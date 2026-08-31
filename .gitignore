@@ -43,3 +43,7 @@ supabase/.branches/
 # Cloudflare secrets
 .dev.vars
 .wrangler/
+
+# Dart / Codex analysis cache
+.codex_dart_data/
+.dartServer/

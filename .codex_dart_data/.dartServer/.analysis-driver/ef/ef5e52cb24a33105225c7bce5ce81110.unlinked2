@@ -1,753 +1,0 @@
-€ÔshouldPainttoStringbuildHandlegetHandleAnchorbuildToolbargetHandleSizecanCutcanCopycanPastecanSelectAll	handleCut
-handleCopyhandlePastehandleSelectAllcontextrenderObjectselectionControlsselectionDelegate_selectionOverlaycontextMenuBuildervalue_value
-_selection_effectiveStartHandleVisibility_effectiveEndHandleVisibility_effectiveToolbarVisibility'_updateTextSelectionOverlayVisibilitieshandlesVisible_handlesVisibleshowHandleshideHandlesshowToolbar showSpellCheckSuggestionsToolbarshowMagnifierupdateMagnifierhideMagnifierupdate_updateSelectionOverlayupdateForScrollhandlesAreVisibletoolbarIsVisiblemagnifierIsVisiblemagnifierExistsspellCheckToolbarIsVisiblehidehideToolbardispose_getStartGlyphHeight_getEndGlyphHeight_buildMagnifier_endHandleDragPosition_endHandleDragTarget_dragStartSelection"_handleSelectionEndHandleDragStart_getHandleDy#_handleSelectionEndHandleDragUpdate_startHandleDragPosition_startHandleDragTarget$_handleSelectionStartHandleDragStart%_handleSelectionStartHandleDragUpdate_handleAnyDragEnd_handleSelectionHandleChanged_chooseType_magnifierInfo_magnifierControllermagnifierConfigurationstartHandleType_startHandleTypelineHeightAtStart_lineHeightAtStart_startHandleDragInProgressisDraggingStartHandle_isDraggingStartHandle_canDragStartHandlestartHandlesVisibleonStartHandleDragStart_handleStartHandleDragStart_handleStartHandleDragUpdateonStartHandleDragUpdateonStartHandleDragEnd_handleStartHandleDragEndendHandleType_endHandleTypelineHeightAtEnd_lineHeightAtEnd_endHandleDragInProgressisDraggingEndHandle_isDraggingEndHandle_canDragEndHandleendHandlesVisibleonEndHandleDragStart_handleEndHandleDragStart_handleEndHandleDragUpdateonEndHandleDragUpdateonEndHandleDragEnd_handleEndHandleDragEndtoolbarVisibleselectionEndpoints_selectionEndpointsdebugRequiredFortoolbarLayerLinkstartHandleLayerLinkendHandleLayerLinkdragStartBehavioronSelectionHandleTappedclipboardStatustoolbarLocation_toolbarLocationfadeDuration_handles_toolbar_contextMenuController_spellCheckToolbarController_buildScheduledmarkNeedsBuild_buildStartHandle_buildEndHandle_buildToolbarchildoffset	layerLink
-visibilitycreateState_controller_opacity	initStatedidUpdateWidget_toolbarVisibilityChangedbuildhandleLayerLinkonSelectionHandleDragStartonSelectionHandleDragUpdateonSelectionHandleDragEndpreferredLineHeighttype_handleVisibilityChanged_getHandleRecteditableTextKeyforcePressEnabledselectionEnableddelegate#_showMagnifierIfSupportedByPlatform#_hideMagnifierIfSupportedByPlatform_lastSecondaryTapWasOnSelection _positionWasOnSelectionExclusive _positionWasOnSelectionInclusive_expandSelection_extendSelectionshouldShowSelectionToolbar_shouldShowSelectionToolbarshouldShowSelectionHandles_shouldShowSelectionHandleseditableTextrenderEditable_isEditableTextMounted_isShiftPressed_dragStartScrollOffset_dragStartViewportOffset_scrollPosition_scrollDirection_longPressStartedWithoutFocusonTapTrackStartonTapTrackReset	onTapDownonForcePressStartonForcePressEndonUserTapAlwaysCalled	onUserTaponSingleTapUponSingleTapCancelonSingleLongTapStartonSingleLongTapMoveUpdateonSingleLongTapEndonSingleLongTapCancelonSecondaryTaponSecondaryTapDownonDoubleTapDown_onSingleLongTapEndOrCancel_selectParagraphsInRange_selectLinesInRange_moveToTextBoundary_selectTextBoundariesInRangeonTripleTapDownonDragSelectionStartonDragSelectionUpdateonDragSelectionEndbuildGestureDetectorbehavior _getEffectiveConsecutiveTapCount_handleTapTrackStart_handleTapTrackReset_handleTapDown_handleTapUp_handleTapCancel_handleDragStart_handleDragUpdate_handleDragEnd_forcePressStarted_forcePressEnded_handleLongPressStart_handleLongPressMoveUpdate_handleLongPressEnd_handleLongPressCancel	_disposedaddListenerremoveListenerdidChangeAppLifecycleState	pasteableunknownnotPasteableenableddisabledToolbarBuilderToolbarItemsParentDataTextSelectionControlsEmptyTextSelectionControlsemptyTextSelectionControlsTextSelectionOverlaySelectionOverlay_SelectionToolbarWrapper_SelectionToolbarWrapperState_SelectionHandleOverlay_SelectionHandleOverlayState+TextSelectionGestureDetectorBuilderDelegate#TextSelectionGestureDetectorBuilderTextSelectionGestureDetector"_TextSelectionGestureDetectorStateClipboardStatusNotifierClipboardStatusLiveTextInputStatusNotifierLiveTextInputStatusTextSelectionHandleControlsïTextSelectionPointTextSelectionDelegateTextSelectionToolbartoolbarBuilderCupertinoTextSelectionToolbarWidgetBuildContextContainerBoxParentData	RenderBoxbooloverrideStringtoStringEditableTextcontextMenuBuilderselectionControlsSelectionAreaonTapcupertinoTextSelectionControlsTextSelectionHandleTypedoubleVoidCallbackOffsetRenderEditablepreferredLineHeight
-DeprecatedRectListValueListenableSize	Clipboard
-cutEnabledtextEditingValue	selectionisCollapsedcopyEnabledpasteEnabledselectAllEnabledtext
-isNotEmptycutSelectionvoidSelectionChangedCausetoolbarcopySelection	pasteTextFuture	selectAllMaterialTextSelectionControlszeroSizedBoxshrinkmaterialTextSelectionControlsOverlayTextEditingValue	LayerLinkDragStartBehaviorstartTextMagnifierConfigurationdebugMaybeDispatchCreatedselectionStartInViewportaddListenerselectionEndInViewportmagnifierConfigurationcontextdebugRequiredForstartHandleType	collapsedstartHandlesVisiblelineHeightAtStartonStartHandleDragStartonStartHandleDragUpdateonEndHandleDragEndendHandleTypeendHandlesVisiblelineHeightAtEndonEndHandleDragStartonEndHandleDragUpdateonStartHandleDragEndtoolbarVisibleselectionEndpointsselectionDelegateclipboardStatusstartHandleLayerLinkendHandleLayerLinktoolbarLayerLinkonSelectionHandleTappeddragStartBehaviortoolbarLocationlastSecondaryTapDownPositionWidgetBuildervisibleForTestingTextSelectionValueNotifiervalueshowHandleshideHandlesshowToolbarmounted showSpellCheckSuggestionsToolbarbuilderTextPositiongetPositionForPointshowMagnifiercurrentTextPositionglobalGesturePositionrenderEditableupdateMagnifierhideMagnifierSchedulerBindingschedulerPhaseSchedulerPhasepersistentCallbacksWidgetsBinding	drawFramemarkNeedsBuildtextDirectionleftrightgetEndpointsForSelection_handlestoolbarIsVisiblemagnifierIsVisiblemagnifierExists_spellCheckToolbarControllerisShownhidehideToolbardebugMaybeDispatchDisposeddisposeremoveListenerint	plainTextisValid
-textInside
-charactersfirstlengthgetRectForComposingRange	TextRangeendheightlastMagnifierInfogetLineAtOffsetoffsetextentOffsetaffinityTextAffinityupstream
-baseOffset
-fromPointsgetLocalRectForCaret	topCenterbottomCenterofrootOverlayfindRenderObjectMatrix4getTransformToMatrixUtilstransformRectglobalToLocalfieldBoundspaintBounds	caretRectcurrentLineBoundariesDragStartDetailsattachedglobalPositiondypointlocalToGlobaldxdefaultTargetPlatformTargetPlatformiOSmacOSabsfloorDragUpdateDetailsfromPositiondragStartSelectionNormalizedandroidfuchsialinuxwindowsextentbaseDragEndDetailsisDraggingStartHandleisDraggingEndHandleuserUpdateTextEditingValuecopyWithdragTextDirectionltrrtldisableddebugCheckHasOverlayemptyMagnifierControllershownoverlayEntrymagnifierBuildershowbelowshouldDisplayHandlesInMagnifierkIsWebFadeTransitionValueChangedkindPointerDeviceKindtouchcalllocalPositionsourceTimeStamp
-listEqualsHapticFeedbackselectionClickCompositedTransformTargetdownDragGestureRecognizerbuildHandleCupertinoTextSelectionControlsgetDataDurationmillisecondsOverlayEntryContextMenuControllerOverlayStateCapturedThemesInheritedThemecapturefromtowrap	insertAllremoveinsert
-visibility	layerLinkchildinstanceaddPostFrameCallback
-debugLabeltypehandleLayerLinkonSelectionHandleDragStartonSelectionHandleDragUpdateonSelectionHandleDragEnd	TapRegiongroupIdSelectableRegionTextFieldTapRegionExcludeSemanticssizebottomRightwidthtopLeftBuilderbuildToolbarStatefulWidgetStateSingleTickerProviderStateMixinAnimationController	Animationview	initStatedurationfadeDurationvsyncwidgetdidUpdateWidgetforwardreverseDirectionalityopacityCompositedTransformFollowerlinkshowWhenUnlinkedkMinInteractiveDimensiongetHandleSizefromLTWHisEmptyexpandToInclude
-fromCirclecenterradiusRelativeRectfillfromLTRBmaxgetHandleAnchortopAlign	alignment	AlignmentRawGestureDetectorbehaviorHitTestBehaviortranslucentgesturesTypeGestureRecognizerFactoryPanGestureRecognizer$GestureRecognizerFactoryWithHandlers
-debugOwnersupportedDevicesstylusunknowngestureSettingsDeviceGestureSettings	touchSloponStartonUpdateonEndPaddingpadding
-EdgeInsetsonlybottom	TextFieldCupertinoTextField	GlobalKeyEditableTextState	protectedfromSelectioneditableTextKeycurrentStateRenderObjectcurrentContextPointerDownEventBaseTapAndDragGestureRecognizer
-ScrollableScrollableStatemaybeOfpositionpixelsAxisDirectionaxisDirectiononTapTrackStartHardwareKeyboardlogicalKeysPressedintersectionLogicalKeyboardKey	shiftLeft
-shiftRightonTapTrackReset	onTapDownhandleTapDownTapDragDownDetailsselectionEnabledTapDownDetailsstylusHandwritingEnabledinvertedStylusScribeisFeatureAvailablethenisAvailableselectPositioncausestylusHandwritingstartStylusHandwritinghasFocustaponForcePressStartForcePressDetailsforcePressEnabledselectWordsInRange
-forcePressonForcePressEnd	onUserTaponUserTapAlwaysCalledonSingleTapUpTapDragUpDetailsrequestKeyboardmousetrackpadtextPositionpreviousSelectionfindSuggestionSpanAtCursorIndexwordAtCursorIndexIsMisspelled
-selectWordtoggleToolbarisAffinityTheSamereadOnlyselectWordEdgeonSingleTapCancelonSingleLongTapStartLongPressStartDetails	longPressFeedbackforLongPressselectPositionAtRawFloatingCursorPointstateFloatingCursorDragStateStartstartLocationupdateFloatingCursoronSingleLongTapMoveUpdateLongPressMoveUpdateDetailsmaxLinesaxisDirectionToAxisAxis
-horizontalverticaloffsetFromOriginUpdateonSingleLongTapEndLongPressEndDetailsonSingleLongTapCancelonSecondaryTaponSecondaryTapDownhandleSecondaryTapDownonDoubleTapDown	doubleTapEndTextBoundaryParagraphBoundaryboundaryLineBoundarygetLeadingTextBoundaryAtgetTrailingTextBoundaryAtonTripleTapDownonDragSelectionStartTapDragStartDetails _getEffectiveConsecutiveTapCountconsecutiveTapCountonDragSelectionUpdateTapDragUpdateDetailsonDragSelectionEndTapDragEndDetailsKeykeyGestureDetectorGestureTapDragDownCallbackForcePressGestureRecognizerstartPressureGestureForcePressStartCallbackGestureForcePressEndCallbackGestureTapCallbackGestureTapDownCallbackGestureTapDragUpCallbackGestureCancelCallbackkLongPressTimeoutGestureLongPressStartCallback"GestureLongPressMoveUpdateCallbackGestureLongPressEndCallbackGestureLongPressCancelCallbackkDoubleTapTimeoutGestureTapDragStartCallbackGestureTapDragUpdateCallbackGestureTapDragEndCallbackdeferToChildminTapGestureRecognizerLongPressGestureRecognizeronLongPressStartonLongPressMoveUpdateonLongPressEndonLongPressCancel%TapAndHorizontalDragGestureRecognizereagerVictoryOnDragonDragStartonDragUpdate	onDragEndonTapUponCancelTapAndPanGestureRecognizerexcludeFromSemanticsWidgetsBindingObserver
-hasStringsFlutterErrorreportErrorFlutterErrorDetails	exceptionstacklibraryErrorDescription	pasteablenotPasteablehasListenersaddObserverremoveObserverAppLifecycleStateresumeddetachedinactivehiddenpausedLiveTextisLiveTextInputAvailableenabledContainerBoxParentDataTextSelectionControlsStatefulWidgetStateSingleTickerProviderStateMixinValueNotifierWidgetsBindingObserver¡Ú|™¹á¥Í¶÷º_0„V„mTextSelectionPoint „.package:flutter/rendering.dart„—„±TextSelectionDelegate „ppackage:flutter/services.dart      
-dart:async  /   ADmathD	dart:math  N   "package:characters/characters.dart  |   package:flutter/foundation.dart  §   package:flutter/gestures.dart  Ğ   package:flutter/rendering.dart  ú   package:flutter/scheduler.dart  ‚$   package:flutter/services.dart  ‚O   
-basic.dart  ‚e   binding.dart  ‚}   constants.dart  ‚—   context_menu_controller.dart  ‚¿   
-debug.dart  ‚Õ   editable_text.dart  ‚ó   feedback.dart  ƒ   framework.dart  ƒ&   gesture_detector.dart  ƒG   inherited_theme.dart  ƒg   magnifier.dart  ƒ   overlay.dart  ƒ™   scrollable.dart  ƒ´   selectable_region.dart  ƒÖ   tap_region.dart  ƒñ   ticker_provider.dart  „   transitions.dartÀ îB À_i´ =€ˆ€§€©€Û.KM{¦Ïù‚#‚L‚N‚d‚|‚–‚¾‚Ô‚òƒƒ%ƒFƒfƒ€ƒ˜ƒ³ƒÕƒğ„„,„.„p„´„¶…………$…)…p……Î…ö†E†G†˜††ï‡;‡a‡«‡Ø‡ßˆ1ˆvˆ“ˆ•ˆ¢ˆëˆîˆğ‰7‰_‰d‰¶ŠŠ%Š*Š]ŠbŠ§Šö‹G‹w‹|‹¶ŒŒXŒŒµŒºV•šü`‡¯åì9T[¬ıJ–±Ôò‘‘‘‘g‘´‘å’5’7’f’m’­’´““0“7“‰“Ç“Î””]”’”¢”Ì•••#•>•^•z•™•Â•ç––J–P–R–ƒ–±–³–ÿ—H—\—c—´—»˜˜$˜4˜^˜˜˜˜Î™#™(™*™v™ª™±šš	šQšsšƒš­šçšì››t›y›{›Ê›å›ìœ5œWœ^œ¯œıF€…¸Ûàâ.zˆİÿŸŸ9ŸsŸxŸ¯ŸØ  H M O š ¡ ï¡ ¡¡:¡t¡y¡­¡è¡í¡ï¢<¢C¢’¢£¢³¢İ£££Q££’£”£Ñ£Ø¤(¤9¤@¤¤×¤ë¥-¥=¥g¥¡¥¦¥ê¦(¦-¦/¦}¦£¦ª¦Ì¦Ó§%§9§I§s§­§²§ì¨$¨)¨,¨.¨u¨z¨É©©g©¨©îªªªMªsªµªÂªıªÿ««$«?«_«{«š«Ã«è¬ ¬K¬l¬n¬{¬’¬­¬Ğ¬î­­­5­:­<­I­š­³­¸­»­½®®	®X®¨®ö¯7¯}¯›¯ó¯õ°8°O°T°¤°ğ±±/±|±ƒ±¿±Ù±ÿ²²:²d²’²¾²ß²ü³³D³ˆ³´³ã´´B´l´…´Öµ7µ–µÆµñ¶(¶A¶l¶¡¶Ü··8·}·Ä·ò¸+¸d¸¸Â¹¹5¹i¹¢¹Ï¹üº%ºXº‡º²ºë»»[»c»h»j»¦»â»é¼7¼y¼¼®¼°¼ü½F½½´½¶½ù¾,¾.¾q¾£¾¥¾×¾Ù¿¿ ¿W¿ƒ¿…¿¤¿º¿ã¿åÀ @À @À @8À @:À @•À @îÀ AEÀ AGÀ A{À A¨À AñÀ BÀ BcÀ BŒÀ BïÀ BôÀ BöÀ C$À C+À C}À C­À C´À CÎÀ CıÀ DÀ DDÀ DkÀ DzÀ DÀ D¡À DÑÀ DÖÀ DØÀ EÀ E-À EMÀ EsÀ ExÀ EzÀ E·À EñÀ EóÀ F0À FHÀ FhÀ FjÀ FÅÀ FíÀ FüÀ GÀ GÀ G,À G;À GBÀ GDÀ GbÀ GÀÀ GÍÀ GÒÀ GÔÀ H#À HKÀ H©À HÉÀ HçÀ I À I9À InÀ IvÀ IŠÀ IÀ I‘À IĞÀ IÿÀ JTÀ JtÀ JšÀ J²À JÚÀ K
-À K1À K;À KCÀ KHÀ KJÀ K‹À K¼À LÀ L1À LYÀ LqÀ L™À LÉÀ LğÀ LúÀ MÀ MÀ M	À MHÀ MbÀ MŠÀ MÀ M‘À MÍÀ MÔÀ N#À NrÀ NÃÀ OÀ O^À O¯À OáÀ PÀ P,À P;À PBÀ PZÀ PzÀ PÇÀ QÀ QiÀ QxÀ Q¡À Q¦À Q¨À QÌÀ QãÀ RÀ R6À R[À R‚À RªÀ R³À RçÀ SÀ S2À SZÀ SÀ SŠÀ SºÀ SæÀ T6À T|À TÀ TƒÀ T¶À T½À UÀ UIÀ UeÀ U…À UÕÀ V&À V<À VeÀ VjÀ VlÀ VÀ VõÀ V÷À W9À W@À WQÀ WXÀ W¬À WĞÀ XÀ XÀ XZÀ X¢À X¤À XåÀ Y'À Y)À YcÀ YjÀ Y{À Y‚À YÊÀ Z,À Z.À ZdÀ ZÀ Z’À ZÏÀ [	À [À [DÀ [XÀ [‡À [©À \À \oÀ \›À \ËÀ \ùÀ ]À ]À ]À ]7À ]}À ]©À ]ÅÀ ^À ^VÀ ^§À ^ğÀ _@À _‰À _³À `À `\À `¬À `ìÀ aNÀ aXÀ a_À a¨À a­À a¯À aĞÀ bÀ bAÀ b[À bÀ bğÀ c9À c‡À cÅÀ d"À d,À d3À dzÀ dÀ dÀ d¤À dÑÀ dıÀ e-À e5À e’À eÁÀ eëÀ fÀ fÀ fÀ fEÀ f›À fÀ fÏÀ g À gnÀ gvÀ gÜÀ h,À hoÀ hŠÀ h¦À h®À h°À iÀ imÀ ioÀ išÀ iëÀ iíÀ jÀ jgÀ jÀ jÁÀ jöÀ jşÀ kÀ kÀ kVÀ kÀ k¶À k¸À l	À l6À l[À l]À l£À l©À lÓÀ lÙÀ m/À mxÀ mÎÀ n!À nsÀ nÅÀ nÜÀ oÀ oÀ oLÀ ooÀ o~À o…À o‡À oÀÀ oÂÀ pÀ pWÀ p}À páÀ qGÀ q“À qâÀ r1À r‚À rÀ rÓÀ sÀ sÀ sÀ saÀ s™À sÓÀ sşÀ tÀ tÀ t-À tEÀ tmÀ t¥À tÌÀ tÖÀ tŞÀ tãÀ tåÀ u6À uMÀ uTÀ u¡À uòÀ v?À vÀ v£À vªÀ vüÀ wKÀ w›À wíÀ xÀ x!À xoÀ xÁÀ xúÀ y1À ylÀ yŠÀ yçÀ z/À z4À z6À zÀ z¢À z±À z¸À zºÀ {	À {SÀ {©À {«À {ìÀ |À |PÀ |XÀ |ƒÀ |ÈÀ |ÖÀ |ØÀ } À }"À }XÀ }`À }bÀ }»À }½À }äÀ ~
-À ~VÀ ~vÀ ~˜À ~ÆÀ ~÷À %À CÀ qÀ ¯À ÜÀ ìÀ úÀ üÀ €FÀ €‚À €•À € À  À 5À hÀ »À âÀ ‚À ‚GÀ ‚{À ‚¥À ‚±À ‚ÕÀ ‚ùÀ ƒÀ ƒ?À ƒfÀ ƒ”À ƒ²À ƒàÀ „À „KÀ „[À „iÀ „kÀ „µÀ „ñÀ …À …À …6À …dÀ …À …šÀ …ßÀ †À †À †#À †%À †WÀ †YÀ †À †™À †ÌÀ ‡À ‡+À ‡5À ‡=À ‡BÀ ‡DÀ ‡”À ‡ĞÀ ‡ùÀ ‡ûÀ ˆKÀ ˆ{À ˆ¢À ˆ¤À ˆíÀ ‰À ‰À ‰&À ‰(À ‰cÀ ‰eÀ ‰·À ‰úÀ Š À Š…À ŠëÀ ‹9À ‹ˆÀ ‹×À Œ(À Œ4À ŒyÀ Œ·À Œ¿À ŒÁÀ À ?À yÀ ¤À «À ­À ÓÀ ëÀ À KÀ rÀ |À „À ‰À ‹À ÖÀ ùÀ À À À `À ªÀ  À CÀ \À ©À ±À ŞÀ ‘%À ‘3À ‘[À ‘}À ‘·À ‘¿À ’À ’À ’AÀ ’gÀ ’³À ’ÓÀ ’õÀ “#À “TÀ “‚À “ À “ÎÀ ”À ”9À ”IÀ ”WÀ ”YÀ ”£À ”ßÀ ”òÀ ”ıÀ •]À •’À •ÅÀ –À –?À –sÀ –¦À –ØÀ —À —À —2À —VÀ —xÀ —œÀ —ÃÀ —ñÀ ˜À ˜=À ˜{À ˜¨À ˜¸À ˜ÆÀ ˜ÈÀ ™À ™NÀ ™aÀ ™lÀ ™“À ™»À ™íÀ ™ùÀ š>À špÀ š{À š‚À š„À š¬À šÄÀ ›À ›;À ›]À ›•À ›¼À ›ÆÀ ›ÎÀ ›ĞÀ œÀ œÀ œ	À œ=À œZÀ œiÀ œpÀ œ‘À œ³À À LÀ kÀ —À ¿À ëÀ öÀ ÿÀ À À 2À \À ‚À äÀ íÀ ôÀ ùÀ ûÀ Ÿ?À ŸrÀ Ÿ£À ŸÆÀ ŸÎÀ ŸÓÀ ŸÕÀ ŸıÀ  À  EÀ  kÀ  rÀ  •À  ÆÀ  ÍÀ  ÏÀ  ôÀ ¡À ¡>À ¡FÀ ¡KÀ ¡NÀ ¡PÀ ¡—À ¡œÀ ¡èÀ ¢À ¢*À ¢wÀ ¢~À ¢ºÀ ¢ĞÀ ¢ìÀ £À £?À £gÀ £†À £¨À £ËÀ £ëÀ ¤ À ¤FÀ ¤cÀ ¤ƒÀ ¤¤À ¤ÂÀ ¤ÜÀ ¥À ¥=À ¥OÀ ¥ŒÀ ¥ÈÀ ¥ÏÀ ¥õÀ ¦À ¦BÀ ¦iÀ ¦À ¦ÅÀ ¦èÀ ¦úÀ §7À §sÀ §zÀ §˜À §àÀ ¨À ¨<À ¨dÀ ¨À ¨ÂÀ ¨îÀ ©À ©kÀ ©pÀ ©rÀ ©«À ©ÊÀ ©ÌÀ ª!À ª;À ªAÀ ªCÀ ª‘À ªãÀ «.À «}À ««À «öÀ «øÀ ¬$À ¬+À ¬}À ¬„À ¬´À ¬ğÀ ¬òÀ ­7À ­hÀ ­oÀ ­¹À ­ÏÀ ­îÀ ®+À ®}À ®ÂÀ ®ÇÀ ®ÉÀ ¯À ¯CÀ ¯YÀ ¯—À ¯™À ¯İÀ °À °À °aÀ °ŠÀ ° À °êÀ °ìÀ ±.À ±‡À ±ÎÀ ²'À ²GÀ ²NÀ ²˜À ²ãÀ ³À ³À ³YÀ ³’À ³ÈÀ ³×À ³ŞÀ ³ûÀ ´À ´À ´À ´\À ´À ´À ´ÙÀ µÀ µDÀ µ‘À µ¡À µ¾À µÕÀ µİÀ µßÀ ¶À ¶À ¶À ¶À ¶:À ¶SÀ ¶²À ¶ÙÀ ¶áÀ ¶æÀ ¶èÀ ·*À ·MÀ ·TÀ ·‡À ·À ··À ·üÀ ¸BÀ ¸À ¸µÀ ¸ÄÀ ¸ËÀ ¸ÍÀ ¸ïÀ ¸ôÀ ¸öÀ ¹!À ¹(À ¹xÀ ¹¼À ¹éÀ º!À ºGÀ ºVÀ º]À º|À º“À º˜À ºšÀ ºÉÀ ºĞÀ »"À »)À »yÀ »°À »ÎÀ »÷À ¼À ¼.À ¼5À ¼VÀ ¼mÀ ¼rÀ ¼tÀ ¼¿À ½À ½>À ½@À ½†À ½áÀ ¾	À ¾À ¾:À ¾@À ¾ŠÀ ¾ÖÀ ¿À ¿'À ¿GÀ ¿~À ¿ºÀ ¿ÏÀ ¿ÑÀ ¿ıÀ ÀÀ ÀVÀ À{À À‚À ÀÍÀ ÁÀ ÁÀ ÁMÀ ÁÀ ÁÀ ÁĞÀ ÁöÀ ÂGÀ Â˜À ÂµÀ ÂÜÀ ÂëÀ ÂòÀ ÃÀ Ã;À ÃJÀ ÃQÀ Ã˜À ÃÄÀ ÃÉÀ ÃËÀ ÄÀ Ä^À Ä¯À ÄÌÀ ÄóÀ ÅÀ Å	À Å*À Å9À Å@À Å”À ÅèÀ Æ(À ÆLÀ Æ•À ÆÃÀ ÆôÀ Ç#À ÇVÀ ÇsÀ Ç}À Ç°À Ç·À ÇäÀ ÇéÀ ÇëÀ È;À È~À È€À ÈÓÀ ÈãÀ É À É"À É^À ÉƒÀ ÉÔÀ Ê%À ÊBÀ ÊQÀ ÊXÀ ÊÀ Ê¢À Ê±À Ê¸À ÊâÀ ÊçÀ ÊéÀ ËÀ ËÀ ËiÀ Ë©À ËÔÀ Ì
-À Ì.À Ì=À ÌDÀ ÌaÀ ÌxÀ Ì}À ÌÀ Ì¬À Ì³À ÍÀ Í
-À ÍZÀ ÍÀ Í©À ÍĞÀ ÍöÀ ÎÀ ÎÀ Î+À ÎBÀ ÎGÀ ÎIÀ Î”À ÎãÀ ÏÀ ÏÀ ÏSÀ Ï¨À ÏÎÀ ÏĞÀ ÏıÀ ĞÀ ĞMÀ Ğ›À ĞÇÀ ĞèÀ Ñ
-À ÑAÀ Ñ}À Ñ’À Ñ”À Ñ¾À ÑÅÀ ÒÀ Ò:À ÒAÀ ÒŠÀ Ò½À Ò¿À ÓÀ ÓEÀ ÓGÀ Ó…À Ó©À ÓúÀ ÔKÀ ÔhÀ ÔÀ ÔœÀ Ô£À ÔÉÀ ÔèÀ Ô÷À ÔşÀ ÕCÀ ÕmÀ ÕrÀ ÕtÀ Õ´À ÖÀ ÖVÀ ÖsÀ Ö˜À Ö§À Ö®À ÖÍÀ ÖÜÀ ÖãÀ ×7À ×‹À ×ËÀ ×íÀ Ø4À ØbÀ Ø“À ØÂÀ ØõÀ ÙÀ ÙÀ ÙMÀ ÙTÀ ÙÀ Ù„À Ù†À ÙÔÀ ÚÀ ÚÀ ÚhÀ ÚxÀ Ú³À ÚµÀ ÚïÀ ÛÀ ÛcÀ Û´À ÛÑÀ ÛàÀ ÛçÀ ÜÀ Ü-À Ü<À ÜCÀ ÜkÀ ÜpÀ ÜrÀ Ü™À Ü À ÜíÀ İÀ İÀ İTÀ İ„À İ†À İÆÀ ŞÀ ŞBÀ Ş~À Ş²À ŞËÀ ßÀ ß2À ßZÀ ßˆÀ ß°À ßÔÀ ßúÀ à À àHÀ à\À àgÀ àpÀ àwÀ à™À àÀ à À àëÀ áÀ áÀ ábÀ ápÀ á•À á—À áåÀ âÀ â9À â;À â‰À â²À âÙÀ âÛÀ ã!À ãSÀ ãiÀ ãœÀ ãÀ ãäÀ ä-À ä@À äVÀ äfÀ äÀ äÊÀ äÏÀ åÀ åÀ åCÀ åJÀ åÀ åİÀ æ(À æHÀ æOÀ æ›À æêÀ çÀ ç#À çlÀ çsÀ ç„À ç‹À çôÀ è"À è$À èpÀ è¿À èÆÀ éÀ é[À éŸÀ éïÀ ê!À êqÀ ê¿À êòÀ ëÀ ëYÀ ëoÀ ëŸÀ ë¡À ëòÀ ìÀ ìÀ ì^À ìÀ ìÂÀ ìÄÀ íÀ í7À í>À íÀ í¼À íÃÀ îÀ î/À î?À îˆÀ îÂÀ îÇÀ îûÀ ïÀ ï@À ïfÀ ïuÀ ï|À ï›À ï²À ï·À ï¹À ğ
-À ğOÀ ğQÀ ğŸÀ ğØÀ ñÀ ñÀ ñ.À ñIÀ ñKÀ ñ’À ñãÀ ñåÀ ò<À ò>À ò~À òÈÀ òŞÀ òöÀ óÀ ó"À ó)À ó+À óYÀ óiÀ óƒÀ ó®À ó¶À ó¸À óûÀ ôÀ ô-À ô5À ô7À ôIÀ ôeÀ ôÀ ôÓÀ ôßÀ ôéÀ õÀ õ.À õoÀ õ{À õ…À õÀ õÕÀ õÚÀ õÜÀ öÀ öWÀ ömÀ ö…À ö¢À öÃÀ öåÀ ÷À ÷$À ÷<À ÷CÀ ÷HÀ ÷JÀ ÷ŠÀ ÷ÑÀ ÷çÀ ø9À ø`À øÀ øÀ ø™À øÑÀ øäÀ øûÀ ùÀ ùDÀ ù`À ùoÀ ùvÀ ùxÀ ù”À ù£À ùªÀ ù¬À ùíÀ úÀ ú(À ú\À ú†À ú­À úÕÀ ûÀ û>À ûJÀ ûTÀ û\À ûaÀ ûcÀ û²À ûÚÀ ü>À üZÀ üiÀ üpÀ ürÀ ü³À üÛÀ üôÀ ı(À ıRÀ ızÀ ı´À ıØÀ ıäÀ ıîÀ ıöÀ ıûÀ ııÀ şÀ ş À şfÀ şÀ ş²À şÁÀ şÈÀ ÿÀ ÿNÀ ÿ©À ÿÇÀ ÿØÀ ÿáÀ  À LÀ nÀ ™À ÂÀ çÀÀJÀ†ÀÀÀËÀÀÀ2À]À†ÀÀ²ÀßÀÀKÀƒÀŒÀ“À˜ÀšÀÓÀÀ0ÀAÀcÀwÀ”À¿ÀğÀÀÀÀÀTÀ‚À‰À·ÀÍÀåÀÀ7ÀTÀcÀjÀƒÀÀ³À¸ÀºÀöÀ)À?ÀSÀ‚ÀÀ®À³ÀµÀéÀÀQÀwÀÓÀ	À	8À	aÀ	oÀ	˜À	¹À	éÀ
-$À
-fÀ
-ªÀ
-èÀÀAÀsÀ¢À¬À³ÀÊÀìÀ6À>ÀCÀEÀwÀ‘ÀßÀÀaÀ¢ÀÊÀñÀKÀ˜ÀÁÀÏÀøÀÀEÀ€ÀÀÀÀ>ÀmÀ•ÀÅÀôÀşÀÀÀ>ÀˆÀÀ•À—ÀÊÀúÀ ÀGÀNÀ[À}ÀÅÀÍÀÏÀÀÀCÀpÀ¹ÀÁÀÃÀáÀFÀHÀÀÉÀîÀÀhÀjÀˆÀ•ÀÒÀÀÀÀ@ÀcÀ‡À®ÀÅÀğÀ#À9ÀUÀuÀŒÀ­ÀÎÀìÀ
-ÀÀ$À.À6À;À=ÀÀÏÀïÀöÀFÀÀ¬À³ÀöÀÀCÀyÀˆÀÀ‘À¼ÀÁÀÄÀÆÀÀcÀªÀßÀ-ÀUÀÀ²ÀÈÀæÀÀÀ"À$À;ÀSÀqÀÀŸÀ¬ÀÀÀÀSÀ~À§ÀŞÀàÀíÀÀÀÀ{À}ÀŸÀßÀäÀæÀóÀ 1À XÀ À À ¤À êÀ!À!LÀ!QÀ!SÀ!`À!tÀ!·À!ÓÀ!éÀ!îÀ!ğÀ"À"CÀ"aÀ"oÀ"À"”À"™À"›À"¨À"ĞÀ"çÀ#	À#+À#KÀ#†À#¨À#ÈÀ#ùÀ$ À$HÀ$nÀ$’À$¢À$°À$¼À$ÆÀ$ÎÀ$ÓÀ$ÖÀ$ØÀ%À%QÀ%rÀ%•À%®À%ÒÀ%õÀ&À&BÀ&fÀ&ŒÀ&¢À&ÊÀ'À'À'
-À'.À'^À'£À'êÀ(+À(]À(‰À(®À(ÕÀ)À)À)À)eÀ)hÀ)jÀ)µÀ)àÀ*	À*@À*BÀ*OÀ*eÀ*}À*À*İÀ*ßÀ+ À+?À+DÀ+FÀ+kÀ+˜À+¶À+ÄÀ+âÀ+éÀ+îÀ+ğÀ,9À,MÀ,TÀ,¤À,òÀ-À-qÀ-ËÀ.À.À.À.)À.fÀ.À.ÒÀ.óÀ/2À/7À/9À/FÀ/ZÀ/œÀ/¸À/ÎÀ/ÓÀ/ÕÀ/âÀ0
-À0`À0bÀ0²À0×À1À1"À1IÀ1¨À1¶À1ğÀ2À2/À2yÀ2ÅÀ3À3[À3iÀ3kÀ3¶À3ÊÀ3íÀ3õÀ3÷À4FÀ4šÀ4·À4èÀ5%À5[À5]À5†À5«À5ñÀ63À6SÀ6qÀ6À6§À6ĞÀ6ûÀ7À7?À7gÀ7À7ØÀ8;À8jÀ8‘À8âÀ9À9NÀ9À9±À9ÉÀ9ßÀ:À:2À:xÀ:ÂÀ;À;-À;rÀ;¹À;ûÀ<À<%À<7À<VÀ<À<¨À<ÍÀ<öÀ=!À=5À=sÀ=À=¯À=ŞÀ>À>%À>7À>GÀ>UÀ>aÀ>kÀ>sÀ>xÀ>{À>}À>ÄÀ>ÉÀ?À?UÀ?‹À?ÖÀ@%À@qÀ@˜À@À@¬À@±ÀAÀAQÀAeÀA£ÀAÚÀB4ÀBiÀBkÀBªÀBÉÀBËÀCÀC$ÀC'ÀC)ÀCqÀCvÀC½ÀDÀDYÀD©ÀD÷ÀEÀEÀEgÀE˜ÀEÀEİÀF.ÀF|ÀFËÀFêÀFïÀFşÀGÀGQÀG}ÀGÂÀHÀH.ÀHfÀH¨ÀHªÀHîÀHõÀIFÀI—ÀIÔÀIÛÀJ ÀJ7ÀJEÀJ„ÀJ†ÀJÖÀJòÀK7ÀK]ÀKÀK¡ÀKÖÀKúÀLÀL>ÀLbÀLiÀLnÀLpÀLÂÀLòÀMÀM%ÀM,ÀM.ÀMTÀMxÀM˜ÀM¿ÀMãÀNÀN'ÀNKÀNRÀNWÀNYÀNŸÀNÍÀOÀO<ÀOQÀOXÀOZÀO¥ÀOÚÀOâÀOäÀP*ÀPiÀPnÀPpÀP¶ÀPöÀQÀQ)ÀQ0ÀQ2ÀQŒÀQ‘ÀQ“ÀQÙÀRÀR7ÀRLÀRSÀRUÀR±ÀR¶ÀR¸ÀRñÀR÷ÀSHÀSÀS•ÀSåÀTÀTÀT&ÀT,ÀT{ÀTÀT©ÀT½ÀTáÀUÀUÀUGÀUIÀUÀUïÀVÀVNÀVÀVÌÀWÀWIÀWQÀWSÀWÀWÊÀWØÀWàÀWåÀWçÀX ÀX&ÀXZÀX`ÀXpÀXvÀXÆÀXßÀY&ÀYaÀYcÀY¸ÀYøÀZZÀZ\ÀZŠÀZÓÀZáÀZéÀZîÀZğÀ[À[%À[uÀ[ÂÀ\À\eÀ\§À\îÀ]À]À]JÀ]QÀ]¡À]ïÀ^AÀ^mÀ^´À^àÀ^âÀ_0À_WÀ_eÀ_¶À_¸À`À`4À`BÀ`‡À`‰À`ÚÀaÀaÀa4Àa•Àa—ÀaèÀb%ÀbFÀbHÀbÀb½ÀbåÀbçÀc9ÀccÀceÀc…ÀcãÀcóÀd<Àd‰ÀdÀdÀd¹ÀeÀe'ÀepÀeœÀe¡Àe£ÀeñÀf;ÀfkÀf’Àf”ÀféÀg3Àg9ÀgÀgàÀhÀhKÀhMÀhÀh—Àh¨Àh¯ÀhıÀiÀiÀi;ÀiÀiçÀiúÀiÿÀjÀjDÀjKÀj\ÀjcÀj±ÀjÅÀjÓÀjïÀkÀkÀkÀkQÀkXÀkªÀlÀlÀlÀl%ÀlwÀl…ÀlµÀlÜÀlëÀlòÀlôÀmIÀmŸÀmõÀnLÀn ÀnŞÀo9Ào‰ÀoİÀpÀpQÀp„ÀpÖÀqÀqXÀq{ÀqÙÀrÀrÀrrÀrŸÀrÅÀsÀs5ÀsYÀs–ÀsÌÀsõÀtTÀtmÀt{Àt›ÀtŞÀu Àu`Àu’Àu£Àu´ÀuÁÀuÌÀuğÀvÀvPÀv`Àv‚Àv§ÀvùÀwÀw=Àw…Àw›ÀwÖÀx5ÀxHÀxSÀx¡ÀxóÀy?Ày]Ày§ÀyÉÀyíÀzÀz6Àz†Àz™Àz¤ÀzîÀzõÀzúÀzüÀ{AÀ{HÀ{“À{³À{ºÀ{ÿÀ|À|À|À|nÀ|‚À|À|ÇÀ|ğÀ}À}@À}OÀ}VÀ}~À}£À}ÓÀ}ÛÀ}üÀ~À~À~FÀ~MÀ~ŸÀ~ÂÀ~ÉÀÀÀ&À-À{ÀÀÀÒÀûÀ€#À€HÀ€xÀ€€À€§À€ÊÀ€ÑÀ€ÖÀ€ØÀ'ÀPÀWÀqÀÀ«À­ÀêÀñÀ‚:À‚AÀ‚RÀ‚YÀ‚¡À‚µÀƒÀƒQÀƒeÀƒsÀƒ‰ÀƒÄÀƒÉÀƒËÀ„À„À„TÀ„[À„lÀ„sÀ„ºÀ„ÓÀ„áÀ…À…:À…aÀ…pÀ…wÀ…ÎÀ…ûÀ†!À†kÀ†‘À†³À†ÕÀ†ùÀ‡	À‡JÀ‡nÀ‡˜À‡¼ÀˆÀˆÀˆ*ÀˆtÀˆ®ÀˆÒÀˆüÀ‰ À‰pÀ‰ƒÀ‰À‰ØÀ‰øÀŠÀŠjÀŠÀŠØÀŠîÀ‹)À‹ˆÀ‹›À‹¦À‹ÇÀ‹ğÀŒÀŒFÀŒxÀŒÏÀÀfÀ£ÀñÀÀCÀnÀŞÀNÀ”À¤ÀÀJÀZÀÇÀ‘8À‘©À’À’;À’KÀ’ÌÀ“LÀ“ËÀ” À”VÀ”©À”ĞÀ”àÀ•<À•oÀ•ËÀ•ÍÀ•ÿÀ–KÀ–À–àÀ–øÀ—,À—=À—‰À—ÅÀ˜À˜GÀ˜uÀ˜¬À˜ØÀ™
-À™ À™pÀ™ÃÀ™ñÀš ÀšTÀšlÀšÀš¯Àš¾ÀšÉÀšĞÀšõÀšúÀšüÀ›AÀ›HÀ›‘À›˜À›©À›°À›ûÀœÀœ"Àœ@Àœ{Àœ€Àœ‚ÀœÊÀœÑÀ!À4À;ÀLÀSÀ¡ÀºÀÈÀÀ-À<ÀCÀiÀ‰À«ÀÔÀŸÀŸSÀŸ‚ÀŸĞÀŸÿÀ 9À FÀ XÀ „À ¯À äÀ òÀ¡À¡QÀ¡„À¡¢À¡çÀ¢À¢QÀ¢À¢°À¢ÀÀ¢âÀ¢ğÀ£+À£6À£ZÀ£~À£ À£ÄÀ¤À¤=À¤uÀ¤€À¤‡À¤‰À¤ËÀ¤ÍÀ¥À¥:À¥?À¥AÀ¥À¥•À¥äÀ¦À¦À¦À¦ À¦jÀ¦ŒÀ¦šÀ¦âÀ§	À§À§À§jÀ§£À§óÀ¨DÀ¨†À¨µÀ¨¿À©À©_À©gÀ©À©­À©ÏÀªÀªFÀªYÀªƒÀª¯ÀªÑÀªôÀ«À«RÀ«`À«rÀ«À«ÉÀ«şÀ¬À¬6À¬mÀ¬¡À¬ĞÀ¬ŞÀ­À­$À­HÀ­lÀ­À­²À­ŞÀ­ïÀ®UÀ®|À®¯À®»À®ÂÀ®ÄÀ¯À¯À¯À¯SÀ¯ZÀ¯ŒÀ¯“À¯¤À¯«À¯üÀ°À°À°XÀ°|À°£À°ÆÀ°ÍÀ°ÒÀ°ÔÀ±À±$À±tÀ±{À±ŒÀ±“À±áÀ±ùÀ²À²)À²MÀ²RÀ²TÀ²–À²À²äÀ²òÀ³À³4À³CÀ³JÀ³pÀ³À³²À³ÿÀ´GÀ´RÀ´}À´¤À´ËÀ´ÖÀ´úÀµÀµ@ÀµdÀµÀµÙÀµäÀ¶À¶À¶À¶À¶_À¶fÀ¶wÀ¶~À¶ÏÀ¶ãÀ·%À·3À·hÀ·½À¸À¸iÀ¸ÀÀ¹À¹RÀ¹¶À¹ßÀºÀº#ÀºWÀºŠÀºÀº‘ÀºÔÀºÛÀ»'À»_À»fÀ»wÀ»~À»ÌÀ»àÀ»îÀ¼$À¼JÀ¼”À¼½À¼âÀ¼ëÀ¼òÀ¼÷À¼ùÀ½!À½MÀ½yÀ½À½ÁÀ½äÀ¾À¾BÀ¾‚À¾¨À¾ÿÀ¿6À¿=À¿BÀ¿DÀ¿–À¿®ÀÀÀÀvÀÀØÀÀİÀÀßÀÁ,ÀÁDÀÁ¤ÀÁéÀÂFÀÂKÀÂMÀÂœÀÂæÀÃ9ÀÃZÀÃ¬ÀÃÛÀÃòÀÄ"ÀÄhÀÄ‹ÀÄ«ÀÄ¹ÀÄÅÀÄÚÀÅÀÅPÀÅÀÅ„ÀÅ†ÀÅÔÀÅõÀÅûÀÆKÀÆfÀÆlÀÆ¶ÀÆïÀÇÀÇ;ÀÇVÀÇgÀÇŠÀÇ’ÀÇãÀÈ1ÀÈaÀÈyÀÈ¬ÀÈæÀÈûÀÉ1ÀÉÀÉƒÀÉ¼ÀÊÀÊ_ÀÊaÀÊÀÊ×ÀÊåÀÊíÀÊòÀÊôÀË7ÀË>ÀËkÀË¹ÀËäÀËëÀËüÀÌÀÌQÀÌeÀÌsÀÌ©ÀÌĞÀÌßÀÌæÀÍÀÍIÀÍWÀÍÀÍ¥ÀÍËÀÍíÀÎÀÎ7ÀÎœÀÎÀÀÏ ÀÏ)ÀÏ0ÀÏWÀÏzÀÏÀÏ†ÀÏˆÀÏĞÀÏ×ÀĞÀĞ$ÀĞ5ÀĞ<ÀĞŠÀĞ£ÀĞ±ÀĞíÀÑÀÑ#ÀÑ*ÀÑ]ÀÑ€ÀÑŞÀÒÀÒ ÀÒUÀÒ„ÀÒÂÀÒÄÀÓÀÓ:ÀÓGÀÓUÀÓ—ÀÓ¦ÀÓ­ÀÓ¯ÀÔÀÔ<ÀÔ^ÀÔ‚ÀÔÓÀÔùÀÕÀÕCÀÕiÀÕºÀÕÃÀÕÑÀÕùÀÖÀÖ>ÀÖiÀÖ—ÀÖÇÀÖöÀ×*À×<À×hÀ×œÀ×ÇÀ×ôÀØÀØÀØ?ÀØeÀØˆÀØ³ÀØáÀÙÀÙ@ÀÙtÀÙ†ÀÙ²ÀÙæÀÚÀÚ>ÀÚ†ÀÚÉÀÚ÷ÀÛ)ÀÛZÀÛÀÛ¤ÀÛòÀÜÀÜÀÜ(ÀÜLÀÜpÀÜ–ÀÜÂÀÜíÀİÀİ+Àİ4Àİ;Àİ@ÀİBÀİ‹Àİ’ÀİáÀİùÀŞ ÀŞÀŞÀŞgÀŞ¡ÀŞ¯ÀŞíÀßÀß#Àß*Àß,ÀßIÀß–ÀßÑÀà#ÀàvÀàºÀàëÀà÷ÀáJÀá›Àá¥ÀâÀâÀâ'ÀâwÀâ¡Àâ±ÀâÁÀâíÀã;ÀãbÀãÀãœÀãÀã¿ÀãéÀäÀäDÀäoÀäÀÀäéÀåÀå+Àå@ÀåKÀåTÀåVÀåÀåÏÀåùÀæ	ÀæÀæCÀækÀæ“Àæ·ÀæÜÀç	Àç9ÀçkÀçÁÀçğÀè&Àè:ÀèhÀèÀèËÀèúÀéÀéhÀé§Àé¿ÀéÎÀéãÀê	Àê2Àê„Àê¯ÀêáÀêñÀëÀë?ÀëmÀë¿ÀëêÀìÀì,Àì7Àì@ÀìBÀìjÀìŒÀìêÀíÀí+ÀíeÀíˆÀí³ÀíáÀîÀîlÀî™ÀîÍÀîßÀïÀï?ÀïjÀï—Àï¯ÀïÅÀïÒÀïåÀğÀğ1Àğ„ÀğèÀñ1ÀñTÀñÀñ­ÀñÙÀòÀòDÀò˜ÀòÅÀòùÀóÀó6ÀócÀó‘ÀóÃÀóôÀô*Àô>Àô“Àô¤Àô¼ÀôÒÀôßÀôòÀõÀõ:Àõ`Àõ“ÀõãÀöÀö<ÀöJÀöSÀöZÀö\Àö‰ÀöÂÀ÷À÷UÀ÷\À÷^À÷«À÷¾ÀøÀømÀøÀøìÀù(ÀùgÀù§ÀùùÀú)ÀúZÀúÀú»ÀúéÀú÷ÀûÀû(Àû2ÀûQÀû’ÀûÖÀüÀü7Àü\Àü–ÀüÄÀüÒÀüŞÀıÀıÀıÀıhÀıoÀıtÀıvÀı¼ÀıÃÀşÀş"Àş)Àş:ÀşAÀş’Àş¦Àş´ÀşìÀÿÀÿbÀÿÀÿ Àÿ²ÀÿÕÀÿÜÀÿŞÀÿúÀ À $À &À RÀ WÀ YÀ ¦À ÇÀ ÎÀÀRÀ˜À÷À!À2À[À„À¡ÀòÀ?ÀfÀ•ÀºÀçÀÀ7ÀtÀ£ÀØÀÀ*À]À’ÀÁÀöÀÀ&À.À3À6À8À‹ÀÀÜÀ,À|À’À—À¦À«ÀøÀEÀWÀ”ÀÄÀËÀ	À	>À	NÀ	iÀ	„À	™À	¶À	ÑÀ	ëÀ
-	À
-"À
-?À
-TÀ
-tÀ
-™À
-·À
-ØÀ
-óÀÀ.ÀOÀmÀ–ÀªÀÄÀËÀÍÀ3ÀyÀ–À¬ÀÔÀÖÀ<À†ÀÕÀ!ÀGÀ]À…À‡ÀÒÀ#ÀYÀ‰À‹ÀÙÀ&ÀbÀdÀ¶ÀÔÀÀÀMÀzÀ|ÀÀÀõÀ÷ÀIÀ]ÀdÀ¬ÀûÀUÀ‡À‰ÀÙÀ'À\ÀÀ‘ÀåÀÀÀjÀÀµÀ·ÀüÀDÀƒÀÁÀÃÀÀSÀUÀœÀÖÀØÀ!ÀaÀcÀ²ÀôÀ*À,À{À¾ÀôÀöÀ1ÀmÀoÀ©ÀçÀéÀ.ÀfÀhÀ»ÀÂÀÀ6À8À{À‚ÀºÀŞÀàÀ ÀÀÀ&ÀvÀyÀ{ÀÓÀ$ÀwÀÊÀéÀïÀBÀWÀ–À¼ÀàÀ À &À uÀ ÇÀ!À!fÀ!³À!æÀ"9À"YÀ"{À"ÌÀ#À#nÀ#À#¨À#ÌÀ$À$lÀ$½À%
-À%=À%yÀ%€À%…À%‡À%¨À%ÍÀ%ÒÀ%ÔÀ%õÀ&À&À&!À&sÀ&šÀ&ÏÀ&õÀ'CÀ'—À'çÀ(À(eÀ(šÀ(¡À(£À(òÀ)'À).À)3À)5À)fÀ)µÀ)áÀ*À*2À*SÀ*ZÀ*_À*aÀ*~À*¥À*ªÀ*¬À*äÀ+À+À+À+VÀ+ˆÀ+À+À+ÃÀ+òÀ+÷À+ùÀ,1À,_À,dÀ,fÀ,œÀ,ÈÀ,ÍÀ,ÏÀ-À-?À-DÀ-FÀ-À-ÅÀ-ÊÀ-ÌÀ.À.6À.;À.=À.`À.‹À.À.’À.ŸÀ.ÇÀ/À/À/eÀ/šÀ/ÃÀ/ÕÀ0	À0FÀ0PÀ0XÀ0ZÀ0ŠÀ0¿À0íÀ1À1LÀ1™À1ÈÀ1éÀ28À2HÀ2}À2•À2ÑÀ3À3OÀ3À3À3¬À3³À3µÀ3åÀ4À4DÀ4lÀ4’À4¸À4ÚÀ5À5sÀ5ÃÀ6À6#À6~À6¢À6äÀ7<À7zÀ7¸À7êÀ8 À8XÀ8ŠÀ8¸À8ìÀ9 À9À96À9ZÀ9€À9²À:À:HÀ:À:À:øÀ;À;^À;œÀ;ÚÀ<À<BÀ<zÀ<¬À<ÚÀ=À="À=4À==À=DÀ=FÀ=•À=ÄÀ>À>TÀ>ŠÀ>¢À>üÀ?QÀ?aÀ?oÀ?vÀ?xÀ?˜À?³À?ÖÀ?øÀ@À@À@!À@$À@&À@uÀ@—À@œÀ@äÀA)ÀAuÀAÙÀBÀBdÀBfÀBÀBƒÀB¾ÀBßÀBõÀCÀCÀCÀC)ÀC4ÀCfÀCˆÀC©ÀCÇÀCèÀDÀD'ÀD|ÀDˆÀD’ÀDİÀEÀE2ÀECÀELÀEtÀEƒÀEŠÀE½ÀEâÀFÀFÀF#ÀF2ÀF9ÀFRÀFWÀFYÀFfÀF“ÀF­ÀFßÀFæÀGÀG$ÀG+ÀGMÀGRÀGTÀGaÀG‘ÀG¶ÀGŞÀHÀHÀHÀH!ÀH.ÀHlÀH‚ÀH©ÀH¼ÀHäÀIÀI2ÀIXÀIsÀIƒÀIŠÀIÀI‘ÀIÀI²ÀIåÀIüÀJÀJÀJÀJÀJfÀJ~ÀJÎÀJÜÀJŞÀK-ÀK{ÀKÀÀKÌÀKÎÀLÀL/ÀL2ÀL4ÀL•ÀLªÀL¯ÀL¾ÀMÀMrÀM¦ÀM«ÀMêÀN8ÀN[ÀN‡ÀNáÀNöÀNøÀOÀOÀOZÀO{ÀO‘ÀO ÀO§ÀO©ÀOÑÀOÜÀP'ÀPIÀPjÀPˆÀP©ÀPÂÀPèÀQDÀQPÀQZÀQ¥ÀQâÀR"ÀR3ÀR<ÀRhÀRwÀR~ÀR€ÀRÃÀRêÀSÀSÀSBÀSQÀSXÀSqÀSvÀSxÀS…ÀS²ÀSÌÀSşÀTÀT6ÀTGÀTNÀTpÀTuÀTwÀT„ÀT´ÀTÙÀUÀU6ÀU=ÀUBÀUDÀUQÀUÀU¥ÀUÌÀUßÀVÀV/ÀVUÀV{ÀV”ÀV›ÀV ÀV¢ÀV¯ÀVÃÀVöÀWÀW#ÀW(ÀW+ÀW-ÀWÀW’ÀW¡ÀWğÀXÀXCÀXOÀXQÀXµÀYÀYUÀYaÀYcÀYÀY«ÀY®ÀY°ÀYÿÀZQÀZˆÀZÚÀ[À[QÀ[^À[vÀ[‘À[±À[ÍÀ[ìÀ\À\:À\rÀ\À\¾À\ÀÀ\ÍÀ]À]À]À]OÀ]QÀ]^À]™À]›À]¨À]çÀ]éÀ]öÀ^WÀ^YÀ^fÀ^ÈÀ^ÊÀ^×À_À_À_+À_fÀ_i   `/// @docImport 'package:flutter/cupertino.dart';
-/// @docImport 'package:flutter/material.dart';  .D M  {  ¦  Ï  ù  ‚#  ‚N  ‚d  ‚|  ‚–  ‚¾  ‚Ô  ‚ò  ƒ  ƒ%  ƒF  ƒf  ƒ€  ƒ˜  ƒ³  ƒÕ  ƒğ  „  „.„V„m„p„—„±   ˆ‹ˆ}‡­€ãˆ}€¾/// Whether or not this child is painted.
-///
-/// Children in the selection toolbar may be laid out for measurement purposes
-/// but not painted. This allows these children to be identified.    ˆ—ˆ˜ˆ—ˆ—Rˆ«  †G†G‚¥‡g/// ParentData that determines whether or not to paint the corresponding child.
-///
-/// Used in the layout of the Cupertino and Material text selection menus, which
-/// decide whether or not to paint their buttons after laying them out and
-/// determining where they overflow.        šš§   µµÍ   ØØß   öö‘  ±±‚`ˆ´/// Builds a selection handle of the given `type`.
-///
-/// The top left corner of this widget is positioned at the bottom of the
-/// selection position.
-///
-/// The supplied [onTap] should be invoked when the handle is tapped, if such
-/// interaction is allowed. As a counterexample, the default selection handle
-/// on iOS [cupertinoTextSelectionControls] does not call [onTap] at all,
-/// since its handles are not meant to be tapped.   ‘ş‘ş’   ’’’#  ‘‘‘î€Æ/// Get the anchor point of the handle relative to itself. The anchor point is
-/// the point that is aligned with a specific point in the text. A handle
-/// often visually "points to" that location.   •'•'•4   •B•B•G   •b•b•i   •~•~•…   ••"•¶   •Æ•Æ•Ü   •ë•ë1–   –#–#$–+ ”””•”Ÿ•”¦”Ğ’9’9„•‚3/// Builds a toolbar near a text selection.
-///
-/// Typically displays buttons for copying and pasting text.
-///
-/// The [globalEditableRegion] parameter is the TextField size of the global
-/// coordinate system in logical pixels.
-///
-/// The [textLineHeight] parameter is the [RenderEditable.preferredLineHeight]
-/// of the [RenderEditable] we are building a toolbar for.
-///
-/// The [selectionMidpoint] parameter is a general calculation midpoint
-/// parameter of the toolbar. More detailed position information
-/// is computable from the [endpoints] parameter.   –˜–˜–Ÿ  –T–T[–Š-/// Returns the size of the selection handle.   ˜«˜«˜Á ˜&˜'˜1˜š˜8˜b–µ–µ‚q˜¤X/// Whether the current selection of the text field managed by the given
-/// `delegate` can be removed from the text field and placed into the
-/// [Clipboard].
-///
-/// By default, false is returned when nothing is selected in the text field.
-///
-/// Subclasses can use this to decide if they should expose the cut
-/// functionality to the user.   šûšû› šušvš€šéš‡š±™,™,‚Kšó3/// Whether the current selection of the text field managed by the given
-/// `delegate` can be copied to the [Clipboard].
-///
-/// By default, false is returned when nothing is selected in the text field.
-///
-/// Subclasses can use this to decide if they should expose the copy
-/// functionality to the user.   ••« ‚ J›}›}‚aŒu/// Whether the text field managed by the given `delegate` supports pasting
-/// from the clipboard.
-///
-/// Subclasses can use this to decide if they should expose the paste
-/// functionality to the user.
-///
-/// This does not consider the contents of the clipboard. Subclasses may want
-/// to, for example, disallow pasting when the clipboard contains an empty
-/// string.   ŸŒŸŒŸ¢ ŸŸŸŸuŸŸ=ää‚gŸ
-/// Whether the current selection of the text field managed by the given
-/// `delegate` can be extended to include the entire content of the text
-/// field.
-///
-/// Subclasses can use this to decide if they should expose the select all
-/// functionality to the user.   ¡Š¡Š¡  ¡¡¡¡v¡¡> Q Qš¡€€¤/// Call [TextSelectionDelegate.cutSelection] to cut current selection.
-///
-/// This is called by subclasses when their cut affordance is activated by
-/// the user.   £.£.£D ¢¥¢¦¢°£¢·¢á¡ñ¡ñŸ£#€§/// Call [TextSelectionDelegate.copySelection] to copy current selection.
-///
-/// This is called by subclasses when their copy affordance is activated by
-/// the user.   ¥Á¥Á¥× ¥/¥0¥:¥£¥A¥k£–£–‚•¥µ>/// Call [TextSelectionDelegate.pasteText] to paste text.
-///
-/// This is called by subclasses when their paste affordance is activated by
-/// the user.
-///
-/// This function is asynchronous since interacting with the clipboard is
-/// asynchronous. Race conditions may exist with this API as currently
-/// implemented.   §É§É§ß §;§<§F§¯§M§w¦1¦1ö§¹€ô/// Call [TextSelectionDelegate.selectAll] to set the current selection to
-/// contain the entire text value.
-///
-/// Does not hide the toolbar.
-///
-/// This is called by subclasses when their select-all affordance is activated
-/// by the user. ˆğˆğŸ:–…x/// An interface for building the selection UI, to be provided by the
-/// implementer of the toolbar widget.
-///
-/// Parts of this class, including [buildToolbar], have been deprecated in favor
-/// of [EditableText.contextMenuBuilder], which is now the preferred way to
-/// customize the context menus.
-///
-/// ## Use with [EditableText.contextMenuBuilder]
-///
-/// For backwards compatibility during the deprecation period, when
-/// [EditableText.selectionControls] is set to an object that does not mix in
-/// [TextSelectionHandleControls], [EditableText.contextMenuBuilder] is ignored
-/// in favor of the deprecated [buildToolbar].
-///
-/// To migrate code from [buildToolbar] to the preferred
-/// [EditableText.contextMenuBuilder], while still using [buildHandle], mix in
-/// [TextSelectionHandleControls] into the [TextSelectionControls] subclass when
-/// moving any toolbar code to a callback passed to
-/// [EditableText.contextMenuBuilder].
-///
-/// In due course, [buildToolbar] will be removed, and the mixin will no longer
-/// be necessary as a way to flag to the framework that the code has been
-/// migrated and does not expect [buildToolbar] to be called.
-///
-/// For more information, see <https://docs.flutter.dev/release/breaking-changes/context-menus>.
-///
-/// See also:
-///
-///  * [SelectionArea], which selects appropriate text selection controls
-///    based on the current platform.        ª×ª×ªŞ ª·ª¸ª·ª·DªÉ    «(«(«5   «C«C«H   «c«c«j   «««†   ««"«·   «Ç«Ç«İ   «ì«ì1¬   ¬$¬$$¬, ««««i«    ¬–¬–¬£   ¬±¬±¬É   ¬Ô¬Ô¬Û   ¬ò¬ò­  ¬p¬q¬p¬p€È¬„    ­b­b­z   ­€­€­‡ ­>­?­>­>x­R  ¨.¨.…‹ªy‚9/// Text selection controls that do not show any toolbars or handles.
-///
-/// This is a placeholder, suitable for temporary use during development, but
-/// not practical for production. For example, it provides no way for the user
-/// to interact with selections: no context menus on desktop, no toolbars or
-/// drag handles on mobile, etc. For production, consider using
-/// [MaterialTextSelectionControls] or creating a custom subclass of
-/// [TextSelectionControls].
-///
-/// The [emptyTextSelectionControls] global variable has a
-/// suitable instance of this class.  ±Á ±Õ    ±İ±İ±÷   ²²²   ²²²'   ²>²>#²Q   ²h²h'²{   ²–²–%²©   ²Â²Â²Ğ   ²ã²ã²è   ³ ³ ³   ³"³"³0   ³H³H=³Z   ³Œ³Œ%³š   ³¸³¸(³Ñ   ³ç³ç³ì   ´´:´) 
-³³n³³€´Y´I´[´z´s´|±1±1Š5 €†/// Creates an object that manages overlay entries for selection handles.
-///
-/// The [context] must have an [Overlay] as an ancestor.  ¼¤»l?¼¤/// {@template flutter.widgets.SelectionOverlay.context}
-/// The context in which the selection UI should appear.
-///
-/// This context must have an [Overlay] as an ancestor because this object
-/// will display the text selection handles in that [Overlay].
-/// {@endtemplate} ½¥½Hi½¥D/// The editable line in which the selected text is being displayed. ¾½¸q¾?/// {@macro flutter.widgets.SelectionOverlay.selectionControls} ¾¾0p¾?/// {@macro flutter.widgets.SelectionOverlay.selectionDelegate} ¾Ã¾§-¾Ã  ¿n¾Û€¥¿nt/// {@macro flutter.widgets.EditableText.contextMenuBuilder}
-///
-/// If not provided, no context menu will be built. ¿ø¿ç¿ø À @xÀ @…À @ŠÀ @†À @‹À @‘À @ŒÀ @VÀ @<VÀ @V À @ÑÀ @ŞÀ @ãÀ @ßÀ @äÀ @êÀ @åÀ @±À @—TÀ @± À A(À A5À A:À A6À A;À AAÀ A<À A
-À @ğRÀ A
- À DÀ DÀ CÿÀ D  À kÀ k‘"À k  À lDÀ l8 À lD  À níÀ nŞ"À ní  À ‡ŞÀ ‡Ò$À ‡Ş  À ˆ‰À ˆ}"À ˆ‰   ¿¦¿§¿‡¿‡Z¿Ñ/// Retrieve current value.   À @À @1À @    À BøÀ BøÀ CÙ€Å/// Whether selection handles are visible.
-///
-/// Set to false if you want to hide the handles. Use this property to show or
-/// hide the handle without rebuilding them.
-///
-/// Defaults to false.   À VnÀ Vn€…À V©./// Whether the handles are currently visible.   À VùÀ VùÀ WÛ€Æ/// {@macro flutter.widgets.SelectionOverlay.toolbarIsVisible}
-///
-/// See also:
-///
-///   * [spellCheckToolbarIsVisible], which is only whether the spell check menu
-///     specifically is visible.   À XÀ X€ˆÀ Xe@/// {@macro flutter.widgets.SelectionOverlay.magnifierIsVisible}   À X¦À X¦À Xğ=/// {@macro flutter.widgets.SelectionOverlay.magnifierExists}   À Y+À Y+€ÿÀ YÕ€‘/// Whether the spell check menu is currently visible.
-///
-/// See also:
-///
-///   * [toolbarIsVisible], which is whether any toolbar is visible.   À D3À D3À D8  À D À D €´À D$    À AIÀ AI©À AN    À DÚÀ DÚ€œÀ E9/// {@macro flutter.widgets.SelectionOverlay.showHandles}   À E|À E|sÀ E¾9/// {@macro flutter.widgets.SelectionOverlay.hideHandles}   À EõÀ EõÛÀ F79/// {@macro flutter.widgets.SelectionOverlay.showToolbar}   À HsÀ Hs1À H  À GÖÀ GÖ·À HRp/// Shows toolbar with spell check suggestions of misspelled words that are
-/// available for click-and-replace.   À IåÀ IåÀ Iì  À I“À I“³À I×;/// {@macro flutter.widgets.SelectionOverlay.showMagnifier}   À K¢À K¢À K©  À KLÀ KL¹À K’=/// {@macro flutter.widgets.SelectionOverlay.updateMagnifier}   À MÀ M€‚À MO;/// {@macro flutter.widgets.SelectionOverlay.hideMagnifier}   À OïÀ OïÀ P   À M“À M“„À Oè‚4/// Updates the overlay after the selection has changed.
-///
-/// If this method is called while the [SchedulerBinding.schedulerPhase] is
-/// [SchedulerPhase.persistentCallbacks], i.e. during the build, layout, or
-/// paint phases (see [WidgetsBinding.drawFrame]), then the update is delayed
-/// until the post-frame callbacks phase. Otherwise the update is done
-/// synchronously. This means that it is safe to call during builds, but also
-/// that if you do call this during a build, the UI will not update until the
-/// next frame (i.e. many milliseconds later).   À QªÀ Qª‚ÕÀ Q¯    À T…À T…ãÀ UP€¹/// Causes the overlay to update its rendering.
-///
-/// This is intended to be called when the [renderObject] may have changed its
-/// text metrics (e.g. because the text was scrolled).   À Z0À Z0^À Zk2/// {@macro flutter.widgets.SelectionOverlay.hide}   À Z”À Z”sÀ ZÖ9/// {@macro flutter.widgets.SelectionOverlay.hideToolbar}   À [À [‚À [K5/// {@macro flutter.widgets.SelectionOverlay.dispose}   À ]À ]„•À ]    À a±À a±‚ÌÀ a¸    À d¨À d¨&À dÀ   À dÕÀ dÕ%À då   À eÀ e)À e  À dƒÀ dƒ†~À d‘    À o/À o/À o@  À oÀ o…ÚÀ o    À x×À x×À xŞ   À xæÀ xæÀ xí  À tçÀ tç…KÀ xÊƒ¨/// Given a handle position and drag position, returns the position of handle
-/// after the drag.
-///
-/// The handle jumps instantly between lines when the drag reaches a full
-/// line's height away from the original handle position. In other words, the
-/// line jump happens when the contact point would be located at the same
-/// place on the handle at the new line as when the gesture started, for both
-/// directions.
-///
-/// This is not the same as just maintaining an offset from the target and the
-/// contact point. There is no point at which moving the drag up and down a
-/// small sub-line-height distance will cause the cursor to jump up and down
-/// between lines. The drag distance must be a full line height for the cursor
-/// to change lines, for both directions.
-///
-/// Both parameters must be in local coordinates because the untransformed
-/// line height is used, and the return value is in local coordinates as well.   À zaÀ zaÀ zs  À z8À z8À z=    À ˆĞÀ ˆĞÀ ˆá  À ˆ¦À ˆ¦…áÀ ˆ«    À ¸À ¸À Ê  À À xÀ ’    À œ"À œ"À œ1  À œÀ œ‚ìÀ œ    À Ÿ À Ÿ À Ÿ.  À ıÀ ı€ÔÀ Ÿ    À  À  À     À  #À  #À  ;   À  IÀ  IÀ  a  À Ÿ×À Ÿ×rÀ Ÿï  ¯õ¯õÀ qW±/// An object that manages a pair of text selection handles for a
-/// [RenderEditable].
-///
-/// This class is a wrapper of [SelectionOverlay] to provide APIs specific for
-/// [RenderEditable]s. To manage selection handles for custom widgets, use
-/// [SelectionOverlay] instead.  À ¢¼ À ¢Ì    À ¢ÔÀ ¢ÔÀ ¢â   À ¢ğÀ ¢ğÀ ¢õ   À £À £0À £-   À £CÀ £C!À £S   À £kÀ £kÀ £p   À £ŠÀ £ŠÀ £   À £¬À £¬À £±   À £ÏÀ £ÏÀ £Ô   À £ïÀ £ï.À ¤   À ¤$À ¤$À ¤4   À ¤JÀ ¤JÀ ¤O   À ¤gÀ ¤gÀ ¤l   À ¤‡À ¤‡À ¤Œ   À ¤¨À ¤¨À ¤­   À ¤ÆÀ ¤ÆÀ ¤Ë   À ¤àÀ ¤à4À ¥   À ¥À ¥À ¥)   À ¥AÀ ¥A€±À ¥á   À ¥ùÀ ¥ùÀ ¦   À ¦À ¦"À ¦+   À ¦FÀ ¦F À ¦T   À ¦mÀ ¦mÀ ¦{   À ¦’À ¦’0À ¦—   À ¦ÉÀ ¦ÉÀ ¦Î   À ¦ìÀ ¦ì€©À §†   À §œÀ §œAÀ §¡ +À ¥AÀ ¥BÀ ¥LÀ ¥ÌÀ ¥UÀ ¥’À ¦«À ¦¼À ¦½À ¦ìÀ ¦íÀ ¦÷À §wÀ § À §=À §ºÀ §ÔÀ §ÕÀ §øÀ §çÀ §úÀ ¨&À ¨À ¨(À ¨RÀ ¨CÀ ¨TÀ ¨|À ¨kÀ ¨~À ¨«À ¨—À ¨­À ¨ÚÀ ¨ÉÀ ¨ÜÀ ¨õÀ ¨ûÀ ©À ¨üÀ ©À ©À ©À ¢,À ¢,‡B €†/// Creates an object that manages overlay entries for selection handles.
-///
-/// The [context] must have an [Overlay] as an ancestor. & À ©ÀÀ ©tSÀ ©À5/// {@macro flutter.widgets.SelectionOverlay.context}	À ªÀ ªÀ ªÀ ªÀ ªÀ ª=À ª%À ª2À ª3À ©ñÀ ©ÎpÀ ©ñ À «ŞÀ «ñÀ «òÀ «ÇÀ «­FÀ «Ç  À ¬×À «ú€óÀ ¬×€¬/// The configuration for the magnifier.
-///
-/// By default, [SelectionOverlay]'s [TextMagnifierConfiguration] is disabled.
-///
-/// {@macro flutter.widgets.magnifier.intro} À ¹ÖÀ ¹¾(À ¹Ö  À »¹À »²À »¹ À ½6À ½À ½'À ½ À ¾À ½èÀ ½ã#À ½è  À ÀìÀ ¿Ó,À Àì€é/// Whether the start handle is visible.
-///
-/// If the value changes, the start handle uses [FadeTransition] to transition
-/// itself on and off the screen.
-///
-/// If this is null, the start selection handle will always be visible. À ÁuÀ Á€…À ÁuE/// Called when the users start dragging the start selection handles. À ÈdÀ Çí€À ÈdL/// Called when the users drag the start selection handles to new locations. À É	À È‚€›À É	\/// Called when the users lift their fingers after dragging the start selection
-/// handles. À ËÃÀ Ë«&À ËÃ  À Í–À ÍÀ Í– À ÏÀ ÎêÀ Îå%À Îê À ÏÆÀ Ï¯À Ïª!À Ï¯  À Ò©À Ñ–$À Ò©€ã/// Whether the end handle is visible.
-///
-/// If the value changes, the end handle uses [FadeTransition] to transition
-/// itself on and off the screen.
-///
-/// If this is null, the end selection handle will always be visible. À Ó.À ÒÁ€À Ó.C/// Called when the users start dragging the end selection handles. À ÙıÀ Ùˆ€ŠÀ ÙıJ/// Called when the users drag the end selection handles to new locations. À ÚÀ Ú€—À ÚZ/// Called when the users lift their fingers after dragging the end selection
-/// handles. À İsÀ ÜtÀ İs€Ï/// Whether the toolbar is visible.
-///
-/// If the value changes, the toolbar uses [FadeTransition] to transition
-/// itself on and off the screen.
-///
-/// If this is null the toolbar will always be visible. À Ş,À Ş,À Ş,  À àûÀ à¢iÀ àûG/// Debugging information for explaining why the [Overlay] is required. À á‚À á€€À á‚Y/// The object supplied to the [CompositedTransformTarget] that wraps the text
-/// field. À â"À á™€À â"r/// The objects supplied to the [CompositedTransformTarget] that wraps the
-/// location of start selection handle. À âÄÀ â=€™À âÄp/// The objects supplied to the [CompositedTransformTarget] that wraps the
-/// location of end selection handle. À ãˆÀ âİ€¼À ãˆ€„/// {@template flutter.widgets.SelectionOverlay.selectionControls}
-/// Builds text selection handles and toolbar.
-/// {@endtemplate}À äXÀ äYÀ äcÀ äÌÀ äjÀ ä”À äîÀ ã _À äî€«/// {@template flutter.widgets.SelectionOverlay.selectionDelegate}
-/// The delegate for manipulating the current selection in the owning
-/// text field.
-/// {@endtemplate} À èÀ åƒÀ è‚¿/// Determines the way that drag start behavior is handled.
-///
-/// If set to [DragStartBehavior.start], handle drag behavior will
-/// begin at the position where the drag gesture won the arena. If set to
-/// [DragStartBehavior.down] it will begin at the position where a down
-/// event is first detected.
-///
-/// In general, setting this to [DragStartBehavior.start] will make drag
-/// animation smoother and setting it to [DragStartBehavior.down] will make
-/// drag behavior feel slightly more reactive.
-///
-/// By default, the drag start behavior is [DragStartBehavior.start].
-///
-/// See also:
-///
-///  * [DragGestureRecognizer.dragStartBehavior], which gives an example for the different behaviors. À ë…À è&ƒvÀ ë…‚¿/// {@template flutter.widgets.SelectionOverlay.onSelectionHandleTapped}
-/// A callback that's optionally invoked when a selection handle is tapped.
-///
-/// The [TextSelectionControls.buildHandle] implementation the text field
-/// uses decides where the handle's tap "hotspot" is, or whether the
-/// selection handle supports tap gestures at all. For instance,
-/// [MaterialTextSelectionControls] calls [onSelectionHandleTapped] when the
-/// selection handle's "knob" is tapped, while
-/// [CupertinoTextSelectionControls] builds a handle that's not sufficiently
-/// large for tapping (as it's not meant to be tapped) so it does not call
-/// [onSelectionHandleTapped] even when tapped.
-/// {@endtemplate} À ì°À ë£À ì°€Ş/// Maintains the status of the clipboard for determining if its contents can
-/// be pasted or not.
-///
-/// Useful because the actual value of the clipboard can only be checked
-/// asynchronously (see [Clipboard.getData]). À ïÀ îıÀ ï À ğ1À ğ9À ğKÀ ğFÀ ğ:À ğHÀ ğ"À ï»€‘À ğ"M/// Controls the fade-in and fade-out animations for the toolbar and handles. À ñÀ ğS€¹À ñ€€/// A pair of handles. If this is non-null, there are always 2, though the
-/// second is hidden when the selection is collapsed. À ñ>À ñ3À ñ>/// A copy/paste toolbar.À ñÉÀ ñŞÀ ñßÀ ñ°À ñ”LÀ ñ° À ò"À ò7À ò8À òÀ ñçRÀ ò À şÀ şÀ ıÿÀ ş    À ¬ôÀ ¬ôÑÀ ­Ú€Í/// {@template flutter.widgets.SelectionOverlay.toolbarIsVisible}
-/// Whether the toolbar is currently visible.
-///
-/// Includes both the text selection toolbar and the spell check menu.
-/// {@endtemplate}   À ®ËÀ ®Ë€ÊÀ ¯d€†/// {@template flutter.widgets.SelectionOverlay.magnifierIsVisible}
-/// Whether the magnifier is currently visible.
-/// {@endtemplate}   À ¯›À ¯›MÀ °«€ô/// {@template flutter.widgets.SelectionOverlay.magnifierExists}
-/// Whether the magnifier currently exists.
-///
-/// This differs from [magnifierIsVisible] in that the magnifier may exist
-/// in the overlay, but not be shown.
-/// {@endtemplate}   À ¸øÀ ¸ø€ÂÀ ¹–x/// The type of start selection handle.
-///
-/// Changing the value while the handles are visible causes them to rebuild.   À ºœÀ ºœÀ »†€Ï/// The line height at the selection start.
-///
-/// This value is used for calculating the size of the start selection handle.
-///
-/// Changing the value while the handles are visible causes them to rebuild.   À ½BÀ ½B€À ½‘B/// Whether the selection start handle is currently being dragged.   À ¿À ¿€ÇÀ ¿    À ÊëÀ Êë€¼À Ë‡v/// The type of end selection handle.
-///
-/// Changing the value while the handles are visible causes them to rebuild.   À ÌÀ Ì
-À Íg€Ë/// The line height at the selection end.
-///
-/// This value is used for calculating the size of the end selection handle.
-///
-/// Changing the value while the handles are visible causes them to rebuild.   À ÏÀ Ï€•À Ï^@/// Whether the selection end handle is currently being dragged.   À ĞÉÀ ĞÉ€ÇÀ ĞÒ    À İˆÀ İˆ€‡À İå</// The text selection positions of selection start and end.  À î1À î2À î<À îÄÀ îCÀ îŒÀ ìÆÀ ìÆ‚3À îÕR/// The location of where the toolbar should be drawn in relative to the
-/// location of [toolbarLayerLink].
-///
-/// If this is null, the toolbar is drawn based on [selectionEndpoints] and
-/// the rect of render object of [context].
-///
-/// This is useful for displaying toolbars at the mouse right-click locations
-/// in desktop devices.   À ¹ÿÀ ¹ÿÀ º  À ¹ëÀ ¹ë€«À ¹ï    À »æÀ »æÀ »í  À »ĞÀ »Ğ€ À »Ô    À ËèÀ ËèÀ Ì   À ËÖÀ ËÖ€¥À ËÚ    À Í¿À Í¿À ÍÆ  À Í«À Í«€šÀ Í¯    À Ş[À Ş[À Şt  À ŞDÀ ŞD‚XÀ ŞH    À ï.À ï.À ï6  À ïÀ ï€›À ï    À ³2À ³2"À ³@  À °îÀ °î…öÀ ³$‚/// {@template flutter.widgets.SelectionOverlay.showMagnifier}
-/// Shows the magnifier, and hides the toolbar if it was showing when [showMagnifier]
-/// was called. This is safe to call on platforms not mobile, since
-/// a magnifierBuilder will not be provided, or the magnifierBuilder will return null
-/// on platforms not mobile.
-///
-/// This is NOT the source of truth for if the magnifier is up or not,
-/// since magnifiers may hide themselves. If this info is needed, check
-/// [MagnifierController.shown].
-/// {@endtemplate}   À ¶êÀ ¶ê‚À ·¤€¥/// {@template flutter.widgets.SelectionOverlay.hideMagnifier}
-/// Hide the current magnifier.
-///
-/// This does nothing if there is no magnifier.
-/// {@endtemplate}   À Á³À Á³À ÁÄ  À Á’À Á’‚5À Á—    À ÃïÀ ÃïÀ Ä  À ÃÍÀ ÃÍ„À ÃÒ    À ÉCÀ ÉCÀ ÉR  À É$À É$ÁÀ É)    À ÓhÀ ÓhÀ Óy  À ÓIÀ ÓI‚'À ÓN    À Õ–À Õ–À Õ¨  À ÕvÀ Õv„À Õ{    À ÚÔÀ ÚÔÀ Úã  À Ú·À Ú··À Ú¼    À ò@À ò@ƒ˜À òå€–/// {@template flutter.widgets.SelectionOverlay.showHandles}
-/// Builds the handles by inserting them into the [context]'s overlay.
-/// {@endtemplate}   À õŞÀ õŞhÀ öt€‡/// {@template flutter.widgets.SelectionOverlay.hideHandles}
-/// Destroys the handles by removing them from overlay.
-/// {@endtemplate}   À ÷ûÀ ÷ûÀ ø	   À øÀ ø!À ø!  À ÷LÀ ÷L„À ÷î€“/// {@template flutter.widgets.SelectionOverlay.showToolbar}
-/// Shows the toolbar by inserting it into the [context]'s overlay.
-/// {@endtemplate}   À üÀ üÀ ü   À üÀ üÀ ü1  À ûeÀ ûe‚”À ûáp/// Shows toolbar with spell check suggestions of misspelled words that are
-/// available for click-and-replace.   À ş"À ş"…tÀ şmB/// Rebuilds the selection toolbar or handles if they are present.   ÀœÀœtÀ7€Œ/// {@template flutter.widgets.SelectionOverlay.hide}
-/// Hides the entire overlay including the toolbar and the handles.
-/// {@endtemplate}   ÀÀ ÀÔ€©/// {@template flutter.widgets.SelectionOverlay.hideToolbar}
-/// Hides the toolbar part of the overlay.
-///
-/// To hide the whole overlay, see [hide].
-/// {@endtemplate}   À¼À¼€õÀF{/// {@template flutter.widgets.SelectionOverlay.dispose}
-/// Disposes this object and release resources.
-/// {@endtemplate}   ÀĞÀĞÀİ  À·À·„ŠÀ¾    À^À^Àk  ÀGÀG…LÀN    ÀáÀáÀî  ÀÌÀÌ†mÀÓ    À#À#À1  À?À?‚€À°/// {@template flutter.widgets.SelectionOverlay.updateMagnifier}
-/// Update the current magnifier with new selection data, so the magnifier
-/// can respond accordingly.
-///
-/// If the magnifier is not shown, this still updates the magnifier position
-/// because the magnifier may have hidden itself and is looking for a cue to reshow
-/// itself.
-///
-/// If there is no magnifier in the overlay, this does nothing.
-/// {@endtemplate} À ¡PÀ ¡PÀ yrÀ ¢€»/// An object that manages a pair of selection handles and a toolbar.
-///
-/// The selection handles are displayed in the [Overlay] that most closely
-/// encloses the given [BuildContext].  À– À®    À¶À¶À»   ÀÌÀÌÀÚ   ÀêÀêÀø   ÀÀÀ  ÀÀ€    À3À&À3  ÀJÀ=ÀJ  ÀeÀUÀe  ÀÀs'À     À¡À¢À¡À¡^ÀÎ  ÀUÀU­À[    À™À€$À™    À©À©3À¿    ÀâÀãÀâÀâ Àô    À 
-À 
-"À # ÀèÀéÀèÀègÀú   À!UÀ!VÀ!UÀ!U€—À!g    À!òÀ!ò€¥À!÷    À"·À"·À"Ä À"À"À"À"‚4À"±  ÀÀ†ÎÀ   À%z À%‘  
-  À%™À%™À%§   À%²À%²À%À   À%ÖÀ%ÖÀ%Û   À%ùÀ%ùÀ%ş   À&À& À&$   À&FÀ&FÀ&K   À&jÀ&jÀ&x   À&À&À&•   À&¦À&¦!À&´   À&ÎÀ&Î0À&Ó À&çÀ&øÀ&ùÀ%SÀ%S³ /// Create selection overlay. 
- À'À'À'  À'DÀ'0+À'D  À'†À'`@À'†  À'ÌÀ'¥BÀ'Ì  À(À'ì<À(  À(IÀ(--À(I  À(|À(_'À(|  À(˜À(‹ À(˜  À(ÎÀ(°"À(Î  À(ïÀ(×)À(ï     À)À)À)À)\À)3  À$ØÀ$Ø„À%?/// This widget represents a single draggable selection handle.   À)ûÀ)â$À)û    À*À*3À*!    À*DÀ*EÀ*DÀ*D€şÀ*V    À+HÀ+H€¤À+M    À-4À-4À-L   À-RÀ-RÀ-Y  À+òÀ+ò‚&À-%/// Returns the bounding [Rect] of the text selection handle in local
-/// coordinates.
-///
-/// When interacting with a text selection handle through a touch event, the
-/// interactive area should be at least [kMinInteractiveDimension] square,
-/// which this method does not consider.   À.@À.@!À.X À.À.À.À.À.0   À/;À/<À/;À/;€–À/M    À/ñÀ/ñÀ/ş À/×À/ØÀ/×À/×ŸÀ/ë  À)jÀ)j•À)p       ÀA¥ÀA¥€ÂÀBW€Š/// [GlobalKey] to the [EditableText] for which the
-/// [TextSelectionGestureDetectorBuilder] will build a [TextSelectionGestureDetector].   ÀBmÀBmZÀBµ;/// Whether the text field should respond to force presses.   ÀBÍÀBÍUÀC7/// Whether the user may select text in the text field.   À>}À>}„¨ÀAt‚Ø/// Delegate interface for the [TextSelectionGestureDetectorBuilder].
-///
-/// The interface is usually implemented by the [State] of text field
-/// implementations wrapping [EditableText], so that they can use a
-/// [TextSelectionGestureDetectorBuilder] to build a
-/// [TextSelectionGestureDetector] for their [EditableText]. The delegate
-/// provides the builder with information about the current state of the text
-/// field. Based on that information, the builder adds the correct gesture
-/// handlers to the gesture detector.
-///
-/// See also:
-///
-///  * [TextField], which implements this delegate for the Material text field.
-///  * [CupertinoTextField], which implements this delegate for the Cupertino
-///    text field.  ÀHh ÀH‹    ÀHÀHÀH›  ÀH0ÀH0v 4/// Creates a [TextSelectionGestureDetectorBuilder]. ÀJ9ÀJ:ÀJyÀH¬ÕÀJyt/// The delegate for this [TextSelectionGestureDetectorBuilder].
-///
-/// The delegate provides the builder with information about what actions can
-/// currently be performed on the text field. Based on this, the builder adds
-/// the correct gesture handlers to the gesture detector.
-///
-/// Typically implemented by a [State] of a widget that builds an
-/// [EditableText].À]À\õÀ\ğ'À\õ À^ÙÀ^»À^¶'À^» Àb>Àb,Àa™€ªÀb,€‡/// Whether the Shift key was pressed when the most recent [PointerDownEvent]
-/// was tracked by the [BaseTapAndDragGestureRecognizer].ÀbßÀbÆÀbJ€˜ÀbÆn/// The viewport offset pixels of any [Scrollable] containing the
-/// [RenderEditable] at the last drag start.Àc]ÀcBÀbéwÀcBN/// The viewport offset pixels of the [RenderEditable] at the last drag start. Àf|Àfm"Àf| ÀhCÀh#Àh*Àh# 	   ÀN[ÀN[‚ÀNªB/// Returns true if lastSecondaryTapDownPosition was on selection.   ÀZòÀZòúÀ\²¡/// Whether to show the selection toolbar.
-///
-/// It is based on the signal source when [onTapDown], [onSecondaryTapDown],
-/// [onDragSelectionStart], or [onForcePressStart] is called. This getter
-/// will return true if the current [onTapDown], or [onDragSelectionStart] event
-/// is triggered by a touch or a stylus. It will always return true for the
-/// current [onSecondaryTapDown] or [onForcePressStart] event.   À]À]”À^x>/// Whether to show the selection handles.
-///
-/// It is based on the signal source when [onTapDown], [onSecondaryTapDown],
-/// [onDragSelectionStart], is called. This getter will return true if the
-/// current [onTapDown], [onSecondaryTapDown], or [onDragSelectionStart] event
-/// is triggered by a touch or a stylus.  À_YÀ_ZÀ^äÀ^ä€ĞÀ_}n/// The [State] of the [EditableText] for which the builder will provide a
-/// [TextSelectionGestureDetector].  À`6À`7À_ºÀ_º€ËÀ`Wu/// The [RenderObject] of the [EditableText] for which the builder will
-/// provide a [TextSelectionGestureDetector].   À`‹À`‹Àa?€/// Returns `true` if a widget with the global key [delegate.editableTextKey]
-/// is in the tree and the widget is mounted.
-///
-/// Otherwise returns `false`.   ÀcgÀcg%Àcr    Àd’Àd’Àd¥   ÀsÀtÀ€ÚÀ€Ú€ÏÀŠ€Œ/// Whether the provided [onUserTap] callback should be dispatched on every
-/// tap or only non-consecutive taps.
-///
-/// Defaults to false.    ÀKÀKÀK$  ÀJôÀJôxÀJù    ÀLÄÀLÄ‘ÀLÉ    ÀP˜ÀP˜ÀP¥  ÀPrÀPrÀPw    ÀQ»ÀQ»ÀQÈ  ÀQ•ÀQ•ÀQš    ÀT­ÀT­ÀT´   ÀTÁÀTÁÀT×   ÀTåÀTåÀTô  ÀT‘ÀT‘ƒRÀT–    ÀX÷ÀX÷ÀXş   ÀYÀYÀY  ÀXáÀXá‚ÀXæ   ÀiÀiÀhOÀhO®Ài&€±/// Handler for [TextSelectionGestureDetector.onTapTrackStart].
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onTapTrackStart], which triggers this
-///    callback.  ÀjÇÀjÈÀjÀjÀjÚ€±/// Handler for [TextSelectionGestureDetector.onTapTrackReset].
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onTapTrackReset], which triggers this
-///    callback.   Àl–Àl–Àl© ÀlyÀlzÀkÀkâÀlŒJ/// Handler for [TextSelectionGestureDetector.onTapDown].
-///
-/// By default, it forwards the tap to [RenderEditable.handleTapDown] and sets
-/// [shouldShowSelectionToolbar] to true if the tap was initiated by a finger or stylus.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onTapDown], which triggers this callback.   À|©À|©À|» À|„À|…ÀzşÀzşƒÀ|—d/// Handler for [TextSelectionGestureDetector.onForcePressStart].
-///
-/// By default, it selects the word at the position of the force press,
-/// if selection is enabled.
-///
-/// This callback is only applicable when force press is enabled.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onForcePressStart], which triggers this
-///    callback.   À´À´ÀÆ À‘À’À~À~‚ÏÀ¤j/// Handler for [TextSelectionGestureDetector.onForcePressEnd].
-///
-/// By default, it selects words in the range specified in [details] and shows
-/// toolbar if it is necessary.
-///
-/// This callback is only applicable when force press is enabled.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onForcePressEnd], which triggers this
-///    callback.  ÀƒgÀƒhÀ¯À¯‚Àƒz–/// Handler for [TextSelectionGestureDetector.onUserTap].
-///
-/// By default, it serves as placeholder to enable subclass override.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onUserTap], which triggers this
-///    callback.
-///  * [TextSelectionGestureDetector.onUserTapAlwaysCalled], which controls
-///     whether this callback is called only on the first tap in a series
-///     of taps.   À„öÀ„öÀ… À„ÕÀ„ÖÀƒÍÀƒÍ—+À„è€ï/// Handler for [TextSelectionGestureDetector.onSingleTapUp].
-///
-/// By default, it selects word edge if selection is enabled.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSingleTapUp], which triggers
-///    this callback.  ÀœÀœÀšşÀšş€Àœ)€ÿ/// Handler for [TextSelectionGestureDetector.onSingleTapCancel].
-///
-/// By default, it serves as placeholder to enable subclass override.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSingleTapCancel], which triggers
-///    this callback.   ÀäÀäÀú À¼À½Àœ„Àœ„ˆ¹ÀÏ/// Handler for [TextSelectionGestureDetector.onSingleLongTapStart].
-///
-/// By default, it selects text position specified in [details] if selection
-/// is enabled.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSingleLongTapStart], which triggers
-///    this callback.   À¦»À¦»"À¦Ö À¦À¦À¥CÀ¥C‰ÆÀ¦¡//// Handler for [TextSelectionGestureDetector.onSingleLongTapMoveUpdate].
-///
-/// By default, it updates the selection location specified in [details] if
-/// selection is enabled.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSingleLongTapMoveUpdate], which
-///    triggers this callback.   À°8À°8À°L À°À°À¯À¯ÁÀ°%€ê/// Handler for [TextSelectionGestureDetector.onSingleLongTapEnd].
-///
-/// By default, it shows toolbar if necessary.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSingleLongTapEnd], which triggers this
-///    callback.  À±ûÀ±üÀ°ÖÀ°ÖzÀ²/// Handler for [TextSelectionGestureDetector.onSingleLongTapCancel].
-///
-/// By default, it hides the magnifier and the floating cursor if necessary.
-///
-/// See also:
-///
-/// * [TextSelectionGestureDetector.onSingleLongTapCancel], which triggers
-///   this callback.  À²æÀ²çÀ²VÀ²Vƒ¿À²ù€†/// Handler for [TextSelectionGestureDetector.onSecondaryTap].
-///
-/// By default, selects the word if possible and shows the toolbar.   À·MÀ·MÀ·\ À·'À·(À¶À¶„rÀ·:€ö/// Handler for [TextSelectionGestureDetector.onSecondaryTapDown].
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onSecondaryTapDown], which triggers this
-///    callback.
-///  * [onSecondaryTap], which is typically called after this.   À¼À¼À¼ À»âÀ»ãÀº“Àº“‚bÀ»õ3/// Handler for [TextSelectionGestureDetector.onDoubleTapDown].
-///
-/// By default, it selects a word through [RenderEditable.selectWord] if
-/// selectionEnabled and shows toolbar if necessary.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onDoubleTapDown], which triggers this
-///    callback.   À¼ûÀ¼û‚EÀ½     À¿ÏÀ¿ÏÀ¿ß   À¿åÀ¿å
-À¿í   À¿ñÀ¿ñÀÀ  À¿°À¿°+À¿µ    ÀÁ`ÀÁ`ÀÁp   ÀÁvÀÁv
-ÀÁ~   ÀÁ‚ÀÁ‚ÀÁ™  ÀÁFÀÁFÀÁK    ÀÃÀÃÀÃ   ÀÃÀÃÀÃ(  ÀÂèÀÂè‚šÀÂò    ÀÇÀÇÀÇ0   ÀÇ?ÀÇ?ÀÇO   ÀÇZÀÇZ
-ÀÇb   ÀÇkÀÇkÀÇ‚  ÀÆñÀÆñƒÿÀÆö    ÀÌŠÀÌŠÀÌ ÀÌgÀÌhÀÊöÀÊö„ÀÌzR/// Handler for [TextSelectionGestureDetector.onTripleTapDown].
-///
-/// By default, it selects a paragraph if
-/// [TextSelectionGestureDetectorBuilderDelegate.selectionEnabled] is true
-/// and shows the toolbar if necessary.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onTripleTapDown], which triggers this
-///    callback.   ÀĞÍÀĞÍÀĞá ÀĞ¥ÀĞ¦ÀÏŠÀÏŠ´ÀĞ¸/// Handler for [TextSelectionGestureDetector.onDragSelectionStart].
-///
-/// By default, it selects a text position specified in [details].
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onDragSelectionStart], which triggers
-///    this callback.   ÀŞÌÀŞÌÀŞá ÀŞ£ÀŞ¤ÀİDÀİD .ÀŞ¶C/// Handler for [TextSelectionGestureDetector.onDragSelectionUpdate].
-///
-/// By default, it updates the selection location specified in the provided
-/// details objects.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onDragSelectionUpdate], which triggers
-///    this callback./lib/src/material/text_field.dart   ÀşÎÀşÎÀşà Àş¨Àş©ÀıxÀıx‚İÀş»/// Handler for [TextSelectionGestureDetector.onDragSelectionEnd].
-///
-/// By default, it cleans up the state used for handling certain
-/// built-in behaviors.
-///
-/// See also:
-///
-///  * [TextSelectionGestureDetector.onDragSelectionEnd], which triggers this
-///    callback.   À·À·À¼   ÀÁÀÁÀÒ   ÀÜÀÜÀì  À [À […ÖÀ¡,/// Returns a [TextSelectionGestureDetector] configured with the handlers
-/// provided by this builder.
-///
-/// The [child] or its subtree should contain an [EditableText] whose key is
-/// the [GlobalKey] provided by the [delegate]'s
-/// [TextSelectionGestureDetectorBuilderDelegate.editableTextKey]. ÀC)ÀC)À ÃÀH„¿/// Builds a [TextSelectionGestureDetector] to wrap an [EditableText].
-///
-/// The class implements sensible defaults for many user interactions
-/// with an [EditableText] (see the documentation of the various gesture handler
-/// methods, e.g. [onTapDown], [onForcePressStart], etc.). Subclasses of
-/// [TextSelectionGestureDetectorBuilder] can change the behavior performed in
-/// responds to these gesture events by overriding the corresponding handler
-/// methods of this class.
-///
-/// The resulting [TextSelectionGestureDetector] to wrap an [EditableText] is
-/// obtained by calling [buildGestureDetector].
-///
-/// A [TextSelectionGestureDetectorBuilder] must be provided a
-/// [TextSelectionGestureDetectorBuilderDelegate], from which information about
-/// the [EditableText] may be obtained. Typically, the [State] of the widget
-/// that builds the [EditableText] implements this interface, and then passes
-/// itself as the [delegate].
-///
-/// See also:
-///
-///  * [TextField], which uses a subclass to implement the Material-specific
-///    gesture logic of an [EditableText].
-///  * [CupertinoTextField], which uses a subclass to implement the
-///    Cupertino-specific gesture logic of an [EditableText].  À	 À	:    À	BÀ	B	À	H   À	RÀ	RÀ	W   À	mÀ	mÀ	r   À	ˆÀ	ˆÀ	   À	À	À	¢   À	ºÀ	ºÀ	¿   À	ÕÀ	ÕÀ	Ú   À	ïÀ	ïÀ	ô   À
-À
-À
-   À
-&À
-&À
-+   À
-CÀ
-CÀ
-H   À
-XÀ
-XÀ
-]   À
-xÀ
-xÀ
-}   À
-À
-À
-¢   À
-»À
-»À
-À   À
-ÜÀ
-ÜÀ
-á   À
-÷À
-÷À
-ü   ÀÀÀ   À2À2À7   ÀSÀSÀX   ÀqÀq"Àv   ÀšÀšÀŸ   À®À®À¼ ÀÀ–À–ƒ3 x/// Create a [TextSelectionGestureDetector].
-///
-/// Multiple callbacks can be called for one sequence of input gesture.  ÀÂÀÏÀÂ€Ò/// {@template flutter.gestures.selectionrecognizers.TextSelectionGestureDetector.onTapTrackStart}
-/// Callback used to indicate that a tap tracking has started upon
-/// a [PointerDownEvent].
-/// {@endtemplate} ÀsÀØªÀst/// {@template flutter.gestures.selectionrecognizers.TextSelectionGestureDetector.onTapTrackReset}
-/// Callback used to indicate that a tap tracking has been reset which
-/// happens on the next [PointerDownEvent] after the timer between two taps
-/// elapses, the recognizer loses the arena, the gesture is cancelled or
-/// the recognizer is disposed of.
-/// {@endtemplate} À}À‰€ıÀ}€È/// Called for every tap down including every tap down that's part of a
-/// double click or a long press, except touches that include enough movement
-/// to not qualify as taps (e.g. pans and flings). ÀNÀ€ÒÀN€”/// Called when a pointer has tapped down and the force of the pointer has
-/// just become greater than [ForcePressGestureRecognizer.startPressure]. ÀúÀf€£Àúi/// Called when a pointer that had previously triggered [onForcePressStart] is
-/// lifted off the screen. ÀiÀgÀi;/// Called for a tap event with the secondary mouse button. ÀàÀ~tÀà@/// Called for a tap down event with the secondary mouse button. ÀwÀù‹ÀwK/// Called for the first tap in a series of taps, consecutive taps do not call
-/// this method.
-///
-/// For example, if the detector was configured with [onTapDown] and
-/// [onDoubleTapDown], three quick taps would be recognized as a single tap
-/// down, followed by a tap up, then a double tap down, followed by a single tap down. À{À‹À{€É/// Called for each touch that becomes recognized as a gesture that is not a
-/// short tap, such as a long tap or drag. It is called at the moment when
-/// another gesture from the touch is recognized. À©À“À©€ì/// Called for the first tap in a series of taps when [onUserTapAlwaysCalled] is
-/// disabled, which is the default behavior.
-///
-/// When [onUserTapAlwaysCalled] is enabled, this is called for every tap,
-/// including consecutive taps. ÀªÀ¹Àª€Â/// Called for a single long tap that's sustained for longer than
-/// [kLongPressTimeout] but not necessarily lifted. Not called for a
-/// double-tap-hold, which calls [onDoubleTapDown] instead. À7ÀÅ€‹À7D/// Called after [onSingleLongTapStart] when the pointer is dragged. ÀÁÀW|ÀÁC/// Called after [onSingleLongTapStart] when the pointer is lifted. ÀIÀÚ€„ÀIE/// Called after [onSingleLongTapStart] when the pointer is canceled. ÀÀe€ÂÀ€Š/// Called after a momentary hold or a short tap that is close in space and
-/// time (within [kDoubleTapTimeout]) to a previous short tap. ÀâÀ.€ÃÀâ€‹/// Called after a momentary hold or a short tap that is close in space and
-/// time (within [kDoubleTapTimeout]) to a previous double-tap. ÀVÀørÀV7/// Called when a mouse starts dragging to select text. ÀÏÀqsÀÏ6/// Called repeatedly as a mouse moves while dragging. ÀQÀëxÀQA/// Called when a mouse that was previously dragging is released. ÀÀj€ÉÀ€Ÿ/// Whether [onUserTap] will be called for all taps including consecutive taps.
-///
-/// Defaults to false, so [onUserTap] is only called for each distinct tap. ÀÓÀ:€¡ÀÓx/// How this gesture detector should behave during hit testing.
-///
-/// This defaults to [HitTestBehavior.deferToChild]. ÀÀâ2À/// Child below this widget.    ÀÀÀÀYÀ>  À8À8—?À]‚/// A gesture detector to respond to non-exclusive event chains for a text field.
-///
-/// An ordinary [GestureDetector] configured to handle events like tap and
-/// double tap will only recognize one or the other. This widget detects both:
-/// the first tap and then any subsequent taps that occurs within a time limit
-/// after the first.
-///
-/// See also:
-///
-///  * [TextField], a Material text field which uses this gesture detector.
-///  * [CupertinoTextField], a Cupertino text field which uses this gesture
-///    detector.        À…À…À‰  ÀYÀY†*Àd    À%‰À%‰GÀ%    À%ÖÀ%ÖGÀ%Û    À&°À&°À&Ã  À&œÀ&œ‚•À&¡    À)IÀ)IÀ)Z  À)7À)7&À)<    À*cÀ*cEÀ*h    À*ÄÀ*ÄÀ*Ø  À*®À*®jÀ*³    À+5À+5À+J  À+À+mÀ+#    À+¥À+¥À+·  À+‘À+‘dÀ+–    À,À,À,%  À+ûÀ+ûgÀ,     À,~À,~À,  À,hÀ,hcÀ,m    À,ìÀ,ìÀ-  À,ÑÀ,ÑqÀ,Ö    À-hÀ-h"À-ƒ  À-HÀ-H€€À-M    À-çÀ-çÀ-û  À-ÎÀ-ÎkÀ-Ó    À.?À.?OÀ.D    À.®À.®À.» À.”À.•À.”À.”‘‹À.¨  À{À{¢§À   ÀB ÀB    ÀB!ÀB!/ÀB1 ÀB9ÀBHÀBIÀBUÀBZÀB`ÀB[ÀAÛÀAÛ€‡ )/// Create a new ClipboardStatusNotifier. ÀByÀBmÀBhÀBm      ÀB…ÀB…ƒĞÀBÍ7/// Check the [Clipboard] and update [value] if needed.   ÀFyÀFyÀF† ÀF[ÀF\ÀF[ÀF[€õÀFm    ÀGwÀGwÀG„ ÀGVÀGWÀGVÀGV€ÇÀGh    ÀHPÀHPÀHb ÀH#ÀH$ÀH#ÀH#jÀH5   ÀI“ÀI”ÀI“ÀI“€‚ÀI¥  À@&À@&‰òÀA{H/// A [ValueNotifier] whose [value] indicates whether the current contents of
-/// the clipboard can be pasted.
-///
-/// The contents of the clipboard can only be read asynchronously, via
-/// [Clipboard.getData], so this maintains a value that can be used
-/// synchronously. Call [update] to asynchronously update value if needed.  ÀN‰ ÀN¤    ÀN¦ÀN¦7ÀNº ÀNÂÀNÕÀNÖÀNçÀNìÀNòÀNíÀN]ÀN]€— (/// Create a new LiveTextStatusNotifier. ÀOÀNÿÀNúÀNÿ      ÀOÀO„]ÀOiA/// Check the [LiveTextInputStatus] and update [value] if needed.   ÀS˜ÀS˜ÀS¥ ÀSzÀS{ÀSzÀSz€ùÀSŒ    ÀTšÀTšÀT§ ÀTyÀTzÀTyÀTy€ÇÀT‹    ÀUsÀUsÀU… ÀUFÀUGÀUFÀUFXÀUX   ÀV¤ÀV¥ÀV¤ÀV¤€‚ÀV¶  ÀL4ÀL4ŠõÀMğ¬/// A [ValueNotifier] whose [value] indicates whether the current device supports the Live Text
-/// (OCR) function.
-///
-/// See also:
-///  * [LiveText], where the availability of Live Text input can be obtained.
-///  * [LiveTextInputStatus], an enumeration that indicates whether the current device is available
-///                           for Live Text input.
-///
-/// Call [update] to asynchronously update [value] if needed.    ÀJ€ÀJ€YÀJĞL/// The clipboard content can be pasted, such as a String of nonzero length. ÀJàÀJà€éÀKÂ€Ø/// The status of the clipboard is unknown. Since getting clipboard data is
-/// asynchronous (see [Clipboard.getData]), this status often exists while
-/// waiting to receive the clipboard contents for the first time. ÀKĞÀKĞ\ÀL L/// The content on the clipboard is not pasteable, such as when it is empty.    ÀJÀJ‚ÀJkH/// An enumeration of the status of the content on the user's clipboard.   ÀXÀX>ÀXE3/// This device supports Live Text input currently. ÀXSÀXSÀYW€ú/// The status of the Live Text input is unknown. Since getting the Live Text input availability
-/// is asynchronous (see [LiveText.isLiveTextInputAvailable]), this status often exists while
-/// waiting to receive the status value for the first time. ÀYeÀYeCÀY 7/// The current device doesn't support Live Text input.    ÀW-ÀW-‚ÀWõ€¾/// An enumeration that indicates whether the current device is available for Live Text input.
-///
-/// See also:
-///  * [LiveText], where the availability of Live Text input can be obtained.       	   À[zÀ[zÀ[‡   À[•À[•À[š   À[µÀ[µÀ[¼   À[ÑÀ[ÑÀ[Ø   À[ğÀ[ğ"À\	   À\À\À\/   À\>À\>1À\`   À\vÀ\v$À\~ À[SÀ[TÀ[SÀ[SiÀ[g    À\ÛÀ\ÛÀ\ñ À\ÂÀ\ÃÀ\ÂÀ\ÂBÀ\Ô    À]$À]$À]: À]
-À]À]
-À]
-CÀ]    À]nÀ]nÀ]„ À]SÀ]TÀ]SÀ]SDÀ]e    À]¼À]¼À]Ò À]À]À]À]HÀ]¯    À^À^À^   À^(À^((À^A À]ëÀ]ìÀ]ëÀ]ëjÀ]ı    À^xÀ^xÀ^   À^™À^™(À^² À^[À^\À^[À^[kÀ^m    À^òÀ^òÀ_ À^ÌÀ^ÍÀ^ÌÀ^ÌNÀ^æ    À_BÀ_BÀ_X À_ À_!À_ À_ DÀ_2  ÀZˆÀZˆ„ßÀ[€ˆ/// [TextSelectionControls] that specifically do not manage the toolbar in order
-/// to leave that to [EditableText.contextMenuBuilder].   ¯Ô¯î¯ï¯·­½‚3¯·Õ/// Text selection controls that do not show any toolbars or handles.
-///
-/// This is a placeholder, suitable for temporary use during development, but
-/// not practical for production. For example, it provides no way for the user
-/// to interact with selections: no context menus on desktop, no toolbars or
-/// drag handles on mobile, etc. For production, consider using
-/// [materialTextSelectionControls] or creating a custom subclass of
-/// [TextSelectionControls].  „¶„¶…ş6/// The type for a Function that builds a toolbar's container with the given
-/// child.
-///
-/// See also:
-///
-///   * [TextSelectionToolbar.toolbarBuilder], which is of this type.
-///     type.
-///   * [CupertinoTextSelectionToolbar.toolbarBuilder], which is similar, but
-///     for a Cupertino-style toolbar.   €²  package:flutter/cupertino.dart  €ä  package:flutter/material.dart ´ =€ˆ€§€©€Û.KM{¦Ïù‚#‚L‚N‚d‚|‚–‚¾‚Ô‚òƒƒ%ƒFƒfƒ€ƒ˜ƒ³ƒÕƒğ„„,„.„p„´„¶…………$…)…p……Î…ö†E†G†˜††ï‡;‡a‡«‡Ø‡ßˆ1ˆvˆ“ˆ•ˆ¢ˆëˆîˆğ‰7‰_‰d‰¶ŠŠ%Š*Š]ŠbŠ§Šö‹G‹w‹|‹¶ŒŒXŒŒµŒºV•šü`‡¯åì9T[¬ıJ–±Ôò‘‘‘‘g‘´‘å’5’7’f’m’­’´““0“7“‰“Ç“Î””]”’”¢”Ì•••#•>•^•z•™•Â•ç––J–P–R–ƒ–±–³–ÿ—H—\—c—´—»˜˜$˜4˜^˜˜˜˜Î™#™(™*™v™ª™±šš	šQšsšƒš­šçšì››t›y›{›Ê›å›ìœ5œWœ^œ¯œıF€…¸Ûàâ.zˆİÿŸŸ9ŸsŸxŸ¯ŸØ  H M O š ¡ ï¡ ¡¡:¡t¡y¡­¡è¡í¡ï¢<¢C¢’¢£¢³¢İ£££Q££’£”£Ñ£Ø¤(¤9¤@¤¤×¤ë¥-¥=¥g¥¡¥¦¥ê¦(¦-¦/¦}¦£¦ª¦Ì¦Ó§%§9§I§s§­§²§ì¨$¨)¨,¨.¨u¨z¨É©©g©¨©îªªªMªsªµªÂªıªÿ««$«?«_«{«š«Ã«è¬ ¬K¬l¬n¬{¬’¬­¬Ğ¬î­­­5­:­<­I­š­³­¸­»­½®®	®X®¨®ö¯7¯}¯›¯ó¯õ°8°O°T°¤°ğ±±/±|±ƒ±¿±Ù±ÿ²²:²d²’²¾²ß²ü³³D³ˆ³´³ã´´B´l´…´Öµ7µ–µÆµñ¶(¶A¶l¶¡¶Ü··8·}·Ä·ò¸+¸d¸¸Â¹¹5¹i¹¢¹Ï¹üº%ºXº‡º²ºë»»[»c»h»j»¦»â»é¼7¼y¼¼®¼°¼ü½F½½´½¶½ù¾,¾.¾q¾£¾¥¾×¾Ù¿¿ ¿W¿ƒ¿…¿¤¿º¿ã¿åÀ @À @À @8À @:À @•À @îÀ AEÀ AGÀ A{À A¨À AñÀ BÀ BcÀ BŒÀ BïÀ BôÀ BöÀ C$À C+À C}À C­À C´À CÎÀ CıÀ DÀ DDÀ DkÀ DzÀ DÀ D¡À DÑÀ DÖÀ DØÀ EÀ E-À EMÀ EsÀ ExÀ EzÀ E·À EñÀ EóÀ F0À FHÀ FhÀ FjÀ FÅÀ FíÀ FüÀ GÀ GÀ G,À G;À GBÀ GDÀ GbÀ GÀÀ GÍÀ GÒÀ GÔÀ H#À HKÀ H©À HÉÀ HçÀ I À I9À InÀ IvÀ IŠÀ IÀ I‘À IĞÀ IÿÀ JTÀ JtÀ JšÀ J²À JÚÀ K
-À K1À K;À KCÀ KHÀ KJÀ K‹À K¼À LÀ L1À LYÀ LqÀ L™À LÉÀ LğÀ LúÀ MÀ MÀ M	À MHÀ MbÀ MŠÀ MÀ M‘À MÍÀ MÔÀ N#À NrÀ NÃÀ OÀ O^À O¯À OáÀ PÀ P,À P;À PBÀ PZÀ PzÀ PÇÀ QÀ QiÀ QxÀ Q¡À Q¦À Q¨À QÌÀ QãÀ RÀ R6À R[À R‚À RªÀ R³À RçÀ SÀ S2À SZÀ SÀ SŠÀ SºÀ SæÀ T6À T|À TÀ TƒÀ T¶À T½À UÀ UIÀ UeÀ U…À UÕÀ V&À V<À VeÀ VjÀ VlÀ VÀ VõÀ V÷À W9À W@À WQÀ WXÀ W¬À WĞÀ XÀ XÀ XZÀ X¢À X¤À XåÀ Y'À Y)À YcÀ YjÀ Y{À Y‚À YÊÀ Z,À Z.À ZdÀ ZÀ Z’À ZÏÀ [	À [À [DÀ [XÀ [‡À [©À \À \oÀ \›À \ËÀ \ùÀ ]À ]À ]À ]7À ]}À ]©À ]ÅÀ ^À ^VÀ ^§À ^ğÀ _@À _‰À _³À `À `\À `¬À `ìÀ aNÀ aXÀ a_À a¨À a­À a¯À aĞÀ bÀ bAÀ b[À bÀ bğÀ c9À c‡À cÅÀ d"À d,À d3À dzÀ dÀ dÀ d¤À dÑÀ dıÀ e-À e5À e’À eÁÀ eëÀ fÀ fÀ fÀ fEÀ f›À fÀ fÏÀ g À gnÀ gvÀ gÜÀ h,À hoÀ hŠÀ h¦À h®À h°À iÀ imÀ ioÀ išÀ iëÀ iíÀ jÀ jgÀ jÀ jÁÀ jöÀ jşÀ kÀ kÀ kVÀ kÀ k¶À k¸À l	À l6À l[À l]À l£À l©À lÓÀ lÙÀ m/À mxÀ mÎÀ n!À nsÀ nÅÀ nÜÀ oÀ oÀ oLÀ ooÀ o~À o…À o‡À oÀÀ oÂÀ pÀ pWÀ p}À páÀ qGÀ q“À qâÀ r1À r‚À rÀ rÓÀ sÀ sÀ sÀ saÀ s™À sÓÀ sşÀ tÀ tÀ t-À tEÀ tmÀ t¥À tÌÀ tÖÀ tŞÀ tãÀ tåÀ u6À uMÀ uTÀ u¡À uòÀ v?À vÀ v£À vªÀ vüÀ wKÀ w›À wíÀ xÀ x!À xoÀ xÁÀ xúÀ y1À ylÀ yŠÀ yçÀ z/À z4À z6À zÀ z¢À z±À z¸À zºÀ {	À {SÀ {©À {«À {ìÀ |À |PÀ |XÀ |ƒÀ |ÈÀ |ÖÀ |ØÀ } À }"À }XÀ }`À }bÀ }»À }½À }äÀ ~
-À ~VÀ ~vÀ ~˜À ~ÆÀ ~÷À %À CÀ qÀ ¯À ÜÀ ìÀ úÀ üÀ €FÀ €‚À €•À € À  À 5À hÀ »À âÀ ‚À ‚GÀ ‚{À ‚¥À ‚±À ‚ÕÀ ‚ùÀ ƒÀ ƒ?À ƒfÀ ƒ”À ƒ²À ƒàÀ „À „KÀ „[À „iÀ „kÀ „µÀ „ñÀ …À …À …6À …dÀ …À …šÀ …ßÀ †À †À †#À †%À †WÀ †YÀ †À †™À †ÌÀ ‡À ‡+À ‡5À ‡=À ‡BÀ ‡DÀ ‡”À ‡ĞÀ ‡ùÀ ‡ûÀ ˆKÀ ˆ{À ˆ¢À ˆ¤À ˆíÀ ‰À ‰À ‰&À ‰(À ‰cÀ ‰eÀ ‰·À ‰úÀ Š À Š…À ŠëÀ ‹9À ‹ˆÀ ‹×À Œ(À Œ4À ŒyÀ Œ·À Œ¿À ŒÁÀ À ?À yÀ ¤À «À ­À ÓÀ ëÀ À KÀ rÀ |À „À ‰À ‹À ÖÀ ùÀ À À À `À ªÀ  À CÀ \À ©À ±À ŞÀ ‘%À ‘3À ‘[À ‘}À ‘·À ‘¿À ’À ’À ’AÀ ’gÀ ’³À ’ÓÀ ’õÀ “#À “TÀ “‚À “ À “ÎÀ ”À ”9À ”IÀ ”WÀ ”YÀ ”£À ”ßÀ ”òÀ ”ıÀ •]À •’À •ÅÀ –À –?À –sÀ –¦À –ØÀ —À —À —2À —VÀ —xÀ —œÀ —ÃÀ —ñÀ ˜À ˜=À ˜{À ˜¨À ˜¸À ˜ÆÀ ˜ÈÀ ™À ™NÀ ™aÀ ™lÀ ™“À ™»À ™íÀ ™ùÀ š>À špÀ š{À š‚À š„À š¬À šÄÀ ›À ›;À ›]À ›•À ›¼À ›ÆÀ ›ÎÀ ›ĞÀ œÀ œÀ œ	À œ=À œZÀ œiÀ œpÀ œ‘À œ³À À LÀ kÀ —À ¿À ëÀ öÀ ÿÀ À À 2À \À ‚À äÀ íÀ ôÀ ùÀ ûÀ Ÿ?À ŸrÀ Ÿ£À ŸÆÀ ŸÎÀ ŸÓÀ ŸÕÀ ŸıÀ  À  EÀ  kÀ  rÀ  •À  ÆÀ  ÍÀ  ÏÀ  ôÀ ¡À ¡>À ¡FÀ ¡KÀ ¡NÀ ¡PÀ ¡—À ¡œÀ ¡èÀ ¢À ¢*À ¢wÀ ¢~À ¢ºÀ ¢ĞÀ ¢ìÀ £À £?À £gÀ £†À £¨À £ËÀ £ëÀ ¤ À ¤FÀ ¤cÀ ¤ƒÀ ¤¤À ¤ÂÀ ¤ÜÀ ¥À ¥=À ¥OÀ ¥ŒÀ ¥ÈÀ ¥ÏÀ ¥õÀ ¦À ¦BÀ ¦iÀ ¦À ¦ÅÀ ¦èÀ ¦úÀ §7À §sÀ §zÀ §˜À §àÀ ¨À ¨<À ¨dÀ ¨À ¨ÂÀ ¨îÀ ©À ©kÀ ©pÀ ©rÀ ©«À ©ÊÀ ©ÌÀ ª!À ª;À ªAÀ ªCÀ ª‘À ªãÀ «.À «}À ««À «öÀ «øÀ ¬$À ¬+À ¬}À ¬„À ¬´À ¬ğÀ ¬òÀ ­7À ­hÀ ­oÀ ­¹À ­ÏÀ ­îÀ ®+À ®}À ®ÂÀ ®ÇÀ ®ÉÀ ¯À ¯CÀ ¯YÀ ¯—À ¯™À ¯İÀ °À °À °aÀ °ŠÀ ° À °êÀ °ìÀ ±.À ±‡À ±ÎÀ ²'À ²GÀ ²NÀ ²˜À ²ãÀ ³À ³À ³YÀ ³’À ³ÈÀ ³×À ³ŞÀ ³ûÀ ´À ´À ´À ´\À ´À ´À ´ÙÀ µÀ µDÀ µ‘À µ¡À µ¾À µÕÀ µİÀ µßÀ ¶À ¶À ¶À ¶À ¶:À ¶SÀ ¶²À ¶ÙÀ ¶áÀ ¶æÀ ¶èÀ ·*À ·MÀ ·TÀ ·‡À ·À ··À ·üÀ ¸BÀ ¸À ¸µÀ ¸ÄÀ ¸ËÀ ¸ÍÀ ¸ïÀ ¸ôÀ ¸öÀ ¹!À ¹(À ¹xÀ ¹¼À ¹éÀ º!À ºGÀ ºVÀ º]À º|À º“À º˜À ºšÀ ºÉÀ ºĞÀ »"À »)À »yÀ »°À »ÎÀ »÷À ¼À ¼.À ¼5À ¼VÀ ¼mÀ ¼rÀ ¼tÀ ¼¿À ½À ½>À ½@À ½†À ½áÀ ¾	À ¾À ¾:À ¾@À ¾ŠÀ ¾ÖÀ ¿À ¿'À ¿GÀ ¿~À ¿ºÀ ¿ÏÀ ¿ÑÀ ¿ıÀ ÀÀ ÀVÀ À{À À‚À ÀÍÀ ÁÀ ÁÀ ÁMÀ ÁÀ ÁÀ ÁĞÀ ÁöÀ ÂGÀ Â˜À ÂµÀ ÂÜÀ ÂëÀ ÂòÀ ÃÀ Ã;À ÃJÀ ÃQÀ Ã˜À ÃÄÀ ÃÉÀ ÃËÀ ÄÀ Ä^À Ä¯À ÄÌÀ ÄóÀ ÅÀ Å	À Å*À Å9À Å@À Å”À ÅèÀ Æ(À ÆLÀ Æ•À ÆÃÀ ÆôÀ Ç#À ÇVÀ ÇsÀ Ç}À Ç°À Ç·À ÇäÀ ÇéÀ ÇëÀ È;À È~À È€À ÈÓÀ ÈãÀ É À É"À É^À ÉƒÀ ÉÔÀ Ê%À ÊBÀ ÊQÀ ÊXÀ ÊÀ Ê¢À Ê±À Ê¸À ÊâÀ ÊçÀ ÊéÀ ËÀ ËÀ ËiÀ Ë©À ËÔÀ Ì
-À Ì.À Ì=À ÌDÀ ÌaÀ ÌxÀ Ì}À ÌÀ Ì¬À Ì³À ÍÀ Í
-À ÍZÀ ÍÀ Í©À ÍĞÀ ÍöÀ ÎÀ ÎÀ Î+À ÎBÀ ÎGÀ ÎIÀ Î”À ÎãÀ ÏÀ ÏÀ ÏSÀ Ï¨À ÏÎÀ ÏĞÀ ÏıÀ ĞÀ ĞMÀ Ğ›À ĞÇÀ ĞèÀ Ñ
-À ÑAÀ Ñ}À Ñ’À Ñ”À Ñ¾À ÑÅÀ ÒÀ Ò:À ÒAÀ ÒŠÀ Ò½À Ò¿À ÓÀ ÓEÀ ÓGÀ Ó…À Ó©À ÓúÀ ÔKÀ ÔhÀ ÔÀ ÔœÀ Ô£À ÔÉÀ ÔèÀ Ô÷À ÔşÀ ÕCÀ ÕmÀ ÕrÀ ÕtÀ Õ´À ÖÀ ÖVÀ ÖsÀ Ö˜À Ö§À Ö®À ÖÍÀ ÖÜÀ ÖãÀ ×7À ×‹À ×ËÀ ×íÀ Ø4À ØbÀ Ø“À ØÂÀ ØõÀ ÙÀ ÙÀ ÙMÀ ÙTÀ ÙÀ Ù„À Ù†À ÙÔÀ ÚÀ ÚÀ ÚhÀ ÚxÀ Ú³À ÚµÀ ÚïÀ ÛÀ ÛcÀ Û´À ÛÑÀ ÛàÀ ÛçÀ ÜÀ Ü-À Ü<À ÜCÀ ÜkÀ ÜpÀ ÜrÀ Ü™À Ü À ÜíÀ İÀ İÀ İTÀ İ„À İ†À İÆÀ ŞÀ ŞBÀ Ş~À Ş²À ŞËÀ ßÀ ß2À ßZÀ ßˆÀ ß°À ßÔÀ ßúÀ à À àHÀ à\À àgÀ àpÀ àwÀ à™À àÀ à À àëÀ áÀ áÀ ábÀ ápÀ á•À á—À áåÀ âÀ â9À â;À â‰À â²À âÙÀ âÛÀ ã!À ãSÀ ãiÀ ãœÀ ãÀ ãäÀ ä-À ä@À äVÀ äfÀ äÀ äÊÀ äÏÀ åÀ åÀ åCÀ åJÀ åÀ åİÀ æ(À æHÀ æOÀ æ›À æêÀ çÀ ç#À çlÀ çsÀ ç„À ç‹À çôÀ è"À è$À èpÀ è¿À èÆÀ éÀ é[À éŸÀ éïÀ ê!À êqÀ ê¿À êòÀ ëÀ ëYÀ ëoÀ ëŸÀ ë¡À ëòÀ ìÀ ìÀ ì^À ìÀ ìÂÀ ìÄÀ íÀ í7À í>À íÀ í¼À íÃÀ îÀ î/À î?À îˆÀ îÂÀ îÇÀ îûÀ ïÀ ï@À ïfÀ ïuÀ ï|À ï›À ï²À ï·À ï¹À ğ
-À ğOÀ ğQÀ ğŸÀ ğØÀ ñÀ ñÀ ñ.À ñIÀ ñKÀ ñ’À ñãÀ ñåÀ ò<À ò>À ò~À òÈÀ òŞÀ òöÀ óÀ ó"À ó)À ó+À óYÀ óiÀ óƒÀ ó®À ó¶À ó¸À óûÀ ôÀ ô-À ô5À ô7À ôIÀ ôeÀ ôÀ ôÓÀ ôßÀ ôéÀ õÀ õ.À õoÀ õ{À õ…À õÀ õÕÀ õÚÀ õÜÀ öÀ öWÀ ömÀ ö…À ö¢À öÃÀ öåÀ ÷À ÷$À ÷<À ÷CÀ ÷HÀ ÷JÀ ÷ŠÀ ÷ÑÀ ÷çÀ ø9À ø`À øÀ øÀ ø™À øÑÀ øäÀ øûÀ ùÀ ùDÀ ù`À ùoÀ ùvÀ ùxÀ ù”À ù£À ùªÀ ù¬À ùíÀ úÀ ú(À ú\À ú†À ú­À úÕÀ ûÀ û>À ûJÀ ûTÀ û\À ûaÀ ûcÀ û²À ûÚÀ ü>À üZÀ üiÀ üpÀ ürÀ ü³À üÛÀ üôÀ ı(À ıRÀ ızÀ ı´À ıØÀ ıäÀ ıîÀ ıöÀ ıûÀ ııÀ şÀ ş À şfÀ şÀ ş²À şÁÀ şÈÀ ÿÀ ÿNÀ ÿ©À ÿÇÀ ÿØÀ ÿáÀ  À LÀ nÀ ™À ÂÀ çÀÀJÀ†ÀÀÀËÀÀÀ2À]À†ÀÀ²ÀßÀÀKÀƒÀŒÀ“À˜ÀšÀÓÀÀ0ÀAÀcÀwÀ”À¿ÀğÀÀÀÀÀTÀ‚À‰À·ÀÍÀåÀÀ7ÀTÀcÀjÀƒÀÀ³À¸ÀºÀöÀ)À?ÀSÀ‚ÀÀ®À³ÀµÀéÀÀQÀwÀÓÀ	À	8À	aÀ	oÀ	˜À	¹À	éÀ
-$À
-fÀ
-ªÀ
-èÀÀAÀsÀ¢À¬À³ÀÊÀìÀ6À>ÀCÀEÀwÀ‘ÀßÀÀaÀ¢ÀÊÀñÀKÀ˜ÀÁÀÏÀøÀÀEÀ€ÀÀÀÀ>ÀmÀ•ÀÅÀôÀşÀÀÀ>ÀˆÀÀ•À—ÀÊÀúÀ ÀGÀNÀ[À}ÀÅÀÍÀÏÀÀÀCÀpÀ¹ÀÁÀÃÀáÀFÀHÀÀÉÀîÀÀhÀjÀˆÀ•ÀÒÀÀÀÀ@ÀcÀ‡À®ÀÅÀğÀ#À9ÀUÀuÀŒÀ­ÀÎÀìÀ
-ÀÀ$À.À6À;À=ÀÀÏÀïÀöÀFÀÀ¬À³ÀöÀÀCÀyÀˆÀÀ‘À¼ÀÁÀÄÀÆÀÀcÀªÀßÀ-ÀUÀÀ²ÀÈÀæÀÀÀ"À$À;ÀSÀqÀÀŸÀ¬ÀÀÀÀSÀ~À§ÀŞÀàÀíÀÀÀÀ{À}ÀŸÀßÀäÀæÀóÀ 1À XÀ À À ¤À êÀ!À!LÀ!QÀ!SÀ!`À!tÀ!·À!ÓÀ!éÀ!îÀ!ğÀ"À"CÀ"aÀ"oÀ"À"”À"™À"›À"¨À"ĞÀ"çÀ#	À#+À#KÀ#†À#¨À#ÈÀ#ùÀ$ À$HÀ$nÀ$’À$¢À$°À$¼À$ÆÀ$ÎÀ$ÓÀ$ÖÀ$ØÀ%À%QÀ%rÀ%•À%®À%ÒÀ%õÀ&À&BÀ&fÀ&ŒÀ&¢À&ÊÀ'À'À'
-À'.À'^À'£À'êÀ(+À(]À(‰À(®À(ÕÀ)À)À)À)eÀ)hÀ)jÀ)µÀ)àÀ*	À*@À*BÀ*OÀ*eÀ*}À*À*İÀ*ßÀ+ À+?À+DÀ+FÀ+kÀ+˜À+¶À+ÄÀ+âÀ+éÀ+îÀ+ğÀ,9À,MÀ,TÀ,¤À,òÀ-À-qÀ-ËÀ.À.À.À.)À.fÀ.À.ÒÀ.óÀ/2À/7À/9À/FÀ/ZÀ/œÀ/¸À/ÎÀ/ÓÀ/ÕÀ/âÀ0
-À0`À0bÀ0²À0×À1À1"À1IÀ1¨À1¶À1ğÀ2À2/À2yÀ2ÅÀ3À3[À3iÀ3kÀ3¶À3ÊÀ3íÀ3õÀ3÷À4FÀ4šÀ4·À4èÀ5%À5[À5]À5†À5«À5ñÀ63À6SÀ6qÀ6À6§À6ĞÀ6ûÀ7À7?À7gÀ7À7ØÀ8;À8jÀ8‘À8âÀ9À9NÀ9À9±À9ÉÀ9ßÀ:À:2À:xÀ:ÂÀ;À;-À;rÀ;¹À;ûÀ<À<%À<7À<VÀ<À<¨À<ÍÀ<öÀ=!À=5À=sÀ=À=¯À=ŞÀ>À>%À>7À>GÀ>UÀ>aÀ>kÀ>sÀ>xÀ>{À>}À>ÄÀ>ÉÀ?À?UÀ?‹À?ÖÀ@%À@qÀ@˜À@À@¬À@±ÀAÀAQÀAeÀA£ÀAÚÀB4ÀBiÀBkÀBªÀBÉÀBËÀCÀC$ÀC'ÀC)ÀCqÀCvÀC½ÀDÀDYÀD©ÀD÷ÀEÀEÀEgÀE˜ÀEÀEİÀF.ÀF|ÀFËÀFêÀFïÀFşÀGÀGQÀG}ÀGÂÀHÀH.ÀHfÀH¨ÀHªÀHîÀHõÀIFÀI—ÀIÔÀIÛÀJ ÀJ7ÀJEÀJ„ÀJ†ÀJÖÀJòÀK7ÀK]ÀKÀK¡ÀKÖÀKúÀLÀL>ÀLbÀLiÀLnÀLpÀLÂÀLòÀMÀM%ÀM,ÀM.ÀMTÀMxÀM˜ÀM¿ÀMãÀNÀN'ÀNKÀNRÀNWÀNYÀNŸÀNÍÀOÀO<ÀOQÀOXÀOZÀO¥ÀOÚÀOâÀOäÀP*ÀPiÀPnÀPpÀP¶ÀPöÀQÀQ)ÀQ0ÀQ2ÀQŒÀQ‘ÀQ“ÀQÙÀRÀR7ÀRLÀRSÀRUÀR±ÀR¶ÀR¸ÀRñÀR÷ÀSHÀSÀS•ÀSåÀTÀTÀT&ÀT,ÀT{ÀTÀT©ÀT½ÀTáÀUÀUÀUGÀUIÀUÀUïÀVÀVNÀVÀVÌÀWÀWIÀWQÀWSÀWÀWÊÀWØÀWàÀWåÀWçÀX ÀX&ÀXZÀX`ÀXpÀXvÀXÆÀXßÀY&ÀYaÀYcÀY¸ÀYøÀZZÀZ\ÀZŠÀZÓÀZáÀZéÀZîÀZğÀ[À[%À[uÀ[ÂÀ\À\eÀ\§À\îÀ]À]À]JÀ]QÀ]¡À]ïÀ^AÀ^mÀ^´À^àÀ^âÀ_0À_WÀ_eÀ_¶À_¸À`À`4À`BÀ`‡À`‰À`ÚÀaÀaÀa4Àa•Àa—ÀaèÀb%ÀbFÀbHÀbÀb½ÀbåÀbçÀc9ÀccÀceÀc…ÀcãÀcóÀd<Àd‰ÀdÀdÀd¹ÀeÀe'ÀepÀeœÀe¡Àe£ÀeñÀf;ÀfkÀf’Àf”ÀféÀg3Àg9ÀgÀgàÀhÀhKÀhMÀhÀh—Àh¨Àh¯ÀhıÀiÀiÀi;ÀiÀiçÀiúÀiÿÀjÀjDÀjKÀj\ÀjcÀj±ÀjÅÀjÓÀjïÀkÀkÀkÀkQÀkXÀkªÀlÀlÀlÀl%ÀlwÀl…ÀlµÀlÜÀlëÀlòÀlôÀmIÀmŸÀmõÀnLÀn ÀnŞÀo9Ào‰ÀoİÀpÀpQÀp„ÀpÖÀqÀqXÀq{ÀqÙÀrÀrÀrrÀrŸÀrÅÀsÀs5ÀsYÀs–ÀsÌÀsõÀtTÀtmÀt{Àt›ÀtŞÀu Àu`Àu’Àu£Àu´ÀuÁÀuÌÀuğÀvÀvPÀv`Àv‚Àv§ÀvùÀwÀw=Àw…Àw›ÀwÖÀx5ÀxHÀxSÀx¡ÀxóÀy?Ày]Ày§ÀyÉÀyíÀzÀz6Àz†Àz™Àz¤ÀzîÀzõÀzúÀzüÀ{AÀ{HÀ{“À{³À{ºÀ{ÿÀ|À|À|À|nÀ|‚À|À|ÇÀ|ğÀ}À}@À}OÀ}VÀ}~À}£À}ÓÀ}ÛÀ}üÀ~À~À~FÀ~MÀ~ŸÀ~ÂÀ~ÉÀÀÀ&À-À{ÀÀÀÒÀûÀ€#À€HÀ€xÀ€€À€§À€ÊÀ€ÑÀ€ÖÀ€ØÀ'ÀPÀWÀqÀÀ«À­ÀêÀñÀ‚:À‚AÀ‚RÀ‚YÀ‚¡À‚µÀƒÀƒQÀƒeÀƒsÀƒ‰ÀƒÄÀƒÉÀƒËÀ„À„À„TÀ„[À„lÀ„sÀ„ºÀ„ÓÀ„áÀ…À…:À…aÀ…pÀ…wÀ…ÎÀ…ûÀ†!À†kÀ†‘À†³À†ÕÀ†ùÀ‡	À‡JÀ‡nÀ‡˜À‡¼ÀˆÀˆÀˆ*ÀˆtÀˆ®ÀˆÒÀˆüÀ‰ À‰pÀ‰ƒÀ‰À‰ØÀ‰øÀŠÀŠjÀŠÀŠØÀŠîÀ‹)À‹ˆÀ‹›À‹¦À‹ÇÀ‹ğÀŒÀŒFÀŒxÀŒÏÀÀfÀ£ÀñÀÀCÀnÀŞÀNÀ”À¤ÀÀJÀZÀÇÀ‘8À‘©À’À’;À’KÀ’ÌÀ“LÀ“ËÀ” À”VÀ”©À”ĞÀ”àÀ•<À•oÀ•ËÀ•ÍÀ•ÿÀ–KÀ–À–àÀ–øÀ—,À—=À—‰À—ÅÀ˜À˜GÀ˜uÀ˜¬À˜ØÀ™
-À™ À™pÀ™ÃÀ™ñÀš ÀšTÀšlÀšÀš¯Àš¾ÀšÉÀšĞÀšõÀšúÀšüÀ›AÀ›HÀ›‘À›˜À›©À›°À›ûÀœÀœ"Àœ@Àœ{Àœ€Àœ‚ÀœÊÀœÑÀ!À4À;ÀLÀSÀ¡ÀºÀÈÀÀ-À<ÀCÀiÀ‰À«ÀÔÀŸÀŸSÀŸ‚ÀŸĞÀŸÿÀ 9À FÀ XÀ „À ¯À äÀ òÀ¡À¡QÀ¡„À¡¢À¡çÀ¢À¢QÀ¢À¢°À¢ÀÀ¢âÀ¢ğÀ£+À£6À£ZÀ£~À£ À£ÄÀ¤À¤=À¤uÀ¤€À¤‡À¤‰À¤ËÀ¤ÍÀ¥À¥:À¥?À¥AÀ¥À¥•À¥äÀ¦À¦À¦À¦ À¦jÀ¦ŒÀ¦šÀ¦âÀ§	À§À§À§jÀ§£À§óÀ¨DÀ¨†À¨µÀ¨¿À©À©_À©gÀ©À©­À©ÏÀªÀªFÀªYÀªƒÀª¯ÀªÑÀªôÀ«À«RÀ«`À«rÀ«À«ÉÀ«şÀ¬À¬6À¬mÀ¬¡À¬ĞÀ¬ŞÀ­À­$À­HÀ­lÀ­À­²À­ŞÀ­ïÀ®UÀ®|À®¯À®»À®ÂÀ®ÄÀ¯À¯À¯À¯SÀ¯ZÀ¯ŒÀ¯“À¯¤À¯«À¯üÀ°À°À°XÀ°|À°£À°ÆÀ°ÍÀ°ÒÀ°ÔÀ±À±$À±tÀ±{À±ŒÀ±“À±áÀ±ùÀ²À²)À²MÀ²RÀ²TÀ²–À²À²äÀ²òÀ³À³4À³CÀ³JÀ³pÀ³À³²À³ÿÀ´GÀ´RÀ´}À´¤À´ËÀ´ÖÀ´úÀµÀµ@ÀµdÀµÀµÙÀµäÀ¶À¶À¶À¶À¶_À¶fÀ¶wÀ¶~À¶ÏÀ¶ãÀ·%À·3À·hÀ·½À¸À¸iÀ¸ÀÀ¹À¹RÀ¹¶À¹ßÀºÀº#ÀºWÀºŠÀºÀº‘ÀºÔÀºÛÀ»'À»_À»fÀ»wÀ»~À»ÌÀ»àÀ»îÀ¼$À¼JÀ¼”À¼½À¼âÀ¼ëÀ¼òÀ¼÷À¼ùÀ½!À½MÀ½yÀ½À½ÁÀ½äÀ¾À¾BÀ¾‚À¾¨À¾ÿÀ¿6À¿=À¿BÀ¿DÀ¿–À¿®ÀÀÀÀvÀÀØÀÀİÀÀßÀÁ,ÀÁDÀÁ¤ÀÁéÀÂFÀÂKÀÂMÀÂœÀÂæÀÃ9ÀÃZÀÃ¬ÀÃÛÀÃòÀÄ"ÀÄhÀÄ‹ÀÄ«ÀÄ¹ÀÄÅÀÄÚÀÅÀÅPÀÅÀÅ„ÀÅ†ÀÅÔÀÅõÀÅûÀÆKÀÆfÀÆlÀÆ¶ÀÆïÀÇÀÇ;ÀÇVÀÇgÀÇŠÀÇ’ÀÇãÀÈ1ÀÈaÀÈyÀÈ¬ÀÈæÀÈûÀÉ1ÀÉÀÉƒÀÉ¼ÀÊÀÊ_ÀÊaÀÊÀÊ×ÀÊåÀÊíÀÊòÀÊôÀË7ÀË>ÀËkÀË¹ÀËäÀËëÀËüÀÌÀÌQÀÌeÀÌsÀÌ©ÀÌĞÀÌßÀÌæÀÍÀÍIÀÍWÀÍÀÍ¥ÀÍËÀÍíÀÎÀÎ7ÀÎœÀÎÀÀÏ ÀÏ)ÀÏ0ÀÏWÀÏzÀÏÀÏ†ÀÏˆÀÏĞÀÏ×ÀĞÀĞ$ÀĞ5ÀĞ<ÀĞŠÀĞ£ÀĞ±ÀĞíÀÑÀÑ#ÀÑ*ÀÑ]ÀÑ€ÀÑŞÀÒÀÒ ÀÒUÀÒ„ÀÒÂÀÒÄÀÓÀÓ:ÀÓGÀÓUÀÓ—ÀÓ¦ÀÓ­ÀÓ¯ÀÔÀÔ<ÀÔ^ÀÔ‚ÀÔÓÀÔùÀÕÀÕCÀÕiÀÕºÀÕÃÀÕÑÀÕùÀÖÀÖ>ÀÖiÀÖ—ÀÖÇÀÖöÀ×*À×<À×hÀ×œÀ×ÇÀ×ôÀØÀØÀØ?ÀØeÀØˆÀØ³ÀØáÀÙÀÙ@ÀÙtÀÙ†ÀÙ²ÀÙæÀÚÀÚ>ÀÚ†ÀÚÉÀÚ÷ÀÛ)ÀÛZÀÛÀÛ¤ÀÛòÀÜÀÜÀÜ(ÀÜLÀÜpÀÜ–ÀÜÂÀÜíÀİÀİ+Àİ4Àİ;Àİ@ÀİBÀİ‹Àİ’ÀİáÀİùÀŞ ÀŞÀŞÀŞgÀŞ¡ÀŞ¯ÀŞíÀßÀß#Àß*Àß,ÀßIÀß–ÀßÑÀà#ÀàvÀàºÀàëÀà÷ÀáJÀá›Àá¥ÀâÀâÀâ'ÀâwÀâ¡Àâ±ÀâÁÀâíÀã;ÀãbÀãÀãœÀãÀã¿ÀãéÀäÀäDÀäoÀäÀÀäéÀåÀå+Àå@ÀåKÀåTÀåVÀåÀåÏÀåùÀæ	ÀæÀæCÀækÀæ“Àæ·ÀæÜÀç	Àç9ÀçkÀçÁÀçğÀè&Àè:ÀèhÀèÀèËÀèúÀéÀéhÀé§Àé¿ÀéÎÀéãÀê	Àê2Àê„Àê¯ÀêáÀêñÀëÀë?ÀëmÀë¿ÀëêÀìÀì,Àì7Àì@ÀìBÀìjÀìŒÀìêÀíÀí+ÀíeÀíˆÀí³ÀíáÀîÀîlÀî™ÀîÍÀîßÀïÀï?ÀïjÀï—Àï¯ÀïÅÀïÒÀïåÀğÀğ1Àğ„ÀğèÀñ1ÀñTÀñÀñ­ÀñÙÀòÀòDÀò˜ÀòÅÀòùÀóÀó6ÀócÀó‘ÀóÃÀóôÀô*Àô>Àô“Àô¤Àô¼ÀôÒÀôßÀôòÀõÀõ:Àõ`Àõ“ÀõãÀöÀö<ÀöJÀöSÀöZÀö\Àö‰ÀöÂÀ÷À÷UÀ÷\À÷^À÷«À÷¾ÀøÀømÀøÀøìÀù(ÀùgÀù§ÀùùÀú)ÀúZÀúÀú»ÀúéÀú÷ÀûÀû(Àû2ÀûQÀû’ÀûÖÀüÀü7Àü\Àü–ÀüÄÀüÒÀüŞÀıÀıÀıÀıhÀıoÀıtÀıvÀı¼ÀıÃÀşÀş"Àş)Àş:ÀşAÀş’Àş¦Àş´ÀşìÀÿÀÿbÀÿÀÿ Àÿ²ÀÿÕÀÿÜÀÿŞÀÿúÀ À $À &À RÀ WÀ YÀ ¦À ÇÀ ÎÀÀRÀ˜À÷À!À2À[À„À¡ÀòÀ?ÀfÀ•ÀºÀçÀÀ7ÀtÀ£ÀØÀÀ*À]À’ÀÁÀöÀÀ&À.À3À6À8À‹ÀÀÜÀ,À|À’À—À¦À«ÀøÀEÀWÀ”ÀÄÀËÀ	À	>À	NÀ	iÀ	„À	™À	¶À	ÑÀ	ëÀ
-	À
-"À
-?À
-TÀ
-tÀ
-™À
-·À
-ØÀ
-óÀÀ.ÀOÀmÀ–ÀªÀÄÀËÀÍÀ3ÀyÀ–À¬ÀÔÀÖÀ<À†ÀÕÀ!ÀGÀ]À…À‡ÀÒÀ#ÀYÀ‰À‹ÀÙÀ&ÀbÀdÀ¶ÀÔÀÀÀMÀzÀ|ÀÀÀõÀ÷ÀIÀ]ÀdÀ¬ÀûÀUÀ‡À‰ÀÙÀ'À\ÀÀ‘ÀåÀÀÀjÀÀµÀ·ÀüÀDÀƒÀÁÀÃÀÀSÀUÀœÀÖÀØÀ!ÀaÀcÀ²ÀôÀ*À,À{À¾ÀôÀöÀ1ÀmÀoÀ©ÀçÀéÀ.ÀfÀhÀ»ÀÂÀÀ6À8À{À‚ÀºÀŞÀàÀ ÀÀÀ&ÀvÀyÀ{ÀÓÀ$ÀwÀÊÀéÀïÀBÀWÀ–À¼ÀàÀ À &À uÀ ÇÀ!À!fÀ!³À!æÀ"9À"YÀ"{À"ÌÀ#À#nÀ#À#¨À#ÌÀ$À$lÀ$½À%
-À%=À%yÀ%€À%…À%‡À%¨À%ÍÀ%ÒÀ%ÔÀ%õÀ&À&À&!À&sÀ&šÀ&ÏÀ&õÀ'CÀ'—À'çÀ(À(eÀ(šÀ(¡À(£À(òÀ)'À).À)3À)5À)fÀ)µÀ)áÀ*À*2À*SÀ*ZÀ*_À*aÀ*~À*¥À*ªÀ*¬À*äÀ+À+À+À+VÀ+ˆÀ+À+À+ÃÀ+òÀ+÷À+ùÀ,1À,_À,dÀ,fÀ,œÀ,ÈÀ,ÍÀ,ÏÀ-À-?À-DÀ-FÀ-À-ÅÀ-ÊÀ-ÌÀ.À.6À.;À.=À.`À.‹À.À.’À.ŸÀ.ÇÀ/À/À/eÀ/šÀ/ÃÀ/ÕÀ0	À0FÀ0PÀ0XÀ0ZÀ0ŠÀ0¿À0íÀ1À1LÀ1™À1ÈÀ1éÀ28À2HÀ2}À2•À2ÑÀ3À3OÀ3À3À3¬À3³À3µÀ3åÀ4À4DÀ4lÀ4’À4¸À4ÚÀ5À5sÀ5ÃÀ6À6#À6~À6¢À6äÀ7<À7zÀ7¸À7êÀ8 À8XÀ8ŠÀ8¸À8ìÀ9 À9À96À9ZÀ9€À9²À:À:HÀ:À:À:øÀ;À;^À;œÀ;ÚÀ<À<BÀ<zÀ<¬À<ÚÀ=À="À=4À==À=DÀ=FÀ=•À=ÄÀ>À>TÀ>ŠÀ>¢À>üÀ?QÀ?aÀ?oÀ?vÀ?xÀ?˜À?³À?ÖÀ?øÀ@À@À@!À@$À@&À@uÀ@—À@œÀ@äÀA)ÀAuÀAÙÀBÀBdÀBfÀBÀBƒÀB¾ÀBßÀBõÀCÀCÀCÀC)ÀC4ÀCfÀCˆÀC©ÀCÇÀCèÀDÀD'ÀD|ÀDˆÀD’ÀDİÀEÀE2ÀECÀELÀEtÀEƒÀEŠÀE½ÀEâÀFÀFÀF#ÀF2ÀF9ÀFRÀFWÀFYÀFfÀF“ÀF­ÀFßÀFæÀGÀG$ÀG+ÀGMÀGRÀGTÀGaÀG‘ÀG¶ÀGŞÀHÀHÀHÀH!ÀH.ÀHlÀH‚ÀH©ÀH¼ÀHäÀIÀI2ÀIXÀIsÀIƒÀIŠÀIÀI‘ÀIÀI²ÀIåÀIüÀJÀJÀJÀJÀJfÀJ~ÀJÎÀJÜÀJŞÀK-ÀK{ÀKÀÀKÌÀKÎÀLÀL/ÀL2ÀL4ÀL•ÀLªÀL¯ÀL¾ÀMÀMrÀM¦ÀM«ÀMêÀN8ÀN[ÀN‡ÀNáÀNöÀNøÀOÀOÀOZÀO{ÀO‘ÀO ÀO§ÀO©ÀOÑÀOÜÀP'ÀPIÀPjÀPˆÀP©ÀPÂÀPèÀQDÀQPÀQZÀQ¥ÀQâÀR"ÀR3ÀR<ÀRhÀRwÀR~ÀR€ÀRÃÀRêÀSÀSÀSBÀSQÀSXÀSqÀSvÀSxÀS…ÀS²ÀSÌÀSşÀTÀT6ÀTGÀTNÀTpÀTuÀTwÀT„ÀT´ÀTÙÀUÀU6ÀU=ÀUBÀUDÀUQÀUÀU¥ÀUÌÀUßÀVÀV/ÀVUÀV{ÀV”ÀV›ÀV ÀV¢ÀV¯ÀVÃÀVöÀWÀW#ÀW(ÀW+ÀW-ÀWÀW’ÀW¡ÀWğÀXÀXCÀXOÀXQÀXµÀYÀYUÀYaÀYcÀYÀY«ÀY®ÀY°ÀYÿÀZQÀZˆÀZÚÀ[À[QÀ[^À[vÀ[‘À[±À[ÍÀ[ìÀ\À\:À\rÀ\À\¾À\ÀÀ\ÍÀ]À]À]À]OÀ]QÀ]^À]™À]›À]¨À]çÀ]éÀ]öÀ^WÀ^YÀ^fÀ^ÈÀ^ÊÀ^×À_À_À_+À_fÀ_i   ToolbarItemsParentDataTextSelectionControlsEmptyTextSelectionControlsemptyTextSelectionControlsTextSelectionOverlaySelectionOverlay_SelectionToolbarWrapper_SelectionToolbarWrapperState_SelectionHandleOverlay_SelectionHandleOverlayState+TextSelectionGestureDetectorBuilderDelegate#TextSelectionGestureDetectorBuilderTextSelectionGestureDetector"_TextSelectionGestureDetectorStateClipboardStatusNotifierClipboardStatusLiveTextInputStatusNotifierLiveTextInputStatusTextSelectionHandleControls(flutter.widgets.SelectionOverlay.context€·The context in which the selection UI should appear.
-
-This context must have an [Overlay] as an ancestor because this object
-will display the text selection handles in that [Overlay].1flutter.widgets.SelectionOverlay.toolbarIsVisiblemWhether the toolbar is currently visible.
-
-Includes both the text selection toolbar and the spell check menu.3flutter.widgets.SelectionOverlay.magnifierIsVisible+Whether the magnifier is currently visible.0flutter.widgets.SelectionOverlay.magnifierExists€‘Whether the magnifier currently exists.
-
-This differs from [magnifierIsVisible] in that the magnifier may exist
-in the overlay, but not be shown..flutter.widgets.SelectionOverlay.showMagnifier¡Shows the magnifier, and hides the toolbar if it was showing when [showMagnifier]
-was called. This is safe to call on platforms not mobile, since
-a magnifierBuilder will not be provided, or the magnifierBuilder will return null
-on platforms not mobile.
-
-This is NOT the source of truth for if the magnifier is up or not,
-since magnifiers may hide themselves. If this info is needed, check
-[MagnifierController.shown]..flutter.widgets.SelectionOverlay.hideMagnifierHHide the current magnifier.
-
-This does nothing if there is no magnifier.2flutter.widgets.SelectionOverlay.selectionControls*Builds text selection handles and toolbar.2flutter.widgets.SelectionOverlay.selectionDelegateMThe delegate for manipulating the current selection in the owning
-text field.8flutter.widgets.SelectionOverlay.onSelectionHandleTapped‚<A callback that's optionally invoked when a selection handle is tapped.
-
-The [TextSelectionControls.buildHandle] implementation the text field
-uses decides where the handle's tap "hotspot" is, or whether the
-selection handle supports tap gestures at all. For instance,
-[MaterialTextSelectionControls] calls [onSelectionHandleTapped] when the
-selection handle's "knob" is tapped, while
-[CupertinoTextSelectionControls] builds a handle that's not sufficiently
-large for tapping (as it's not meant to be tapped) so it does not call
-[onSelectionHandleTapped] even when tapped.,flutter.widgets.SelectionOverlay.showHandlesBBuilds the handles by inserting them into the [context]'s overlay.,flutter.widgets.SelectionOverlay.hideHandles3Destroys the handles by removing them from overlay.,flutter.widgets.SelectionOverlay.showToolbar?Shows the toolbar by inserting it into the [context]'s overlay.%flutter.widgets.SelectionOverlay.hide?Hides the entire overlay including the toolbar and the handles.,flutter.widgets.SelectionOverlay.hideToolbarNHides the toolbar part of the overlay.
-
-To hide the whole overlay, see [hide].(flutter.widgets.SelectionOverlay.dispose+Disposes this object and release resources.0flutter.widgets.SelectionOverlay.updateMagnifier>Update the current magnifier with new selection data, so the magnifier
-can respond accordingly.
-
-If the magnifier is not shown, this still updates the magnifier position
-because the magnifier may have hidden itself and is looking for a cue to reshow
-itself.
-
-If there is no magnifier in the overlay, this does nothing.Rflutter.gestures.selectionrecognizers.TextSelectionGestureDetector.onTapTrackStartTCallback used to indicate that a tap tracking has started upon
-a [PointerDownEvent].Rflutter.gestures.selectionrecognizers.TextSelectionGestureDetector.onTapTrackReset€îCallback used to indicate that a tap tracking has been reset which
-happens on the next [PointerDownEvent] after the timer between two taps
-elapses, the recognizer loses the arena, the gesture is cancelled or
-the recognizer is disposed of. î

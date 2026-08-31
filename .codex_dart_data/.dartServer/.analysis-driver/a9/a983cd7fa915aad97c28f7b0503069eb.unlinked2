@@ -1,670 +1,0 @@
-€…axisDirection
-controllerphysicsviewportBuilderincrementCalculatorexcludeFromSemanticshitTestBehaviorsemanticChildCountdragStartBehaviorrestorationIdscrollBehaviorclipBehavioraxiscreateStatedebugFillPropertiesmaybeOfof"recommendDeferredLoadingForContextensureVisible
-scrollablepositionupdateShouldNotify	_positionresolvedPhysics_physicsdeltaToScrollOrigin_effectiveScrollControllervsyncdevicePixelRatio_devicePixelRationotificationContextstorageContext_persistedScrollOffset_configuration_fallbackScrollController_mediaQueryGestureSettings_updatePositionrestoreState
-saveOffset	initStatedidChangeDependencies_shouldUpdatePositiondidUpdateWidgetdispose_scrollSemanticsKeysetSemanticsActions_gestureDetectorKey_ignorePointerKey_gestureRecognizers_shouldIgnorePointer_lastCanDrag_lastAxisDirection
-setCanDragsetIgnorePointer_drag_hold_handleDragDown_handleDragStart_handleDragUpdate_handleDragEnd_handleDragCancel_disposeHold_disposeDrag#_targetScrollOffsetForPointerScroll_pointerSignalEventDelta_receivedPointerSignal_handlePointerScroll _handleScrollMetricsNotification_buildChromebuild_performEnsureVisiblestatechild	registrar_selectionDelegate_kDefaultDragTargetSize%_kDefaultSelectToScrollVelocityScalar_autoScroller_scheduledLayoutChange _currentDragStartRelatedToOrigin_currentDragEndRelatedToOrigin_selectionStartsInScrollable_scheduleLayoutChange!_selectableStartEdgeUpdateRecords_selectableEndEdgeUpdateRecordsdidChangeSelectableshandleClearSelectionhandleSelectionEdgeUpdate_inferPositionRelatedToOrigin"_updateDragLocationsFromGeometrieshandleSelectAllhandleSelectWordhandleGranularlyExtendSelection"handleDirectionallyExtendSelection_jumpToEdge_globalPositionInScrollable_dragTargetFromEventdispatchSelectionEventToChildensureChildUpdatedallowImplicitScrollingcreateRenderObjectupdateRenderObject_allowImplicitScrolling_semanticChildCount_onScrollToOffsetdescribeSemanticsConfiguration
-_innerNodeassembleSemanticsNodeclearSemanticscreateDefaultValuedidUpdateValuefromPrimitivestoPrimitivesenablednoneweightedEventweightedContinuousfreediagonalDragBehaviorhorizontalDetailsverticalDetails_verticalFallbackController_horizontalFallbackController_verticalOuterScrollableKey_horizontalInnerScrollableKeyverticalScrollablehorizontalScrollabletwoDimensionalScrollablehorizontalKey
-lockedAxislastDragOffset_evaluateLockedAxisverticalOuterKeyViewportBuilderTwoDimensionalViewportBuilder_EnsureVisibleResults
-Scrollable_ScrollableScopeScrollableState_ScrollableSelectionHandler _ScrollableSelectionHandlerState%_ScrollableSelectionContainerDelegate_getDeltaToScrollOrigin_ScrollSemantics_RenderScrollSemantics_RestorableScrollOffsetDiagonalDragBehaviorTwoDimensionalScrollableTwoDimensionalScrollableState_TwoDimensionalScrollableScope_VerticalOuterDimension_VerticalOuterDimensionState_HorizontalInnerDimension_HorizontalInnerDimensionStateŸ	ToleranceWidgetBuildContextViewportOffsetListFuturevoidViewportListViewGridViewCustomScrollViewofensureVisibleSingleChildScrollViewShrinkWrappingViewportScrollControllerScrollPositionPageViewPageControllerPageStoragekeepScrollOffsetPageStorageKeykey
-ScrollViewScrollNotificationNotificationListenerStatefulWidgetAxisDirectiondownDragStartBehaviorstartCliphardEdgeHitTestBehavioropaqueaxisDirectionrightinitialScrollOffsetoffset	animateToScrollConfigurationScrollBehaviorscrollBehaviorScrollPhysicsphysicsAlwaysScrollableScrollPhysicsScrollActionScrollIncrementTypepagelineScrollIncrementCalculatorGestureDetectorexcludeFromSemanticsbool	separatedSemanticsConfigurationscrollChildCountintDragGestureRecognizerdragStartBehaviorRestorationBucketRestorationScopeRestorationManagerString	ScrollbarScrollableDetailsclipBehaviorAxisaxisDirectionToAxisoverrideDiagnosticPropertiesBuilderdebugFillPropertiesaddEnumPropertyDiagnosticsPropertyStringPropertyInheritedElement'getElementForInheritedWidgetOfExactTypewidget
-scrollabledependOnInheritedElementcontextmaybeOfaxisFlutterError	fromPartsDiagnosticsNodeErrorSummaryErrorDescription	ErrorHintrecommendDeferredLoadingactivityScrollActivityvelocitygetInheritedWidgetOfExactTypepositiondoubleDurationzeroCurveCurveseaseScrollPositionAlignmentPolicyexplicitRenderObject_performEnsureVisiblefindRenderObject	alignmentdurationcurvealignmentPolicytargetRenderObjectaddAllisEmptyvaluelengthsinglewaitthenInheritedWidgetStateTickerProviderStateMixinRestorationMixinScrollContextcreateScrollPositionOffsetEdgeDraggingAutoScrolleruppixelsleft
-controllerTickerProvidercurrentContextrestorationIdDeviceGestureSettingsgetScrollPhysicsapplyTodetachscheduleMicrotaskdisposeattach	protectedregisterForRestorationrestoreOffsetinitialRestore!debugIsSerializableForRestorationServicesBindinginstancerestorationManager	flushData	initState
-MediaQuerymaybeGestureSettingsOfmaybeDevicePixelRatioOfViewdevicePixelRatiodidChangeDependenciesshouldNotifyruntimeTypeparentdidUpdateWidget	GlobalKeySetSemanticsActioncurrentStatereplaceSemanticsActionsRawGestureDetectorStateMapTypeGestureRecognizerFactoryverticalVerticalDragGestureRecognizer$GestureRecognizerFactoryWithHandlerssupportedDevicesdragDevicesonDownonStartonUpdateonEndonCancelminFlingDistanceminFlingVelocitymaxFlingVelocityvelocityTrackerBuildermultitouchDragStrategygetMultitouchDragStrategygestureSettings
-horizontalHorizontalDragGestureRecognizerreplaceGestureRecognizersRenderIgnorePointerignoringDragScrollHoldControllerDragDownDetailsholdDragStartDetailsdragDragUpdateDetailsupdateDragEndDetailsendcancelminmaxminScrollExtentmaxScrollExtentPointerScrollEventLogicalKeyboardKeyHardwareKeyboardlogicalKeysPressedanypointerAxisModifierscontainskindPointerDeviceKindmouseflipAxisscrollDeltadxdyaxisDirectionIsReversedPointerSignalEventshouldAcceptUserOffsetGestureBindingpointerSignalResolverregisterPointerScrollInertiaCancelEventpointerScrollPointerEventrespondallowPlatformDefaultScrollMetricsNotificationdepthmarkNeedsSemanticsUpdate	directiondecorationClipBehaviorbuildScrollbarbuildOverscrollIndicatorchildListeneronPointerSignalRawGestureDetectorgesturesbehaviorhitTestBehavior	SemanticsexplicitChildNodesIgnorePointerviewportBuilderonNotificationallowImplicitScrollingsemanticChildCountSelectionRegistrarSelectionContainerstate	registrardelegate)MultiSelectableSelectionContainerDelegatevelocityScalaraddListenerremoveListenerSchedulerBindingaddPostFrameCallbacklayoutDidChange
-debugLabelSelectionEdgeUpdateEvent
-SelectableselectablestoSetremoveWheredidChangeSelectablesSelectionResultClearSelectionEventclearhandleClearSelectionglobalPositiontypeSelectionEventTypeendEdgeUpdate	translateforEndgranularityforStarthandleSelectionEdgeUpdatependingstopAutoScrollstartAutoScrollIfNecessary	scrolling	RenderBoxglobalToLocallocalToGlobalsizeheightwidthinfiniteMatrix4getTransformTocurrentSelectionStartIndexforceUpdateStartSelectionGeometryhasSelectionSelectionPointstartSelectionPointMatrixUtilstransformPointlocalPosition
-lineHeightcurrentSelectionEndIndexforceUpdateEndendSelectionPointSelectAllSelectionEventhandleSelectAllSelectWordSelectionEventhandleSelectWordGranularlyExtendSelectionEventhandleGranularlyExtendSelectionisEnd!DirectionallyExtendSelectionEvent"handleDirectionallyExtendSelectionRectfromLTRB
-edgeBottombottomedgeToptopjumpTofromLTWH
-fromCentercenterSelectionEventstartEdgeUpdategranularlyExtendSelectiondirectionallyExtendSelectionremove	selectAll
-selectWordselectParagraphdispatchSelectionEventToChildabsprecisionErrorTolerancedispatchSelectionEventSemanticsNodeRenderViewportexcludeFromScrollingRenderAbstractViewportuseTwoPaneSemanticsdescribeSemanticsConfigurationSingleChildRenderObjectWidgetRenderProxyBoxisSemanticBoundaryhaveDimensionshasImplicitScrollingscrollPositionscrollExtentMaxscrollExtentMinonScrollToOffsetIterablefirstisTaggedassembleSemanticsNodeshowOnScreenrectflagsCollectionisHiddenindexInParentscrollIndex
-updateWithconfigchildrenInInversePaintOrderclearSemanticsRestorableValuenotifyListenersObject
-kTouchSlopTwoDimensionalViewportTwoDimensionalScrollViewnoneverticalScrollablehorizontalScrollable"dependOnInheritedWidgetOfExactTypetwoDimensionalScrollableScrollMetricsverticalDetailshorizontalDetailshorizontalKeyincrementCalculatordiagonalDragBehaviorverticalOuterKeyverticalOffsethorizontalOffsetweightedEventweightedContinuousfree_handleDragDown_handleDragStartsourceTimeStampdeltaprimaryDelta_handleDragUpdatepixelsPerSecondVelocityprimaryVelocity_handleDragEnd_handleDragCancel
-setCanDrag_gestureRecognizersPanGestureRecognizer_configuration_physics_mediaQueryGestureSettings_lastCanDrag_lastAxisDirection_gestureDetectorKey_effectiveScrollControllerStatefulWidgetInheritedWidgetStateTickerProviderStateMixinRestorationMixinScrollContext)MultiSelectableSelectionContainerDelegateSingleChildRenderObjectWidgetRenderProxyBoxRestorableValue
-ScrollableScrollableState2Zº±(Í¸Àşæœí…Á…Ï	Tolerance …›package:flutter/physics.dart   ‚@   
-dart:async  ‚V   ‚h‚kmath‚k	dart:math  ‚u   package:flutter/foundation.dart  ‚    package:flutter/gestures.dart  ‚É   package:flutter/rendering.dart  ‚ó   package:flutter/scheduler.dart  ƒ   package:flutter/services.dart  ƒH   
-basic.dart  ƒ^   framework.dart  ƒx   gesture_detector.dart  ƒ™   media_query.dart  ƒµ   notification_listener.dart  ƒÛ   restoration.dart  ƒ÷   restoration_properties.dart  „   scroll_activity.dart  „>   scroll_configuration.dart  „c   scroll_context.dart  „‚   scroll_controller.dart  „¤   scroll_physics.dart  „Ã   scroll_position.dart  „ã   scrollable_helpers.dart  …   selectable_region.dart  …(   selection_container.dart  …L   ticker_provider.dart  …l   	view.dart  …   viewport.dartÀ ¥œ À‰‰ú =€ˆ€§€©€Ú€ß&MyÎ‚‚3‚=‚?‚U‚r‚t‚Ÿ‚È‚òƒƒEƒGƒ]ƒwƒ˜ƒ´ƒÚƒö„„=„b„„£„Â„â……'…K…k…€…™…›…Ò…Ô…í†††Z†€†Û†İ‡-‡]‡†‡œ‡¹‡áˆˆˆˆCˆGˆˆÜ‰‰L‰N‰Ÿ‰É‰ÎŠŠiŠ®Š³‹‹V‹¢‹»‹ÀŒŒ]ŒpŒuŒ·Œ¼
-Zéî8zËPU¤öCŞãò÷‘A‘r‘Ã‘á’1’K’š’¹“	““l“¬“×“ı””#”Q”g”z””½”å••:•S•m•••É–––N––ˆ–×—(—r—À˜˜/˜6˜_˜u˜›˜˜Ö™(™9™@™™àš.štšÄ››4›;›‹›Æ›Í›Ş›åœ1œZœpœ—œ™œÏX„‹ÚA“ËÒŸ ŸqŸÃ  ^ ® Ñ Ø é ğ¡B¡‘¡ä¡ú¢¢¢k¢r¢Ä££££#£n£¾¤¤-¤/¤q¤¾¥¥#¥*¥w¥É¦¦¦A¦¦Ê¦à§§§^§¬§Ê§Ñ¨"¨o¨º¨Ğ¨×¨è¨ï©A©V©z©|©ºªªª]ª”ªªª±ªÂªÉ««;«=«†««Ş«å¬2¬~¬Ë¬Ò­­g­n­­†­Ì®'®I®K®£®ã¯"¯)¯r¯¿°
-°*°1°}°Ì°ş±±N±U±f±m±½±à±ç±ı²+²-²i²¸²¿³³M³T³ ³í³ô´´´Z´m´ƒ´£´¥´âµ.µ5µƒµÈµÏ¶¶_¶¤¶½¶Ó¶ü¶ş·5·<·`·g·À¸¸[¸w¸y¸®¸µ¸ß¹¹¹&¹]¹_¹l¹²¹Şº0º}ºÂºÇºÉ»»D»K»o»v»…»Ç»Ò»Ù¼&¼n¼»¼â¼é½8½‰½×½õ½ü¾I¾š¾¶¾½¾Î¾Õ¿¿K¿”¿ÜÀ @À @hÀ @‡À @âÀ A6À AsÀ A¯À AËÀ AÔÀ AùÀ BOÀ BVÀ BhÀ BmÀ BoÀ BÀÀ BĞÀ B×À BûÀ CÀ CÀ CMÀ CXÀ C_À C¬À CôÀ DAÀ DhÀ DoÀ D¾À EÀ EZÀ EaÀ E®À EÿÀ FÀ F"À FoÀ FªÀ F±À FÂÀ FÉÀ GÀ GIÀ GŒÀ GØÀ GéÀ HÀ HHÀ HaÀ H³À HÖÀ HäÀ IÀ I>À I„À I×À J-À JeÀ JŒÀ J§À JµÀ JÒÀ JêÀ KAÀ KpÀ K€À KÀ K–À KªÀ KµÀ KÓÀ KØÀ KÚÀ L,À LkÀ LrÀ LÁÀ MÀ MdÀ MkÀ M¹À N	À NSÀ NZÀ N©À NóÀ O>À ObÀ OiÀ O¹À OÖÀ P.À P‰À P§À QÀ QEÀ QNÀ QzÀ QÅÀ QÌÀ QßÀ QäÀ QæÀ R6À RTÀ R[À RŸÀ RğÀ SÀ S9À SVÀ SsÀ S›À S»À TÀ T À TGÀ TIÀ T™À TéÀ U9À UÀ U¯À U·À UøÀ VÀ V_À VÀ V­À VñÀ WÀ W6À WSÀ WjÀ W•À WÆÀ WĞÀ WóÀ WõÀ X/À XTÀ X…À XŒÀ XÀ XÇÀ XëÀ XòÀ YÀ Y0À Y7À Y‚À Y‡À YŠÀ YŒÀ YŞÀ Z À ZRÀ Z·À Z¹À ZŞÀ [ À [À [À [BÀ [hÀ [mÀ [pÀ [rÀ [ŸÀ [¤À [ïÀ \À \ À \fÀ \´À \¹À ]À ]AÀ ]rÀ ]§À ]ÇÀ ]ÕÀ ]×À ^À ^#À ^rÀ ^ÀÀ _À _=À _[À _]À _›À _ÎÀ _êÀ _ìÀ `<À `À `†À `ØÀ aÀ aNÀ a„À a»À aóÀ b+À b1À b3À biÀ b¡À b£À b°À bìÀ bîÀ bûÀ c À c"À c/À cdÀ c†À cˆÀ c•À cåÀ cçÀ côÀ d#À d%À d2À dhÀ d½À d¿À dæÀ eÀ eLÀ eNÀ e—À e³À fÀ f1À f~À f¸À fúÀ füÀ g0À gPÀ g‡À gÕÀ h"À hYÀ hˆÀ hÀ h‘À hñÀ iÀ iCÀ iHÀ iJÀ iXÀ ieÀ i¯À iîÀ jÀ j?À jÀ j¤À j©À j«À j¹À jÆÀ jêÀ k"À kNÀ kšÀ kãÀ l!À l&À l(À l6À lCÀ lYÀ lÀ l¶À l½À lÕÀ lÚÀ lÜÀ lêÀ l÷À mÀ mgÀ m€À mÛÀ móÀ nÀ nÀ nÀ nTÀ n¦À nºÀ nÁÀ nëÀ oÀ ocÀ owÀ o~À oãÀ pÀ pWÀ paÀ p¢À p¸À pÁÀ péÀ qÀ qJÀ qLÀ qÀ q¢À q¤À q²À q¿À qïÀ rÀ rÀ rNÀ ryÀ rÇÀ rìÀ s À sLÀ s‚À s±À sÜÀ sìÀ t!À tRÀ t|À tÈÀ tèÀ u#À u.À u7À uqÀ u¥À u¬À u®À uÛÀ uõÀ uüÀ vÀ vÀ vÀ vÀ v2À vXÀ v„À v’À vÆÀ vóÀ vúÀ vüÀ wÀ w<À wRÀ wWÀ wYÀ wiÀ wkÀ w¡À w£À w°À w¾À wúÀ x/À xzÀ xÀ x†À xˆÀ x·À x¹À xûÀ y(À y\À y^À y´À yñÀ z"À zHÀ zJÀ zaÀ z~À z€À zÀ z›À z¼À {À {À {%À {8À {À {ÎÀ |À |XÀ |tÀ |‚À | À |½À } À },À }‚À }èÀ ~&À ~DÀ ~vÀ ~ªÀ ~àÀ À FÀ À ÔÀ €À €|À €ÂÀ &À lÀ ´À ÊÀ ŞÀ ìÀ ‚À ‚NÀ ‚|À ‚ÔÀ ‚íÀ ƒSÀ ƒ“À ƒ±À ƒãÀ „À „MÀ „}À „³À „úÀ …AÀ …ˆÀ …éÀ †/À †“À †ÙÀ ‡!À ‡7À ‡KÀ ‡YÀ ‡bÀ ‡iÀ ‡„À ‡«À ‡àÀ ˆ9À ˆ@À ˆEÀ ˆGÀ ˆTÀ ˆbÀ ˆ‰À ˆ³À ˆÂÀ ˆÉÀ ˆìÀ ‰!À ‰:À ‰“À ‰ÅÀ ‰ÌÀ ‰ÑÀ ‰ÓÀ ‰èÀ ‰êÀ ‰úÀ ŠÀ ŠÀ ŠOÀ ŠkÀ Š‡À Š±À Š¶À Š¸À ŠíÀ ‹8À ‹ŠÀ ‹´À ‹ĞÀ ŒÀ ŒÀ ŒnÀ ŒˆÀ ŒŸÀ Œ¦À Œ«À Œ­À ŒäÀ 4À aÀ ~À ƒÀ …À ¶À À 3À MÀ iÀ nÀ pÀ À ÅÀ À ^À rÀ À ˆÀ ¹À 	À 6À LÀ bÀ ~À šÀ ŸÀ ¡À ºÀ ÍÀ ÒÀ ÔÀ íÀ ‘ À ‘À ‘À ‘À ‘À ‘mÀ ‘¨À ‘æÀ ‘üÀ ’@À ’aÀ ’iÀ ’nÀ ’pÀ ’¼À “
-À “À “XÀ “³À “ÎÀ ”À ”VÀ ”©À ”úÀ •KÀ •›À •­À •İÀ •ßÀ –&À –PÀ –€À –®À –¶À –¸À —À —	À —À —FÀ —ƒÀ —ÑÀ —âÀ —ëÀ ˜(À ˜}À ˜ÓÀ ™À ™uÀ ™†À ™À ™ËÀ ™íÀ šFÀ šMÀ šRÀ šTÀ š‡À š±À šçÀ ›(À ›{À ›½À ›ãÀ œÀ œnÀ œ§À œ®À œ³À œµÀ À ,À ˆÀ ©À ÛÀ À %À ,À ?À DÀ FÀ ƒÀ «À ÓÀ ŸÀ Ÿ6À Ÿ>À Ÿ@À ŸkÀ Ÿ{À ŸÄÀ ŸÔÀ ŸÜÀ ŸáÀ ŸãÀ ŸõÀ Ÿ÷À  À  À  :À  ZÀ  ¹À ¡À ¡	À ¡2À ¡^À ¡fÀ ¡ÅÀ ¢
-À ¢1À ¢JÀ ¢eÀ ¢}À ¢¯À ¢ÓÀ ¢øÀ £"À £OÀ £À £ªÀ £éÀ ¤À ¤3À ¤bÀ ¤£À ¤³À ¤ÁÀ ¤ÍÀ ¤×À ¤ßÀ ¤áÀ ¥
-À ¥KÀ ¥†À ¥¨À ¥ÍÀ ¥ìÀ ¦1À ¦OÀ ¦‰À ¦£À ¦¯À ¦¹À ¦ÀÀ ¦ÂÀ ¦ïÀ ¦ñÀ §5À §…À §£À §ĞÀ §æÀ ¨À ¨"À ¨:À ¨DÀ ¨KÀ ¨MÀ ¨aÀ ¨fÀ ¨hÀ ¨·À ©À ©KÀ ©{À ©—À ©´À ©ÜÀ ©üÀ ªYÀ ª€À ªˆÀ ªÎÀ ªİÀ ªúÀ «À «*À «SÀ «‚À «ŠÀ «ÃÀ «ÈÀ «ÊÀ «ØÀ «åÀ ¬+À ¬WÀ ¬¨À ­ À ­À ­À ­
-À ­>À ­CÀ ­À ­ÄÀ ® À ®'À ®AÀ ®^À ®|À ®–À ®À ®ŸÀ ®¿À ®áÀ ®øÀ ¯À ¯!À ¯.À ¯‡À ¯ŠÀ ¯ŒÀ ¯áÀ °#À °%À °2À °HÀ °`À °¡À °½À °ßÀ °çÀ °ìÀ °îÀ °ûÀ ±<À ±cÀ ±•À ±ËÀ ±ÒÀ ±×À ±ÙÀ ±æÀ ±úÀ ²À ²3À ²8À ²:À ²GÀ ²oÀ ²À ²³À ²ØÀ ²ôÀ ²üÀ ³À ³À ³À ³VÀ ³‚À ³‡À ³ØÀ ´*À ´vÀ ´‡À ´èÀ µJÀ µgÀ µ˜À µ¨À µèÀ µóÀ ¶&À ¶+À ¶-À ¶nÀ ¶¢À ¶¤À ¶ÜÀ ·À ·!À ·AÀ ·rÀ ·šÀ ·ÇÀ ·òÀ ·ôÀ ¸FÀ ¸tÀ ¸vÀ ¸£À ¸ÀÀ ¸èÀ ¹À ¹À ¹À ¹SÀ ¹kÀ ¹À ¹£À ¹¥À ¹ğÀ º1À ºSÀ ºvÀ º…À ºŒÀ º°À ºûÀ »!À »2À »;À »bÀ »|À »ÁÀ »ÆÀ »ÈÀ ¼À ¼/À ¼6À ¼ƒÀ ¼¦À ¼­À ¼şÀ ½NÀ ½œÀ ½îÀ ¾ À ¾À ¾VÀ ¾§À ¾ùÀ ¿9À ¿–À ¿ñÀ ¿óÀ À À À!À ÀaÀ À•À ÀÜÀ ÀäÀ ÁÀ Á]À ÁeÀ ÁˆÀ ÁÀ ÁÀ ÁœÀ ÁáÀ ÂÀ Â?À ÂmÀ Â™À ÂÄÀ ÂóÀ ÂøÀ ÂúÀ ÃÀ ÃVÀ ÃµÀ ÃãÀ Ä<À ÄCÀ Ä…À ÄÀÀ ÅÀ ÅhÀ Å„À Å À ÅªÀ ÅÚÀ ÅşÀ Æ'À Æ1À Æ?À ÆÀ ÆíÀ Ç	À Ç%À Ç/À ÇaÀ Ç‡À Ç°À ÇºÀ ÇÁÀ ÈÀ ÈÀ ÈbÀ È´À ÈÇÀ ÈõÀ ÉÀ É2À É9À ÉbÀ É°À ÉÖÀ ÉÿÀ ÊÀ ÊÀ Ê#À Ê(À Ê*À ÊkÀ Ê¬À ÊñÀ ËÀ ËmÀ Ë»À ÌÀ Ì]À Ì˜À ÌÈÀ ÌÑÀ Í'À ÍHÀ ÍQÀ ÍXÀ ÍšÀ ÍöÀ ÍûÀ ÍıÀ Î6À ÎqÀ ÎxÀ ÎÈÀ ÎÿÀ ÏNÀ Ï‘À Ï¾À ÏáÀ ĞÀ Ğ
-À ĞLÀ ĞÀ ĞÆÀ ĞóÀ Ñ>À Ñ—À Ñ½À Ò À ÒcÀ Ò¤À Ò½À ÒşÀ ÓÀ ÓNÀ ÓbÀ Ó‹À Ó•À ÓœÀ ÓÇÀ ÔÀ ÔeÀ Ô‹À ÔÊÀ Õ+À ÕjÀ ÕƒÀ ÕÀÀ ÕÊÀ ÖÀ Ö"À ÖIÀ ÖSÀ ÖZÀ Ö_À ÖaÀ ÖnÀ Ö²À ÖŞÀ × À ×uÀ ×¢À ×ÏÀ ×ÖÀ ×êÀ ×ïÀ ×ñÀ ×şÀ ØDÀ Ø›À ØŞÀ Ù	À ÙÀ Ù"À Ù$À Ù1À ÙŒÀ ÙŞÀ Ú,À Ú|À Ú¼À Û"À ÛKÀ ÛlÀ ÛsÀ Û‡À ÛŒÀ ÛÀ Û›À ÛüÀ ÜQÀ ÜŸÀ ÜïÀ İ/À İ•À İ¾À İßÀ İæÀ İúÀ İÿÀ ŞÀ Ş&À ŞHÀ ŞgÀ ŞˆÀ ŞÀ ŞØÀ ß
-À ßNÀ ß\À ß™À ßÍÀ àÀ àÀ àIÀ àXÀ à_À àªÀ àóÀ áEÀ áWÀ árÀ ázÀ áàÀ âÀ â"À âkÀ â¾À ãÀ ã&À ã1À ãdÀ ã¶À ãÉÀ ãÔÀ äÀ äMÀ äXÀ äiÀ äŠÀ äÍÀ åÀ å,À å7À åcÀ å®À åÁÀ åÌÀ å÷À æAÀ æLÀ æ]À æ}À æÆÀ çÀ çnÀ çÀ çŒÀ ç¿À èÀ è$À è/À è\À è¨À è³À èÄÀ èäÀ é'À ésÀ é†À é‘À é½À êÀ êÀ ê&À êQÀ ê›À ê¦À ê·À ê¾À êÃÀ êÅÀ ëÀ ëCÀ ëˆÀ ëĞÀ ëúÀ ëÿÀ ìÀ ì@À ì]À ì‚À ì©À ìÑÀ ìÙÀ ìŞÀ ìàÀ ìíÀ íMÀ íhÀ í˜À íèÀ îÀ î?À îÀ î¶À îğÀ ï-À ïVÀ ï¦À ïôÀ ğÀ ğWÀ ğ–À ğÀÀ ğëÀ ñÀ ñiÀ ñ¹À ñÀÀ òÀ ò	À òÀ òÀ òLÀ òÀ òÙÀ óÀ ó7À óŠÀ óÄÀ ôÀ ôWÀ ôsÀ ôÀ ô™À ôÃÀ õÀ õÀ õoÀ õ¦À õôÀ õûÀ öOÀ ö‚À ö©À öúÀ ÷4À ÷xÀ ÷ÃÀ ÷ßÀ ÷ûÀ øÀ økÀ øÃÀ øúÀ ùFÀ ùMÀ ùRÀ ùTÀ ùaÀ ùuÀ ù¥À ùÓÀ ùøÀ úÀ ú3À ú8À ú;À ú=À ú€À ú³À úùÀ û@À ûˆÀ ûĞÀ ûÖÀ ûÙÀ ûÛÀ üÀ ü]À übÀ üÀ üíÀ ı5À ıaÀ ı•À ıšÀ ıëÀ ş:À ş‹À şÔÀ şîÀ ÿ.À ÿJÀ ÿZÀ ÿwÀ ÿ¢À ÿ»À ÿâÀ ÿôÀ ;À =À _À …À §À »À ½À ÊÀÀ3ÀNÀ…À´ÀÇÀÏÀÔÀÖÀãÀ;ÀMÀ†À›À¸ÀêÀïÀòÀôÀ+ÀGÀnÀ™À²ÀÙÀğÀÀHÀzÀ‘ÀÆÀËÀÍÀÀ@À]À…À¤À³ÀºÀóÀÀAÀbÀgÀiÀÀİÀşÀ*ÀWÀfÀmÀ“À´À¹À»ÀÉÀËÀÀÀGÀoÀ~À…À§ÀÈÀÍÀÏÀ	 À	+À	VÀ	À	‡À	¦À	«À	­À	ºÀ
-À
-5À
-\À
-€À
-À
-ÇÀ
-ôÀ+ÀbÀ”ÀğÀ&À/À6À;À=À[À]ÀjÀ‰À¢ÀÆÀíÀôÀQÀkÀ§À¶À½À¿ÀÀÀ0ÀdÀÀ²ÀõÀ7ÀUÀeÀ•ÀËÀÖÀôÀıÀÀ1À|ÀĞÀÕÀ×ÀäÀÿÀÀ4À9À<À>À‘À ÀâÀïÀÀÀ'ÀRÀjÀoÀqÀ~À§ÀÄÀÉÀËÀØÀôÀÀÀÀÀAÀDÀFÀWÀYÀ›À¼ÀÀ-ÀmÀtÀÆÀæÀïÀñÀ7ÀWÀ^À¯ÀÿÀÀÀYÀ”À›ÀèÀ+À@ÀWÀYÀ¢À³À¼À¿ÀÁÀ
-ÀUÀmÀrÀÄÀÀIÀ‘À£À¨ÀôÀDÀ}À‚À‘À–ÀâÀÀlÀ{À´ÀìÀóÀEÀUÀyÀ‰À¯ÀÓÀ÷ÀÀ/ÀWÀ“ÀÊÀşÀÀÀUÀjÀÀ ÀÙÀàÀ)ÀvÀ¤À¦ÀİÀäÀ -À xÀ ¤À ¦À ôÀ ûÀ!KÀ!–À!À!®À!µÀ"À"+À"cÀ"eÀ"¤À"«À"ÓÀ#À#À#GÀ#NÀ#‘À#ãÀ$"À$BÀ$DÀ$„À$‹À$³À$×À$ÙÀ%À%À%CÀ%mÀ%oÀ%¬À%³À%ÛÀ&	À&À&À&mÀ&oÀ&ÀÀ&êÀ&ñÀ'À'À'+À'‰À'”À'›À'ŞÀ(-À(À(ÀÀ(ÇÀ)À)>À)EÀ)VÀ)]À)ªÀ)áÀ**À*fÀ*¶À*äÀ*éÀ*ëÀ+<À+LÀ+SÀ+wÀ+~À+À+åÀ+ğÀ+÷À,:À,‰À,ÛÀ-À-#À-tÀ-¹À-ÀÀ.À.2À.9À.JÀ.QÀ.ŸÀ.íÀ/0À/~À/À/µÀ/îÀ0À0YÀ0šÀ0¨À0ÅÀ1À1lÀ1¼À2À24À2OÀ2]À2jÀ2sÀ2‡À2’À2°À2µÀ2¸À2ºÀ2õÀ2úÀ3LÀ3À3¬À3±À3ÿÀ4FÀ4À4ÓÀ5À5UÀ5‡À5»À6À6}À6À6²À6¹À6õÀ6üÀ7KÀ7kÀ7—À7ÖÀ8À8À8À8IÀ8PÀ8ŒÀ8“À8äÀ9À92À9sÀ9¬À9±À9³À9ÁÀ9ÎÀ9äÀ:À:SÀ:ZÀ:’À:ÍÀ:ÔÀ:ìÀ:ñÀ:óÀ;À;À;LÀ;sÀ;¶À;¸À;ÉÀ<À<ZÀ<¨À<ÍÀ=À=?À=pÀ=À=ÜÀ>&À>DÀ>zÀ>µÀ>¾À>ÅÀ>ÇÀ>ÚÀ?4À?qÀ?¿À?äÀ@À@ZÀ@À@¼À@ıÀAGÀAeÀAÀAÚÀAãÀAêÀAïÀAñÀAÿÀBÀB4ÀBAÀBÀBÚÀBâÀBïÀCBÀCÀC˜ÀCšÀCÇÀCóÀDÀDEÀDhÀDŸÀDÙÀE1ÀEcÀEzÀE®ÀEìÀFÀFBÀF~ÀF¿ÀFõÀG1ÀGcÀGµÀGâÀHÀHOÀHÀHïÀI'ÀIBÀI|ÀIÀÀIàÀJÀJ^ÀJ¥ÀJßÀKÀKUÀK­ÀLÀLÀL$ÀL0ÀL:ÀLBÀLDÀLŠÀLÄÀLÆÀM!ÀM&ÀM(ÀM6ÀMCÀMWÀM„ÀM³ÀMÉÀMÎÀMÑÀMÓÀN
-ÀNEÀNƒÀN§ÀNçÀOÀO>ÀOYÀO`ÀObÀO£ÀO¥ÀO²ÀOûÀOşÀP ÀP.ÀPbÀP…ÀP•ÀP·ÀPÜÀPÿÀQÀQ*ÀQCÀQcÀQ„ÀQ¢ÀQ¼ÀQØÀRÀRnÀRpÀR¤ÀR×ÀRÙÀRæÀS7ÀS:ÀS<ÀSzÀS®ÀSïÀTÀTfÀThÀT}ÀT˜ÀTšÀTÖÀTãÀUÀU/ÀULÀUtÀU”ÀUñÀVÀV ÀV-ÀV;ÀVÀVßÀWÀWÀW5ÀW:ÀW<ÀWiÀWÀWÈÀXÀXKÀXqÀX¿ÀXÍÀXçÀXîÀXóÀXõÀYÀY5ÀYZÀYÀY‘ÀYÁÀYöÀZÀZiÀZ„ÀZ¼ÀZÃÀZèÀZíÀZïÀZüÀ[1À[_À[„À[«À[»À[âÀ\À\AÀ\zÀ\ªÀ\ßÀ]
-À]@À]_À]uÀ]·À]öÀ^3À^TÀ^„À^ÁÀ^ÖÀ^õÀ_FÀ_QÀ_XÀ_~À_ƒÀ_…À_’À_ÉÀ_ıÀ`.À`[À`‚À`±À`ŞÀ`æÀaÀaMÀazÀa¡ÀaĞÀaıÀbÀbÀb,ÀbSÀbŠÀbÁÀbÒÀbùÀcÀc^Àc•Àc¦ÀcÛÀdÀdGÀdyÀd©ÀdÖÀeÀeEÀeuÀe­Àe¸Àe¿ÀeÚÀeìÀfÀfdÀfÀf¡ÀféÀfúÀgÀg@ÀgGÀgzÀgÀgÀgÀg¿ÀgÛÀgóÀh/ÀhkÀhœÀhÙÀhõÀhıÀi0ÀimÀi‰Ài‘Ài“Ài¸ÀißÀiïÀjÀjTÀj{ÀjÀÀjÇÀj÷ÀjüÀjşÀkÀk)ÀkEÀk]Àk‚Àk©Àk¹ÀkéÀlÀlEÀlxÀlÀlŸÀl¤Àl¦Àl³ÀlÔÀlùÀm ÀmsÀmˆÀmªÀm»ÀmëÀn ÀnGÀn]Àn­ÀnûÀoFÀo–Ào¿ÀpÀpaÀpºÀpëÀqÀq3ÀqcÀq•ÀqÁÀqóÀr6ÀryÀr¼ÀsÀs[ÀsÀs°ÀsÀÀsÎÀt!ÀtpÀt³ÀtÓÀtôÀu!Àu\Àu»ÀuÈÀuÓÀuäÀuëÀuğÀuòÀuÿÀv<ÀvdÀvŒÀv»ÀvåÀvíÀw4Àw[Àw©Àw®Àw±Àw³ÀwãÀxÀx>ÀxNÀxsÀx˜Àx»ÀxÒÀxæÀxÿÀyÀy@Ày^ÀyxÀy”ÀyĞÀz-Àz/ÀzeÀz™Àz›Àz¨ÀzıÀ{ À{À{BÀ{nÀ{pÀ{¦À{åÀ|À|\À|^À|kÀ|À|¿À}À}8À}=À}?À}À}ÛÀ~*À~7À~gÀ~ƒÀ~ À~ÈÀ~èÀEÀlÀtÀœÀ»ÀÌÀëÀ€À€À€JÀ€TÀ€†À€—À€¶À€ÓÀ€êÀÀÀ'À)ÀWÀ\À^ÀkÀŒÀ±ÀØÀ‚ À‚@À‚bÀ‚sÀ‚£À‚ØÀ‚ÿÀƒÀƒaÀƒ±À„À„PÀ„¡À„ìÀ…)À…|À…ËÀ†À†.À†OÀ†|À†·À‡À‡#À‡.À‡?À‡FÀ‡KÀ‡MÀ‡ZÀ‡—À‡¿À‡çÀˆÀˆ@ÀˆHÀˆÀˆ¶À‰À‰	À‰   /// @docImport 'package:flutter/material.dart';
-///
-/// @docImport 'page_storage.dart';
-/// @docImport 'page_view.dart';
-/// @docImport 'scroll_metrics.dart';
-/// @docImport 'scroll_notification.dart';
-/// @docImport 'scroll_view.dart';
-/// @docImport 'single_child_scroll_view.dart';
-/// @docImport 'two_dimensional_scroll_view.dart';
-/// @docImport 'two_dimensional_viewport.dart';‚?  ‚U‚k ‚t  ‚Ÿ  ‚È  ‚ò  ƒ  ƒG  ƒ]  ƒw  ƒ˜  ƒ´  ƒÚ  ƒö  „  „=  „b  „  „£  „Â  „â  …  …'  …K  …k  …€  …›…Á…Ï   ” ”    ””	”   ”'”''”,   ”U”U”Z   ”k”k”p   ”~”~”Œ   ”¢”¢”§   ”Á”Á!”Æ   ”é”é”î   ••0•   •>•>•C   •W•W•\   •q•q!•v   •™•™-• ”<”I”J”İ• •1•2•…•‰•Š•°•¿•À•Ğ•Ö–•ò•ê•×•í–•õ–“Ù“Ù‚5 "/// Creates a widget that scrolls.  ˜‹–‚„˜‹‚>/// {@template flutter.widgets.Scrollable.axisDirection}
-/// The direction in which this widget scrolls.
-///
-/// For example, if the [Scrollable.axisDirection] is [AxisDirection.down],
-/// increasing the scroll position will cause content below the bottom of the
-/// viewport to become visible through the viewport. Similarly, if the
-/// axisDirection is [AxisDirection.right], increasing the scroll position
-/// will cause content beyond the right edge of the viewport to become visible
-/// through the viewport.
-///
-/// Defaults to [AxisDirection.down].
-/// {@endtemplate} œŠ˜ŸƒõœŠƒ–/// {@template flutter.widgets.Scrollable.controller}
-/// An object that can be used to control the position to which this widget is
-/// scrolled.
-///
-/// A [ScrollController] serves several purposes. It can be used to control
-/// the initial scroll position (see [ScrollController.initialScrollOffset]).
-/// It can be used to control whether the scroll view should automatically
-/// save and restore its scroll position in the [PageStorage] (see
-/// [ScrollController.keepScrollOffset]). It can be used to read the current
-/// scroll position (see [ScrollController.offset]), or change it (see
-/// [ScrollController.animateTo]).
-///
-/// If null, a [ScrollController] will be created internally by [Scrollable]
-/// in order to create and manage the [ScrollPosition].
-///
-/// See also:
-///
-///  * [Scrollable.ensureVisible], which animates the scroll position to
-///    reveal a given [BuildContext].
-/// {@endtemplate} ¢œ›…}¢…/// {@template flutter.widgets.Scrollable.physics}
-/// How the widgets should respond to user input.
-///
-/// For example, determines how the widget continues to animate after the
-/// user stops dragging the scroll view.
-///
-/// Defaults to matching platform conventions via the physics provided from
-/// the ambient [ScrollConfiguration].
-///
-/// If an explicit [ScrollBehavior] is provided to
-/// [Scrollable.scrollBehavior], the [ScrollPhysics] provided by that behavior
-/// will take precedence after [Scrollable.physics].
-///
-/// The physics can be changed dynamically, but new physics will only take
-/// effect if the _class_ of the provided object changes. Merely constructing
-/// a new instance with a different configuration is insufficient to cause the
-/// physics to be reapplied. (This is because the final object used is
-/// generated dynamically, which can be relatively expensive, and it would be
-/// inefficient to speculatively create this object each frame to see if the
-/// physics should be updated.)
-///
-/// See also:
-///
-///  * [AlwaysScrollableScrollPhysics], which can be used to indicate that the
-///    scrollable should react to scroll requests (and possible overscroll)
-///    even if the scrollable's contents fit without scrolling being necessary.
-/// {@endtemplate} ¤¢‚¤Ç/// Builds the viewport through which the scrollable content is displayed.
-///
-/// A typical viewport uses the given [ViewportOffset] to determine which part
-/// of its content is actually visible through the viewport.
-///
-/// See also:
-///
-///  * [Viewport], which is a viewport that displays a list of slivers.
-///  * [ShrinkWrappingViewport], which is a viewport that displays a list of
-///    slivers and sizes itself based on the size of the slivers. §¤1‚å§‚‰/// {@template flutter.widgets.Scrollable.incrementCalculator}
-/// An optional function that will be called to calculate the distance to
-/// scroll when the scrollable is asked to scroll via the keyboard using a
-/// [ScrollAction].
-///
-/// If not supplied, the [Scrollable] will scroll a default amount when a
-/// keyboard navigation key is pressed (e.g. pageUp/pageDown, control-upArrow,
-/// etc.), or otherwise invoked by a [ScrollAction].
-///
-/// If [incrementCalculator] is null, the default for
-/// [ScrollIncrementType.page] is 80% of the size of the scroll window, and
-/// for [ScrollIncrementType.line], 50 logical pixels.
-/// {@endtemplate} ©c§‚Z©c‚/// {@template flutter.widgets.scrollable.excludeFromSemantics}
-/// Whether the scroll actions introduced by this [Scrollable] are exposed
-/// in the semantics tree.
-///
-/// Text fields with an overflow are usually scrollable to make sure that the
-/// user can get to the beginning/end of the entered text. However, these
-/// scrolling actions are generally not exposed to the semantics layer.
-/// {@endtemplate}
-///
-/// See also:
-///
-///  * [GestureDetector.excludeFromSemantics], which is used to accomplish the
-///    exclusion. «)©~º«)v/// {@template flutter.widgets.scrollable.hitTestBehavior}
-/// Defines the behavior of gesture detector used in this [Scrollable].
-///
-/// This defaults to [HitTestBehavior.opaque] which means it prevents targets
-/// behind this [Scrollable] from receiving events.
-/// {@endtemplate}
-///
-/// See also:
-///
-///  * [HitTestBehavior], for an explanation on different behaviors. ®4«?ƒ®4‚¼/// The number of children that will contribute semantic information.
-///
-/// The value will be null if the number of children is unknown or unbounded.
-///
-/// Some subtypes of [ScrollView] can infer this value automatically. For
-/// example [ListView] will use the number of widgets in the child list,
-/// while the [ListView.separated] constructor will use half that amount.
-///
-/// For [CustomScrollView] and other types which do not receive a builder
-/// or list of widgets, the child count must be explicitly provided.
-///
-/// See also:
-///
-///  * [CustomScrollView], for an explanation of scroll semantics.
-///  * [SemanticsConfiguration.scrollChildCount], the corresponding semantics property. ²®¥ƒƒ²ƒ/// {@template flutter.widgets.scrollable.dragStartBehavior}
-/// Determines the way that drag start behavior is handled.
-///
-/// If set to [DragStartBehavior.start], scrolling drag behavior will
-/// begin at the position where the drag gesture won the arena. If set to
-/// [DragStartBehavior.down] it will begin at the position where a down
-/// event is first detected.
-///
-/// In general, setting this to [DragStartBehavior.start] will make drag
-/// animation smoother and setting it to [DragStartBehavior.down] will make
-/// drag behavior feel slightly more reactive.
-///
-/// By default, the drag start behavior is [DragStartBehavior.start].
-///
-/// See also:
-///
-///  * [DragGestureRecognizer.dragStartBehavior], which gives an example for
-///    the different behaviors.
-///
-/// {@endtemplate} ´“²/‚q´“‚+/// {@template flutter.widgets.scrollable.restorationId}
-/// Restoration ID to save and restore the scroll offset of the scrollable.
-///
-/// If a restoration id is provided, the scrollable will persist its current
-/// scroll offset and restore it during state restoration.
-///
-/// The scroll offset is persisted in a [RestorationBucket] claimed from
-/// the surrounding [RestorationScope] using the provided restoration ID.
-///
-/// See also:
-///
-///  * [RestorationManager], which explains how state restoration works in
-///    Flutter.
-/// {@endtemplate} ¶ë´§‚R¶ë‚/// {@template flutter.widgets.scrollable.scrollBehavior}
-/// A [ScrollBehavior] that will be applied to this widget individually.
-///
-/// Defaults to null, wherein the inherited [ScrollBehavior] is copied and
-/// modified to alter the viewport decoration, like [Scrollbar]s.
-///
-/// [ScrollBehavior]s also provide [ScrollPhysics]. If an explicit
-/// [ScrollPhysics] is provided in [physics], it will take precedence,
-/// followed by [scrollBehavior], and then the inherited ancestor
-/// [ScrollBehavior].
-/// {@endtemplate} ¸h· t¸hG/// {@macro flutter.material.Material.clipBehavior}
-///
-/// Defaults to [Clip.hardEdge].
-///
-/// This is passed to decorators in [ScrollableDetails], and does not directly affect
-/// clipping of the [Scrollable]. This reflects the same [Clip] that is provided
-/// to [ScrollView.clipBehavior] and is supplied to the [Viewport].   ¸{¸{€š¸ê\/// The axis along which the scroll view scrolls.
-///
-/// Determined by the [axisDirection].   ¹¹¹¹@¹8    ¹‡¹‡&¹£ ¹a¹b¹a¹ad¹s    ¿m¿m¿z   ¿„¿„
-¿Š  ºËºË‡ ¿e„0/// The state from the closest instance of this class that encloses the given
-/// context, or null if none is found.
-///
-/// Typical usage is as follows:
-///
-/// ```dart
-/// ScrollableState? scrollable = Scrollable.maybeOf(context);
-/// ```
-///
-/// Calling this method will create a dependency on the [ScrollableState]
-/// that is returned, if there is one. This is typically the closest
-/// [Scrollable], but may be a more distant ancestor if [axis] is used to
-/// target a specific [Scrollable].
-///
-/// Using the optional [Axis] is useful when Scrollables are nested and the
-/// target [Scrollable] is not the closest instance. When [axis] is provided,
-/// the nearest enclosing [ScrollableState] in that [Axis] is returned, or
-/// null if there is none.
-///
-/// This finds the nearest _ancestor_ [Scrollable] of the `context`. This
-/// means that if the `context` is that of a [Scrollable], it will _not_ find
-/// _that_ [Scrollable].
-///
-/// See also:
-///
-/// * [Scrollable.of], which is similar to this method, but asserts
-///   if no [Scrollable] ancestor is found.   À GeÀ GeÀ Gr   À G|À G|
-À G‚  À BqÀ Bq‰eÀ Gb„‚/// The state from the closest instance of this class that encloses the given
-/// context.
-///
-/// Typical usage is as follows:
-///
-/// ```dart
-/// ScrollableState scrollable = Scrollable.of(context);
-/// ```
-///
-/// Calling this method will create a dependency on the [ScrollableState]
-/// that is returned, if there is one. This is typically the closest
-/// [Scrollable], but may be a more distant ancestor if [axis] is used to
-/// target a specific [Scrollable].
-///
-/// Using the optional [Axis] is useful when Scrollables are nested and the
-/// target [Scrollable] is not the closest instance. When [axis] is provided,
-/// the nearest enclosing [ScrollableState] in that [Axis] is returned.
-///
-/// This finds the nearest _ancestor_ [Scrollable] of the `context`. This
-/// means that if the `context` is that of a [Scrollable], it will _not_ find
-/// _that_ [Scrollable].
-///
-/// If no [Scrollable] ancestor is found, then this method will assert in
-/// debug mode, and throw an exception in release mode.
-///
-/// See also:
-///
-/// * [Scrollable.maybeOf], which is similar to this method, but returns null
-///   if no [Scrollable] ancestor is found.   À PÀ PÀ P   À PÀ P
-À P$  À KÜÀ KÜ†À OäƒÅ/// Provides a heuristic to determine if expensive frame-bound tasks should be
-/// deferred for the [context] at a specific point in time.
-///
-/// Calling this method does _not_ create a dependency on any other widget.
-/// This also means that the value returned is only good for the point in time
-/// when it is called, and callers will not get updated if the value changes.
-///
-/// The heuristic used is determined by the [physics] of this [Scrollable]
-/// via [ScrollPhysics.recommendDeferredLoading]. That method is called with
-/// the current [ScrollPosition.activity]'s [ScrollActivity.velocity].
-///
-/// The optional [Axis] allows targeting of a specific [Scrollable] of that
-/// axis, useful when Scrollables are nested. When [axis] is provided,
-/// [ScrollPosition.recommendDeferredLoading] is called for the nearest
-/// [Scrollable] in that [Axis].
-///
-/// If there is no [Scrollable] in the widget tree above the [context], this
-/// method returns false.   À S=À S=À SJ   À SZÀ SZÀ Sa   À SwÀ Sw!À S€   À SŸÀ SŸÀ S¥   À S¿À S¿VÀ Sİ 
-À SmÀ S‹À S“À S”À S­À S³À S´À SïÀ TÀ TÀ QèÀ Qè‡À S)/// Scrolls all scrollables that enclose the given context so as to make the
-/// given context visible.
-///
-/// If a [Scrollable] enclosing the provided [BuildContext] is a
-/// [TwoDimensionalScrollable], both vertical and horizontal axes will ensure
-/// the target is made visible. ‰N‰NÀ P:“²Š+/// A widget that manages scrolling in one dimension and informs the [Viewport]
-/// through which the content is viewed.
-///
-/// [Scrollable] implements the interaction model for a scrollable widget,
-/// including gesture recognition, but does not have an opinion about how the
-/// viewport, which actually displays the children, is constructed.
-///
-/// It's rare to construct a [Scrollable] directly. Instead, consider [ListView]
-/// or [GridView], which combine scrolling, viewporting, and a layout model. To
-/// combine layout models (or to use a custom layout mode), consider using
-/// [CustomScrollView].
-///
-/// The static [Scrollable.of] and [Scrollable.ensureVisible] functions are
-/// often used to interact with the [Scrollable] widget inside a [ListView] or
-/// a [GridView].
-///
-/// To further customize scrolling behavior with a [Scrollable]:
-///
-/// 1. You can provide a [viewportBuilder] to customize the child model. For
-///    example, [SingleChildScrollView] uses a viewport that displays a single
-///    box child whereas [CustomScrollView] uses a [Viewport] or a
-///    [ShrinkWrappingViewport], both of which display a list of slivers.
-///
-/// 2. You can provide a custom [ScrollController] that creates a custom
-///    [ScrollPosition] subclass. For example, [PageView] uses a
-///    [PageController], which creates a page-oriented scroll position subclass
-///    that keeps the same page visible when the [Scrollable] resizes.
-///
-/// ## Persisting the scroll position during a session
-///
-/// Scrollables attempt to persist their scroll position using [PageStorage].
-/// This can be disabled by setting [ScrollController.keepScrollOffset] to false
-/// on the [controller]. If it is enabled, using a [PageStorageKey] for the
-/// [key] of this widget (or one of its ancestors, e.g. a [ScrollView]) is
-/// recommended to help disambiguate different [Scrollable]s from each other.
-///
-/// See also:
-///
-///  * [ListView], which is a commonly used [ScrollView] that displays a
-///    scrolling, linear list of child widgets.
-///  * [PageView], which is a scrolling list of child widgets that are each the
-///    size of the viewport.
-///  * [GridView], which is a [ScrollView] that displays a scrolling, 2D array
-///    of child widgets.
-///  * [CustomScrollView], which is a [ScrollView] that creates custom scroll
-///    effects using slivers.
-///  * [SingleChildScrollView], which is a scrollable widget that has a single
-///    child.
-///  * [ScrollNotification] and [NotificationListener], which can be used to watch
-///    the scroll position without using a [ScrollController].  À ZZ À Zj    À ZlÀ ZlÀ Zz   À Z†À Z†À Z”   À ZÀ ZÀ Z­  À ZTÀ ZTa    À ZÑÀ Z» À ZÑ  À ZõÀ ZàÀ Zõ      À [)À [)À [: À [À [À [À [gÀ [  À Z À Z NÀ Z&    À _OÀ _?À _O  À _ßÀ _ĞÀ _ß  À crÀ cfÀ cr À d¡À d¸À d¹À dˆÀ djPÀ dˆ  À dÕÀ dÁ"À dÕ  À dúÀ dè+À dú  À e/À e1À e/ À w“À wœÀ wÀ w}À wm1À w} À yÀ y
-À y"À yÀ y#À y$À xäÀ x»jÀ xä À yNÀ yWÀ yXÀ y:À y*/À y: À y÷À zÀ zÀ yıÀ zÀ yşÀ zÀ yÚÀ y¶iÀ yÚ À z@À z)À z$!À z)  À zRÀ zLÀ zR  À ziÀ zcÀ zi  À ‰òÀ ‰ìÀ ‰ò  À ŠÀ ‰üÀ Š 
-   À ]ÙÀ ]ÙbÀ _$(/// The manager for this [Scrollable] widget's viewport position.
-///
-/// To control what kind of [ScrollPosition] is created for a [Scrollable],
-/// provide it with custom [ScrollController] that creates the appropriate
-/// [ScrollPosition] in its [ScrollController.createScrollPosition] method.   À __À __mÀ _°:/// The resolved [ScrollPhysics] of the [ScrollableState].   À _îÀ _î‚AÀ a/// An [Offset] that represents the absolute distance from the origin, or 0,
-/// of the [ScrollPosition] expressed in the associated [Axis].
-///
-/// Used by [EdgeDraggingAutoScroller] to progress the position forward when a
-/// drag gesture reaches the edge of the [Viewport].   À b5À b5jÀ bJ   À b¥À b¦À b¥À b¥EÀ bÄ   À bğÀ bñÀ bğÀ bğ.À c   À c$À c%À c$À c$>À c<   À cŠÀ c‹À cŠÀ cŠYÀ c©   À céÀ cêÀ céÀ cé8À d   À d'À d(À d'À d'?À d@     À e™À e™ƒ­À e    À iyÀ iyÀ iŒ   À i—À i—À iœ À iLÀ iMÀ iZÀ i[À iLÀ iL[À il    À jØÀ jØÀ jß À j­À j®À j»À j¼À j­À j­wÀ jÍ   À l*À l+À l8À l9À l*À l*€®À lJ   À lŞÀ lßÀ lìÀ líÀ lŞÀ lŞ<À lş    À n;À n;À nF  À n À n ƒ€À n%    À qÖÀ qÖÀ qá À q¦À q§À q´À qµÀ q¦À q¦„YÀ qÆ   À vÀ vÀ vÀ vÀ vÀ vPÀ v%    À wÙÀ wÙÀ wî À w¥À w¦À w²À w³À w¥À w¥€ßÀ wÅ    À z­À z­
-À z² À z‚À zƒÀ zÀ zÀ z‚À z‚ÁÀ z¢    À ˆzÀ ˆz
-À ˆ À ˆIÀ ˆJÀ ˆVÀ ˆWÀ ˆIÀ ˆI†À ˆi    À Š3À Š3À ŠC  À ŠÀ Š€–À Š#    À ŠĞÀ ŠĞÀ Šá  À ŠºÀ ŠºïÀ Š¿    À ŒÆÀ ŒÆÀ ŒØ  À Œ¯À Œ¯€ÒÀ Œ´    À ›À ›À ª  À ‡À ‡€åÀ Œ    À rÀ r‚+À w    À £À £-À ¨    À ÖÀ Ö-À Û    À ‘ÕÀ ‘ÕÀ ‘Ü  À ‘ªÀ ‘ª€ÂÀ ‘±    À “;À “;À “N  À “À “ƒìÀ “"    À —)À —)À —<  À —À —ƒCÀ —    À špÀ špÀ š}  À šVÀ šV‚[À š[    À œİÀ œİ&À œ÷  À œ·À œ·‹À œ¼    À \À \À i   À rÀ rÀ y  À HÀ H—À O    À  !À  !À  . À ŸùÀ ŸúÀ  À  À ŸùÀ ŸùˆkÀ      À ©À ©À ©Œ   À ©›À ©›À ©¢   À ©¸À ©¸!À ©Á   À ©àÀ ©àÀ ©æ   À ª À ª VÀ ª   À ª]À ª] À ªk 
-À ©®À ©ÌÀ ©ÔÀ ©ÕÀ ©îÀ ©ôÀ ©õÀ ª0À ªMÀ ªNÀ ©MÀ ©M‚yÀ ©c    À ¬ À ¬ &À ¬ À «ÌÀ «ÍÀ «ÚÀ «ÛÀ «ÌÀ «Ì7À «ì  À [rÀ [rÀ Q”À ]GÄ/// State object for a [Scrollable] widget.
-///
-/// To manipulate a [Scrollable] widget's scroll position, use the object
-/// obtained from the [position] property.
-///
-/// To be informed of when a [Scrollable] widget is scrolling, use a
-/// [NotificationListener] to listen for [ScrollNotification] notifications.
-///
-/// This class is not intended to be subclassed. To specialize the behavior of a
-/// [Scrollable], provide it with a [ScrollPhysics].  À ® À ®#    À ®+À ®+À ®9   À ®EÀ ®EÀ ®S   À ®bÀ ®bÀ ®p   À ®€À ®€À ®  À ®À ®€™    À ®·À ®¡À ®·  À ®ÖÀ ®ÁÀ ®Ö  À ®ğÀ ®ãÀ ®ğ  À ¯À ®ú"À ¯     À ¯#À ¯$À ¯#À ¯#bÀ ¯Q  À ­
-À ­
-‚~À ­Ê€µ/// A widget to handle selection for a scrollable.
-///
-/// This widget registers itself to the [registrar] and uses
-/// [SelectionContainer] to collect selectables from its subtree.   À °À ¯ã=À °     À °'À °(À °'À °'€ÃÀ °9    À ±À ±%À ±. À °ğÀ °ñÀ °ğÀ °ğ€åÀ ±   À ±ÛÀ ±ÜÀ ±ÛÀ ±Û[À ±í    À ²VÀ ²VÀ ²c À ²<À ²=À ²<À ²<€ÃÀ ²P  À ¯ŒÀ ¯ŒƒvÀ ¯’   À ´ê À µ    À µÀ µÀ µ   À µ&À µ& À µ> À µZÀ µPÀ µ\À µ{À µmÀ µ}À µ•À µîÀ µ À µ¾À µ°À µÀÀ ´êÀ ´ê?   À ¶À ¶„À ¶p/À ¶„ À ·À ¶òÀ ¶Ş>À ¶ò  À ·9À ·#À ·9  À ·bÀ ·C,À ·b À ·’À ·yÀ ·t#À ·y  À ·¤À ·œ(À ·¤  À ·ÑÀ ·É&À ·Ñ À ¸lÀ ¸MÀ ¸H)À ¸M  À ¸´À ¸¥À ¸´ À ¿‘À ¿’À ¿}À ¿À ¿~À ¿ŠÀ ¿YÀ »ÊƒÉÀ ¿Yƒ@/// Stores the scroll offset when a scrollable receives the last
-/// [SelectionEdgeUpdateEvent].
-///
-/// The stored scroll offset may be null if a scrollable never receives a
-/// [SelectionEdgeUpdateEvent].
-///
-/// When a new [SelectionEdgeUpdateEvent] is dispatched to a selectable, this
-/// updater checks the current scroll offset against the one stored in these
-/// records. If the scroll offset is different, it synthesizes an opposite
-/// [SelectionEdgeUpdateEvent] and dispatches the event before dispatching the
-/// new event.
-///
-/// For example, if a selectable receives an end [SelectionEdgeUpdateEvent]
-/// and its scroll offset in the records is different from the current value,
-/// it synthesizes a start [SelectionEdgeUpdateEvent] and dispatches it before
-/// dispatching the original end [SelectionEdgeUpdateEvent].À ¿ìÀ ¿íÀ ¿ØÀ ¿ëÀ ¿ÙÀ ¿åÀ ¿¶À ¿˜VÀ ¿¶    À ¸xÀ ¸x)À ¸‹    À ¸ÏÀ ¸ÏÀ ¸Ş  À ¸ÂÀ ¸Â€ßÀ ¸Æ    À º3À º3‘À º8   À ¿õÀ ¿öÀ ¿õÀ ¿õ–À À    À ÁÃÀ ÁÃÀ Á× À Á‘À Á’À Á‘À Á‘eÀ Á®    À Ã3À Ã3À ÃL À ÂüÀ ÂıÀ ÂüÀ Âü‡*À Ã    À ÊQÀ ÊQÀ ÊX  À Ê,À Ê,ƒÍÀ Ê3    À ÏÂÀ ÏÂÀ ÏÇ   À ÏåÀ ÏåÀ Ïê À ÏÚÀ ÏûÀ ÍÿÀ Íÿˆ^À Ï˜~/// Infers the [_currentDragStartRelatedToOrigin] and
-/// [_currentDragEndRelatedToOrigin] from the geometry.
-///
-/// This method is called after a select word and select all event where the
-/// selection is triggered by none drag events. The
-/// [_currentDragStartRelatedToOrigin] and [_currentDragEndRelatedToOrigin]
-/// are essential to handle future [SelectionEdgeUpdateEvent]s.   À ÖÀ ÖÀ Ö¨ À ÖcÀ ÖdÀ ÖcÀ ÖcŠÀ Ö€    À Ø!À Ø!À Ø: À ×óÀ ×ôÀ ×óÀ ×ó-À Ø    À ÙcÀ Ùc$À Ù‚ À Ù&À Ù'À Ù&À Ù&‚dÀ ÙC    À ÛĞÀ ÛĞ'À Ûò À ÛÀ Û‘À ÛÀ Û‚mÀ Û­    À ŞÀ ŞÀ Ş  À ŞÀ ŞŒ¾À Ş    À êèÀ êèÀ êï  À êÇÀ êÇ6À êÌ    À ìÀ ìÀ ì6  À ìÀ ì€ÙÀ ì    À íÀ íÀ í(   À í4À í4À íC À ìâÀ ìãÀ ìâÀ ìâ…%À ìÿ    À ò2À ò2À ò= À òÀ òÀ òÀ ò‡CÀ ò   À ùVÀ ùWÀ ùVÀ ùV€àÀ ùh  À ³À ³À G3À ´y/// This updater handles the case where the selectables change frequently, and
-/// it optimizes toward scrolling updates.
-///
-/// It keeps track of the drag start offset relative to scroll origin for every
-/// selectable. The records are used to determine whether the selection is up to
-/// date with the scroll position when it sends the drag update event to a
-/// selectable.  À ÿ6 À ÿF    À ÿNÀ ÿN	À ÿT   À ÿ^À ÿ^À ÿl   À ÿ{À ÿ{$À ÿ‰   À ÿ¦À ÿ¦À ÿ´   À ÿ¿À ÿ¿ À ÿÍ   À ÿæÀ ÿæÀ ÿì 
-À ÿûÀ À 7À À À À À 3À  À 6À ÿ0À ÿ0	    À TÀ ?À T  À lÀ a!À l  À ’À ‡À ’  À ´À ©À ´      À öÀ öÀ À ¿À ÀÀ ¿À ¿À ã    ÀıÀıÀ
-   ÀÀ#À* ÀØÀÙÀØÀØÀê  À ûÛÀ ûÛ‡À şôƒ/// With [_ScrollSemantics] certain child [SemanticsNode]s can be
-/// excluded from the scrollable area for semantics purposes.
-///
-/// Nodes, that are to be excluded, have to be tagged with
-/// [RenderViewport.excludeFromScrolling] and the [RenderAbstractViewport] in
-/// use has to add the [RenderViewport.useTwoPaneSemantics] tag to its
-/// [SemanticsConfiguration] by overriding
-/// [RenderObject.describeSemanticsConfiguration].
-///
-/// If the tag [RenderViewport.useTwoPaneSemantics] is present on the viewport,
-/// two semantics nodes will be used to represent the [Scrollable]: The outer
-/// node will contain all children, that are excluded from scrolling. The inner
-/// node, which is annotated with the scrolling actions, will house the
-/// scrollable children.  À- ÀC    ÀKÀK Àc   ÀrÀr$À€   ÀÀÀ«   À¶À¶ ÀÄ   ÀİÀİÀè ÀÀ÷ÀÀ-ÀÀ/ÀcÀOÀeÀÀ†ÀŒÀ‡À-À-œ    ÀQÀBÀQ  ÀäÀßÀä  ÀÂÀ½	ÀÂ  À	ÀÀ	  ÀNÀ?ÀN    ÀÏÀÏoÀ(B/// Whether this render object is excluded from the semantic tree.   ÀkÀkpÀ©1/// Whether this node can be scrolled implicitly.   ÀÍÀÍ3ÀÖ    ÀlÀlÀ{  À_À_Àc    ÀÀ
-À   À À €·À    À8À8
-À=  À!À!€ªÀ%    ÀèÀèÀï  ÀÑÀÑ€ØÀÖ    À	àÀ	àÀ	÷ À	¯À	°À	¯À	¯‚ŠÀ	Á    ÀÀÀ›   À¦À¦À½   ÀÊÀÊ Àâ À_À`À_À_„tÀq   ÀÙÀÚÀÙÀÙ^Àë  ÀôÀôFÀú      ÀÀÀÀ/À&    ÀäÀåÀäÀä2Àù    À=À=ÀE ÀÀÀÀQÀ.    À–À–À ÀsÀtÀsÀsTÀ‡   ÀÍÀÎÀÍÀÍ=Àâ  À À ¢À¦   À] Àu  
-  À}À}	Àƒ   ÀÀÀ›   À³À³ÀÁ   À×À×Àå   ÀûÀûÀ    ÀÀÀ   À3À3!À8   À[À[5À`   À—À—0Àœ   ÀÎÀÎ-ÀÓ 
-ÀOÀwÀ‹ÀŒÀ°ÀÁÀÂÀåÀôÀõÀ¶À¶‚M €”/// Creates a widget that scrolls in two dimensions.
-///
-/// The [horizontalDetails], [verticalDetails], and [viewportBuilder] must not
-/// be null. 	 À‡À	€’À‡\/// How scrolling gestures should lock to one axis, or allow free movement
-/// in both axes. ÀÀ¢€ÿÀ€É/// The configuration of the horizontal [Scrollable].
-///
-/// These [ScrollableDetails] can be used to set the [AxisDirection],
-/// [ScrollController], [ScrollPhysics] and more for the horizontal axis. À ’À¨€ùÀ ’€Å/// The configuration of the vertical [Scrollable].
-///
-/// These [ScrollableDetails] can be used to set the [AxisDirection],
-/// [ScrollController], [ScrollPhysics] and more for the vertical axis. À"QÀ ¨¸À"Qi/// Builds the viewport through which the scrollable content is displayed.
-///
-/// A [TwoDimensionalViewport] uses two given [ViewportOffset]s to determine
-/// which part of its content is actually visible through the viewport.
-///
-/// See also:
-///
-///  * [TwoDimensionalViewport], which is a viewport that displays a span of
-///    widgets in both dimensions. À"öÀ"g€¢À"öd/// {@macro flutter.widgets.Scrollable.incrementCalculator}
-///
-/// This value applies in both axes. À$2À#/À$2/// {@macro flutter.widgets.scrollable.restorationId}
-///
-/// Internally, the [TwoDimensionalScrollable] will introduce a
-/// [RestorationScope] that will be assigned this value. The two [Scrollable]s
-/// within will then be given unique IDs within this scope. À$ÀÀ$F€À$Àe/// {@macro flutter.widgets.scrollable.excludeFromSemantics}
-///
-/// This value applies to both axes. À%[À$Û€À%[`/// {@macro flutter.widgets.scrollable.hitTestBehavior}
-///
-/// This value applies to both axes. À%õÀ%q€•À%õb/// {@macro flutter.widgets.scrollable.dragStartBehavior}
-///
-/// This value applies in both axes.    À&À&À&À&^À&:    À*À*À*  À&qÀ&q„vÀ*	ƒ2/// The state from the closest instance of this class that encloses the given
-/// context, or null if none is found.
-///
-/// Typical usage is as follows:
-///
-/// ```dart
-/// TwoDimensionalScrollableState? scrollable = TwoDimensionalScrollable.maybeOf(context);
-/// ```
-///
-/// Calling this method will create a dependency on the closest
-/// [TwoDimensionalScrollable] in the [context]. The internal [Scrollable]s
-/// can be accessed through [TwoDimensionalScrollableState.verticalScrollable]
-/// and [TwoDimensionalScrollableState.horizontalScrollable].
-///
-/// Alternatively, [Scrollable.maybeOf] can be used by providing the desired
-/// [Axis] to the `axis` parameter.
-///
-/// See also:
-///
-/// * [TwoDimensionalScrollable.of], which is similar to this method, but
-///   asserts if no [Scrollable] ancestor is found.   À/À/À/$  À*íÀ*í‡ÆÀ/ƒ¹/// The state from the closest instance of this class that encloses the given
-/// context.
-///
-/// Typical usage is as follows:
-///
-/// ```dart
-/// TwoDimensionalScrollableState scrollable = TwoDimensionalScrollable.of(context);
-/// ```
-///
-/// Calling this method will create a dependency on the closest
-/// [TwoDimensionalScrollable] in the [context]. The internal [Scrollable]s
-/// can be accessed through [TwoDimensionalScrollableState.verticalScrollable]
-/// and [TwoDimensionalScrollableState.horizontalScrollable].
-///
-/// If no [TwoDimensionalScrollable] ancestor is found, then this method will
-/// assert in debug mode, and throw an exception in release mode.
-///
-/// Alternatively, [Scrollable.of] can be used by providing the desired [Axis]
-/// to the `axis` parameter.
-///
-/// See also:
-///
-/// * [TwoDimensionalScrollable.maybeOf], which is similar to this method,
-///   but returns null if no [TwoDimensionalScrollable] ancestor is found. ÀÁÀÁšõÀƒ¥/// A widget that manages scrolling in both the vertical and horizontal
-/// dimensions and informs the [TwoDimensionalViewport] through which the
-/// content is viewed.
-///
-/// [TwoDimensionalScrollable] implements the interaction model for a scrollable
-/// widget in both the vertical and horizontal axes, including gesture
-/// recognition, but does not have an opinion about how the
-/// [TwoDimensionalViewport], which actually displays the children, is
-/// constructed.
-///
-/// It's rare to construct a [TwoDimensionalScrollable] directly. Instead,
-/// consider subclassing [TwoDimensionalScrollView], which combines scrolling,
-/// viewporting, and a layout model in both dimensions.
-///
-/// See also:
-///
-///  * [TwoDimensionalScrollView], an abstract base class for displaying a
-///    scrolling array of children in both directions.
-///  * [TwoDimensionalViewport], which can be used to customize the child layout
-///    model.   À5iÀ5W-À5i  À5›À5‰/À5› À5üÀ6À6À6À6À6À5ŞÀ5½[À5Ş À6^À6gÀ6wÀ6hÀ6xÀ6yÀ6>À6]À6>    À6À6À7€Ù/// The [ScrollableState] of the vertical axis.
-///
-/// Accessible by calling [TwoDimensionalScrollable.of].
-///
-/// Alternatively, [Scrollable.of] can be used by providing [Axis.vertical]
-/// to the `axis` parameter.   À8À8™À9€İ/// The [ScrollableState] of the horizontal axis.
-///
-/// Accessible by calling [TwoDimensionalScrollable.of].
-///
-/// Alternatively, [Scrollable.of] can be used by providing [Axis.horizontal]
-/// to the `axis` parameter.   À9µÀ9¶À9ÃÀ9ÄÀ9µÀ9µ:À9Õ    À;%À;%"À;> À:õÀ:öÀ;À;À:õÀ:õ†øÀ;    ÀBÀBÀB( ÀAóÀAôÀBÀBÀAóÀAó‹1ÀB   ÀM*ÀM+ÀM8ÀM9ÀM*ÀM*€¢ÀMJ  À2ºÀ2º›À5‚@/// State object for a [TwoDimensionalScrollable] widget.
-///
-/// To manipulate one of the internal [Scrollable] widget's scroll position, use
-/// the object obtained from the [verticalScrollable] or [horizontalScrollable]
-/// property.
-///
-/// To be informed of when a [TwoDimensionalScrollable] widget is scrolling,
-/// use a [NotificationListener] to listen for [ScrollNotification]s.
-/// Both axes will have the same viewport depth since there is only one
-/// viewport, and so should be differentiated by the [Axis] of the
-/// [ScrollMetrics] provided by the notification.  ÀNï ÀO    ÀOÀO&ÀO#   ÀOBÀOBÀOQ  ÀNéÀNéu    ÀOˆÀOd<ÀOˆ      ÀOÌÀOÌ"ÀOë ÀO§ÀO¨ÀO§ÀO§RÀO¹  ÀN§ÀN§UÀN­   ÀPj ÀP    ÀP‰ÀP‰	ÀP   ÀP™ÀP™ÀP§   ÀP»ÀP»ÀPÊ   ÀPàÀPàÀPï   ÀQÀQÀQ	   ÀQÀQÀQ    ÀQ.ÀQ.ÀQ4   ÀQGÀQGÀQM   ÀQgÀQgÀQm   ÀQˆÀQˆÀQ   ÀQ¦ÀQ¦ÀQ¬   ÀQÀÀQÀÀQÆ   ÀQÜÀQÜ5ÀQá ÀQøÀRÀRÀRÀR!ÀRjÀRDÀR0ÀR"ÀR3ÀR@ÀRAÀRUÀRGÀRXÀReÀRfÀPdÀPd‚    ÀRÀRr/ÀR  ÀRÇÀR¦.ÀRÇ     ÀRÛÀRÜÀRÛÀRÛZÀS  ÀP.ÀP.ƒ
-ÀP4    ÀTpÀTjÀTp  ÀT‡ÀTÀT‡    ÀS|ÀS|qÀS•    ÀSñÀSñsÀT  	   ÀUÀUÀU$   ÀU3ÀU3ÀU:   ÀUPÀUP!ÀUY   ÀUxÀUxÀU~   ÀU˜ÀU˜VÀU¶   ÀUõÀUõ ÀV ÀTØÀTÙÀUFÀUdÀUlÀUmÀU†ÀUŒÀUÀUÈÀUåÀUæÀTØÀTØ‚`ÀTû    ÀWWÀWWÀW^  ÀW>ÀW>³ÀWC    ÀYÀYÀY) ÀX÷ÀXøÀX÷ÀX÷ôÀY	    À[À[À[% ÀZñÀZòÀZñÀZñ„À[    À_«À_«À_½ À_‡À_ˆÀ_‡À_‡‡öÀ_™    Àg¤Àg¤Àg³ ÀgƒÀg„ÀgƒÀgƒƒwÀg•   Àk ÀkÀk Àk ¢Àk    ÀlÅÀlÅ
-ÀlÊ Àl¨Àl©Àl¨Àl¨‰FÀlº    ÀvÀvÀv"   Àv+Àv+Àv2 ÀuôÀuõÀuôÀuô¸Àv  ÀS<ÀS<¤sÀSB   Àx! Àx:    ÀxBÀxB	ÀxH   ÀxRÀxRÀx`   ÀxwÀxwÀx†   ÀxœÀxœÀx«   Àx¿Àx¿ÀxÅ   ÀxÖÀxÖÀxÜ   ÀxêÀxêÀxğ   ÀyÀyÀy	   Ày#Ày#Ày)   ÀyDÀyDÀyJ   ÀybÀybÀyh   Ày|Ày|Ày‚   Ày˜Ày˜5Ày Ày´ÀyÈÀyÉÀy×ÀyİÀz)ÀzÀyìÀyŞÀyïÀyüÀyıÀzÀzÀzÀz#Àz$ÀxÀx‚    ÀzRÀz11ÀzR  Àz‚Àzg/Àz‚     ÀzÀzÀzÀz^ÀzÉ  ÀwãÀwãƒÀwé    À{YÀ{D'À{Y    À{rÀ{rqÀ{‘    À{çÀ{çsÀ|     À|`À|aÀ|`À|`€ÛÀ|r    À~kÀ~kÀ~x   À~‡À~‡À~   À~¤À~¤!À~­   À~ÌÀ~ÌÀ~Ò   À~ìÀ~ìVÀ
-   ÀIÀI ÀW À~,À~-À~šÀ~¸À~ÀÀ~ÁÀ~ÚÀ~àÀ~áÀÀ9À:À~,À~,ƒ.À~O    À}À}
-À‚ À`ÀaÀ`À`…éÀr    À‡pÀ‡pÀ‡}   À‡†À‡†À‡ À‡OÀ‡PÀ‡OÀ‡O¸À‡c  À{À{À{     À/À/€½Àè€¬/// This behavior will not allow for any diagonal scrolling.
-///
-/// Drag gestures in one direction or the other will lock the input axis until
-/// the gesture is released. ÀóÀóÀ€ş/// This behavior will only allow diagonal scrolling on a weighted
-/// scale per gesture event.
-///
-/// This means that after initially evaluating the drag gesture, the weighted
-/// evaluation (based on [kTouchSlop]) stands until the gesture is released. ÀÀ?ÀB/// This behavior will only allow diagonal scrolling on a weighted
-/// scale that is evaluated throughout a gesture event.
-///
-/// This means that during each update to the drag gesture, the scrolling
-/// axis will be allowed to scroll diagonally if it exceeds the
-/// [kTouchSlop]. À[À[^ÀµS/// This behavior allows free movement in any and all directions when
-/// dragging.    ÀYÀY„dÀ`/// Specifies how to configure the [DragGestureRecognizer]s of a
-/// [TwoDimensionalScrollable].      À ú\À ú\À úl  À ú=À ú=šÀ úD      ††€Ë†ˆo/// Signature used by [Scrollable] to build the viewport through which the
-/// scrollable content is displayed.  †İ†İ4‡e}/// Signature used by [TwoDimensionalScrollable] to build the viewport through
-/// which the scrollable content is displayed.  ‰‰F‰  	  €²  package:flutter/material.dart  €è  page_storage.dart    page_view.dart  /  scroll_metrics.dart  V  scroll_notification.dart  ‚  scroll_view.dart  ¦  single_child_scroll_view.dart  ×   two_dimensional_scroll_view.dart  ‚  two_dimensional_viewport.dart ‰ú =€ˆ€§€©€Ú€ß&MyÎ‚‚3‚=‚?‚U‚r‚t‚Ÿ‚È‚òƒƒEƒGƒ]ƒwƒ˜ƒ´ƒÚƒö„„=„b„„£„Â„â……'…K…k…€…™…›…Ò…Ô…í†††Z†€†Û†İ‡-‡]‡†‡œ‡¹‡áˆˆˆˆCˆGˆˆÜ‰‰L‰N‰Ÿ‰É‰ÎŠŠiŠ®Š³‹‹V‹¢‹»‹ÀŒŒ]ŒpŒuŒ·Œ¼
-Zéî8zËPU¤öCŞãò÷‘A‘r‘Ã‘á’1’K’š’¹“	““l“¬“×“ı””#”Q”g”z””½”å••:•S•m•••É–––N––ˆ–×—(—r—À˜˜/˜6˜_˜u˜›˜˜Ö™(™9™@™™àš.štšÄ››4›;›‹›Æ›Í›Ş›åœ1œZœpœ—œ™œÏX„‹ÚA“ËÒŸ ŸqŸÃ  ^ ® Ñ Ø é ğ¡B¡‘¡ä¡ú¢¢¢k¢r¢Ä££££#£n£¾¤¤-¤/¤q¤¾¥¥#¥*¥w¥É¦¦¦A¦¦Ê¦à§§§^§¬§Ê§Ñ¨"¨o¨º¨Ğ¨×¨è¨ï©A©V©z©|©ºªªª]ª”ªªª±ªÂªÉ««;«=«†««Ş«å¬2¬~¬Ë¬Ò­­g­n­­†­Ì®'®I®K®£®ã¯"¯)¯r¯¿°
-°*°1°}°Ì°ş±±N±U±f±m±½±à±ç±ı²+²-²i²¸²¿³³M³T³ ³í³ô´´´Z´m´ƒ´£´¥´âµ.µ5µƒµÈµÏ¶¶_¶¤¶½¶Ó¶ü¶ş·5·<·`·g·À¸¸[¸w¸y¸®¸µ¸ß¹¹¹&¹]¹_¹l¹²¹Şº0º}ºÂºÇºÉ»»D»K»o»v»…»Ç»Ò»Ù¼&¼n¼»¼â¼é½8½‰½×½õ½ü¾I¾š¾¶¾½¾Î¾Õ¿¿K¿”¿ÜÀ @À @hÀ @‡À @âÀ A6À AsÀ A¯À AËÀ AÔÀ AùÀ BOÀ BVÀ BhÀ BmÀ BoÀ BÀÀ BĞÀ B×À BûÀ CÀ CÀ CMÀ CXÀ C_À C¬À CôÀ DAÀ DhÀ DoÀ D¾À EÀ EZÀ EaÀ E®À EÿÀ FÀ F"À FoÀ FªÀ F±À FÂÀ FÉÀ GÀ GIÀ GŒÀ GØÀ GéÀ HÀ HHÀ HaÀ H³À HÖÀ HäÀ IÀ I>À I„À I×À J-À JeÀ JŒÀ J§À JµÀ JÒÀ JêÀ KAÀ KpÀ K€À KÀ K–À KªÀ KµÀ KÓÀ KØÀ KÚÀ L,À LkÀ LrÀ LÁÀ MÀ MdÀ MkÀ M¹À N	À NSÀ NZÀ N©À NóÀ O>À ObÀ OiÀ O¹À OÖÀ P.À P‰À P§À QÀ QEÀ QNÀ QzÀ QÅÀ QÌÀ QßÀ QäÀ QæÀ R6À RTÀ R[À RŸÀ RğÀ SÀ S9À SVÀ SsÀ S›À S»À TÀ T À TGÀ TIÀ T™À TéÀ U9À UÀ U¯À U·À UøÀ VÀ V_À VÀ V­À VñÀ WÀ W6À WSÀ WjÀ W•À WÆÀ WĞÀ WóÀ WõÀ X/À XTÀ X…À XŒÀ XÀ XÇÀ XëÀ XòÀ YÀ Y0À Y7À Y‚À Y‡À YŠÀ YŒÀ YŞÀ Z À ZRÀ Z·À Z¹À ZŞÀ [ À [À [À [BÀ [hÀ [mÀ [pÀ [rÀ [ŸÀ [¤À [ïÀ \À \ À \fÀ \´À \¹À ]À ]AÀ ]rÀ ]§À ]ÇÀ ]ÕÀ ]×À ^À ^#À ^rÀ ^ÀÀ _À _=À _[À _]À _›À _ÎÀ _êÀ _ìÀ `<À `À `†À `ØÀ aÀ aNÀ a„À a»À aóÀ b+À b1À b3À biÀ b¡À b£À b°À bìÀ bîÀ bûÀ c À c"À c/À cdÀ c†À cˆÀ c•À cåÀ cçÀ côÀ d#À d%À d2À dhÀ d½À d¿À dæÀ eÀ eLÀ eNÀ e—À e³À fÀ f1À f~À f¸À fúÀ füÀ g0À gPÀ g‡À gÕÀ h"À hYÀ hˆÀ hÀ h‘À hñÀ iÀ iCÀ iHÀ iJÀ iXÀ ieÀ i¯À iîÀ jÀ j?À jÀ j¤À j©À j«À j¹À jÆÀ jêÀ k"À kNÀ kšÀ kãÀ l!À l&À l(À l6À lCÀ lYÀ lÀ l¶À l½À lÕÀ lÚÀ lÜÀ lêÀ l÷À mÀ mgÀ m€À mÛÀ móÀ nÀ nÀ nÀ nTÀ n¦À nºÀ nÁÀ nëÀ oÀ ocÀ owÀ o~À oãÀ pÀ pWÀ paÀ p¢À p¸À pÁÀ péÀ qÀ qJÀ qLÀ qÀ q¢À q¤À q²À q¿À qïÀ rÀ rÀ rNÀ ryÀ rÇÀ rìÀ s À sLÀ s‚À s±À sÜÀ sìÀ t!À tRÀ t|À tÈÀ tèÀ u#À u.À u7À uqÀ u¥À u¬À u®À uÛÀ uõÀ uüÀ vÀ vÀ vÀ vÀ v2À vXÀ v„À v’À vÆÀ vóÀ vúÀ vüÀ wÀ w<À wRÀ wWÀ wYÀ wiÀ wkÀ w¡À w£À w°À w¾À wúÀ x/À xzÀ xÀ x†À xˆÀ x·À x¹À xûÀ y(À y\À y^À y´À yñÀ z"À zHÀ zJÀ zaÀ z~À z€À zÀ z›À z¼À {À {À {%À {8À {À {ÎÀ |À |XÀ |tÀ |‚À | À |½À } À },À }‚À }èÀ ~&À ~DÀ ~vÀ ~ªÀ ~àÀ À FÀ À ÔÀ €À €|À €ÂÀ &À lÀ ´À ÊÀ ŞÀ ìÀ ‚À ‚NÀ ‚|À ‚ÔÀ ‚íÀ ƒSÀ ƒ“À ƒ±À ƒãÀ „À „MÀ „}À „³À „úÀ …AÀ …ˆÀ …éÀ †/À †“À †ÙÀ ‡!À ‡7À ‡KÀ ‡YÀ ‡bÀ ‡iÀ ‡„À ‡«À ‡àÀ ˆ9À ˆ@À ˆEÀ ˆGÀ ˆTÀ ˆbÀ ˆ‰À ˆ³À ˆÂÀ ˆÉÀ ˆìÀ ‰!À ‰:À ‰“À ‰ÅÀ ‰ÌÀ ‰ÑÀ ‰ÓÀ ‰èÀ ‰êÀ ‰úÀ ŠÀ ŠÀ ŠOÀ ŠkÀ Š‡À Š±À Š¶À Š¸À ŠíÀ ‹8À ‹ŠÀ ‹´À ‹ĞÀ ŒÀ ŒÀ ŒnÀ ŒˆÀ ŒŸÀ Œ¦À Œ«À Œ­À ŒäÀ 4À aÀ ~À ƒÀ …À ¶À À 3À MÀ iÀ nÀ pÀ À ÅÀ À ^À rÀ À ˆÀ ¹À 	À 6À LÀ bÀ ~À šÀ ŸÀ ¡À ºÀ ÍÀ ÒÀ ÔÀ íÀ ‘ À ‘À ‘À ‘À ‘À ‘mÀ ‘¨À ‘æÀ ‘üÀ ’@À ’aÀ ’iÀ ’nÀ ’pÀ ’¼À “
-À “À “XÀ “³À “ÎÀ ”À ”VÀ ”©À ”úÀ •KÀ •›À •­À •İÀ •ßÀ –&À –PÀ –€À –®À –¶À –¸À —À —	À —À —FÀ —ƒÀ —ÑÀ —âÀ —ëÀ ˜(À ˜}À ˜ÓÀ ™À ™uÀ ™†À ™À ™ËÀ ™íÀ šFÀ šMÀ šRÀ šTÀ š‡À š±À šçÀ ›(À ›{À ›½À ›ãÀ œÀ œnÀ œ§À œ®À œ³À œµÀ À ,À ˆÀ ©À ÛÀ À %À ,À ?À DÀ FÀ ƒÀ «À ÓÀ ŸÀ Ÿ6À Ÿ>À Ÿ@À ŸkÀ Ÿ{À ŸÄÀ ŸÔÀ ŸÜÀ ŸáÀ ŸãÀ ŸõÀ Ÿ÷À  À  À  :À  ZÀ  ¹À ¡À ¡	À ¡2À ¡^À ¡fÀ ¡ÅÀ ¢
-À ¢1À ¢JÀ ¢eÀ ¢}À ¢¯À ¢ÓÀ ¢øÀ £"À £OÀ £À £ªÀ £éÀ ¤À ¤3À ¤bÀ ¤£À ¤³À ¤ÁÀ ¤ÍÀ ¤×À ¤ßÀ ¤áÀ ¥
-À ¥KÀ ¥†À ¥¨À ¥ÍÀ ¥ìÀ ¦1À ¦OÀ ¦‰À ¦£À ¦¯À ¦¹À ¦ÀÀ ¦ÂÀ ¦ïÀ ¦ñÀ §5À §…À §£À §ĞÀ §æÀ ¨À ¨"À ¨:À ¨DÀ ¨KÀ ¨MÀ ¨aÀ ¨fÀ ¨hÀ ¨·À ©À ©KÀ ©{À ©—À ©´À ©ÜÀ ©üÀ ªYÀ ª€À ªˆÀ ªÎÀ ªİÀ ªúÀ «À «*À «SÀ «‚À «ŠÀ «ÃÀ «ÈÀ «ÊÀ «ØÀ «åÀ ¬+À ¬WÀ ¬¨À ­ À ­À ­À ­
-À ­>À ­CÀ ­À ­ÄÀ ® À ®'À ®AÀ ®^À ®|À ®–À ®À ®ŸÀ ®¿À ®áÀ ®øÀ ¯À ¯!À ¯.À ¯‡À ¯ŠÀ ¯ŒÀ ¯áÀ °#À °%À °2À °HÀ °`À °¡À °½À °ßÀ °çÀ °ìÀ °îÀ °ûÀ ±<À ±cÀ ±•À ±ËÀ ±ÒÀ ±×À ±ÙÀ ±æÀ ±úÀ ²À ²3À ²8À ²:À ²GÀ ²oÀ ²À ²³À ²ØÀ ²ôÀ ²üÀ ³À ³À ³À ³VÀ ³‚À ³‡À ³ØÀ ´*À ´vÀ ´‡À ´èÀ µJÀ µgÀ µ˜À µ¨À µèÀ µóÀ ¶&À ¶+À ¶-À ¶nÀ ¶¢À ¶¤À ¶ÜÀ ·À ·!À ·AÀ ·rÀ ·šÀ ·ÇÀ ·òÀ ·ôÀ ¸FÀ ¸tÀ ¸vÀ ¸£À ¸ÀÀ ¸èÀ ¹À ¹À ¹À ¹SÀ ¹kÀ ¹À ¹£À ¹¥À ¹ğÀ º1À ºSÀ ºvÀ º…À ºŒÀ º°À ºûÀ »!À »2À »;À »bÀ »|À »ÁÀ »ÆÀ »ÈÀ ¼À ¼/À ¼6À ¼ƒÀ ¼¦À ¼­À ¼şÀ ½NÀ ½œÀ ½îÀ ¾ À ¾À ¾VÀ ¾§À ¾ùÀ ¿9À ¿–À ¿ñÀ ¿óÀ À À À!À ÀaÀ À•À ÀÜÀ ÀäÀ ÁÀ Á]À ÁeÀ ÁˆÀ ÁÀ ÁÀ ÁœÀ ÁáÀ ÂÀ Â?À ÂmÀ Â™À ÂÄÀ ÂóÀ ÂøÀ ÂúÀ ÃÀ ÃVÀ ÃµÀ ÃãÀ Ä<À ÄCÀ Ä…À ÄÀÀ ÅÀ ÅhÀ Å„À Å À ÅªÀ ÅÚÀ ÅşÀ Æ'À Æ1À Æ?À ÆÀ ÆíÀ Ç	À Ç%À Ç/À ÇaÀ Ç‡À Ç°À ÇºÀ ÇÁÀ ÈÀ ÈÀ ÈbÀ È´À ÈÇÀ ÈõÀ ÉÀ É2À É9À ÉbÀ É°À ÉÖÀ ÉÿÀ ÊÀ ÊÀ Ê#À Ê(À Ê*À ÊkÀ Ê¬À ÊñÀ ËÀ ËmÀ Ë»À ÌÀ Ì]À Ì˜À ÌÈÀ ÌÑÀ Í'À ÍHÀ ÍQÀ ÍXÀ ÍšÀ ÍöÀ ÍûÀ ÍıÀ Î6À ÎqÀ ÎxÀ ÎÈÀ ÎÿÀ ÏNÀ Ï‘À Ï¾À ÏáÀ ĞÀ Ğ
-À ĞLÀ ĞÀ ĞÆÀ ĞóÀ Ñ>À Ñ—À Ñ½À Ò À ÒcÀ Ò¤À Ò½À ÒşÀ ÓÀ ÓNÀ ÓbÀ Ó‹À Ó•À ÓœÀ ÓÇÀ ÔÀ ÔeÀ Ô‹À ÔÊÀ Õ+À ÕjÀ ÕƒÀ ÕÀÀ ÕÊÀ ÖÀ Ö"À ÖIÀ ÖSÀ ÖZÀ Ö_À ÖaÀ ÖnÀ Ö²À ÖŞÀ × À ×uÀ ×¢À ×ÏÀ ×ÖÀ ×êÀ ×ïÀ ×ñÀ ×şÀ ØDÀ Ø›À ØŞÀ Ù	À ÙÀ Ù"À Ù$À Ù1À ÙŒÀ ÙŞÀ Ú,À Ú|À Ú¼À Û"À ÛKÀ ÛlÀ ÛsÀ Û‡À ÛŒÀ ÛÀ Û›À ÛüÀ ÜQÀ ÜŸÀ ÜïÀ İ/À İ•À İ¾À İßÀ İæÀ İúÀ İÿÀ ŞÀ Ş&À ŞHÀ ŞgÀ ŞˆÀ ŞÀ ŞØÀ ß
-À ßNÀ ß\À ß™À ßÍÀ àÀ àÀ àIÀ àXÀ à_À àªÀ àóÀ áEÀ áWÀ árÀ ázÀ áàÀ âÀ â"À âkÀ â¾À ãÀ ã&À ã1À ãdÀ ã¶À ãÉÀ ãÔÀ äÀ äMÀ äXÀ äiÀ äŠÀ äÍÀ åÀ å,À å7À åcÀ å®À åÁÀ åÌÀ å÷À æAÀ æLÀ æ]À æ}À æÆÀ çÀ çnÀ çÀ çŒÀ ç¿À èÀ è$À è/À è\À è¨À è³À èÄÀ èäÀ é'À ésÀ é†À é‘À é½À êÀ êÀ ê&À êQÀ ê›À ê¦À ê·À ê¾À êÃÀ êÅÀ ëÀ ëCÀ ëˆÀ ëĞÀ ëúÀ ëÿÀ ìÀ ì@À ì]À ì‚À ì©À ìÑÀ ìÙÀ ìŞÀ ìàÀ ìíÀ íMÀ íhÀ í˜À íèÀ îÀ î?À îÀ î¶À îğÀ ï-À ïVÀ ï¦À ïôÀ ğÀ ğWÀ ğ–À ğÀÀ ğëÀ ñÀ ñiÀ ñ¹À ñÀÀ òÀ ò	À òÀ òÀ òLÀ òÀ òÙÀ óÀ ó7À óŠÀ óÄÀ ôÀ ôWÀ ôsÀ ôÀ ô™À ôÃÀ õÀ õÀ õoÀ õ¦À õôÀ õûÀ öOÀ ö‚À ö©À öúÀ ÷4À ÷xÀ ÷ÃÀ ÷ßÀ ÷ûÀ øÀ økÀ øÃÀ øúÀ ùFÀ ùMÀ ùRÀ ùTÀ ùaÀ ùuÀ ù¥À ùÓÀ ùøÀ úÀ ú3À ú8À ú;À ú=À ú€À ú³À úùÀ û@À ûˆÀ ûĞÀ ûÖÀ ûÙÀ ûÛÀ üÀ ü]À übÀ üÀ üíÀ ı5À ıaÀ ı•À ıšÀ ıëÀ ş:À ş‹À şÔÀ şîÀ ÿ.À ÿJÀ ÿZÀ ÿwÀ ÿ¢À ÿ»À ÿâÀ ÿôÀ ;À =À _À …À §À »À ½À ÊÀÀ3ÀNÀ…À´ÀÇÀÏÀÔÀÖÀãÀ;ÀMÀ†À›À¸ÀêÀïÀòÀôÀ+ÀGÀnÀ™À²ÀÙÀğÀÀHÀzÀ‘ÀÆÀËÀÍÀÀ@À]À…À¤À³ÀºÀóÀÀAÀbÀgÀiÀÀİÀşÀ*ÀWÀfÀmÀ“À´À¹À»ÀÉÀËÀÀÀGÀoÀ~À…À§ÀÈÀÍÀÏÀ	 À	+À	VÀ	À	‡À	¦À	«À	­À	ºÀ
-À
-5À
-\À
-€À
-À
-ÇÀ
-ôÀ+ÀbÀ”ÀğÀ&À/À6À;À=À[À]ÀjÀ‰À¢ÀÆÀíÀôÀQÀkÀ§À¶À½À¿ÀÀÀ0ÀdÀÀ²ÀõÀ7ÀUÀeÀ•ÀËÀÖÀôÀıÀÀ1À|ÀĞÀÕÀ×ÀäÀÿÀÀ4À9À<À>À‘À ÀâÀïÀÀÀ'ÀRÀjÀoÀqÀ~À§ÀÄÀÉÀËÀØÀôÀÀÀÀÀAÀDÀFÀWÀYÀ›À¼ÀÀ-ÀmÀtÀÆÀæÀïÀñÀ7ÀWÀ^À¯ÀÿÀÀÀYÀ”À›ÀèÀ+À@ÀWÀYÀ¢À³À¼À¿ÀÁÀ
-ÀUÀmÀrÀÄÀÀIÀ‘À£À¨ÀôÀDÀ}À‚À‘À–ÀâÀÀlÀ{À´ÀìÀóÀEÀUÀyÀ‰À¯ÀÓÀ÷ÀÀ/ÀWÀ“ÀÊÀşÀÀÀUÀjÀÀ ÀÙÀàÀ)ÀvÀ¤À¦ÀİÀäÀ -À xÀ ¤À ¦À ôÀ ûÀ!KÀ!–À!À!®À!µÀ"À"+À"cÀ"eÀ"¤À"«À"ÓÀ#À#À#GÀ#NÀ#‘À#ãÀ$"À$BÀ$DÀ$„À$‹À$³À$×À$ÙÀ%À%À%CÀ%mÀ%oÀ%¬À%³À%ÛÀ&	À&À&À&mÀ&oÀ&ÀÀ&êÀ&ñÀ'À'À'+À'‰À'”À'›À'ŞÀ(-À(À(ÀÀ(ÇÀ)À)>À)EÀ)VÀ)]À)ªÀ)áÀ**À*fÀ*¶À*äÀ*éÀ*ëÀ+<À+LÀ+SÀ+wÀ+~À+À+åÀ+ğÀ+÷À,:À,‰À,ÛÀ-À-#À-tÀ-¹À-ÀÀ.À.2À.9À.JÀ.QÀ.ŸÀ.íÀ/0À/~À/À/µÀ/îÀ0À0YÀ0šÀ0¨À0ÅÀ1À1lÀ1¼À2À24À2OÀ2]À2jÀ2sÀ2‡À2’À2°À2µÀ2¸À2ºÀ2õÀ2úÀ3LÀ3À3¬À3±À3ÿÀ4FÀ4À4ÓÀ5À5UÀ5‡À5»À6À6}À6À6²À6¹À6õÀ6üÀ7KÀ7kÀ7—À7ÖÀ8À8À8À8IÀ8PÀ8ŒÀ8“À8äÀ9À92À9sÀ9¬À9±À9³À9ÁÀ9ÎÀ9äÀ:À:SÀ:ZÀ:’À:ÍÀ:ÔÀ:ìÀ:ñÀ:óÀ;À;À;LÀ;sÀ;¶À;¸À;ÉÀ<À<ZÀ<¨À<ÍÀ=À=?À=pÀ=À=ÜÀ>&À>DÀ>zÀ>µÀ>¾À>ÅÀ>ÇÀ>ÚÀ?4À?qÀ?¿À?äÀ@À@ZÀ@À@¼À@ıÀAGÀAeÀAÀAÚÀAãÀAêÀAïÀAñÀAÿÀBÀB4ÀBAÀBÀBÚÀBâÀBïÀCBÀCÀC˜ÀCšÀCÇÀCóÀDÀDEÀDhÀDŸÀDÙÀE1ÀEcÀEzÀE®ÀEìÀFÀFBÀF~ÀF¿ÀFõÀG1ÀGcÀGµÀGâÀHÀHOÀHÀHïÀI'ÀIBÀI|ÀIÀÀIàÀJÀJ^ÀJ¥ÀJßÀKÀKUÀK­ÀLÀLÀL$ÀL0ÀL:ÀLBÀLDÀLŠÀLÄÀLÆÀM!ÀM&ÀM(ÀM6ÀMCÀMWÀM„ÀM³ÀMÉÀMÎÀMÑÀMÓÀN
-ÀNEÀNƒÀN§ÀNçÀOÀO>ÀOYÀO`ÀObÀO£ÀO¥ÀO²ÀOûÀOşÀP ÀP.ÀPbÀP…ÀP•ÀP·ÀPÜÀPÿÀQÀQ*ÀQCÀQcÀQ„ÀQ¢ÀQ¼ÀQØÀRÀRnÀRpÀR¤ÀR×ÀRÙÀRæÀS7ÀS:ÀS<ÀSzÀS®ÀSïÀTÀTfÀThÀT}ÀT˜ÀTšÀTÖÀTãÀUÀU/ÀULÀUtÀU”ÀUñÀVÀV ÀV-ÀV;ÀVÀVßÀWÀWÀW5ÀW:ÀW<ÀWiÀWÀWÈÀXÀXKÀXqÀX¿ÀXÍÀXçÀXîÀXóÀXõÀYÀY5ÀYZÀYÀY‘ÀYÁÀYöÀZÀZiÀZ„ÀZ¼ÀZÃÀZèÀZíÀZïÀZüÀ[1À[_À[„À[«À[»À[âÀ\À\AÀ\zÀ\ªÀ\ßÀ]
-À]@À]_À]uÀ]·À]öÀ^3À^TÀ^„À^ÁÀ^ÖÀ^õÀ_FÀ_QÀ_XÀ_~À_ƒÀ_…À_’À_ÉÀ_ıÀ`.À`[À`‚À`±À`ŞÀ`æÀaÀaMÀazÀa¡ÀaĞÀaıÀbÀbÀb,ÀbSÀbŠÀbÁÀbÒÀbùÀcÀc^Àc•Àc¦ÀcÛÀdÀdGÀdyÀd©ÀdÖÀeÀeEÀeuÀe­Àe¸Àe¿ÀeÚÀeìÀfÀfdÀfÀf¡ÀféÀfúÀgÀg@ÀgGÀgzÀgÀgÀgÀg¿ÀgÛÀgóÀh/ÀhkÀhœÀhÙÀhõÀhıÀi0ÀimÀi‰Ài‘Ài“Ài¸ÀißÀiïÀjÀjTÀj{ÀjÀÀjÇÀj÷ÀjüÀjşÀkÀk)ÀkEÀk]Àk‚Àk©Àk¹ÀkéÀlÀlEÀlxÀlÀlŸÀl¤Àl¦Àl³ÀlÔÀlùÀm ÀmsÀmˆÀmªÀm»ÀmëÀn ÀnGÀn]Àn­ÀnûÀoFÀo–Ào¿ÀpÀpaÀpºÀpëÀqÀq3ÀqcÀq•ÀqÁÀqóÀr6ÀryÀr¼ÀsÀs[ÀsÀs°ÀsÀÀsÎÀt!ÀtpÀt³ÀtÓÀtôÀu!Àu\Àu»ÀuÈÀuÓÀuäÀuëÀuğÀuòÀuÿÀv<ÀvdÀvŒÀv»ÀvåÀvíÀw4Àw[Àw©Àw®Àw±Àw³ÀwãÀxÀx>ÀxNÀxsÀx˜Àx»ÀxÒÀxæÀxÿÀyÀy@Ày^ÀyxÀy”ÀyĞÀz-Àz/ÀzeÀz™Àz›Àz¨ÀzıÀ{ À{À{BÀ{nÀ{pÀ{¦À{åÀ|À|\À|^À|kÀ|À|¿À}À}8À}=À}?À}À}ÛÀ~*À~7À~gÀ~ƒÀ~ À~ÈÀ~èÀEÀlÀtÀœÀ»ÀÌÀëÀ€À€À€JÀ€TÀ€†À€—À€¶À€ÓÀ€êÀÀÀ'À)ÀWÀ\À^ÀkÀŒÀ±ÀØÀ‚ À‚@À‚bÀ‚sÀ‚£À‚ØÀ‚ÿÀƒÀƒaÀƒ±À„À„PÀ„¡À„ìÀ…)À…|À…ËÀ†À†.À†OÀ†|À†·À‡À‡#À‡.À‡?À‡FÀ‡KÀ‡MÀ‡ZÀ‡—À‡¿À‡çÀˆÀˆ@ÀˆHÀˆÀˆ¶À‰À‰	À‰   
-Scrollable_ScrollableScopeScrollableState_ScrollableSelectionHandler _ScrollableSelectionHandlerState%_ScrollableSelectionContainerDelegate_getDeltaToScrollOrigin_ScrollSemantics_RenderScrollSemantics_RestorableScrollOffsetDiagonalDragBehaviorTwoDimensionalScrollableTwoDimensionalScrollableState_TwoDimensionalScrollableScope_VerticalOuterDimension_VerticalOuterDimensionState_HorizontalInnerDimension_HorizontalInnerDimensionState	(flutter.widgets.Scrollable.axisDirectionÌThe direction in which this widget scrolls.
-
-For example, if the [Scrollable.axisDirection] is [AxisDirection.down],
-increasing the scroll position will cause content below the bottom of the
-viewport to become visible through the viewport. Similarly, if the
-axisDirection is [AxisDirection.right], increasing the scroll position
-will cause content beyond the right edge of the viewport to become visible
-through the viewport.
-
-Defaults to [AxisDirection.down].%flutter.widgets.Scrollable.controllerƒ	An object that can be used to control the position to which this widget is
-scrolled.
-
-A [ScrollController] serves several purposes. It can be used to control
-the initial scroll position (see [ScrollController.initialScrollOffset]).
-It can be used to control whether the scroll view should automatically
-save and restore its scroll position in the [PageStorage] (see
-[ScrollController.keepScrollOffset]). It can be used to read the current
-scroll position (see [ScrollController.offset]), or change it (see
-[ScrollController.animateTo]).
-
-If null, a [ScrollController] will be created internally by [Scrollable]
-in order to create and manage the [ScrollPosition].
-
-See also:
-
- * [Scrollable.ensureVisible], which animates the scroll position to
-   reveal a given [BuildContext]."flutter.widgets.Scrollable.physics„kHow the widgets should respond to user input.
-
-For example, determines how the widget continues to animate after the
-user stops dragging the scroll view.
-
-Defaults to matching platform conventions via the physics provided from
-the ambient [ScrollConfiguration].
-
-If an explicit [ScrollBehavior] is provided to
-[Scrollable.scrollBehavior], the [ScrollPhysics] provided by that behavior
-will take precedence after [Scrollable.physics].
-
-The physics can be changed dynamically, but new physics will only take
-effect if the _class_ of the provided object changes. Merely constructing
-a new instance with a different configuration is insufficient to cause the
-physics to be reapplied. (This is because the final object used is
-generated dynamically, which can be relatively expensive, and it would be
-inefficient to speculatively create this object each frame to see if the
-physics should be updated.)
-
-See also:
-
- * [AlwaysScrollableScrollPhysics], which can be used to indicate that the
-   scrollable should react to scroll requests (and possible overscroll)
-   even if the scrollable's contents fit without scrolling being necessary..flutter.widgets.Scrollable.incrementCalculator‚An optional function that will be called to calculate the distance to
-scroll when the scrollable is asked to scroll via the keyboard using a
-[ScrollAction].
-
-If not supplied, the [Scrollable] will scroll a default amount when a
-keyboard navigation key is pressed (e.g. pageUp/pageDown, control-upArrow,
-etc.), or otherwise invoked by a [ScrollAction].
-
-If [incrementCalculator] is null, the default for
-[ScrollIncrementType.page] is 80% of the size of the scroll window, and
-for [ScrollIncrementType.line], 50 logical pixels./flutter.widgets.scrollable.excludeFromSemantics2Whether the scroll actions introduced by this [Scrollable] are exposed
-in the semantics tree.
-
-Text fields with an overflow are usually scrollable to make sure that the
-user can get to the beginning/end of the entered text. However, these
-scrolling actions are generally not exposed to the semantics layer.*flutter.widgets.scrollable.hitTestBehavior€¾Defines the behavior of gesture detector used in this [Scrollable].
-
-This defaults to [HitTestBehavior.opaque] which means it prevents targets
-behind this [Scrollable] from receiving events.,flutter.widgets.scrollable.dragStartBehavior‚ŠDetermines the way that drag start behavior is handled.
-
-If set to [DragStartBehavior.start], scrolling drag behavior will
-begin at the position where the drag gesture won the arena. If set to
-[DragStartBehavior.down] it will begin at the position where a down
-event is first detected.
-
-In general, setting this to [DragStartBehavior.start] will make drag
-animation smoother and setting it to [DragStartBehavior.down] will make
-drag behavior feel slightly more reactive.
-
-By default, the drag start behavior is [DragStartBehavior.start].
-
-See also:
-
- * [DragGestureRecognizer.dragStartBehavior], which gives an example for
-   the different behaviors.(flutter.widgets.scrollable.restorationId³Restoration ID to save and restore the scroll offset of the scrollable.
-
-If a restoration id is provided, the scrollable will persist its current
-scroll offset and restore it during state restoration.
-
-The scroll offset is persisted in a [RestorationBucket] claimed from
-the surrounding [RestorationScope] using the provided restoration ID.
-
-See also:
-
- * [RestorationManager], which explains how state restoration works in
-   Flutter.)flutter.widgets.scrollable.scrollBehaviorA [ScrollBehavior] that will be applied to this widget individually.
-
-Defaults to null, wherein the inherited [ScrollBehavior] is copied and
-modified to alter the viewport decoration, like [Scrollbar]s.
-
-[ScrollBehavior]s also provide [ScrollPhysics]. If an explicit
-[ScrollPhysics] is provided in [physics], it will take precedence,
-followed by [scrollBehavior], and then the inherited ancestor
-[ScrollBehavior]. 3Ò

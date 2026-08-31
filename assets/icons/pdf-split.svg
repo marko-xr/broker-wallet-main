@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <g stroke="#000000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- Page -->
+  <path d="M28 16h48l16 16v80H28V16z"/>
+  <path d="M76 16v16h16"/>
+  <!-- Dashed split line -->
+  <path d="M64 28v8M64 44v8M64 60v8M64 76v8M64 92v8"/>
+  <!-- Scissors -->
+  <circle cx="52" cy="64" r="6"/>
+  <circle cx="76" cy="64" r="6"/>
+  <path d="M58 60l24-18M70 86L46 68"/>
+
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <g stroke="#000000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- House -->
+  <path d="M20 72l44-32 44 32"/>
+  <path d="M30 72v32h68V72"/>
+  <path d="M56 84h16v20H56z"/>
+  <!-- Percent -->
+  <circle cx="34" cy="38" r="10"/>
+  <circle cx="94" cy="24" r="10"/>
+  <path d="M42 30l36-12"/>
+
+  </g>
+</svg>

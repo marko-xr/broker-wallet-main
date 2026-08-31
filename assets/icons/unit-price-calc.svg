@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <g stroke="#000000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- Grid square -->
+  <rect x="18" y="22" width="44" height="44" rx="4"/>
+  <path d="M40 22v44M18 44h44"/>
+  <!-- Conversion arrows -->
+  <path d="M72 32h36M96 24l12 8-12 8"/>
+  <path d="M108 60H72M84 68l-12-8 12-8"/>
+  <!-- Price coin -->
+  <circle cx="92" cy="88" r="16"/>
+  <path d="M92 76v24M84 88h16"/>
+
+  </g>
+</svg>

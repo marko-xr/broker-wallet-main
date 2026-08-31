@@ -1,0 +1,1 @@
+enum AddRequestedMode { add, edit }

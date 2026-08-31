@@ -1,0 +1,265 @@
+// ========================================================================
+// FIRESTORE SECURITY RULES - OPTION A (RECOMMENDED)
+// Server-Enforced Quota System with Cloud Functions
+// ========================================================================
+// Items in quota-enforced sections MUST be created via Cloud Functions.
+// This prevents client-side quota bypass and ensures secure enforcement.
+// ========================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ========================================================================
+    // USER PROFILE DOCUMENTS
+    // ========================================================================
+    match /users/{userId} {
+      // Users can read their own profile (including counts)
+      allow read: if isOwner(userId);
+      
+      // Users CAN update their profile but NOT the counts field
+      // Counts are server-managed via Cloud Functions
+      allow update: if isOwner(userId) 
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['counts']);
+      
+      // Users can create their own profile
+      allow create: if isOwner(userId);
+      
+      // Users cannot delete their own profile (use admin SDK)
+      allow delete: if false;
+
+      // Idempotency tokens subcollection (server-managed)
+      match /idempotency_tokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    // ========================================================================
+    // QUOTA-ENFORCED SECTIONS (Subcollections under users/{userId})
+    // ========================================================================
+    // Sections: offers, requests, owners, offices, tools, quotations
+    // ALL writes MUST go through addItemWithQuota Cloud Function
+    match /users/{userId}/{section}/{itemId} {
+      allow read: if isOwner(userId) 
+        && section in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations'];
+      
+      // NO direct client writes - must use addItemWithQuota Cloud Function
+      allow write: if false;
+      
+      // Nested subcollections (e.g., media, notes attached to items)
+      match /{subcollection}/{subdocId} {
+        allow read: if isOwner(userId);
+        // Allow writes to subcollections since they don't affect quota count
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // ========================================================================
+    // ROOT-LEVEL QUOTA-ENFORCED COLLECTIONS (BLOCKED)
+    // ========================================================================
+    // Block direct writes to root-level collections that should use Cloud Functions
+    match /{collection}/{itemId} {
+      // Block all writes to quota-enforced collections at root level
+      allow write: if false 
+        && collection in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations'];
+      
+      // Allow reads if document has userId field matching authenticated user
+      allow read: if isAuthenticated()
+        && collection in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations']
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================================================
+    // OTHER USER SUBCOLLECTIONS (not quota-enforced)
+    // ========================================================================
+    // For collections like settings, preferences, brokers, watchmen, etc.
+    match /users/{userId}/{collection}/{docId} {
+      allow read, write: if isOwner(userId)
+        && !(collection in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations', 'idempotency_tokens']);
+      
+      // Nested subcollections
+      match /{subcollection}/{subdocId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ========================================================================
+    // AUDIT LOGS (server-only)
+    // ========================================================================
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    // ========================================================================
+    // FEEDBACK COLLECTION
+    // ========================================================================
+    match /feedback/{feedbackId} {
+      // Users can only create feedback (not read/update/delete)
+      allow create: if isAuthenticated() 
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'rating', 'comment', 'createdAt', 'appVersion', 'platform', 'status'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() > 0
+        && request.resource.data.status == 'unread'
+        && request.resource.data.userId is string
+        && request.resource.data.userName is string
+        && request.resource.data.userEmail is string
+        && request.resource.data.appVersion is string
+        && request.resource.data.platform is string;
+      
+      // Only admins can read/update feedback (implement admin role check)
+      // For now, no one can read feedback except through admin SDK
+      allow read, update, delete: if false;
+    }
+
+    // ========================================================================
+    // PHONE & EMAIL LOOKUP INDEXES
+    // ========================================================================
+    match /phone_lookup/{phoneE164} {
+      // Allow anyone to check if a phone exists (needed for signup/signin validation)
+      // This only reveals if a phone is registered, not who owns it
+      allow get: if true;
+      
+      // Only the authenticated user can create/update/delete their own lookup entry
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneE164 == phoneE164;
+    }
+
+    match /email_lookup/{email} {
+      // Allow anyone to check if an email exists (needed for signup/signin validation)
+      // This only reveals if an email is registered, not who owns it
+      allow get: if true;
+      
+      // Only the authenticated user can create/update/delete their own lookup entry
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.email == email;
+    }
+
+    // ========================================================================
+    // PENDING EMAIL VERIFICATIONS
+    // ========================================================================
+    match /pending_email_verifications/{verificationId} {
+      // Allow users to manage their own pending verifications
+      allow read, write, delete: if isAuthenticated()
+        && resource != null
+        && request.auth.uid == resource.data.userId;
+      
+      // Allow create when resource doesn't exist yet (for initial creation)
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'email', 'timestamp', 'verified', 'verificationSent', 'expiresAt'])
+        && request.resource.data.userId is string
+        && request.resource.data.email is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.verified is bool
+        && request.resource.data.verificationSent is bool
+        && request.resource.data.expiresAt is int;
+    }
+
+    // ========================================================================
+    // APP CONFIG (read-only for clients)
+    // ========================================================================
+    match /app_config/{docId} {
+      allow read: if isAuthenticated(); // All users can read app config
+      allow write: if false; // Only admins can write (handle via admin SDK)
+    }
+  }
+}
+    // FEEDBACK COLLECTION - Users can submit feedback for admin review
+    match /feedback/{feedbackId} {
+      // Users can only create feedback (not read/update/delete)
+      allow create: if isAuthenticated() 
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'rating', 'comment', 'createdAt', 'appVersion', 'platform', 'status'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() > 0
+        && request.resource.data.status == 'unread'
+        && request.resource.data.userId is string
+        && request.resource.data.userName is string
+        && request.resource.data.userEmail is string
+        && request.resource.data.appVersion is string
+        && request.resource.data.platform is string;
+      
+      // Only admins can read/update feedback (implement admin role check)
+      // For now, no one can read feedback except through admin SDK
+      allow read, update, delete: if false;
+    }
+
+    // PHONE LOOKUP INDEX - Allow reads for signup/signin validation, restrict writes to owning user
+    match /phone_lookup/{phoneE164} {
+      // Allow anyone to check if a phone exists (needed for signup/signin validation)
+      // This only reveals if a phone is registered, not who owns it
+      allow get: if true;
+      
+      // Only the authenticated user can create/update/delete their own lookup entry
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneE164 == phoneE164;
+    }
+
+    // EMAIL LOOKUP INDEX - Allow reads for signup/signin validation, restrict writes to owning user
+    match /email_lookup/{email} {
+      // Allow anyone to check if an email exists (needed for signup/signin validation)
+      // This only reveals if an email is registered, not who owns it
+      allow get: if true;
+      
+      // Only the authenticated user can create/update/delete their own lookup entry
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.email == email;
+    }
+
+    // ROOT-LEVEL COLLECTIONS (if you have any shared data)
+    // Only allow if the document has a userId field that matches the authenticated user
+    match /{collection}/{docId} {
+      allow read, write: if isAuthenticated()
+        && ((resource != null && resource.data.userId == request.auth.uid)
+            || (request.resource != null
+                && request.resource.data.userId == request.auth.uid));
+    }
+
+    // ADMIN COLLECTIONS (if needed for app configuration)
+    match /app_config/{docId} {
+      allow read: if isAuthenticated(); // All users can read app config
+      allow write: if false; // Only admins can write (handle via admin SDK)
+    }
+
+    // ------------ PENDING EMAIL VERIFICATIONS (owner-only) ------------
+    // Purpose: Temporary storage for email verification before adding to account
+    // Doc ID format: {userId}_{email_with_dots_and_at_replaced}
+    match /pending_email_verifications/{verificationId} {
+      // Allow users to manage their own pending verifications
+      allow read, write, delete: if isAuthenticated()
+        && request.auth.uid == resource.data.userId;
+      
+      // Allow create when resource doesn't exist yet (for initial creation)
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'email', 'timestamp', 'verified', 'verificationSent', 'expiresAt'])
+        && request.resource.data.userId is string
+        && request.resource.data.email is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.verified is bool
+        && request.resource.data.verificationSent is bool
+        && request.resource.data.expiresAt is int;
+    }
+  }
+}

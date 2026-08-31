@@ -1,0 +1,45 @@
+﻿# Node.js
+node_modules/
+.next/
+out/
+dist/
+
+# Flutter and Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+build/
+coverage/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Editor files
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Backend credentials
+service-account*.json
+firebase-service*.json
+supabase-service*.json
+cloudflare-credentials*.json
+revenuecat-credentials*.json
+
+# Supabase CLI temporary files
+supabase/.temp/
+supabase/.branches/
+
+# Cloudflare secrets
+.dev.vars
+.wrangler/

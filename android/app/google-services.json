@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "559250802209",
+    "project_id": "broker-wallet-app",
+    "storage_bucket": "broker-wallet-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:559250802209:android:510945e0a62a9172858560",
+        "android_client_info": {
+          "package_name": "com.example.broker_wallet"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "559250802209-tjbueppkabnpkv6k556s8mbbqobf96qd.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfBLL7Wf34CYEfzWYEgtJBn7aJKKM0xJk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "559250802209-tjbueppkabnpkv6k556s8mbbqobf96qd.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "559250802209-38ei7llbnujijtrl1f6pa95uasq210o9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.broker-wallet"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

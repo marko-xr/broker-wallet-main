@@ -1,0 +1,127 @@
+// ========================================================================
+// OPTION A (RECOMMENDED): Server-Only Item Creation
+// ========================================================================
+// This option enforces that ALL item creation must go through Cloud Functions.
+// Clients cannot bypass quota checks by manipulating the client code.
+// This is the MOST SECURE approach.
+// ========================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ========================================================================
+    // USER PROFILE DOCUMENTS
+    // ========================================================================
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId);
+      
+      // Users CANNOT directly write to their profile (counts are server-managed)
+      // Profile updates (name, email, etc.) should go through Cloud Functions
+      allow write: if false;
+
+      // Idempotency tokens subcollection (managed by server)
+      match /idempotency_tokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    // ========================================================================
+    // QUOTA-ENFORCED SECTIONS (offers, requests, owners, offices, tools, quotations)
+    // ========================================================================
+    // All writes MUST go through addItemWithQuota Cloud Function
+    match /users/{userId}/{section}/{itemId} {
+      allow read: if isOwner(userId) 
+        && section in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations'];
+      
+      // NO client writes allowed - must use Cloud Function
+      allow write: if false;
+      
+      // Nested subcollections (e.g., item media, notes)
+      match /{subcollection}/{subdocId} {
+        allow read: if isOwner(userId);
+        allow write: if false; // Consider allowing writes here if subcollections don't affect quota
+      }
+    }
+
+    // ========================================================================
+    // OTHER USER SUBCOLLECTIONS (not quota-enforced)
+    // ========================================================================
+    // For collections that don't need quota (e.g., settings, preferences)
+    match /users/{userId}/{collection}/{docId} {
+      allow read, write: if isOwner(userId)
+        && !(collection in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations', 'idempotency_tokens']);
+    }
+
+    // ========================================================================
+    // AUDIT LOGS (server-only)
+    // ========================================================================
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    // ========================================================================
+    // FEEDBACK COLLECTION
+    // ========================================================================
+    match /feedback/{feedbackId} {
+      allow create: if isAuthenticated() 
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'rating', 'comment', 'createdAt', 'appVersion', 'platform', 'status'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5
+        && request.resource.data.status == 'unread';
+      
+      allow read, update, delete: if false;
+    }
+
+    // ========================================================================
+    // PHONE & EMAIL LOOKUP INDEXES
+    // ========================================================================
+    match /phone_lookup/{phoneE164} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneE164 == phoneE164;
+    }
+
+    match /email_lookup/{email} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.email == email;
+    }
+
+    // ========================================================================
+    // PENDING EMAIL VERIFICATIONS
+    // ========================================================================
+    match /pending_email_verifications/{verificationId} {
+      allow read, write, delete: if isAuthenticated()
+        && resource != null
+        && request.auth.uid == resource.data.userId;
+      
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'email', 'timestamp', 'verified', 'verificationSent', 'expiresAt']);
+    }
+
+    // ========================================================================
+    // APP CONFIG (read-only for clients)
+    // ========================================================================
+    match /app_config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}

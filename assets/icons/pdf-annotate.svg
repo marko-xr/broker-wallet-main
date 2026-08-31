@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <g stroke="#000000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- Page -->
+  <path d="M28 16h48l16 16v80H28V16z"/>
+  <path d="M76 16v16h16"/>
+  <!-- Pen -->
+  <path d="M36 84l18-18 8 8-18 18-10 2 2-10z"/>
+  <path d="M60 60l8 8"/>
+  <!-- Stamp -->
+  <path d="M84 84c6 0 10 4 10 10v6H74v-6c0-6 4-10 10-10z"/>
+  <path d="M74 100h20v8H74z"/>
+
+  </g>
+</svg>

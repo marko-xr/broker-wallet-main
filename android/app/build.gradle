@@ -1,0 +1,94 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id 'com.google.gms.google-services'
+}
+
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace = "com.example.broker_wallet"
+    // compileSdk and targetSdk are correctly set for Android 15+ compliance.
+    compileSdk = 36
+    
+    // Recommended: Use NDK r29. It enables 16KB alignment by default.
+    ndkVersion = "29.0.14206865"
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += ["-Xsuppress-version-warnings"]
+    }
+
+    defaultConfig {
+        applicationId = "com.example.broker_wallet"
+        minSdkVersion flutter.minSdkVersion
+        targetSdk = 35  // Update to latest
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        multiDexEnabled true  // Add this for large apps
+        ndk {
+            // Includes only the 64-bit architectures
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProperties['storeFile'] != null) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    // Add this block to handle any potential packaging conflicts
+    packagingOptions {
+        pickFirst '/libc++_shared.so'
+        pickFirst '/libjsc.so'
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    // Import the Firebase BoM (Bill of Materials) - Updated for 16KB compliance
+    implementation platform('com.google.firebase:firebase-bom:34.4.0')
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.android.gms:play-services-auth:21.2.0'  
+    implementation 'com.google.firebase:firebase-analytics'
+    
+    // Facebook SDK: Native library excluded by Flutter tree-shaking (not used in code)
+    // Note: If you enable Facebook login in the future, verify 16KB compliance
+    // The SDK's libconceal.so may cause issues (tracked in GitHub issue #1350)
+    implementation 'com.facebook.android:facebook-android-sdk:17.0.1'
+    
+    // Add multidex support for large apps
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // Core library desugaring
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}

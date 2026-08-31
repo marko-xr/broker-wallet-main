@@ -1,0 +1,4 @@
+enum AddOfficesMode {
+  add,
+  edit,
+}

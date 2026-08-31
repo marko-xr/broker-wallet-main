@@ -1,0 +1,164 @@
+// ========================================================================
+// OPTION B (ALTERNATIVE): Client Writes with Quota Checks in Rules
+// ========================================================================
+// This option allows clients to write items directly BUT enforces quota checks
+// in Firestore Security Rules. Less secure than Option A because:
+// - Rules are complex and harder to audit
+// - Race conditions possible if transaction not used client-side
+// - Client can still manipulate timing/ordering of requests
+// USE ONLY IF PRODUCT TEAM INSISTS ON CLIENT WRITES
+// ========================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function validSection(section) {
+      return section in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations'];
+    }
+
+    function planLimit(plan) {
+      return plan == 'premium' ? 1000000 : 5;
+    }
+
+    // ========================================================================
+    // USER PROFILE DOCUMENTS
+    // ========================================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      // Allow updates to counts field only (for client-side quota tracking)
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'counts', 'counts.offers', 'counts.requests', 'counts.owners',
+             'counts.offices', 'counts.tools', 'counts.quotations', 'lastQuotaCheckAt', 'updatedAt'
+           ])
+        && validCountIncrement();
+
+      function validCountIncrement() {
+        let plan = resource.data.plan == null ? 'free' : resource.data.plan;
+        let sections = ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations'];
+        return sections.every((section) => matchesIncrement(section, plan));
+      }
+
+      function matchesIncrement(section, plan) {
+        let oldVal = resource.data.counts[section] == null ? 0 : resource.data.counts[section];
+        let newVal = request.resource.data.counts[section] == null ? oldVal : request.resource.data.counts[section];
+        let changed = newVal != oldVal;
+        return (!changed) || (
+          newVal == oldVal + 1 &&
+          newVal <= planLimit(plan)
+        );
+      }
+
+      match /idempotency_tokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update, delete: if false;
+      }
+    }
+
+    // ========================================================================
+    // QUOTA-ENFORCED SECTIONS
+    // ========================================================================
+    match /users/{userId}/{section}/{itemId} {
+      allow read: if isOwner(userId) && validSection(section);
+      
+      // Allow create only if quota check passes
+      allow create: if isOwner(userId)
+        && validSection(section)
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.section == section
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && ensureQuota(section);
+      
+      allow update, delete: if isOwner(userId) && validSection(section);
+
+      function ensureQuota(section) {
+        let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
+        return user.exists()
+          && validSection(section)
+          && planLimit(user.data.plan == null ? 'free' : user.data.plan) >
+             (user.data.counts[section] == null ? 0 : user.data.counts[section]);
+      }
+
+      match /{subcollection}/{subdocId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ========================================================================
+    // OTHER USER SUBCOLLECTIONS
+    // ========================================================================
+    match /users/{userId}/{collection}/{docId} {
+      allow read, write: if isOwner(userId)
+        && !(collection in ['offers', 'requests', 'owners', 'offices', 'tools', 'quotations', 'idempotency_tokens']);
+    }
+
+    // ========================================================================
+    // AUDIT LOGS (server-only)
+    // ========================================================================
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    // ========================================================================
+    // FEEDBACK COLLECTION
+    // ========================================================================
+    match /feedback/{feedbackId} {
+      allow create: if isAuthenticated() 
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'rating', 'comment', 'createdAt', 'appVersion', 'platform', 'status'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5
+        && request.resource.data.status == 'unread';
+      
+      allow read, update, delete: if false;
+    }
+
+    // ========================================================================
+    // PHONE & EMAIL LOOKUP
+    // ========================================================================
+    match /phone_lookup/{phoneE164} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phoneE164 == phoneE164;
+    }
+
+    match /email_lookup/{email} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.email == email;
+    }
+
+    // ========================================================================
+    // PENDING EMAIL VERIFICATIONS
+    // ========================================================================
+    match /pending_email_verifications/{verificationId} {
+      allow read, write, delete: if isAuthenticated()
+        && resource != null
+        && request.auth.uid == resource.data.userId;
+      
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId;
+    }
+
+    // ========================================================================
+    // APP CONFIG
+    // ========================================================================
+    match /app_config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}

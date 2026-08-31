@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper to check if user has premium plan
+    function isPremium() {
+      return isAuthenticated() 
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan != 'free';
+    }
+
+    // Helper to check quota limit (FREE users only)
+    function isWithinQuota(section) {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let counts = userDoc.data.get('counts', {});
+      let currentCount = counts.get(section, 0);
+      let freeLimit = 3;
+      
+      // Premium users have unlimited
+      return userDoc.data.plan != 'free' || currentCount < freeLimit;
+    }
+
+    // ========================================================================
+    // USER PROFILE DOCUMENTS
+    // ========================================================================
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId);
+      
+      // Users can create their own profile on signup
+      allow create: if isOwner(userId);
+      
+      // Users can update their profile, but NOT the counts field
+      // Counts are managed automatically by Cloud Functions
+      allow update: if isOwner(userId) 
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['counts']));
+    }
+
+    // ========================================================================
+    // QUOTA-ENFORCED COLLECTIONS (ROOT LEVEL)
+    // ========================================================================
+    
+    // OFFERS
+    match /offers/{offerId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('offers');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // REQUESTS
+    match /requests/{requestId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('requests');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // OWNERS
+    match /owners/{ownerId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('owners');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // OFFICES
+    match /offices/{officeId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('offices');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // BROKERS
+    match /brokers/{brokerId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('brokers');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // WATCHMEN
+    match /watchmen/{watchmenId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('watchmen');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // QUOTATIONS
+    match /quotations/{quotationId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isWithinQuota('quotations');
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    // ========================================================================
+    // FEEDBACK COLLECTION
+    // ========================================================================
+    match /feedback/{feedbackId} {
+      allow create: if isAuthenticated() 
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['userId', 'userName', 'userEmail', 'rating', 'comment', 'createdAt', 'appVersion', 'platform', 'status'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5;
+      
+      allow read, update, delete: if false;
+    }
+
+    // ========================================================================
+    // PHONE & EMAIL LOOKUP INDEXES
+    // ========================================================================
+    match /phone_lookup/{phoneE164} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /email_lookup/{email} {
+      allow get: if true;
+      allow create, update, delete: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================================================
+    // PENDING EMAIL VERIFICATIONS
+    // ========================================================================
+    match /pending_email_verifications/{verificationId} {
+      allow read, write, delete: if isAuthenticated()
+        && resource != null
+        && request.auth.uid == resource.data.userId;
+      
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId;
+    }
+
+    // ========================================================================
+    // APP CONFIG (read-only for clients)
+    // ========================================================================
+    match /app_config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}

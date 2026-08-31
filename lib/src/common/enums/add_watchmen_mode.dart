@@ -1,0 +1,4 @@
+enum AddWatchmenMode {
+  add,
+  edit,
+}

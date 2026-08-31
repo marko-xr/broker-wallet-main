@@ -1,0 +1,1 @@
+enum AddOffersMode { add, edit }

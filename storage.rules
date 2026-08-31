@@ -1,0 +1,101 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+    
+    // Content type validators
+    function isJpeg() { 
+      return request.resource.contentType == 'image/jpeg'; 
+    }
+    
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    function isMp4() { 
+      return request.resource.contentType == 'video/mp4'; 
+    }
+    
+    function isPdf() { 
+      return request.resource.contentType == 'application/pdf'; 
+    }
+    
+    // Size limits (bytes)
+    function maxImage() { 
+      return 10 * 1024 * 1024; // 10 MB
+    }
+    
+    function maxVideo() { 
+      return 200 * 1024 * 1024; // 200 MB
+    }
+    
+    function maxPdf() { 
+      return 20 * 1024 * 1024; // 20 MB
+    }
+    
+    // Profile images - JPEG only for standardization
+    match /profile_images/{uid}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+                   && isOwner(uid)
+                   && isJpeg()
+                   && request.resource.size <= maxImage();
+    }
+    
+    // Property media (images, videos, PDFs) - supports nested paths
+    // Matches: property_media/{uid}/{collection}/{docId}/{file}
+    match /property_media/{uid}/{collection}/{docId}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+                   && isOwner(uid)
+                   && (
+                        (isJpeg() && request.resource.size <= maxImage()) ||
+                        (isMp4() && request.resource.size <= maxVideo()) ||
+                        (isPdf() && request.resource.size <= maxPdf())
+                      );
+    }
+    
+    // Legacy property media path (2 levels) - keep for backward compatibility
+    match /property_media/{uid}/{folder}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+                   && isOwner(uid)
+                   && (
+                        (isImage() && request.resource.size <= maxImage()) ||
+                        (isMp4() && request.resource.size <= maxVideo()) ||
+                        (isPdf() && request.resource.size <= maxPdf())
+                      );
+    }
+    
+    // User documents (PDFs only)
+    match /user_documents/{uid}/{file} {
+      allow read: if isSignedIn() && isOwner(uid);
+      allow write: if isSignedIn()
+                   && isOwner(uid)
+                   && isPdf()
+                   && request.resource.size <= maxPdf();
+    }
+    
+    // Quotations (existing compatibility)
+    match /quotations/{uid}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+                   && isOwner(uid)
+                   && (isJpeg() || isPdf())
+                   && request.resource.size <= maxPdf();
+    }
+    
+    // Test uploads for permission testing
+    match /test_uploads/{uid}/{file} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+  }
+}

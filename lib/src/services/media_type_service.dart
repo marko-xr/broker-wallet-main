@@ -1,5 +1,6 @@
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
@@ -11,10 +12,9 @@ enum UploadSource { camera, gallery, files }
 class MediaUploadService {
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseStorage get _storage => FirebaseStorage.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
-
   // Get current user ID
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Upload profile image using folder structure to match rules
   Future<String> uploadProfileImage(XFile imageFile,
@@ -135,7 +135,7 @@ class MediaUploadService {
       }
 
       // Verify user is still authenticated
-      if (_auth.currentUser == null) {
+      if (_currentUserId == null) {
         throw Exception('User session expired. Please sign in again.');
       }
 
@@ -361,21 +361,11 @@ class MediaUploadService {
   /// Test authentication and permissions - ENHANCED
   Future<bool> testUploadPermissions() async {
     try {
-      if (_auth.currentUser == null) {
-        // No authenticated user found (log removed)
+      if (_currentUserId == null) {
         return false;
       }
-
-      final user = _auth.currentUser!;
-      // User info logs removed (log removed): ${user.uid}
-
-      // Get the ID token to check claims (no-op for now)
-      await user.getIdToken();
-
-      // Test reference creation removed (log removed)
       return true;
     } catch (e) {
-      // Permission test failed (log removed): $e
       return false;
     }
   }

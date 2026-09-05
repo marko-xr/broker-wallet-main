@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
 import 'package:broker_wallet/src/services/clean_permission_service.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -788,18 +788,22 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     }
 
     // QUOTA CHECK: Check if user can add more image-to-pdf documents
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final canAdd = await QuotaHelper.checkAndWarnQuota(
-        context: context,
-        uid: user.uid,
-        section: 'imageToPdf',
-        toolName: 'imageToPdf',
-      );
+    final currentUserId =
+        RepositoryProvider.instance.authRepository.currentUserId;
+    if (currentUserId == null) {
+      _showToast(localization.translate('pleaseLoginFirst'), Colors.red);
+      return;
+    }
 
-      if (!canAdd) {
-        return; // User hit quota limit
-      }
+    final canAdd = await QuotaHelper.checkAndWarnQuota(
+      context: context,
+      uid: currentUserId,
+      section: 'imageToPdf',
+      toolName: 'imageToPdf',
+    );
+
+    if (!canAdd) {
+      return; // User hit quota limit
     }
 
     setState(() {
@@ -917,9 +921,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
       await _saveConvertedDocuments();
 
       // Update quota count
-      if (user != null) {
-        await _incrementQuotaCount(user.uid, 'imageToPdf');
-      }
+      await _incrementQuotaCount(currentUserId, 'imageToPdf');
 
       _resetForm();
 

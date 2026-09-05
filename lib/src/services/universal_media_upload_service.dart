@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:path/path.dart' as path;
@@ -28,9 +28,8 @@ class UniversalMediaUploadService {
   static const int _thumbnailQuality = 75;
 
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Upload any media file (image, video, or PDF) with standardization
   Future<MediaFileModel> uploadMedia({

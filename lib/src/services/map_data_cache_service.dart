@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 
@@ -28,7 +28,10 @@ class MapDataCacheService {
     if (_wasManuallyInvalidated) return false;
 
     if (_cachedLocations == null || _lastCacheTime == null) return false;
-    if (_cachedUserId != FirebaseAuth.instance.currentUser?.uid) return false;
+    if (_cachedUserId !=
+        RepositoryProvider.instance.authRepository.currentUserId) {
+      return false;
+    }
 
     final now = DateTime.now();
     return now.difference(_lastCacheTime!) < _cacheValidityDuration;
@@ -44,13 +47,14 @@ class MapDataCacheService {
   /// Preload map data in the background
   Future<void> preloadMapData() async {
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (currentUserId == null) {
         // No user logged in - skipping preload (log removed)
         return;
       }
 
-      // Starting background preload for user (log removed): ${currentUser.uid}
+      // Starting background preload for user (log removed): $currentUserId
 
       final locations = <CachedLocationData>[];
       final firestore = FirebaseFirestore.instance;
@@ -59,22 +63,22 @@ class MapDataCacheService {
       final results = await Future.wait([
         firestore
             .collection('users')
-            .doc(currentUser.uid)
+            .doc(currentUserId)
             .collection('offers')
             .get(),
         firestore
             .collection('users')
-            .doc(currentUser.uid)
+            .doc(currentUserId)
             .collection('owners')
             .get(),
         firestore
             .collection('users')
-            .doc(currentUser.uid)
+            .doc(currentUserId)
             .collection('offices')
             .get(),
         firestore
             .collection('users')
-            .doc(currentUser.uid)
+            .doc(currentUserId)
             .collection('watchmen')
             .get(),
       ]);
@@ -187,7 +191,7 @@ class MapDataCacheService {
       // Update cache
       _cachedLocations = locations;
       _lastCacheTime = DateTime.now();
-      _cachedUserId = currentUser.uid;
+      _cachedUserId = currentUserId;
       _wasManuallyInvalidated = false; // Reset flag after successful load
 
       // Preloaded ${locations.length} locations successfully (log removed)

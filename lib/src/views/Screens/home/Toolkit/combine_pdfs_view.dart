@@ -9,7 +9,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'package:broker_wallet/src/constants/constants.dart';
@@ -509,18 +509,22 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     }
 
     // QUOTA CHECK: Check if user can add more combined PDFs
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final canAdd = await QuotaHelper.checkAndWarnQuota(
-        context: context,
-        uid: user.uid,
-        section: 'combinePdfs',
-        toolName: 'combinePdfs',
-      );
+    final currentUserId =
+        RepositoryProvider.instance.authRepository.currentUserId;
+    if (currentUserId == null) {
+      _showToast(localization.translate('pleaseLoginFirst'), Colors.red);
+      return;
+    }
 
-      if (!canAdd) {
-        return; // User hit quota limit
-      }
+    final canAdd = await QuotaHelper.checkAndWarnQuota(
+      context: context,
+      uid: currentUserId,
+      section: 'combinePdfs',
+      toolName: 'combinePdfs',
+    );
+
+    if (!canAdd) {
+      return; // User hit quota limit
     }
 
     setState(() {
@@ -728,9 +732,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       await _saveCombinedDocuments();
 
       // Update quota count
-      if (user != null) {
-        await _incrementQuotaCount(user.uid, 'combinePdfs');
-      }
+      await _incrementQuotaCount(currentUserId, 'combinePdfs');
 
       _resetForm();
       _showToast(

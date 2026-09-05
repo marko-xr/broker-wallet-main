@@ -37,6 +37,9 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
+  String? get currentUserId => _client.auth.currentUser?.id;
+
+  @override
   Future<UserModel> signUpWithEmailAndPassword({
     required String email,
     required String password,
@@ -260,8 +263,6 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> deleteAccount() async {
-    throw UnsupportedError(
-      'Account deletion requires a protected server-side Supabase operation.',
     throw const AuthFailure(
       code: AuthFailureCode.operationNotAllowed,
       message:

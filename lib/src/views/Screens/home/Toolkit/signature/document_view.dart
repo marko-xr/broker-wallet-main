@@ -7,7 +7,7 @@ import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf_pdf;
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signed_documents_storage.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Model class to represent a signature overlay on the document
@@ -415,18 +415,25 @@ class _DocumentViewState extends State<DocumentView> {
 
     try {
       // QUOTA CHECK: Check if user can add more signed documents
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final canAdd = await QuotaHelper.checkAndWarnQuota(
-          context: context,
-          uid: user.uid,
-          section: 'signature',
-          toolName: 'signature',
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (currentUserId == null) {
+        SignedDocumentsHelper.showToast(
+          localization.translate('pleaseLoginFirst'),
+          Colors.red,
         );
+        return;
+      }
 
-        if (!canAdd) {
-          return; // User hit quota limit
-        }
+      final canAdd = await QuotaHelper.checkAndWarnQuota(
+        context: context,
+        uid: currentUserId,
+        section: 'signature',
+        toolName: 'signature',
+      );
+
+      if (!canAdd) {
+        return; // User hit quota limit
       }
 
       // Show loading indicator
@@ -513,9 +520,7 @@ class _DocumentViewState extends State<DocumentView> {
       await SignedDocumentsStorage.saveDocuments(documents);
 
       // Update quota count
-      if (user != null) {
-        await _incrementQuotaCount(user.uid, 'signature');
-      }
+      await _incrementQuotaCount(currentUserId, 'signature');
 
       // Close loading dialog
       if (mounted) Navigator.pop(context);

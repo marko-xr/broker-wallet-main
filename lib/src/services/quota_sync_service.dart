@@ -1,11 +1,10 @@
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 
 /// Service to sync user quota counts with server-side data
 /// This ensures quota limits cannot be bypassed by reinstalling the app
 class QuotaSyncService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// Sync user's quota counts with actual Firestore data
   /// Should be called:
@@ -15,24 +14,19 @@ class QuotaSyncService {
   /// - Periodically to ensure accuracy
   Future<QuotaSyncResult> syncUserQuota() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (currentUserId == null) {
         throw Exception('User must be logged in to sync quota');
       }
-
-      // 🔄 Syncing quota for user: ${user.uid} (log removed)
 
       // Call Cloud Function to sync counts
       final result = await _functions.httpsCallable('syncUserQuota').call();
 
       final data = result.data as Map<String, dynamic>;
 
-      // ✅ Quota sync complete: ${data['message']} (log removed)
-      // 📊 Updated counts: ${data['counts']} (log removed)
-
       return QuotaSyncResult.fromMap(data);
     } catch (e) {
-      // ❌ Failed to sync quota: $e (log removed)
       throw Exception('Failed to sync quota: $e');
     }
   }
@@ -41,14 +35,14 @@ class QuotaSyncService {
   /// This prevents unnecessary Cloud Function calls
   Future<bool> shouldSync() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return false;
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (currentUserId == null) return false;
 
       // For now, always return true
       // You can add logic to check lastQuotaSync timestamp
       return true;
     } catch (e) {
-      // Error checking sync status: $e (log removed)
       return true; // Err on the side of syncing
     }
   }

@@ -1,7 +1,8 @@
 // lib/src/Views/Screens/home/Profile/my_plan_view.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -13,8 +14,8 @@ class MyPlanView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
+    final currentUserId = context.watch<AuthViewModel>().currentUserId;
+    if (currentUserId == null) {
       return const Scaffold(
         body: Center(child: Text('Please log in')),
       );
@@ -44,7 +45,7 @@ class MyPlanView extends StatelessWidget {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
+            .doc(currentUserId)
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {

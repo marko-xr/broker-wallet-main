@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/services/video_compression_service.dart';
 import 'package:broker_wallet/src/services/regional_storage_config.dart';
 import 'dart:developer' as developer;
@@ -10,9 +10,8 @@ class OptimizedVideoUploadService {
   static const String _logName = 'OptimizedVideoUpload';
 
   // Use lazy getter to avoid accessing Firebase before initialization
-  static FirebaseAuth get _auth => FirebaseAuth.instance;
-
-  static String? get _currentUserId => _auth.currentUser?.uid;
+  static String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Upload video with compression and resumable progress tracking
   static Future<VideoUploadResult> uploadVideo({

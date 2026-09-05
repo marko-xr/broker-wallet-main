@@ -205,6 +205,9 @@ class FirebaseAuthRepository implements AuthRepository {
   Stream<UserModel?> get authStateChanges => _authStateController.stream;
 
   @override
+  String? get currentUserId => _auth.currentUser?.uid;
+
+  @override
   UserModel? get currentUser {
     final firebaseUser = _auth.currentUser;
     if (firebaseUser == null) return null;

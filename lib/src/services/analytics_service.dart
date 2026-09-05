@@ -1,7 +1,7 @@
 // lib/src/services/analytics_service.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/data/models/analytics_model.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:convert';
@@ -13,11 +13,10 @@ class AnalyticsService {
   factory AnalyticsService() => instance;
   AnalyticsService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   static const String _cacheBoxName = 'analytics_cache';
-  static const String _cacheKey = 'latest_analytics';
+  static String _cacheKey(String userId) => 'latest_analytics_$userId';
 
   /// Initialize Hive box for analytics caching
   Future<void> initialize() async {
@@ -30,10 +29,13 @@ class AnalyticsService {
   }
 
   /// Get cached analytics instantly (for offline/fast load)
-  AnalyticsData? getCachedAnalytics() {
+  AnalyticsData? getCachedAnalytics([String? userId]) {
     try {
+      final uid = userId ??
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (uid == null) return null;
       final box = Hive.box(_cacheBoxName);
-      final cachedJson = box.get(_cacheKey);
+      final cachedJson = box.get(_cacheKey(uid));
       if (cachedJson != null) {
         return AnalyticsData.fromJson(json.decode(cachedJson));
       }
@@ -44,10 +46,10 @@ class AnalyticsService {
   }
 
   /// Cache analytics data for offline access
-  Future<void> _cacheAnalytics(AnalyticsData data) async {
+  Future<void> _cacheAnalytics(AnalyticsData data, String userId) async {
     try {
       final box = Hive.box(_cacheBoxName);
-      await box.put(_cacheKey, json.encode(data.toJson()));
+      await box.put(_cacheKey(userId), json.encode(data.toJson()));
       print('💾 Analytics cached successfully');
     } catch (e) {
       print('⚠️ Failed to cache analytics: $e');
@@ -57,18 +59,19 @@ class AnalyticsService {
   /// Get comprehensive analytics data
   /// Loads from cache first, then updates from Firestore
   Future<AnalyticsData> getAnalytics() async {
-    final userId = _auth.currentUser?.uid;
+    final userId =
+        RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return AnalyticsData.empty();
     }
 
     // Return cached data immediately
-    final cached = getCachedAnalytics();
+    final cached = getCachedAnalytics(userId);
 
     try {
       // Fetch fresh data in background
       final data = await _aggregateAnalyticsData(userId);
-      await _cacheAnalytics(data);
+      await _cacheAnalytics(data, userId);
       return data;
     } catch (e) {
       print('❌ Analytics fetch failed: $e - using cached data');
@@ -78,14 +81,15 @@ class AnalyticsService {
 
   /// Stream analytics with real-time updates
   Stream<AnalyticsData> watchAnalytics() async* {
-    final userId = _auth.currentUser?.uid;
+    final userId =
+        RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       yield AnalyticsData.empty();
       return;
     }
 
     // Yield cached data first for instant display
-    final cached = getCachedAnalytics();
+    final cached = getCachedAnalytics(userId);
     if (cached != null) {
       yield cached;
     }
@@ -94,7 +98,7 @@ class AnalyticsService {
     await for (final _ in Stream.periodic(const Duration(seconds: 30))) {
       try {
         final data = await _aggregateAnalyticsData(userId);
-        await _cacheAnalytics(data);
+        await _cacheAnalytics(data, userId);
         yield data;
       } catch (e) {
         print('⚠️ Analytics stream error: $e');

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:broker_wallet/src/services/storage_performance_monitor.dart';
 import 'dart:developer' as developer;
@@ -11,9 +11,8 @@ class OptimizedStorageService {
 
   // Use lazy getters to avoid accessing Firebase before initialization
   static FirebaseStorage get _storage => FirebaseStorage.instance;
-  static FirebaseAuth get _auth => FirebaseAuth.instance;
-
-  static String? get _currentUserId => _auth.currentUser?.uid;
+  static String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Upload image with compression, resizing, and optimal cache headers
   static Future<String> uploadImageFast({

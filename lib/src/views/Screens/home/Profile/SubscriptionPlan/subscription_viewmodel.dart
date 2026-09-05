@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/quota_sync_service.dart';
@@ -9,10 +10,17 @@ import 'package:broker_wallet/src/services/quota_sync_service.dart';
 enum SubscriptionPlan { monthly, yearly }
 
 class SubscriptionViewModel extends ChangeNotifier {
+  final AuthRepository _authRepository;
+
+  SubscriptionViewModel({AuthRepository? authRepository})
+      : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository;
+
   SubscriptionPlan? _selectedPlan;
   bool _isLoading = false;
   bool _isTestMode = true; // Enable test mode for development
 
+  String? get currentUserId => _authRepository.currentUserId;
   SubscriptionPlan? get selectedPlan => _selectedPlan;
   bool get isLoading => _isLoading;
   bool get isTestMode => _isTestMode;
@@ -30,8 +38,8 @@ class SubscriptionViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
+      final uid = _authRepository.currentUserId;
+      if (uid == null) {
         Fluttertoast.showToast(
           msg: 'Please login first',
           backgroundColor: Colors.red,
@@ -47,7 +55,7 @@ class SubscriptionViewModel extends ChangeNotifier {
           : DateTime.now().add(const Duration(days: 365));
 
       // Update user subscription in Firestore
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'plan': planName,
         'subscription': {
           'plan': planName,
@@ -123,11 +131,11 @@ class SubscriptionViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      final uid = _authRepository.currentUserId;
+      if (uid == null) return;
 
       // Revert to free plan
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'plan': 'free',
         'subscription': {
           'plan': 'free',

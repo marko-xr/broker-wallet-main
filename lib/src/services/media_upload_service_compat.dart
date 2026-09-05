@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:broker_wallet/src/services/universal_media_upload_service.dart';
 import 'package:broker_wallet/src/services/media_type_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -27,10 +27,10 @@ class MediaUploadServiceCompat {
   final UniversalMediaUploadService _universalService =
       UniversalMediaUploadService();
   final MediaUploadService _legacyService = MediaUploadService();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Upload property media with automatic HEIC→JPEG conversion
   ///

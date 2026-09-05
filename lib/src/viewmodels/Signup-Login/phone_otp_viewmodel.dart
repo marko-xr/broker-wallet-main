@@ -321,9 +321,6 @@ class PhoneOtpViewModel extends ChangeNotifier {
       final authRepo = RepositoryProvider.instance.authRepository;
       final initialPhone = _args.phoneNumber.isNotEmpty
           ? _args.phoneNumber
-          : (!SupabaseConfig.useSupabaseAuth
-              ? FirebaseAuth.instance.currentUser?.phoneNumber ?? ''
-              : '');
           : (authRepo.currentUser?.phoneNumber ?? '');
 
       // First, mark phone as verified to ensure proper state
@@ -350,12 +347,6 @@ class PhoneOtpViewModel extends ChangeNotifier {
           return true;
         }
 
-        if (!SupabaseConfig.useSupabaseAuth) {
-          final firebaseUser = FirebaseAuth.instance.currentUser;
-          if (firebaseUser?.phoneNumber != null) {
-            // Debug log suppressed: Re-marking phone verified from Firebase user
-            await authViewModel.markPhoneVerified(
-                phoneNumber: firebaseUser!.phoneNumber!);
         final currentRepoUser =
             authRepo.currentUser ?? await authRepo.reloadUser();
         if (currentRepoUser?.phoneNumber != null &&
@@ -363,12 +354,6 @@ class PhoneOtpViewModel extends ChangeNotifier {
           await authViewModel.markPhoneVerified(
               phoneNumber: currentRepoUser.phoneNumber!);
 
-            // Check again after marking
-            if (authViewModel.isAuthenticated) {
-              // Debug log suppressed: AuthViewModel confirmed authentication after manual mark
-              return true;
-            }
-          // Check again after marking
           if (authViewModel.isAuthenticated) {
             return true;
           }

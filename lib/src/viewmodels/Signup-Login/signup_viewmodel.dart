@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart'
-    show FirebaseAuth, UserCredential;
     show UserCredential;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -584,9 +583,6 @@ class SignUpViewModel extends ChangeNotifier {
       final authViewModel = context.read<AuthViewModel>();
       final authRepo = RepositoryProvider.instance.authRepository;
       final initialPhone = _pendingVerifiedPhone ??
-          (!SupabaseConfig.useSupabaseAuth
-              ? FirebaseAuth.instance.currentUser?.phoneNumber
-              : null) ??
           authRepo.currentUser?.phoneNumber ??
           authViewModel.currentUser?.phoneNumber ??
           '';
@@ -604,14 +600,6 @@ class SignUpViewModel extends ChangeNotifier {
           return true;
         }
 
-        if (!SupabaseConfig.useSupabaseAuth) {
-          final firebaseUser = FirebaseAuth.instance.currentUser;
-          if (firebaseUser?.phoneNumber != null) {
-            await authViewModel.markPhoneVerified(
-                phoneNumber: firebaseUser!.phoneNumber);
-            if (authViewModel.isAuthenticated) {
-              return true;
-            }
         final currentRepoUser =
             authRepo.currentUser ?? await authRepo.reloadUser();
         if (currentRepoUser?.phoneNumber != null &&
@@ -629,7 +617,6 @@ class SignUpViewModel extends ChangeNotifier {
         if (!context.mounted) return false;
       }
     } catch (e) {
-      // Debug log suppressed: Failed to synchronize AuthViewModel after legacy phone signup: $e
       // Debug log suppressed: Failed to synchronize AuthViewModel after phone signup: $e
     }
 

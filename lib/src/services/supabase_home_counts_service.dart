@@ -6,10 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Row-level security is the ownership boundary: every query is executed with
 /// the current Supabase session, so only rows owned by that user are visible.
 class SupabaseHomeCountsService {
-  SupabaseHomeCountsService({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client;
+  SupabaseHomeCountsService({SupabaseClient? client}) : _customClient = client;
 
-  final SupabaseClient _client;
+  final SupabaseClient? _customClient;
+  SupabaseClient get _client => _customClient ?? Supabase.instance.client;
 
   static const Map<String, String> _tableToCountKey = {
     'watchmen': 'watchmen',

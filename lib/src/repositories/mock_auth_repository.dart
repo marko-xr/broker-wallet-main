@@ -16,6 +16,9 @@ class MockAuthRepository implements AuthRepository {
   UserModel? get currentUser => _currentUser;
 
   @override
+  String? get currentUserId => _currentUser?.uid;
+
+  @override
   Future<UserModel> signUpWithEmailAndPassword({
     required String email,
     required String password,

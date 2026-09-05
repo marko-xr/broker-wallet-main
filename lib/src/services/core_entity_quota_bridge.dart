@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../config/supabase_config.dart';
+import '../repositories/repository_provider.dart';
 import 'quota_helper.dart';
 
 /// Backend-aware bridge for the legacy core-entity quota UI.
@@ -24,14 +24,14 @@ class CoreEntityQuotaBridge {
       return true;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return true;
+    final uid = RepositoryProvider.instance.authRepository.currentUserId;
+    if (uid == null) {
+      return false;
     }
 
     return QuotaHelper.checkAndWarnQuota(
       context: context,
-      uid: user.uid,
+      uid: uid,
       section: section,
     );
   }
@@ -41,13 +41,13 @@ class CoreEntityQuotaBridge {
       return;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
+    final uid = RepositoryProvider.instance.authRepository.currentUserId;
+    if (uid == null) {
       return;
     }
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'counts': {section: FieldValue.increment(1)},
         'lifetimeCreated': {section: FieldValue.increment(1)},
       }, SetOptions(merge: true));

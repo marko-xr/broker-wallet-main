@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -13,9 +13,9 @@ import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 class QuotationService {
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
   static const String _collectionName = 'users';
 
   // Generate new quotation ID without saving (for file uploads)

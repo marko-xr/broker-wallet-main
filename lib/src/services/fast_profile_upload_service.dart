@@ -1,9 +1,9 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path/path.dart' as path;
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -36,9 +36,8 @@ class FastProfileUploadService {
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseStorage get _storage => FirebaseStorage.instance;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
-
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
 
   /// Save profile image immediately to local storage and queue for upload
   /// Returns temporary URL for immediate UI display

@@ -9,7 +9,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 import 'package:broker_wallet/src/data/models/filter_model.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/supabase_core_entities_service.dart';
 
@@ -97,7 +97,6 @@ class SearchViewModel extends ChangeNotifier {
 
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   Timer? _debounceTimer;
 
@@ -211,7 +210,8 @@ class SearchViewModel extends ChangeNotifier {
         return;
       }
 
-      final currentUserId = _auth.currentUser?.uid;
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
       if (currentUserId == null) return;
 
       // Fetch all data in parallel

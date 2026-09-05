@@ -5,7 +5,8 @@ import 'package:broker_wallet/src/services/clean_location_service.dart';
 import 'package:broker_wallet/src/services/clean_permission_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:broker_wallet/src/Views/Widgets/custom_map_pin.dart';
 import 'dart:async';
@@ -155,10 +156,12 @@ class MapViewViewModel extends ChangeNotifier {
 
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
+  final AuthRepository _authRepository;
   final _cacheService = MapDataCacheService();
 
-  MapViewViewModel() {
+  MapViewViewModel({AuthRepository? authRepository})
+      : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository {
     _initializeMap();
   }
 
@@ -223,8 +226,8 @@ class MapViewViewModel extends ChangeNotifier {
       _error = null;
       // _safeNotifyListeners();
 
-      final currentUser = _auth.currentUser;
-      if (currentUser == null) {
+      final currentUserId = _authRepository.currentUserId;
+      if (currentUserId == null) {
         throw Exception('User not authenticated');
       }
 
@@ -285,19 +288,19 @@ class MapViewViewModel extends ChangeNotifier {
       _allLocations.clear();
 
       // Load offers
-      await _loadOffers(currentUser.uid);
+      await _loadOffers(currentUserId);
       if (_disposed) return;
 
       // Load owners
-      await _loadOwners(currentUser.uid);
+      await _loadOwners(currentUserId);
       if (_disposed) return;
 
       // Load offices
-      await _loadOffices(currentUser.uid);
+      await _loadOffices(currentUserId);
       if (_disposed) return;
 
       // Load watchmen
-      await _loadWatchmen(currentUser.uid);
+      await _loadWatchmen(currentUserId);
       if (_disposed) return;
 
       // Debug log suppressed: TOTAL LOCATIONS LOADED: ${_allLocations.length}
@@ -349,15 +352,15 @@ class MapViewViewModel extends ChangeNotifier {
 
   // Set up real-time listeners for instant updates
   void _setupRealtimeListeners() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null || _disposed) return;
+    final currentUserId = _authRepository.currentUserId;
+    if (currentUserId == null || _disposed) return;
 
     // Debug log suppressed: SETTING UP REAL-TIME LISTENERS
 
     // Listen to offers collection
     _offersSubscription = _firestore
         .collection('users')
-        .doc(currentUser.uid)
+        .doc(currentUserId)
         .collection('offers')
         .snapshots()
         .listen((snapshot) {
@@ -368,7 +371,7 @@ class MapViewViewModel extends ChangeNotifier {
     // Listen to owners collection
     _ownersSubscription = _firestore
         .collection('users')
-        .doc(currentUser.uid)
+        .doc(currentUserId)
         .collection('owners')
         .snapshots()
         .listen((snapshot) {
@@ -379,7 +382,7 @@ class MapViewViewModel extends ChangeNotifier {
     // Listen to offices collection
     _officesSubscription = _firestore
         .collection('users')
-        .doc(currentUser.uid)
+        .doc(currentUserId)
         .collection('offices')
         .snapshots()
         .listen((snapshot) {
@@ -390,7 +393,7 @@ class MapViewViewModel extends ChangeNotifier {
     // Listen to watchmen collection
     _watchmenSubscription = _firestore
         .collection('users')
-        .doc(currentUser.uid)
+        .doc(currentUserId)
         .collection('watchmen')
         .snapshots()
         .listen((snapshot) {

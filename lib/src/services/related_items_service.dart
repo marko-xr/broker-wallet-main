@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import '../data/models/ScreensModel/offers_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 
@@ -15,7 +15,8 @@ class RelatedItemsService {
       return Stream.value([]);
     }
 
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId =
+        RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return Stream.value([]);
     }
@@ -43,7 +44,8 @@ class RelatedItemsService {
       return Stream.value([]);
     }
 
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId =
+        RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return Stream.value([]);
     }
@@ -99,7 +101,8 @@ class RelatedItemsService {
       return 0;
     }
 
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId =
+        RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return 0;
     }

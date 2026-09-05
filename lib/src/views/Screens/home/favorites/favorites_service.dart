@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:hive/hive.dart';
 import 'favorites_item_model.dart';
 import 'dart:async';
@@ -22,14 +23,11 @@ class FavoriteMetadata {
 class FavoriteService {
   // Use lazy getters to avoid accessing Firebase before initialization
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   // Get current user ID
-  String? get _currentUserId => _auth.currentUser?.uid;
-
-  String? get _activeUserId => SupabaseConfig.useSupabaseAuth
-      ? sb.Supabase.instance.client.auth.currentUser?.id
-      : _currentUserId;
+  String? get _activeUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
+  String? get _currentUserId => _activeUserId;
 
   String _supabaseTable(String type) {
     const tables = {
@@ -52,10 +50,9 @@ class FavoriteService {
   Future<void> waitForAuthReady(
       {Duration timeout = const Duration(seconds: 5)}) async {
     if (isAuthReady) return;
-    if (SupabaseConfig.useSupabaseAuth) return;
 
     final completer = Completer<void>();
-    late StreamSubscription<User?> subscription;
+    late StreamSubscription<UserModel?> subscription;
 
     Timer? timeoutTimer = Timer(timeout, () {
       if (!completer.isCompleted) {
@@ -64,7 +61,9 @@ class FavoriteService {
       }
     });
 
-    subscription = _auth.authStateChanges().listen((User? user) {
+    subscription = RepositoryProvider.instance.authRepository
+        .authStateChanges
+        .listen((UserModel? user) {
       if (user != null && !completer.isCompleted) {
         timeoutTimer.cancel();
         subscription.cancel();

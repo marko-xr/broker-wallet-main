@@ -11,6 +11,11 @@ abstract class AuthRepository {
   /// Get the current authenticated user
   UserModel? get currentUser;
 
+  /// Canonical authenticated user ID (Firebase Auth UID or Supabase auth.users.id UUID).
+  /// Returns null if not authenticated.
+  /// Never falls back to offline cache as authority.
+  String? get currentUserId => currentUser?.uid;
+
   /// Sign up with email and password
   Future<UserModel> signUpWithEmailAndPassword({
     required String email,

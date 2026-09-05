@@ -1,7 +1,9 @@
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import '../data/models/user_model.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/repository_provider.dart';
 import '../data/models/filter_model.dart';
 import '../data/models/grid_item_model.dart';
 import '../data/models/unified_item_model.dart';
@@ -61,6 +63,7 @@ class HomeViewModel extends ChangeNotifier {
 
   // Single combined stream subscription for efficiency
   StreamSubscription? _combinedSubscription;
+  StreamSubscription? _authSubscription;
   StreamSubscription<AuthState>? _supabaseAuthSubscription;
   StreamSubscription<void>? _coreMutationSubscription;
   // Filter subscriptions for managing filter-specific streams
@@ -122,7 +125,14 @@ class HomeViewModel extends ChangeNotifier {
     ];
   }
 
-  HomeViewModel() {
+  final AuthRepository _authRepository;
+
+  UserModel? get currentUser => _authRepository.currentUser;
+  String? get currentUserId => _authRepository.currentUserId;
+
+  HomeViewModel({AuthRepository? authRepository})
+      : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository {
     _loadCachedCountsInstantly();
     // Delay stream initialization until user is authenticated
     _initializeStreamsWhenReady();
@@ -142,7 +152,7 @@ class HomeViewModel extends ChangeNotifier {
     // Don't call notifyListeners here - let the UI render immediately with cached values
   }
 
-  /// Initialize streams only when Firebase Auth is ready
+  /// Initialize streams only when Auth is ready
   void _initializeStreamsWhenReady() {
     if (_streamsInitialized) return;
 
@@ -152,7 +162,7 @@ class HomeViewModel extends ChangeNotifier {
     }
 
     // Check if user is already authenticated
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = _authRepository.currentUser;
     if (currentUser != null) {
       _initializeLiveStreams();
       _streamsInitialized = true;
@@ -160,10 +170,13 @@ class HomeViewModel extends ChangeNotifier {
     }
 
     // Otherwise, wait for auth state change
-    FirebaseAuth.instance.authStateChanges().listen((user) {
+    _authSubscription ??= _authRepository.authStateChanges.listen((user) {
       if (user != null && !_streamsInitialized) {
         _initializeLiveStreams();
         _streamsInitialized = true;
+      } else if (user == null && _streamsInitialized) {
+        _resetCountsForSignedOutUser();
+        _streamsInitialized = false;
       }
     });
   }
@@ -621,6 +634,7 @@ class HomeViewModel extends ChangeNotifier {
   void dispose() {
     // Cancel subscriptions and timers to prevent memory leaks
     _combinedSubscription?.cancel();
+    _authSubscription?.cancel();
     _supabaseAuthSubscription?.cancel();
     _coreMutationSubscription?.cancel();
     for (final subscription in _filterSubscriptions) {

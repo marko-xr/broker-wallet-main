@@ -10,7 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -502,18 +502,23 @@ class _ScannerViewState extends State<ScannerView>
       {int? pageIndex}) async {
     try {
       // QUOTA CHECK: Check if user can add more scanned documents
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final canAdd = await QuotaHelper.checkAndWarnQuota(
-          context: context,
-          uid: user.uid,
-          section: 'scanner',
-          toolName: 'scanner',
-        );
+      final currentUserId =
+          RepositoryProvider.instance.authRepository.currentUserId;
+      if (currentUserId == null) {
+        _showToast(
+            _localization.translate('pleaseLoginFirst'), Colors.red);
+        return false;
+      }
 
-        if (!canAdd) {
-          return false; // User hit quota limit
-        }
+      final canAdd = await QuotaHelper.checkAndWarnQuota(
+        context: context,
+        uid: currentUserId,
+        section: 'scanner',
+        toolName: 'scanner',
+      );
+
+      if (!canAdd) {
+        return false; // User hit quota limit
       }
 
       // Check storage permissions first
@@ -564,9 +569,7 @@ class _ScannerViewState extends State<ScannerView>
       await _saveDocuments();
 
       // Update quota count
-      if (user != null) {
-        await _incrementQuotaCount(user.uid, 'scanner');
-      }
+      await _incrementQuotaCount(currentUserId, 'scanner');
 
       // Generate new filename for next scan
       _generateFileName();

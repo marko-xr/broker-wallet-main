@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -977,19 +977,20 @@ class PdfGenerationService {
 
   // Upload PDF to Firebase Storage and return download URL
   static Future<String> uploadPdfToStorage(
-      String localPath, String quotationId) async {
+      String localPath, String quotationId, [String? userId]) async {
     try {
       final file = File(localPath);
-      final user = FirebaseAuth.instance.currentUser;
+      final currentUserId = userId ??
+          RepositoryProvider.instance.authRepository.currentUserId;
 
-      if (user == null) {
+      if (currentUserId == null) {
         throw Exception('User not authenticated');
       }
 
       final ref = FirebaseStorage.instance
           .ref()
           .child('quotations')
-          .child(user.uid)
+          .child(currentUserId)
           .child('$quotationId.pdf');
 
       await ref.putFile(file);

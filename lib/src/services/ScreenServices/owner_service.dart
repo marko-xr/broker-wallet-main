@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../repositories/repository_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../config/supabase_config.dart';
@@ -12,12 +12,12 @@ import '../supabase_core_entities_service.dart';
 
 class OwnerService {
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
   final FastMediaUploadService _fastUploadService = FastMediaUploadService();
   final _mapDataCache = MapDataCacheService();
   SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
   static const String _collectionName = 'users';
 
   String generateNewOwnerId() {

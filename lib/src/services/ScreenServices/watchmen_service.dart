@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../repositories/repository_provider.dart';
 
 import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/watchmen_model.dart';
@@ -8,11 +8,11 @@ import '../supabase_core_entities_service.dart';
 
 class WatchmenService {
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  FirebaseAuth get _auth => FirebaseAuth.instance;
   final _mapDataCache = MapDataCacheService();
   SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId =>
+      RepositoryProvider.instance.authRepository.currentUserId;
   static const String _collectionName = 'users';
 
   Future<String?> saveWatchmen(WatchmenModel watchmen) async {

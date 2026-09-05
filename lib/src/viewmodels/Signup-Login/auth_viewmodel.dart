@@ -10,10 +10,6 @@ import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 
 class AuthViewModel extends ChangeNotifier {
-  final AuthRepository _authRepository =
-      RepositoryProvider.instance.authRepository;
-  final UserRepository _userRepository =
-      RepositoryProvider.instance.userRepository;
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
 
@@ -24,8 +20,6 @@ class AuthViewModel extends ChangeNotifier {
   StreamSubscription<UserModel?>? _userStreamSubscription;
 
   String _resolvedDisplayName = '';
-  AuthViewModel() {
-    _initializeAuth();
 
   AuthViewModel({
     AuthRepository? authRepository,
@@ -42,6 +36,12 @@ class AuthViewModel extends ChangeNotifier {
 
   // Getters
   UserModel? get currentUser => _currentUser;
+
+  /// Canonical authenticated user ID.
+  /// Delegates directly to the active AuthRepository session.
+  /// Returns null if not authenticated.
+  String? get currentUserId => _authRepository.currentUserId;
+
   bool get isLoading => _isLoading;
   bool get isAuthenticated {
     final u = _currentUser;
@@ -258,8 +258,6 @@ class AuthViewModel extends ChangeNotifier {
     } on AuthFailure {
       rethrow;
     } catch (e) {
-      throw e;
-      if (e is AuthFailure) rethrow;
       throw AuthFailure(
         code: AuthFailureCode.unknown,
         message: e.toString(),

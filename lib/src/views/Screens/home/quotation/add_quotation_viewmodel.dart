@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 
@@ -38,7 +39,15 @@ class AdministrativeFeeRowVM {
 }
 
 class AddQuotationViewModel extends ChangeNotifier {
-  final QuotationService _quotationService = QuotationService();
+  final QuotationService _quotationService;
+  final AuthRepository _authRepository;
+
+  AddQuotationViewModel({
+    QuotationService? quotationService,
+    AuthRepository? authRepository,
+  })  : _quotationService = quotationService ?? QuotationService(),
+        _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository;
 
   bool _disposed = false;
 
@@ -640,17 +649,20 @@ class AddQuotationViewModel extends ChangeNotifier {
     // if (!_validateForm()) return;
 
     // QUOTA CHECK: Check if user can add more quotations
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final canAdd = await QuotaHelper.checkAndWarnQuota(
-        context: context,
-        uid: user.uid,
-        section: 'quotations',
-      );
+    final currentUserId = _authRepository.currentUserId;
+    if (currentUserId == null) {
+      _showToast('User must be logged in to create quotations', Colors.red);
+      return;
+    }
 
-      if (!canAdd) {
-        return; // User hit quota limit
-      }
+    final canAdd = await QuotaHelper.checkAndWarnQuota(
+      context: context,
+      uid: currentUserId,
+      section: 'quotations',
+    );
+
+    if (!canAdd) {
+      return; // User hit quota limit
     }
 
     _computeDerivedTotals();
@@ -669,7 +681,7 @@ class AddQuotationViewModel extends ChangeNotifier {
       }).toList();
 
       final quotation = QuotationModel(
-        userId: '',
+        userId: currentUserId,
         propertyTitle: propertyTitle,
         propertyType: propertyType.isEmpty ? null : propertyType,
         parking: parking,
@@ -721,9 +733,7 @@ class AddQuotationViewModel extends ChangeNotifier {
 
       if (quotationId != null && !_disposed) {
         // Update quota count
-        if (user != null) {
-          await _incrementQuotaCount(user.uid, 'quotations');
-        }
+        await _incrementQuotaCount(currentUserId, 'quotations');
 
         // Generate PDF locally FIRST (fast local operation)
         await _generateAndSavePdfLocally(quotationId, quotation, context);

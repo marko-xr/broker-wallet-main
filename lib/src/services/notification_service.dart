@@ -6,7 +6,8 @@ import 'package:broker_wallet/src/data/models/notification_model.dart';
 import 'package:broker_wallet/src/repositories/notification_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -26,12 +27,14 @@ class NotificationService {
   static final NotificationService instance = NotificationService._internal();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthRepository _authRepository =
+      RepositoryProvider.instance.authRepository;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final NotificationRepository _notificationRepository =
       RepositoryProvider.instance.notificationRepository;
-  StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<UserModel?>? _authSubscription;
+  String? _lastAuthenticatedUserId;
 
   final StreamController<Map<String, dynamic>> _notificationTapController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -65,9 +68,14 @@ class NotificationService {
     _messaging.onTokenRefresh.listen(_handleTokenRefresh);
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedRemoteMessage);
-    _authSubscription ??= _auth.authStateChanges().listen((user) async {
+    _authSubscription ??= _authRepository.authStateChanges.listen((user) async {
       if (user != null) {
+        _lastAuthenticatedUserId = user.uid;
         await _syncInitialToken();
+      } else {
+        final previousUserId = _lastAuthenticatedUserId;
+        _lastAuthenticatedUserId = null;
+        await _clearTokenForUser(previousUserId);
       }
     });
 
@@ -137,10 +145,12 @@ class NotificationService {
 
   Future<void> _syncInitialToken() async {
     final token = await _messaging.getToken();
-    final uid = _auth.currentUser?.uid;
+    final uid = _authRepository.currentUserId;
     if (token == null || uid == null) {
       return;
     }
+
+    _lastAuthenticatedUserId = uid;
 
     final platform = Platform.isAndroid
         ? 'android'
@@ -163,7 +173,7 @@ class NotificationService {
   }
 
   void _handleTokenRefresh(String token) {
-    final uid = _auth.currentUser?.uid;
+    final uid = _authRepository.currentUserId;
     if (uid == null) {
       return;
     }
@@ -221,7 +231,12 @@ class NotificationService {
   }
 
   Future<void> clearToken() async {
-    final uid = _auth.currentUser?.uid;
+    await _clearTokenForUser(
+      _authRepository.currentUserId ?? _lastAuthenticatedUserId,
+    );
+  }
+
+  Future<void> _clearTokenForUser(String? uid) async {
     final token = await _messaging.getToken();
     if (uid == null || token == null) {
       return;

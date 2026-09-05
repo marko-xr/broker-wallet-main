@@ -269,8 +269,15 @@ class FirebaseAuthRepository implements AuthRepository {
       await sendEmailVerification();
 
       return userModel;
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure.fromFirebase(e);
     } catch (e) {
-      throw Exception('Failed to sign up: $e');
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to sign up: $e',
+        originalException: e,
+      );
     }
   }
 
@@ -306,9 +313,19 @@ class FirebaseAuthRepository implements AuthRepository {
         return updatedUser;
       }
 
-      throw Exception('User data not found');
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'User data not found.',
+      );
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure.fromFirebase(e);
     } catch (e) {
-      throw Exception('Failed to sign in: $e');
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to sign in: $e',
+        originalException: e,
+      );
     }
   }
 
@@ -432,14 +449,26 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> sendEmailVerification() async {
+  Future<void> sendEmailVerification({String? email}) async {
     final user = _auth.currentUser;
-    if (user == null) throw Exception('No user signed in');
+    if (user == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'No user signed in.',
+      );
+    }
 
     try {
       await ProfessionalEmailService.sendProfessionalVerificationEmail(user);
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure.fromFirebase(e);
     } catch (e) {
-      throw Exception('Failed to send email verification: $e');
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to send email verification: $e',
+        originalException: e,
+      );
     }
   }
 
@@ -457,6 +486,51 @@ class FirebaseAuthRepository implements AuthRepository {
     }
 
     return isVerified;
+  }
+
+  @override
+  Future<UserModel?> reloadUser() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      await user.reload();
+      final refreshedUser = _auth.currentUser;
+      if (refreshedUser == null) return null;
+
+      final isVerified = refreshedUser.emailVerified;
+      final profile = await _userRepository.getUserById(refreshedUser.uid);
+      if (profile != null) {
+        if (profile.isEmailVerified != isVerified) {
+          final updated = profile.copyWith(isEmailVerified: isVerified);
+          await _userRepository.updateUser(updated);
+          return updated;
+        }
+        return profile;
+      }
+      return UserModel(
+        uid: refreshedUser.uid,
+        name: refreshedUser.displayName ?? '',
+        email: refreshedUser.email ?? '',
+        phoneNumber: refreshedUser.phoneNumber,
+        createdAt: DateTime.now(),
+        isEmailVerified: refreshedUser.emailVerified,
+        subscription: UserSubscription(
+          plan: 'free',
+          isActive: true,
+          features: [],
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure.fromFirebase(e);
+    } catch (e) {
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to reload user: $e',
+        originalException: e,
+      );
+    }
   }
 
   @override
@@ -557,9 +631,16 @@ class FirebaseAuthRepository implements AuthRepository {
   @override
   Future<void> sendPasswordResetEmail(String email) async {
     try {
-      await _auth.sendPasswordResetEmail(email: email);
+      await _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure.fromFirebase(e);
     } catch (e) {
-      throw Exception('Failed to send password reset email: $e');
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to send password reset email: $e',
+        originalException: e,
+      );
     }
   }
 

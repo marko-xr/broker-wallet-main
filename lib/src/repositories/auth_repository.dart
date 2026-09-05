@@ -1,8 +1,9 @@
 import 'package:broker_wallet/src/data/models/user_model.dart';
+export 'auth_failure.dart';
 
 /// Abstract repository interface for authentication operations
 /// This allows us to easily switch between different authentication backends
-/// (Firebase, REST API, local storage, etc.) without changing business logic
+/// (Firebase, Supabase, etc.) without changing business logic
 abstract class AuthRepository {
   /// Stream of authentication state changes
   Stream<UserModel?> get authStateChanges;
@@ -31,12 +32,15 @@ abstract class AuthRepository {
   Future<UserModel> signInWithFacebook();
 
   /// Send email verification
-  Future<void> sendEmailVerification();
+  Future<void> sendEmailVerification({String? email});
 
   /// Check if email is verified
   Future<bool> isEmailVerified();
 
-  /// Check email verification and update Firestore if verified
+  /// Reload the current user from the server and return the refreshed UserModel
+  Future<UserModel?> reloadUser();
+
+  /// Check email verification and update backend user record if verified
   Future<bool> checkEmailVerificationAndUpdate();
 
   /// Send password reset email

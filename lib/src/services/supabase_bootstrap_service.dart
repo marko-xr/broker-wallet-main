@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
+import 'supabase_secure_storage.dart';
+
 /// Initializes the Supabase client alongside the existing Firebase backend.
 ///
 /// During the migration period this service is intentionally optional:
@@ -26,6 +28,9 @@ abstract final class SupabaseBootstrapService {
       await Supabase.initialize(
         url: SupabaseConfig.url,
         publishableKey: SupabaseConfig.publishableKey,
+        authOptions: FlutterAuthClientOptions(
+          localStorage: SupabaseSecureStorage(),
+        ),
       ).timeout(const Duration(seconds: 10));
       _initialized = true;
       return true;

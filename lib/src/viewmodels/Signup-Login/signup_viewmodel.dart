@@ -1,15 +1,20 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart'
+    show FirebaseAuth, UserCredential;
+    show UserCredential;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/services/auth_service.dart';
 import 'package:broker_wallet/src/common/utils/phone_utils.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/repositories/auth_failure.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 enum SignupMethod { phone, email }
@@ -285,45 +290,16 @@ class SignUpViewModel extends ChangeNotifier {
           context.go('/email-verification', extra: email.trim());
         }
       }
-    } on FirebaseAuthException catch (e) {
-      // Debug log suppressed: FIREBASE AUTH EXCEPTION
-      // Debug log suppressed: Code: ${e.code}
-      // Debug log suppressed: Message: ${e.message}
-
-      String errorMessage = _getFirebaseErrorMessage(e);
+    } on AuthFailure catch (e) {
       if (context.mounted) {
-        _showToast(errorMessage, Colors.red);
+        _showToast(e.message, Colors.red);
       }
     } catch (e) {
-      // Debug log suppressed: GENERAL EXCEPTION
-      // Debug log suppressed: Error: $e
-      // Debug log suppressed: Error type: ${e.runtimeType}
-
       if (context.mounted) {
         _showToast('Failed to create account: ${e.toString()}', Colors.red);
       }
     } finally {
       _setLoading(false);
-    }
-  }
-
-// Add better Firebase error handling
-  String _getFirebaseErrorMessage(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'weak-password':
-        return 'The password provided is too weak.';
-      case 'email-already-in-use':
-        return 'An account already exists for this email.';
-      case 'invalid-email':
-        return 'The email address is not valid.';
-      case 'operation-not-allowed':
-        return 'Email/password accounts are not enabled.';
-      case 'too-many-requests':
-        return 'Too many requests. Try again later.';
-      case 'network-request-failed':
-        return 'Network error. Please check your connection.';
-      default:
-        return e.message ?? 'An unknown error occurred.';
     }
   }
 
@@ -349,6 +325,10 @@ class SignUpViewModel extends ChangeNotifier {
 
       if (context.mounted) {
         _showToast('Verification email sent. Check your inbox.', Colors.green);
+      }
+    } on AuthFailure catch (e) {
+      if (context.mounted) {
+        _showToast(e.message, Colors.red);
       }
     } catch (e) {
       // Debug log suppressed: Error resending email: $e
@@ -399,6 +379,15 @@ class SignUpViewModel extends ChangeNotifier {
   Future<void> signUpWithPhone(BuildContext context) async {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
+
+    if (SupabaseConfig.useSupabaseAuth) {
+      _phoneError =
+          'Phone registration is not supported with Supabase yet. Please use email and password.';
+      _setLoading(false);
+      _showToast(_phoneError!, Colors.orange);
+      if (!_disposed) notifyListeners();
+      return;
+    }
 
     if (!_validatePhoneSignup(loc)) {
       return;
@@ -543,6 +532,12 @@ class SignUpViewModel extends ChangeNotifier {
     String? name,
     required String phoneE164,
   }) async {
+    if (SupabaseConfig.useSupabaseAuth) {
+      _showToast(
+          'Phone registration is not supported with Supabase.', Colors.red);
+      return;
+    }
+
     if (_phoneFlowCompleted) return;
     _phoneFlowCompleted = true;
 
@@ -587,8 +582,13 @@ class SignUpViewModel extends ChangeNotifier {
 
     try {
       final authViewModel = context.read<AuthViewModel>();
-      final initialPhone = FirebaseAuth.instance.currentUser?.phoneNumber ??
-          _pendingVerifiedPhone ??
+      final authRepo = RepositoryProvider.instance.authRepository;
+      final initialPhone = _pendingVerifiedPhone ??
+          (!SupabaseConfig.useSupabaseAuth
+              ? FirebaseAuth.instance.currentUser?.phoneNumber
+              : null) ??
+          authRepo.currentUser?.phoneNumber ??
+          authViewModel.currentUser?.phoneNumber ??
           '';
 
       if (initialPhone.isNotEmpty) {
@@ -601,16 +601,24 @@ class SignUpViewModel extends ChangeNotifier {
       for (var attempt = 0; attempt < maxAttempts; attempt++) {
         if (authViewModel.isAuthenticated ||
             authViewModel.currentUser?.isPhoneVerified == true) {
-          // Debug log suppressed: AuthViewModel confirmed authentication on attempt ${attempt + 1}
           return true;
         }
 
-        final firebaseUser = FirebaseAuth.instance.currentUser;
-        if (firebaseUser?.phoneNumber != null) {
+        if (!SupabaseConfig.useSupabaseAuth) {
+          final firebaseUser = FirebaseAuth.instance.currentUser;
+          if (firebaseUser?.phoneNumber != null) {
+            await authViewModel.markPhoneVerified(
+                phoneNumber: firebaseUser!.phoneNumber);
+            if (authViewModel.isAuthenticated) {
+              return true;
+            }
+        final currentRepoUser =
+            authRepo.currentUser ?? await authRepo.reloadUser();
+        if (currentRepoUser?.phoneNumber != null &&
+            currentRepoUser!.phoneNumber!.isNotEmpty) {
           await authViewModel.markPhoneVerified(
-              phoneNumber: firebaseUser!.phoneNumber);
+              phoneNumber: currentRepoUser.phoneNumber!);
           if (authViewModel.isAuthenticated) {
-            // Debug log suppressed: AuthViewModel confirmed authentication after manual mark
             return true;
           }
         }
@@ -620,10 +628,9 @@ class SignUpViewModel extends ChangeNotifier {
         await Future.delayed(pollingInterval);
         if (!context.mounted) return false;
       }
-
-      // Debug log suppressed: Timed out waiting for AuthViewModel authentication
     } catch (e) {
       // Debug log suppressed: Failed to synchronize AuthViewModel after legacy phone signup: $e
+      // Debug log suppressed: Failed to synchronize AuthViewModel after phone signup: $e
     }
 
     return false;

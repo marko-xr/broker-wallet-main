@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
-
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
@@ -15,6 +14,8 @@ class AuthViewModel extends ChangeNotifier {
       RepositoryProvider.instance.authRepository;
   final UserRepository _userRepository =
       RepositoryProvider.instance.userRepository;
+  final AuthRepository _authRepository;
+  final UserRepository _userRepository;
 
   UserModel? _currentUser;
   bool _isLoading = true;
@@ -25,6 +26,18 @@ class AuthViewModel extends ChangeNotifier {
   String _resolvedDisplayName = '';
   AuthViewModel() {
     _initializeAuth();
+
+  AuthViewModel({
+    AuthRepository? authRepository,
+    UserRepository? userRepository,
+    bool autoInitialize = true,
+  })  : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository,
+        _userRepository =
+            userRepository ?? RepositoryProvider.instance.userRepository {
+    if (autoInitialize) {
+      _initializeAuth();
+    }
   }
 
   // Getters
@@ -106,8 +119,15 @@ class AuthViewModel extends ChangeNotifier {
       );
 
       return userModel;
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
-      throw e;
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -125,8 +145,15 @@ class AuthViewModel extends ChangeNotifier {
       );
 
       return userModel;
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
-      throw e;
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -140,8 +167,15 @@ class AuthViewModel extends ChangeNotifier {
 
       final userModel = await _authRepository.signInWithGoogle();
       return userModel;
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
-      throw e;
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -155,11 +189,34 @@ class AuthViewModel extends ChangeNotifier {
 
       final userModel = await _authRepository.signInWithFacebook();
       return userModel;
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
-      throw e;
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<UserModel?> reloadUser() async {
+    try {
+      final reloaded = await _authRepository.reloadUser();
+      if (reloaded != null) {
+        _currentUser = reloaded;
+        _isAuthenticated = reloaded.isEmailVerified || reloaded.isPhoneVerified;
+        _refreshDisplayName(reloaded);
+        await OfflineAuthService.instance.updateCachedUserModel(reloaded);
+        notifyListeners();
+      }
+      return reloaded;
+    } catch (_) {
+      return _currentUser;
     }
   }
 
@@ -198,8 +255,16 @@ class AuthViewModel extends ChangeNotifier {
   Future<void> sendEmailVerification() async {
     try {
       await _authRepository.sendEmailVerification();
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
       throw e;
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     }
   }
 
@@ -276,14 +341,19 @@ class AuthViewModel extends ChangeNotifier {
         // This prevents premature redirects to login during app startup
         if (_isLoading) {
           _isLoading = false;
-          // Debug log suppressed: Auth loading completed - first auth state received
         }
 
-        // For email users, check if email is verified
+        // Cache ownership: session state is authoritative.
+        // Cache never overrides a logged out session.
         if (user != null) {
+          if (previousUid != null && previousUid != user.uid) {
+            OfflineAuthService.instance.clearAuthCache();
+          }
           _isAuthenticated = user.isEmailVerified || user.isPhoneVerified;
+          OfflineAuthService.instance.cacheUserModel(user);
         } else {
           _isAuthenticated = false;
+          OfflineAuthService.instance.clearAuthCache();
         }
 
         // Always notify listeners when auth state changes
@@ -428,26 +498,23 @@ class AuthViewModel extends ChangeNotifier {
       notifyListeners();
 
       await _authRepository.signOut();
+      await OfflineAuthService.instance.clearAuthCache();
       _currentUser = null;
       _isAuthenticated = false;
       _resolvedDisplayName = '';
-      // Debug log suppressed: AuthViewModel: Sign out completed successfully
     } catch (e) {
-      // Debug log suppressed: AuthViewModel: Sign out error: $e
-
-      // Even if there's an error, still set user as not authenticated
-      // This ensures the UI state is consistent
+      await OfflineAuthService.instance.clearAuthCache();
       _currentUser = null;
       _isAuthenticated = false;
       _resolvedDisplayName = '';
 
       // Only rethrow if it's a critical error
+      if (e is AuthFailure) {
+        rethrow;
+      }
       if (e.toString().toLowerCase().contains('firebase') &&
           !e.toString().toLowerCase().contains('facebook')) {
         throw e;
-      } else {
-        // For Facebook plugin errors and other non-critical errors, just log them
-        // Debug log suppressed: AuthViewModel: Non-critical sign out error ignored
       }
     } finally {
       _isLoading = false;

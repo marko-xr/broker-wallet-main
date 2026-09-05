@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' show UserCredential;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -8,6 +8,8 @@ import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/services/auth_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/common/utils/phone_utils.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/repositories/auth_failure.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 enum LoginMethod { phone, email }
@@ -109,6 +111,14 @@ class SignInViewModel extends ChangeNotifier {
   Future<void> sendOTP(BuildContext context) async {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
+
+    if (SupabaseConfig.useSupabaseAuth) {
+      _phoneError =
+          'Phone sign-in is not supported with Supabase yet. Please use email and password.';
+      _showToast(_phoneError!, Colors.orange);
+      if (!_disposed) notifyListeners();
+      return;
+    }
 
     final rawPhone = phoneController.text.trim();
     _phoneError = null;
@@ -216,7 +226,10 @@ class SignInViewModel extends ChangeNotifier {
       );
 
       if (user == null) {
-        throw Exception('Sign in did not return a user.');
+        throw const AuthFailure(
+          code: AuthFailureCode.unknown,
+          message: 'Sign in did not return a user.',
+        );
       }
 
       if (!user.isEmailVerified) {
@@ -234,6 +247,17 @@ class SignInViewModel extends ChangeNotifier {
 
       if (context.mounted) {
         context.go('/home');
+      }
+    } on AuthFailure catch (e) {
+      if (e.isEmailNotConfirmed) {
+        if (context.mounted) {
+          context.go(
+            '/email-verification',
+            extra: emailController.text.trim(),
+          );
+        }
+      } else {
+        _showToast(e.message, Colors.red);
       }
     } catch (e) {
       final message = e.toString();
@@ -272,6 +296,11 @@ class SignInViewModel extends ChangeNotifier {
     UserCredential credential, {
     required String phoneE164,
   }) async {
+    if (SupabaseConfig.useSupabaseAuth) {
+      _showToast('Phone sign-in is not supported with Supabase.', Colors.red);
+      return;
+    }
+
     if (_phoneFlowCompleted) return;
     _phoneFlowCompleted = true;
 

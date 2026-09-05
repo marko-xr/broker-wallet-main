@@ -4,11 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:broker_wallet/src/services/auth_service.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
 class EmailVerificationViewModel extends ChangeNotifier {
-  final AuthService _authService = AuthService();
+  EmailVerificationViewModel({
+    AuthRepository? authRepository,
+  }) : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository;
+
+  final AuthRepository _authRepository;
 
   // State variables
   bool _isLoading = false;
@@ -86,9 +92,14 @@ class EmailVerificationViewModel extends ChangeNotifier {
     if (_isCheckingVerification) return;
 
     try {
-      final user = await _authService.reloadAndGetUser();
+      final isVerified = await _authRepository.isEmailVerified();
+      bool verified = isVerified;
+      if (!verified) {
+        final reloaded = await _authRepository.reloadUser();
+        verified = reloaded?.isEmailVerified == true;
+      }
 
-      if (user?.emailVerified == true) {
+      if (verified) {
         _verificationCheckTimer?.cancel();
 
         // Show success and navigate
@@ -117,9 +128,14 @@ class EmailVerificationViewModel extends ChangeNotifier {
     _setCheckingVerification(true);
 
     try {
-      final user = await _authService.reloadAndGetUser();
+      final isVerified = await _authRepository.isEmailVerified();
+      bool verified = isVerified;
+      if (!verified) {
+        final reloaded = await _authRepository.reloadUser();
+        verified = reloaded?.isEmailVerified == true;
+      }
 
-      if (user?.emailVerified == true) {
+      if (verified) {
         _verificationCheckTimer?.cancel();
         _showToast(loc.translate('emailVerifiedSuccess'), Colors.green);
 
@@ -130,7 +146,8 @@ class EmailVerificationViewModel extends ChangeNotifier {
         _showToast(loc.translate('emailNotVerifiedYet'), Colors.orange);
       }
     } catch (e) {
-      final message = _mapAuthError(loc, e.toString());
+      final message =
+          e is AuthFailure ? e.message : _mapAuthError(loc, e.toString());
       _setError(message);
       _showToast(message, Colors.red);
     } finally {
@@ -146,11 +163,14 @@ class EmailVerificationViewModel extends ChangeNotifier {
     _setResendingEmail(true);
 
     try {
-      await _authService.sendEmailVerification();
+      await _authRepository.sendEmailVerification(
+        email: _email.isNotEmpty ? _email : null,
+      );
       _startResendCooldown();
       _showToast(loc.translate('verificationEmailSent'), Colors.green);
     } catch (e) {
-      final message = _mapAuthError(loc, e.toString());
+      final message =
+          e is AuthFailure ? e.message : _mapAuthError(loc, e.toString());
       _setError(message);
       _showToast(message, Colors.red);
     } finally {

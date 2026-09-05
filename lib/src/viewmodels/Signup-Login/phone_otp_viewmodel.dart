@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/services/auth_service.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 class PhoneOtpViewModel extends ChangeNotifier {
@@ -266,6 +268,11 @@ class PhoneOtpViewModel extends ChangeNotifier {
     UserCredential credential,
   ) async {
     final loc = AppLocalizations.of(context);
+
+    if (SupabaseConfig.useSupabaseAuth) {
+      throw Exception('Phone sign-in is not supported with Supabase.');
+    }
+
     final user = credential.user;
     if (user == null) {
       throw Exception(loc.translate('verificationFailed'));
@@ -289,41 +296,18 @@ class PhoneOtpViewModel extends ChangeNotifier {
 
     // Force a final sync to ensure auth state is current
     if (context.mounted) {
-      try {
-        final authViewModel = context.read<AuthViewModel>();
-        await authViewModel.syncUserFromRepository();
-      } catch (e) {
-        // Debug log suppressed: Final auth sync failed: $e
-      }
+      final authViewModel = context.read<AuthViewModel>();
+      await authViewModel.syncUserFromRepository();
     }
 
-    // Debug log suppressed: Navigating to home screen...
-
     _timer?.cancel();
-    _showToast(loc.translate('otpVerifiedSuccess'), Colors.green);
 
-    // Navigate to home screen after successful verification
     if (context.mounted) {
-      // Add a delay to ensure auth state is fully propagated
-      await Future.delayed(const Duration(milliseconds: 200));
+      final loc = AppLocalizations.of(context);
+      _showToast(loc.translate('otpVerifiedSuccess'), Colors.green);
 
-      if (context.mounted) {
-        // Force one more auth sync before navigation
-        try {
-          final authViewModel = context.read<AuthViewModel>();
-          await authViewModel.syncUserFromRepository();
-          // Debug log suppressed: Final auth state check (suppressed)
-        } catch (e) {
-          // Debug log suppressed: Failed final auth sync: $e
-        }
-
-        // Simple navigation without complex fallbacks
-        // Debug log suppressed: Initiating navigation to /home...
-        final router = GoRouter.of(context);
-        router.go('/home');
-
-        // Debug log suppressed: Navigation call completed
-      }
+      final router = GoRouter.of(context);
+      router.go('/home');
     }
   }
 
@@ -334,8 +318,13 @@ class PhoneOtpViewModel extends ChangeNotifier {
 
     try {
       final authViewModel = context.read<AuthViewModel>();
-      final initialPhone =
-          FirebaseAuth.instance.currentUser?.phoneNumber ?? _args.phoneNumber;
+      final authRepo = RepositoryProvider.instance.authRepository;
+      final initialPhone = _args.phoneNumber.isNotEmpty
+          ? _args.phoneNumber
+          : (!SupabaseConfig.useSupabaseAuth
+              ? FirebaseAuth.instance.currentUser?.phoneNumber ?? ''
+              : '');
+          : (authRepo.currentUser?.phoneNumber ?? '');
 
       // First, mark phone as verified to ensure proper state
       if (initialPhone.isNotEmpty) {
@@ -361,15 +350,26 @@ class PhoneOtpViewModel extends ChangeNotifier {
           return true;
         }
 
-        final firebaseUser = FirebaseAuth.instance.currentUser;
-        if (firebaseUser?.phoneNumber != null) {
-          // Debug log suppressed: Re-marking phone verified from Firebase user
+        if (!SupabaseConfig.useSupabaseAuth) {
+          final firebaseUser = FirebaseAuth.instance.currentUser;
+          if (firebaseUser?.phoneNumber != null) {
+            // Debug log suppressed: Re-marking phone verified from Firebase user
+            await authViewModel.markPhoneVerified(
+                phoneNumber: firebaseUser!.phoneNumber!);
+        final currentRepoUser =
+            authRepo.currentUser ?? await authRepo.reloadUser();
+        if (currentRepoUser?.phoneNumber != null &&
+            currentRepoUser!.phoneNumber!.isNotEmpty) {
           await authViewModel.markPhoneVerified(
-              phoneNumber: firebaseUser!.phoneNumber!);
+              phoneNumber: currentRepoUser.phoneNumber!);
 
+            // Check again after marking
+            if (authViewModel.isAuthenticated) {
+              // Debug log suppressed: AuthViewModel confirmed authentication after manual mark
+              return true;
+            }
           // Check again after marking
           if (authViewModel.isAuthenticated) {
-            // Debug log suppressed: AuthViewModel confirmed authentication after manual mark
             return true;
           }
         }

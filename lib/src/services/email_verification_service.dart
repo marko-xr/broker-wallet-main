@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
+import 'package:broker_wallet/src/repositories/auth_failure.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 
 /// Service for handling email verification before adding to account
@@ -20,8 +22,20 @@ class EmailVerificationService {
     required String email,
     required String password,
   }) async {
+    if (SupabaseConfig.useSupabaseAuth) {
+      throw const AuthFailure(
+        code: AuthFailureCode.providerUnavailable,
+        message: 'Account email linking is not supported with Supabase yet.',
+      );
+    }
+
     final user = _auth.currentUser;
-    if (user == null) throw Exception('No user signed in');
+    if (user == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'No user signed in',
+      );
+    }
 
     try {
       // Validate email format
@@ -103,8 +117,11 @@ class EmailVerificationService {
     required String email,
     required String password,
   }) async {
+    if (SupabaseConfig.useSupabaseAuth) {
+      return false;
+    }
     final user = _auth.currentUser;
-    if (user == null) throw Exception('No user signed in');
+    if (user == null) return false;
 
     try {
       // Check if there's a pending verification for this email
@@ -165,6 +182,8 @@ class EmailVerificationService {
 
   /// Check if there's a pending verification for the current user
   static Future<String?> getPendingEmailForUser(String userId) async {
+    if (SupabaseConfig.useSupabaseAuth) return null;
+
     try {
       final querySnapshot = await _firestore
           .collection(_pendingVerificationsCollection)
@@ -197,6 +216,8 @@ class EmailVerificationService {
   /// Cancel pending email verification
   static Future<void> cancelPendingVerification(
       String userId, String email) async {
+    if (SupabaseConfig.useSupabaseAuth) return;
+
     try {
       await _firestore
           .collection(_pendingVerificationsCollection)
@@ -212,6 +233,7 @@ class EmailVerificationService {
   /// Update Firebase Auth display name to show email instead of phone
   /// This helps in Firebase console for better user identification
   static Future<void> updateDisplayNameToEmail() async {
+    if (SupabaseConfig.useSupabaseAuth) return;
     final user = _auth.currentUser;
     if (user == null) return;
 

@@ -135,9 +135,15 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> sendEmailVerification() async {
+  Future<void> sendEmailVerification({String? email}) async {
     await Future.delayed(Duration(milliseconds: 200));
     // Mock: do nothing, just simulate delay
+  }
+
+  @override
+  Future<UserModel?> reloadUser() async {
+    await Future.delayed(Duration(milliseconds: 100));
+    return _currentUser;
   }
 
   @override

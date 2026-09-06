@@ -7,6 +7,7 @@ class MockAuthRepository implements AuthRepository {
   bool emailVerified = false;
   int reloadCount = 0;
   int sendVerificationCount = 0;
+  bool hasSession = false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -17,6 +18,20 @@ class MockAuthRepository implements AuthRepository {
   @override
   Future<UserModel?> reloadUser() async {
     reloadCount++;
+    if (!hasSession) {
+      return UserModel(
+        uid: 'user-123',
+        name: 'Test',
+        email: 'test@example.com',
+        createdAt: DateTime.now(),
+        isEmailVerified: emailVerified,
+        subscription: UserSubscription(
+          plan: 'free',
+          isActive: true,
+          features: [],
+        ),
+      );
+    }
     return UserModel(
       uid: 'user-123',
       name: 'Test',
@@ -65,6 +80,22 @@ void main() {
     test('clearError clears error message', () {
       viewModel.clearError();
       expect(viewModel.errorMessage, isNull);
+    });
+
+    test('refresh supports verification after signup returned no session',
+        () async {
+      mockRepo.emailVerified = true;
+
+      final reloaded = await mockRepo.reloadUser();
+
+      expect(mockRepo.reloadCount, equals(1));
+      expect(reloaded?.isEmailVerified, isTrue);
+    });
+
+    test('resend remains repository-backed without a live session', () async {
+      await mockRepo.sendEmailVerification(email: 'agent@broker.com');
+
+      expect(mockRepo.sendVerificationCount, equals(1));
     });
   });
 }

@@ -3,6 +3,7 @@
 /// Values are supplied with Flutter's `--dart-define` flags so no backend
 /// credentials need to be committed to the application source tree.
 abstract final class SupabaseConfig {
+  static const String authCallbackUri = 'brokerwallet://auth/callback';
   static const String url = String.fromEnvironment('SUPABASE_URL');
   static const String publishableKey =
       String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');

@@ -6,6 +6,7 @@ import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/email_verification_completion.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 
 class EmailVerificationView extends StatefulWidget {
@@ -43,70 +44,44 @@ class _EmailVerificationViewState extends State<EmailVerificationView> {
     });
   }
 
-  Future<void> _checkEmailVerificationSilently() async {
-    if (_isCheckingVerification) return;
+  final _completion = EmailVerificationCompletion();
 
-    _isCheckingVerification = true;
-
-    try {
-      final authVM = context.read<AuthViewModel>();
-
-      // Silently check verification status
-      await authVM.checkEmailVerificationStatus();
-
-      if (authVM.isAuthenticated && authVM.isEmailVerified) {
-        _timer?.cancel();
-        if (mounted) {
-          // Show success message
-          _showToast('Email verified successfully!', Colors.green);
-
-          // Navigate to home after a brief delay
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (mounted) {
-            context.go('/home');
-          }
-        }
-      }
-    } catch (e) {
-    } finally {
-      _isCheckingVerification = false;
-    }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _completeIfVerified(Provider.of<AuthViewModel>(context));
   }
 
-  Future<void> _checkEmailVerification() async {
-    if (_isCheckingVerification) return;
+  void _completeIfVerified(AuthViewModel auth) {
+    if (!mounted || !_completion.tryClaim(auth)) return;
+    _timer?.cancel();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showToast('Email verified successfully!', Colors.green);
+      context.go('/home');
+    });
+  }
 
+  Future<void> _checkEmailVerificationSilently() =>
+      _checkEmailVerification(silent: true);
+
+  Future<void> _checkEmailVerification({bool silent = false}) async {
+    if (_isCheckingVerification || _completion.isClaimed) return;
     _isCheckingVerification = true;
-
     try {
-      final authVM = context.read<AuthViewModel>();
-
-      // Check verification status using repository pattern
-      await authVM.checkEmailVerificationStatus();
-
-      if (authVM.isAuthenticated && authVM.isEmailVerified) {
-        _timer?.cancel();
-        if (mounted) {
-          // Show success message
-          _showToast('Email verified successfully!', Colors.green);
-
-          // Navigate to home after a brief delay to show the success message
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (mounted) {
-            context.go('/home');
-          }
-        }
-      } else {
-        if (mounted) {
-          _showToast(
-              'Email not verified yet. Please check your email and click the verification link.',
-              Colors.orange);
-        }
+      final auth = context.read<AuthViewModel>();
+      await auth.checkEmailVerificationStatus();
+      if (!mounted) return;
+      _completeIfVerified(auth);
+      if (!silent && !_completion.isClaimed) {
+        _showToast(
+          'Email not verified yet. Please check your email and click the verification link.',
+          Colors.orange,
+        );
       }
     } catch (e) {
-      if (mounted) {
-        _showToast(
-            'Error checking verification status: ${e.toString()}', Colors.red);
+      if (!silent && mounted && !_completion.isClaimed) {
+        _showToast('Error checking verification status: $e', Colors.red);
       }
     } finally {
       _isCheckingVerification = false;
@@ -229,7 +204,9 @@ class _EmailVerificationViewState extends State<EmailVerificationView> {
                     child: OutlinedButton(
                       onPressed: vm.isResendingEmail
                           ? null
-                          : () => vm.resendVerificationEmail(context),
+                          : () => vm.resendVerificationEmail(context,
+                              onAlreadyVerified: () => _completeIfVerified(
+                                  context.read<AuthViewModel>())),
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: colors.primary),
                         shape: RoundedRectangleBorder(

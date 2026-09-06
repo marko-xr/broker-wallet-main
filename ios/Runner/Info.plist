@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>FlutterDeepLinkingEnabled</key>
+    <false/>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
@@ -63,6 +65,14 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>com.googleusercontent.apps.460721646511-7pv4bplsdnqifr9mj4s1khvgofkf5sle</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>brokerwallet-auth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>brokerwallet</string>
             </array>
         </dict>
     </array>

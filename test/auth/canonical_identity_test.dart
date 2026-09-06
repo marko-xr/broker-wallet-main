@@ -7,14 +7,17 @@ import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/quotation/add_quotation_viewmodel.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 
-UserModel createTestUser({required String uid, String email = 'test@example.com'}) {
+UserModel createTestUser(
+    {required String uid, String email = 'test@example.com'}) {
   return UserModel(
     uid: uid,
     name: 'Test User',
     email: email,
     createdAt: DateTime.now(),
-    subscription: UserSubscription(plan: 'free', isActive: false, features: const []),
+    subscription:
+        UserSubscription(plan: 'free', isActive: false, features: const []),
   );
 }
 
@@ -64,7 +67,8 @@ void main() {
       expect(mockRepo.currentUserId, isNull);
     });
 
-    test('AuthRepository.currentUserId returns Firebase UID in Firebase mode', () {
+    test('AuthRepository.currentUserId returns Firebase UID in Firebase mode',
+        () {
       mockRepo.mockUser = createTestUser(
         uid: 'firebase_test_uid_123',
         email: 'broker@realtig.com',
@@ -81,7 +85,9 @@ void main() {
       expect(mockRepo.currentUserId, equals(supabaseUuid));
     });
 
-    test('AuthViewModel.currentUserId delegates directly to active AuthRepository session', () {
+    test(
+        'AuthViewModel.currentUserId delegates directly to active AuthRepository session',
+        () {
       final authVM = AuthViewModel(authRepository: mockRepo);
 
       expect(authVM.currentUserId, isNull);
@@ -96,7 +102,9 @@ void main() {
       expect(authVM.currentUserId, isNull);
     });
 
-    test('HomeViewModel uses injected AuthRepository without calling FirebaseAuth', () {
+    test(
+        'HomeViewModel uses injected AuthRepository without calling FirebaseAuth',
+        () {
       mockRepo.mockUser = createTestUser(
         uid: 'home_user_456',
         email: 'home@realtig.com',
@@ -109,7 +117,9 @@ void main() {
       homeVM.dispose();
     });
 
-    test('SubscriptionViewModel exposes canonical currentUserId from AuthRepository', () {
+    test(
+        'SubscriptionViewModel exposes canonical currentUserId from AuthRepository',
+        () {
       mockRepo.mockUser = null;
       final subVM = SubscriptionViewModel(authRepository: mockRepo);
 
@@ -124,7 +134,9 @@ void main() {
       subVM.dispose();
     });
 
-    test('AddQuotationViewModel accepts injected AuthRepository and resolves canonical identity', () {
+    test(
+        'AddQuotationViewModel accepts injected AuthRepository and resolves canonical identity',
+        () {
       mockRepo.mockUser = createTestUser(
         uid: 'quotation_author_uuid',
         email: 'quotation@realtig.com',
@@ -136,7 +148,8 @@ void main() {
       quotationVM.dispose();
     });
 
-    test('AnalyticsService scopes cache keys by authenticated user identity', () {
+    test('AnalyticsService scopes cache keys by authenticated user identity',
+        () {
       final service = AnalyticsService.instance;
       expect(service, isNotNull);
 
@@ -145,6 +158,14 @@ void main() {
       const userB = 'user_account_B';
 
       expect(userA, isNot(equals(userB)));
+    });
+
+    test('Supabase auth callback URI is stable for mobile confirmation links',
+        () {
+      expect(
+        SupabaseConfig.authCallbackUri,
+        equals('brokerwallet://auth/callback'),
+      );
     });
   });
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart'
-    show UserCredential;
+import 'package:firebase_auth/firebase_auth.dart' show UserCredential;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -303,7 +302,8 @@ class SignUpViewModel extends ChangeNotifier {
   }
 
 // Also update the resend method with better error handling
-  Future<void> resendVerificationEmail(BuildContext context) async {
+  Future<void> resendVerificationEmail(BuildContext context,
+      {VoidCallback? onAlreadyVerified}) async {
     _isResendingEmail = true;
     notifyListeners();
 
@@ -314,7 +314,11 @@ class SignUpViewModel extends ChangeNotifier {
       if (authVM.isEmailVerified) {
         if (context.mounted) {
           _showToast('Email is already verified!', Colors.green);
-          context.go('/home');
+          if (onAlreadyVerified != null) {
+            onAlreadyVerified();
+          } else {
+            context.go('/home');
+          }
         }
         return;
       }

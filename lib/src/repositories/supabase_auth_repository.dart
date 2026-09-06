@@ -2,7 +2,9 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 
 /// Supabase implementation of [AuthRepository].
 ///
@@ -53,6 +55,7 @@ class SupabaseAuthRepository implements AuthRepository {
       final response = await _client.auth.signUp(
         email: normalizedEmail,
         password: password,
+        emailRedirectTo: SupabaseConfig.authCallbackUri,
         data: {
           'name': name.trim(),
           'full_name': name.trim(),
@@ -174,6 +177,7 @@ class SupabaseAuthRepository implements AuthRepository {
       await _client.auth.resend(
         type: OtpType.signup,
         email: targetEmail,
+        emailRedirectTo: SupabaseConfig.authCallbackUri,
       );
     } on AuthException catch (e) {
       throw AuthFailure.fromSupabase(e);
@@ -196,12 +200,8 @@ class SupabaseAuthRepository implements AuthRepository {
       if (profile?.isEmailVerified == true) return true;
     }
 
-    if (_pendingVerificationEmail != null) {
-      final profile =
-          await _userRepository.getUserByEmail(_pendingVerificationEmail!);
-      if (profile?.isEmailVerified == true) return true;
-    }
-
+    // A pending signup has no session and cannot read profiles under RLS.
+    // Confirmation must establish a session through the SDK callback first.
     return false;
   }
 
@@ -374,12 +374,21 @@ class SupabaseAuthRepository implements AuthRepository {
     if (user == null) return null;
 
     try {
-      return await _userRepository.getUserById(user.id) ?? _fromAuthUser(user);
+      final profile = await _userRepository.getUserById(user.id);
+      if (profile != null) {
+        if (kDebugMode) {
+          debugPrint('Supabase profile source: database');
+        }
+        return profile;
+      }
     } catch (_) {
       // Keep auth-state delivery resilient if profile loading is temporarily
       // unavailable. RLS still protects database access independently.
-      return _fromAuthUser(user);
     }
+    if (kDebugMode) {
+      debugPrint('Supabase profile source: auth metadata fallback');
+    }
+    return _fromAuthUser(user);
   }
 
   UserModel _fromAuthUser(User user) {

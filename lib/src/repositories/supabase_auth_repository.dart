@@ -257,8 +257,38 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() async {
+    if (kDebugMode) {
+      print('🚀 Supabase logout started');
+    }
+
+    try {
+      await _client.auth.signOut();
+    } on AuthException catch (e) {
+      throw AuthFailure.fromSupabase(e);
+    } catch (e) {
+      if (e is AuthFailure) rethrow;
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Failed to sign out: $e',
+        originalException: e,
+      );
+    }
+
+    final hasSession = _client.auth.currentSession != null;
+    final hasUser = _client.auth.currentUser != null;
+    if (hasSession || hasUser) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Supabase sign out did not clear the active session.',
+      );
+    }
+
     await OfflineAuthService.instance.clearAuthCache();
-    await _client.auth.signOut();
+
+    if (kDebugMode) {
+      print('✅ Supabase logout completed');
+      print('✅ Supabase session after logout: absent');
+    }
   }
 
   @override
@@ -286,23 +316,27 @@ class SupabaseAuthRepository implements AuthRepository {
       throw AuthException('The authenticated profile could not be loaded.');
     }
 
+    final sanitizedName = name?.trim();
+
     await _userRepository.updateUser(
       existing.copyWith(
-        name: name,
+        name: sanitizedName,
         phoneNumber: phoneNumber,
         profileImageUrl: profileImageUrl,
       ),
     );
 
-    if (name != null) {
-      await _client.auth.updateUser(
-        UserAttributes(
-          data: {
-            ...?user.userMetadata,
-            'name': name.trim(),
-            'full_name': name.trim(),
-          },
-        ),
+    final refreshed = await _userRepository.getUserById(user.id);
+    if (refreshed == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Profile update could not be confirmed from database.',
+      );
+    }
+    if (sanitizedName != null && refreshed.name.trim() != sanitizedName) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Profile name did not persist to the profile repository.',
       );
     }
   }

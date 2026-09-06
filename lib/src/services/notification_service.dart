@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:broker_wallet/firebase_options.dart';
 import 'package:broker_wallet/src/data/models/notification_model.dart';
+import 'package:broker_wallet/src/repositories/firestore_notification_repository.dart';
 import 'package:broker_wallet/src/repositories/notification_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
@@ -23,16 +25,47 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 /// Centralized notification orchestration: permissions, tokens, foreground display
 class NotificationService {
-  NotificationService._internal();
-  static final NotificationService instance = NotificationService._internal();
+  NotificationService._internal({
+    FirebaseMessaging? messaging,
+    AuthRepository? authRepository,
+    NotificationRepository? notificationRepository,
+    FlutterLocalNotificationsPlugin? localNotifications,
+    Future<String?> Function()? tokenProvider,
+    bool? isSupabaseAuthModeOverride,
+  })  : _messaging = messaging,
+        _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository,
+        _localNotifications =
+            localNotifications ?? FlutterLocalNotificationsPlugin(),
+        _notificationRepository = notificationRepository ??
+            RepositoryProvider.instance.notificationRepository,
+        _tokenProvider = tokenProvider,
+        _isSupabaseAuthModeOverride = isSupabaseAuthModeOverride;
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final AuthRepository _authRepository =
-      RepositoryProvider.instance.authRepository;
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
-  final NotificationRepository _notificationRepository =
-      RepositoryProvider.instance.notificationRepository;
+  static final NotificationService instance =
+      NotificationService._internal(messaging: FirebaseMessaging.instance);
+
+  @visibleForTesting
+  factory NotificationService.forTesting({
+    required AuthRepository authRepository,
+    required NotificationRepository notificationRepository,
+    Future<String?> Function()? tokenProvider,
+    bool? isSupabaseAuthModeOverride,
+  }) {
+    return NotificationService._internal(
+      authRepository: authRepository,
+      notificationRepository: notificationRepository,
+      tokenProvider: tokenProvider,
+      isSupabaseAuthModeOverride: isSupabaseAuthModeOverride,
+    );
+  }
+
+  final FirebaseMessaging? _messaging;
+  final AuthRepository _authRepository;
+  final FlutterLocalNotificationsPlugin _localNotifications;
+  final NotificationRepository _notificationRepository;
+  final Future<String?> Function()? _tokenProvider;
+  final bool? _isSupabaseAuthModeOverride;
   StreamSubscription<UserModel?>? _authSubscription;
   String? _lastAuthenticatedUserId;
 
@@ -57,6 +90,11 @@ class NotificationService {
       return;
     }
 
+    final messaging = _messaging;
+    if (messaging == null) {
+      throw StateError('NotificationService requires FirebaseMessaging.');
+    }
+
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     tz.initializeTimeZones();
     _configureTimezone();
@@ -65,7 +103,7 @@ class NotificationService {
     await _requestPermission();
     await _syncInitialToken();
 
-    _messaging.onTokenRefresh.listen(_handleTokenRefresh);
+    messaging.onTokenRefresh.listen(_handleTokenRefresh);
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedRemoteMessage);
     _authSubscription ??= _authRepository.authStateChanges.listen((user) async {
@@ -79,7 +117,7 @@ class NotificationService {
       }
     });
 
-    final initialMessage = await _messaging.getInitialMessage();
+    final initialMessage = await messaging.getInitialMessage();
     if (initialMessage != null) {
       _handleOpenedRemoteMessage(initialMessage);
     }
@@ -126,7 +164,12 @@ class NotificationService {
   }
 
   Future<void> _requestPermission() async {
-    final settings = await _messaging.requestPermission(
+    final messaging = _messaging;
+    if (messaging == null) {
+      return;
+    }
+
+    final settings = await messaging.requestPermission(
       alert: true,
       announcement: false,
       badge: true,
@@ -144,7 +187,12 @@ class NotificationService {
   }
 
   Future<void> _syncInitialToken() async {
-    final token = await _messaging.getToken();
+    final messaging = _messaging;
+    if (messaging == null) {
+      return;
+    }
+
+    final token = await messaging.getToken();
     final uid = _authRepository.currentUserId;
     if (token == null || uid == null) {
       return;
@@ -231,18 +279,41 @@ class NotificationService {
   }
 
   Future<void> clearToken() async {
+    if (_isSupabaseAuthMode &&
+        _notificationRepository is FirestoreNotificationRepository) {
+      if (kDebugMode) {
+        print(
+            '⚠️ Skipping legacy Firestore FCM delete in Supabase auth mode (unsupported backend/session combination).');
+      }
+      return;
+    }
+
     await _clearTokenForUser(
       _authRepository.currentUserId ?? _lastAuthenticatedUserId,
     );
   }
 
   Future<void> _clearTokenForUser(String? uid) async {
-    final token = await _messaging.getToken();
+    final token = await _resolveToken();
     if (uid == null || token == null) {
       return;
     }
     await _notificationRepository.deleteFcmToken(uid, token);
   }
+
+  Future<String?> _resolveToken() async {
+    if (_tokenProvider != null) {
+      return _tokenProvider();
+    }
+    final messaging = _messaging;
+    if (messaging == null) {
+      return null;
+    }
+    return messaging.getToken();
+  }
+
+  bool get _isSupabaseAuthMode =>
+      _isSupabaseAuthModeOverride ?? SupabaseConfig.useSupabaseAuth;
 
   Future<String?> _resolveDeviceName() async {
     try {

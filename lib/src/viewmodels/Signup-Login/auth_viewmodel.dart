@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
@@ -500,20 +501,17 @@ class AuthViewModel extends ChangeNotifier {
       _currentUser = null;
       _isAuthenticated = false;
       _resolvedDisplayName = '';
+      if (kDebugMode) {
+        print('✅ AuthViewModel logout state: unauthenticated');
+      }
+    } on AuthFailure {
+      rethrow;
     } catch (e) {
-      await OfflineAuthService.instance.clearAuthCache();
-      _currentUser = null;
-      _isAuthenticated = false;
-      _resolvedDisplayName = '';
-
-      // Only rethrow if it's a critical error
-      if (e is AuthFailure) {
-        rethrow;
-      }
-      if (e.toString().toLowerCase().contains('firebase') &&
-          !e.toString().toLowerCase().contains('facebook')) {
-        throw e;
-      }
+      throw AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: e.toString(),
+        originalException: e,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();

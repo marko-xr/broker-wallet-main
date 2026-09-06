@@ -12,14 +12,8 @@ import 'package:broker_wallet/src/repositories/auth_repository.dart';
 class EditProfileViewModel extends ChangeNotifier {
   final ThemeViewModel themeVM;
   final LocaleViewModel localeVM;
-  final UserRepository _userRepository =
-      RepositoryProvider.instance.userRepository;
-  final AuthRepository _authRepository =
-      RepositoryProvider.instance.authRepository;
-  final MediaUploadServiceCompat _mediaUploadService =
-      MediaUploadServiceCompat();
-  final FastProfileUploadService _fastProfileUploadService =
-      FastProfileUploadService();
+  final UserRepository _userRepository;
+  final AuthRepository _authRepository;
 
   String _name;
   String _email;
@@ -34,9 +28,15 @@ class EditProfileViewModel extends ChangeNotifier {
     required String name,
     required String email,
     required String phone,
+    UserRepository? userRepository,
+    AuthRepository? authRepository,
   })  : _name = name,
         _email = email,
-        _phone = phone;
+        _phone = phone,
+        _userRepository =
+            userRepository ?? RepositoryProvider.instance.userRepository,
+        _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository;
 
   // Getters
   String get name => _name;
@@ -132,7 +132,7 @@ class EditProfileViewModel extends ChangeNotifier {
       };
 
       // Use fast profile upload service for immediate save + background upload
-      final tempUrl = await _fastProfileUploadService.saveProfileImageFast(
+      final tempUrl = await FastProfileUploadService().saveProfileImageFast(
         imageFile: imageFile,
         userData: userData,
       );
@@ -153,6 +153,9 @@ class EditProfileViewModel extends ChangeNotifier {
       }
     }
   }
+
+  MediaUploadServiceCompat get _mediaUploadService =>
+      MediaUploadServiceCompat();
 
   /// Format phone number for storage
   String _formatPhoneNumber() {

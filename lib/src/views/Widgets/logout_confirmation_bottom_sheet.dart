@@ -4,7 +4,7 @@ import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
 class LogoutConfirmationBottomSheet extends StatelessWidget {
-  final VoidCallback? onLogout;
+  final Future<void> Function()? onLogout;
 
   const LogoutConfirmationBottomSheet({
     super.key,
@@ -93,11 +93,11 @@ class LogoutConfirmationBottomSheet extends StatelessWidget {
                 // Close the bottom sheet immediately
                 Navigator.of(context).pop();
 
-                // Small delay to ensure UI updates
-                await Future.delayed(const Duration(milliseconds: 100));
-
                 // Call the logout callback
-                onLogout?.call();
+                final callback = onLogout;
+                if (callback != null) {
+                  await callback();
+                }
               },
               child: Text(
                 loc.translate('yesLogOut'),

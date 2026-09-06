@@ -241,7 +241,19 @@ class ProfileView extends StatelessWidget {
                           iconAsset: SvgIcon.logOut,
                           isSvg: true,
                           title: localization.translate('logout'),
-                          onTap: vm.logout,
+                          subtitle: vm.isLoggingOut ? 'Signing out...' : null,
+                          hasTrailing: vm.isLoggingOut,
+                          trailingWidget: vm.isLoggingOut
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colors.primary,
+                                  ),
+                                )
+                              : null,
+                          onTap: vm.isLoggingOut ? null : vm.logout,
                         ),
                         const SizedBox(height: 32),
                       ]),

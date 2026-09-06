@@ -32,6 +32,7 @@ class ProfileViewModel extends ChangeNotifier {
   bool _disposed = false;
   bool _isLinkingEmail = false;
   bool _isLinkingPhone = false;
+  bool _isLoggingOut = false;
   StreamSubscription<ProfileUploadCompletedEvent>?
       _uploadCompletionSubscription;
   StreamSubscription<UserModel?>? _userStreamSubscription;
@@ -151,6 +152,7 @@ class ProfileViewModel extends ChangeNotifier {
   bool get isSubscribed => _currentUser?.subscription.isActive ?? false;
   bool get isLinkingEmail => _isLinkingEmail;
   bool get isLinkingPhone => _isLinkingPhone;
+  bool get isLoggingOut => _isLoggingOut;
   bool get hasLinkedEmail =>
       ((_currentUser?.email ?? '').isNotEmpty) ||
       ((authVM.currentUser?.email ?? '').isNotEmpty);
@@ -347,47 +349,38 @@ class ProfileViewModel extends ChangeNotifier {
     );
   }
 
-  void _handleLogout() async {
+  Future<void> _handleLogout() async {
     if (_disposed) return;
+    if (_isLoggingOut) return;
+
+    _isLoggingOut = true;
+    notifyListeners();
+
     try {
       // Debug log suppressed: Profile: Starting logout process...
 
-      // Close any open bottom sheets or modals first
-      if (context.mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-
+      // Preserve existing logout cleanup ordering for token ownership removal.
       // Sign out
       await NotificationService.instance.clearToken();
       await authVM.signOut();
       // Debug log suppressed: Profile: Logout completed successfully
-
-      // Force immediate navigation to welcome screen
-      if (!_disposed && context.mounted) {
-        context.go('/welcome');
-      }
     } catch (e) {
       // Debug log suppressed: Profile: Logout error: $e
 
-      // Handle logout error - but still navigate to welcome screen
       if (!_disposed && context.mounted) {
-        // Only show error if it's a critical Firebase error
-        if (e.toString().toLowerCase().contains('firebase')) {
-          Fluttertoast.showToast(
-            msg:
-                'Logout warning: Some services may still be connected. Please sign in again.',
-            toastLength: Toast.LENGTH_LONG,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.orange,
-            textColor: Colors.white,
-            fontSize: 16.0,
-          );
-        }
-
-        // Always navigate to welcome screen even if there was an error
-        // The user expects to be logged out
-        context.go('/welcome');
+        Fluttertoast.showToast(
+          msg: 'Logout failed. Please try again.',
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+          fontSize: 16.0,
+        );
       }
+      rethrow;
+    } finally {
+      _isLoggingOut = false;
+      notifyListeners();
     }
   }
 

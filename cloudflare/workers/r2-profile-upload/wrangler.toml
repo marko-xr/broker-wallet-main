@@ -1,0 +1,14 @@
+name = "r2-profile-upload"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Private profile-image bucket. The MEDIA_BUCKET binding is used only by worker.js.
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "broker-wallet-media"
+
+# Required runtime configuration (set outside this file; never commit credentials):
+# Public/non-sensitive: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, R2_BUCKET_NAME,
+# R2_S3_ENDPOINT, ALLOWED_ORIGIN.
+# Server-only secrets: SUPABASE_SECRET_KEY, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.

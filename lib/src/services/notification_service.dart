@@ -293,12 +293,23 @@ class NotificationService {
     );
   }
 
+  /// Notification-token cleanup is best-effort: the push-device persistence
+  /// backend is optional and must never block or fail an authoritative sign
+  /// out. Failures are recorded as a debug-only diagnostic and swallowed so the
+  /// caller can proceed to auth sign out.
   Future<void> _clearTokenForUser(String? uid) async {
-    final token = await _resolveToken();
-    if (uid == null || token == null) {
-      return;
+    try {
+      final token = await _resolveToken();
+      if (uid == null || token == null) {
+        return;
+      }
+      await _notificationRepository.deleteFcmToken(uid, token);
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '⚠️ Skipping FCM token cleanup; notification backend unavailable (${e.runtimeType}).');
+      }
     }
-    await _notificationRepository.deleteFcmToken(uid, token);
   }
 
   Future<String?> _resolveToken() async {

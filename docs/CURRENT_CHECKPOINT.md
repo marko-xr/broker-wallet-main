@@ -79,6 +79,22 @@ Recovery Step 4C — Profile screen refresh:
 Do not mark image/R2, phone, password, delete account or notifications backend
 complete.
 
+PROFILE NON-MEDIA CHECKPOINT — PASS
+
+Verified by human on a real device:
+
+- Name-only save persists correctly to hosted `public.profiles.name`.
+- Profile screen reflects the new name immediately.
+- `phone_number` before test: `NULL`.
+- `phone_number` after name-only save: unchanged `NULL`.
+- `phone_e164` before test: `NULL`.
+- `phone_e164` after name-only save: unchanged `NULL`.
+- No phone-field corruption is confirmed.
+- No repository patch is justified.
+- No code changes were needed for this verification.
+
 NEXT CHECKPOINT:
-Profile non-media/account data only.
-Do not include profile image/R2 yet.
+Profile Image / Cloudflare R2 tracing only.
+
+The recovery branch intentionally predates later R2 WIP on update-main. Do not
+assume later R2 commits are safe or complete.

@@ -24,12 +24,28 @@ Authoritative logout verification observed:
 - Supabase session after logout absent
 - AuthViewModel unauthenticated
 
-Current known issue:
-Supabase notifications Realtime subscription throws RealtimeSubscribeException.
-public.notifications is not currently in the supabase_realtime publication.
+Recovery Step 2 — PASS
+
+Verified on hosted Supabase:
+
+- public.notifications is in the supabase_realtime publication.
+- migration 20260822000500_add_notifications_to_realtime.sql was applied.
+- RealtimeSubscribeException for public.notifications is gone on real device.
+- Supabase logout remains PASS.
+
+Important newly confirmed problem:
+
+- Normal `flutter run` still defaults Auth/Profile to Firebase because
+  `USE_SUPABASE_AUTH` defaults false.
+- Supabase currently requires URL + publishable key dart-defines.
+- In Supabase mode, startup map preload still performs Firestore reads for
+  offers/owners/offices/watchmen.
 
 NEXT STEP ONLY:
-Recovery Step 2 — notifications Realtime subscription only.
+Recovery Step 3 — make Supabase the normal default Auth/Profile runtime and
+stop only those startup Firestore map-preload reads.
+
+DO NOT mark Step 3 complete.
 
 DO NOT TOUCH YET:
 

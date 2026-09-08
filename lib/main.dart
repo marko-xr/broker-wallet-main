@@ -30,6 +30,7 @@ import 'firebase_options.dart';
 import 'src/services/offline_image_service.dart';
 import 'src/services/offline_media_service.dart';
 import 'src/services/supabase_bootstrap_service.dart';
+import 'src/config/supabase_config.dart';
 import 'dart:async';
 
 // Non-blocking language preloading - runs in background
@@ -80,8 +81,9 @@ Future<void> initializeAppServices() async {
   await Hive.initFlutter();
   await SharedPreferences.getInstance();
 
-  // Initialize Supabase only when SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY
-  // are provided via --dart-define. Firebase remains active during migration.
+  // Initialize Supabase using production defaults, with optional --dart-define
+  // overrides for staging/testing. Firebase remains active for unmigrated
+  // features during the migration.
   await SupabaseBootstrapService.initialize();
 
   // Initialize caches with timeouts and error handling - don't block startup
@@ -177,6 +179,11 @@ void _initializeFavoritesServiceAsync() {
 
 // Non-blocking map data preload - runs in background for instant map loading
 void _preloadMapDataAsync() {
+  // Map data is still Firebase-backed and is not part of the Supabase
+  // Auth/Profile runtime. Avoid issuing those optional Firestore reads when
+  // Supabase is the active identity/profile authority.
+  if (SupabaseConfig.useSupabaseAuth) return;
+
   Future.microtask(() async {
     try {
       // Wait a bit to ensure Firebase auth is ready

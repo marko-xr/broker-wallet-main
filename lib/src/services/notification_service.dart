@@ -187,62 +187,78 @@ class NotificationService {
   }
 
   Future<void> _syncInitialToken() async {
-    final messaging = _messaging;
-    if (messaging == null) {
-      return;
+    try {
+      final messaging = _messaging;
+      if (messaging == null) {
+        return;
+      }
+
+      final token = await messaging.getToken();
+      final uid = _authRepository.currentUserId;
+      if (token == null || uid == null) {
+        return;
+      }
+
+      _lastAuthenticatedUserId = uid;
+
+      final platform = Platform.isAndroid
+          ? 'android'
+          : Platform.isIOS
+              ? 'ios'
+              : 'unknown';
+      final locale =
+          WidgetsBinding.instance.platformDispatcher.locale.toString();
+      final deviceName = await _resolveDeviceName();
+
+      await _notificationRepository.upsertFcmToken(
+        uid,
+        FcmTokenMetadata(
+          token: token,
+          platform: platform,
+          updatedAt: DateTime.now(),
+          deviceName: deviceName,
+          locale: locale,
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '⚠️ Skipping FCM token registration; notification backend unavailable (${e.runtimeType}).');
+      }
     }
-
-    final token = await messaging.getToken();
-    final uid = _authRepository.currentUserId;
-    if (token == null || uid == null) {
-      return;
-    }
-
-    _lastAuthenticatedUserId = uid;
-
-    final platform = Platform.isAndroid
-        ? 'android'
-        : Platform.isIOS
-            ? 'ios'
-            : 'unknown';
-    final locale = WidgetsBinding.instance.platformDispatcher.locale.toString();
-    final deviceName = await _resolveDeviceName();
-
-    await _notificationRepository.upsertFcmToken(
-      uid,
-      FcmTokenMetadata(
-        token: token,
-        platform: platform,
-        updatedAt: DateTime.now(),
-        deviceName: deviceName,
-        locale: locale,
-      ),
-    );
   }
 
-  void _handleTokenRefresh(String token) {
-    final uid = _authRepository.currentUserId;
-    if (uid == null) {
-      return;
+  Future<void> _handleTokenRefresh(String token) async {
+    try {
+      final uid = _authRepository.currentUserId;
+      if (uid == null) {
+        return;
+      }
+
+      final platform = Platform.isAndroid
+          ? 'android'
+          : Platform.isIOS
+              ? 'ios'
+              : 'unknown';
+      final locale =
+          WidgetsBinding.instance.platformDispatcher.locale.toString();
+
+      await _notificationRepository.upsertFcmToken(
+        uid,
+        FcmTokenMetadata(
+          token: token,
+          platform: platform,
+          updatedAt: DateTime.now(),
+          deviceName: null,
+          locale: locale,
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '⚠️ Skipping FCM token registration; notification backend unavailable (${e.runtimeType}).');
+      }
     }
-
-    final platform = Platform.isAndroid
-        ? 'android'
-        : Platform.isIOS
-            ? 'ios'
-            : 'unknown';
-    final locale = WidgetsBinding.instance.platformDispatcher.locale.toString();
-
-    _notificationRepository.upsertFcmToken(
-      uid,
-      FcmTokenMetadata(
-        token: token,
-        platform: platform,
-        updatedAt: DateTime.now(),
-        deviceName: null,
-        locale: locale,
-      ),
-    );
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {

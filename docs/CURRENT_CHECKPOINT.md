@@ -33,27 +33,52 @@ Verified on hosted Supabase:
 - RealtimeSubscribeException for public.notifications is gone on real device.
 - Supabase logout remains PASS.
 
-Important newly confirmed problem:
+Recovery Step 3 — PASS
 
-- Normal `flutter run` still defaults Auth/Profile to Firebase because
-  `USE_SUPABASE_AUTH` defaults false.
-- Supabase currently requires URL + publishable key dart-defines.
-- In Supabase mode, startup map preload still performs Firestore reads for
-  offers/owners/offices/watchmen.
+Verified on real device:
+
+- Plain `flutter run` now defaults Auth/Profile to Supabase: PASS.
+- Signup appears in Supabase: PASS.
+- Login/Home/Profile: PASS.
+- Startup Firestore offers/owners/offices/watchmen permission errors are gone:
+  PASS.
+- Logout and restart behavior: PASS.
+
+Recovery Step 4A — PASS
+
+Verified on real device:
+
+- Unconfigured push notification registration no longer throws an unhandled
+  UnsupportedError into signup/verification/login/logout flows: PASS.
+- Signup: PASS.
+- Email verification link flow: PASS.
+- Login: PASS.
+- Home: PASS.
+- Profile: PASS.
+- Logout: PASS.
+- Login again: PASS.
+
+Previously observed Welcome-page flash before Home is no longer reproducible and
+requires no work now.
+
+Known defect:
+
+- Changing only the profile name in the app appears in UI behavior but the new
+  name is not persisted to hosted Supabase `public.profiles`.
 
 NEXT STEP ONLY:
-Recovery Step 3 — make Supabase the normal default Auth/Profile runtime and
-stop only those startup Firestore map-preload reads.
+Recovery Step 4B — diagnose PROFILE NAME persistence to `public.profiles`.
 
-DO NOT mark Step 3 complete.
+DO NOT mark Step 4B complete.
 
 DO NOT TOUCH YET:
 
-- Profile save/name
-- Profile image/R2
+- profile image / R2
 - password
-- phone/OTP
+- phone / OTP
 - delete account
 - Search
 - Favorites
-- unrelated router/auth changes
+- notifications backend setup
+- push_devices
+- Router

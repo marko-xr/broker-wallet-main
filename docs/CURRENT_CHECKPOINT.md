@@ -93,8 +93,53 @@ Verified by human on a real device:
 - No repository patch is justified.
 - No code changes were needed for this verification.
 
-NEXT CHECKPOINT:
-Profile Image / Cloudflare R2 tracing only.
+R2 STEP 1 — SUPABASE PROFILE MEDIA CONFIRM RPC — PASS
+
+Verified on hosted Supabase:
+
+- `public.profiles.profile_media_id` exists.
+- `public.media_objects` exists.
+- `media_status` supports the required profile-media states.
+- `confirm_profile_media_upload(...)` exists.
+- The RPC is `SECURITY DEFINER`.
+- `anon` cannot EXECUTE the RPC.
+- `authenticated` cannot EXECUTE the RPC.
+- `service_role` can EXECUTE the RPC.
+- Migration `20260907000500` is applied remotely.
+- Security lockdown migration `20260908000100` is applied remotely.
+- Local and remote Supabase migration histories match.
+
+Important security decision:
+
+The Flutter client must never call `confirm_profile_media_upload` directly.
+Only the trusted server-side Cloudflare Worker may invoke it using the
+server-side Supabase secret/service credential.
+
+NEXT CHECKPOINT ONLY:
+
+R2 Step 2 — Cloudflare profile-image infrastructure.
+
+Scope for the next checkpoint:
+
+- R2 bucket
+- Profile-image Worker source/config
+- Worker secrets/bindings
+- Deploy and independently verify Worker
+
+Do not integrate Flutter with R2 yet.
+
+Still excluded:
+
+- Edit Profile image integration
+- `profile_save_result`
+- Password
+- Phone/OTP
+- Delete account
+- Notifications
+- Search/Favorites
+- Router
+- Stream/video
+- Subscriptions
 
 The recovery branch intentionally predates later R2 WIP on update-main. Do not
 assume later R2 commits are safe or complete.

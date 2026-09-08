@@ -43,8 +43,14 @@ class ProfileViewModel extends ChangeNotifier {
     required this.context,
     required this.authVM,
   }) {
+    authVM.addListener(_handleAuthViewModelChanged);
     _initializeUser();
     _setupUploadCompletionListener();
+  }
+
+  void _handleAuthViewModelChanged() {
+    if (_disposed) return;
+    notifyListeners();
   }
 
   void _subscribeToUserStream(String uid) {
@@ -109,14 +115,14 @@ class ProfileViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   UserModel? get currentUser => _currentUser;
   String get displayName {
-    final primaryName = _currentUser?.name.trim() ?? '';
-    if (primaryName.isNotEmpty) {
-      return primaryName;
-    }
-
     final authDisplayName = authVM.displayName.trim();
     if (authDisplayName.isNotEmpty) {
       return authDisplayName;
+    }
+
+    final primaryName = _currentUser?.name.trim() ?? '';
+    if (primaryName.isNotEmpty) {
+      return primaryName;
     }
 
     final emailCandidates = <String?>[
@@ -169,6 +175,7 @@ class ProfileViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    authVM.removeListener(_handleAuthViewModelChanged);
     _uploadCompletionSubscription?.cancel();
     _userStreamSubscription?.cancel();
     super.dispose();

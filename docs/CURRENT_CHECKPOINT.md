@@ -61,24 +61,24 @@ Verified on real device:
 Previously observed Welcome-page flash before Home is no longer reproducible and
 requires no work now.
 
-Known defect:
+Recovery Step 4B — Profile name persistence:
 
-- Changing only the profile name in the app appears in UI behavior but the new
-  name is not persisted to hosted Supabase `public.profiles`.
+- Name-only Edit Profile save writes successfully to hosted
+  `public.profiles`: PASS.
+- Hosted Supabase row updated and sync version increased: PASS.
+- Cold persistence is authoritative from Supabase: PASS.
 
-NEXT STEP ONLY:
-Recovery Step 4B — diagnose PROFILE NAME persistence to `public.profiles`.
+Recovery Step 4C — Profile screen refresh:
 
-DO NOT mark Step 4B complete.
+- Root cause was stale ProfileViewModel display state.
+- ProfileViewModel now reacts to refreshed AuthViewModel state.
+- New profile name appears immediately on Profile after Save: PASS.
+- Home/Search/Favorites continue showing the same new name: PASS.
+- Cold restart shows the same persisted name: PASS.
 
-DO NOT TOUCH YET:
+Do not mark image/R2, phone, password, delete account or notifications backend
+complete.
 
-- profile image / R2
-- password
-- phone / OTP
-- delete account
-- Search
-- Favorites
-- notifications backend setup
-- push_devices
-- Router
+NEXT CHECKPOINT:
+Profile non-media/account data only.
+Do not include profile image/R2 yet.

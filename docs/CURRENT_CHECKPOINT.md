@@ -201,26 +201,54 @@ Supabase:
 Do not repeat destructive backend security tests in production unless there is
 a concrete reason.
 
+FLUTTER-P1 — R2Config + R2ProfileUploadService — PASS
+
+Verified:
+
+- Production Worker default: https://media-api.brokerwallet.ae
+- `R2_UPLOAD_WORKER_URL` dart-define override remains supported.
+- Plain Flutter runtime requires no R2 Worker dart-define.
+- `R2ProfileUploadService` supports:
+  - authenticated `/authorize`
+  - direct signed PUT
+  - `/confirm`
+  - `/profile-image-url` signed read
+- User identity/token comes from the current Supabase session.
+- No Supabase secret/service_role credential exists in Flutter.
+- No R2 access/secret credential exists in Flutter.
+- No signed URLs or auth tokens are logged.
+- No Firebase fallback was added.
+- Targeted analyze: PASS.
+- `git diff --check`: PASS.
+- Backend production was already verified PASS.
+- Real-device integration is N/A for P1 because no UI/repository path is wired
+  yet.
+
 NEXT CHECKPOINT ONLY:
 
-FLUTTER-P1 — add the minimal production R2 profile-image client layer:
-`R2Config` + `R2ProfileUploadService`.
+FLUTTER-P2 — SupabaseUserRepository signed profile-image read.
 
-Flutter profile-image integration has NOT started yet.
-Repository signed-image read has NOT started yet.
-Edit Profile image upload integration has NOT started yet.
+Goal:
+
+When `public.profiles.profile_media_id` exists, resolve the current short-lived
+profile image URL through `R2ProfileUploadService` `/profile-image-url` and
+expose it through the existing `UserModel.profileImageUrl` read path.
+
+Do not start Edit Profile image upload yet.
 
 Still excluded:
 
-- UI changes
-- EditProfileViewModel integration
-- SupabaseUserRepository integration
-- Legacy Firebase profile-image removal
+- EditProfileViewModel
+- EditProfileView
+- ProfileViewModel
+- ProfileView
+- FastProfileUploadService
+- Firebase profile image path
+- localization
 - Password
 - Phone/OTP
 - Delete account
 - Notifications
 - Search/Favorites
 - Router
-- Stream/video
-- RevenueCat
+- backend deployment/migrations

@@ -115,18 +115,56 @@ The Flutter client must never call `confirm_profile_media_upload` directly.
 Only the trusted server-side Cloudflare Worker may invoke it using the
 server-side Supabase secret/service credential.
 
+R2 STEP 2 — CLOUDFLARE PROFILE IMAGE BACKEND PREVIEW — PASS
+
+Verified preview behavior:
+
+- `/authorize` without token: 401 PASS.
+- `/authorize` with invalid token: 401 PASS.
+- Valid token with mismatched `userId`: 403 PASS.
+- Valid `/authorize`: PASS.
+- Object key is scoped to the authenticated user: PASS.
+- Signed PUT URL: PASS.
+
+Valid image E2E:
+
+- Private R2 signed PUT: PASS.
+- Actual uploaded image size: 78596 bytes.
+- `/confirm`: PASS.
+- `media_objects.status` is `ready`.
+- `public.profiles.profile_media_id` links the same media object.
+- `/profile-image-url`: PASS.
+- Signed GET: PASS.
+- Downloaded bytes match the original.
+- Downloaded SHA256 equals the original SHA256: PASS.
+
+Security:
+
+- R2 `r2.dev` public access is disabled.
+- R2 custom public domains: none.
+- MIME-mismatch upload is rejected by `/confirm` with 422.
+- Rejected media row becomes `failed`.
+- Rejected media is not linked to the profile.
+- Good media remains `ready` and linked.
+
+RPC:
+
+- Profile-media-id ambiguity migration was fixed and applied.
+- Confirm RPC remains `SECURITY DEFINER`.
+- `anon` EXECUTE: false.
+- `authenticated` EXECUTE: false.
+- `service_role` EXECUTE: true.
+
+Production Worker deployment is NOT DONE.
+Flutter R2 integration is NOT DONE.
+
 NEXT CHECKPOINT ONLY:
 
-R2 Step 2 — Cloudflare profile-image infrastructure.
+R2 Production Worker deployment using the already-verified Worker version,
+followed by production endpoint smoke tests.
 
-Scope for the next checkpoint:
-
-- R2 bucket
-- Profile-image Worker source/config
-- Worker secrets/bindings
-- Deploy and independently verify Worker
-
-Do not integrate Flutter with R2 yet.
+After production backend PASS:
+begin Flutter Profile Image integration in separate small checkpoints.
 
 Still excluded:
 

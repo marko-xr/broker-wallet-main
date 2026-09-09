@@ -191,10 +191,7 @@ class ProfileViewModel extends ChangeNotifier {
   void _initializeUser() async {
     try {
       if (authVM.currentUser != null) {
-        // Try to get user from repository
         try {
-          _currentUser =
-              await _userRepository.getUserById(authVM.currentUser!.uid);
           if (authVM.currentUser?.uid != null) {
             _subscribeToUserStream(authVM.currentUser!.uid);
           }

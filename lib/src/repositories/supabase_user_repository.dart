@@ -1,5 +1,6 @@
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
+import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 
@@ -9,10 +10,17 @@ import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 /// `public.profiles`. Subscription state remains server-owned and will be
 /// connected to RevenueCat in a later stage.
 class SupabaseUserRepository implements UserRepository {
-  SupabaseUserRepository({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client;
+  SupabaseUserRepository({
+    SupabaseClient? client,
+    R2ProfileUploadService? profileImageService,
+  })  : _client = client ?? Supabase.instance.client,
+        _profileImageService = profileImageService ??
+            R2ProfileUploadService(
+              supabaseClient: client ?? Supabase.instance.client,
+            );
 
   final SupabaseClient _client;
+  final R2ProfileUploadService _profileImageService;
 
   static const _table = 'profiles';
 
@@ -34,7 +42,7 @@ class SupabaseUserRepository implements UserRepository {
   @override
   Future<UserModel?> getUserById(String uid) async {
     final row = await _client.from(_table).select().eq('id', uid).maybeSingle();
-    return row == null ? null : _fromProfile(row);
+    return row == null ? null : await _fromProfile(row);
   }
 
   @override
@@ -65,7 +73,7 @@ class SupabaseUserRepository implements UserRepository {
         .select()
         .eq('email', email.trim().toLowerCase())
         .maybeSingle();
-    return row == null ? null : _fromProfile(row);
+    return row == null ? null : await _fromProfile(row);
   }
 
   @override
@@ -98,7 +106,8 @@ class SupabaseUserRepository implements UserRepository {
         .from(_table)
         .stream(primaryKey: const ['id'])
         .eq('id', uid)
-        .map((rows) => rows.isEmpty ? null : _fromProfile(rows.first));
+        .asyncMap((rows) async =>
+            rows.isEmpty ? null : await _fromProfile(rows.first));
   }
 
   Map<String, dynamic> _editableColumns(UserModel user) {
@@ -114,15 +123,18 @@ class SupabaseUserRepository implements UserRepository {
     };
   }
 
-  UserModel _fromProfile(Map<String, dynamic> row) {
+  Future<UserModel> _fromProfile(Map<String, dynamic> row) async {
+    final profileMediaId = _profileMediaId(row['profile_media_id']);
+    final profileImageUrl = profileMediaId == null
+        ? null
+        : await _resolveProfileImageUrl();
+
     return UserModel(
       uid: row['id'] as String? ?? '',
       name: row['name'] as String? ?? '',
       email: row['email'] as String? ?? '',
       phoneNumber: row['phone_number'] as String?,
-      // Profile media is stored as R2-backed metadata, not a permanent URL.
-      // It will be resolved when the R2 media layer is migrated.
-      profileImageUrl: null,
+      profileImageUrl: profileImageUrl,
       createdAt: _parseTimestamp(row['created_at']) ?? DateTime.now(),
       lastLoginAt: _parseTimestamp(row['last_login_at']),
       isEmailVerified: row['is_email_verified'] as bool? ?? false,
@@ -132,6 +144,22 @@ class SupabaseUserRepository implements UserRepository {
         row['preferences'] as Map? ?? const <String, dynamic>{},
       ),
     );
+  }
+
+  String? _profileMediaId(dynamic value) {
+    return value is String && value.trim().isNotEmpty ? value : null;
+  }
+
+  Future<String?> _resolveProfileImageUrl() async {
+    try {
+      final image = await _profileImageService.getCurrentProfileImage();
+      final url = image.profileImageUrl;
+      return url == null || url.trim().isEmpty ? null : url;
+    } catch (_) {
+      // Signed image URLs are optional presentation data. The authoritative
+      // profile read must still succeed if this request cannot be resolved.
+      return null;
+    }
   }
 
   DateTime? _parseTimestamp(dynamic value) {

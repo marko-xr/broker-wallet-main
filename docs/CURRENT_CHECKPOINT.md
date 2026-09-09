@@ -224,31 +224,48 @@ Verified:
 - Real-device integration is N/A for P1 because no UI/repository path is wired
   yet.
 
+FLUTTER-P2 — SIGNED PROFILE IMAGE READ — PASS
+
+Verified by human on a real device:
+
+- Login: PASS.
+- Home: PASS.
+- Profile opens: PASS.
+- Existing R2 profile image resolves through the production Worker: PASS.
+- Cold restart: PASS.
+- Profile image remains available after restart: PASS.
+- Name/profile text unchanged: PASS.
+- No Auth/Profile crash: PASS.
+- Previous screen-switching image flicker is fixed.
+- Welcome-page flash previously observed after login is no longer reproducible
+  and requires no current work.
+
+Minor non-blocking UX observation:
+
+- On a full cold app start only, the profile image may visibly refresh once
+  before stabilizing.
+- This does not affect data, authentication, Supabase
+  `profile_media_id`, or final image correctness.
+- Do not open a new fix for this now.
+- Re-check during final Profile UX polish after upload integration is complete.
+
 NEXT CHECKPOINT ONLY:
 
-FLUTTER-P2 — SupabaseUserRepository signed profile-image read.
+FLUTTER-P3 — wire EditProfileViewModel profile-image upload to
+R2ProfileUploadService.
 
-Goal:
-
-When `public.profiles.profile_media_id` exists, resolve the current short-lived
-profile image URL through `R2ProfileUploadService` `/profile-image-url` and
-expose it through the existing `UserModel.profileImageUrl` read path.
-
-Do not start Edit Profile image upload yet.
+Do not start UI/localization work yet.
 
 Still excluded:
 
-- EditProfileViewModel
-- EditProfileView
-- ProfileViewModel
-- ProfileView
-- FastProfileUploadService
-- Firebase profile image path
+- EditProfileView UI changes
+- ProfileSaveResult UI
 - localization
+- legacy Firebase image cleanup
 - Password
 - Phone/OTP
 - Delete account
 - Notifications
 - Search/Favorites
 - Router
-- backend deployment/migrations
+- backend changes/deployment

@@ -155,21 +155,67 @@ RPC:
 - `authenticated` EXECUTE: false.
 - `service_role` EXECUTE: true.
 
-Production Worker deployment is NOT DONE.
-Flutter R2 integration is NOT DONE.
+PROFILE IMAGE BACKEND — PRODUCTION PASS
+
+Cloudflare Worker:
+
+- Worker: `r2-profile-upload`
+- Production endpoint: https://media-api.brokerwallet.ae
+- Production Version ID: `491a5e0f-6b51-4ca9-8d33-8164bcfec348`
+- Production traffic: 100%
+
+Preview backend verification PASS:
+
+- `/authorize` auth/security checks: PASS.
+- Private signed PUT: PASS.
+- `/confirm`: PASS.
+- `Supabase media_objects` status becomes `ready`.
+- `public.profiles.profile_media_id` linked atomically.
+- `/profile-image-url`: PASS.
+- Signed GET: PASS.
+- Downloaded image SHA256 matches original.
+- R2 `r2.dev` public access disabled.
+- No custom public R2 domain.
+- MIME mismatch rejected with 422.
+- Invalid media row marked `failed`.
+- Invalid media never linked to profile.
+
+Production smoke verification PASS:
+
+- `/authorize` without token: 401.
+- `/profile-image-url` with real Supabase token: PASS.
+- Signed GET URL returned.
+- Production signed GET downloads the correct 78596-byte image.
+- SHA256 matches original image.
+- Custom domain `media-api.brokerwallet.ae`: PASS.
+- `brokerwallet.ae` and `www.brokerwallet.ae` remain working.
+
+Supabase:
+
+- `confirm_profile_media_upload` RPC ambiguity fix applied.
+- RPC remains `SECURITY DEFINER`.
+- `anon` EXECUTE: false.
+- `authenticated` EXECUTE: false.
+- `service_role` EXECUTE: true.
+
+Do not repeat destructive backend security tests in production unless there is
+a concrete reason.
 
 NEXT CHECKPOINT ONLY:
 
-R2 Production Worker deployment using the already-verified Worker version,
-followed by production endpoint smoke tests.
+FLUTTER-P1 — add the minimal production R2 profile-image client layer:
+`R2Config` + `R2ProfileUploadService`.
 
-After production backend PASS:
-begin Flutter Profile Image integration in separate small checkpoints.
+Flutter profile-image integration has NOT started yet.
+Repository signed-image read has NOT started yet.
+Edit Profile image upload integration has NOT started yet.
 
 Still excluded:
 
-- Edit Profile image integration
-- `profile_save_result`
+- UI changes
+- EditProfileViewModel integration
+- SupabaseUserRepository integration
+- Legacy Firebase profile-image removal
 - Password
 - Phone/OTP
 - Delete account
@@ -177,7 +223,4 @@ Still excluded:
 - Search/Favorites
 - Router
 - Stream/video
-- Subscriptions
-
-The recovery branch intentionally predates later R2 WIP on update-main. Do not
-assume later R2 commits are safe or complete.
+- RevenueCat

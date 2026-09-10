@@ -48,7 +48,7 @@ class SearchView extends StatelessWidget {
               onNotification: (n) => false,
               child: CustomScrollView(
                 // bigger cache to make scrolling silky
-                scrollCacheExtent: 1400,
+                cacheExtent: 1400,
                 slivers: [
                   // Header
                   SliverToBoxAdapter(

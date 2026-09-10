@@ -127,7 +127,7 @@ class SupabaseUserRepository implements UserRepository {
     final profileMediaId = _profileMediaId(row['profile_media_id']);
     final profileImageUrl = profileMediaId == null
         ? null
-        : await _resolveProfileImageUrl();
+        : await _resolveProfileImageUrl(profileMediaId);
 
     return UserModel(
       uid: row['id'] as String? ?? '',
@@ -135,6 +135,7 @@ class SupabaseUserRepository implements UserRepository {
       email: row['email'] as String? ?? '',
       phoneNumber: row['phone_number'] as String?,
       profileImageUrl: profileImageUrl,
+      profileMediaId: profileMediaId,
       createdAt: _parseTimestamp(row['created_at']) ?? DateTime.now(),
       lastLoginAt: _parseTimestamp(row['last_login_at']),
       isEmailVerified: row['is_email_verified'] as bool? ?? false,
@@ -150,10 +151,9 @@ class SupabaseUserRepository implements UserRepository {
     return value is String && value.trim().isNotEmpty ? value : null;
   }
 
-  Future<String?> _resolveProfileImageUrl() async {
+  Future<String?> _resolveProfileImageUrl(String profileMediaId) async {
     try {
-      final image = await _profileImageService.getCurrentProfileImage();
-      final url = image.profileImageUrl;
+      final url = await _profileImageService.resolveSignedUrl(profileMediaId);
       return url == null || url.trim().isEmpty ? null : url;
     } catch (_) {
       // Signed image URLs are optional presentation data. The authoritative

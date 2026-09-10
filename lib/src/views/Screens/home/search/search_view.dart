@@ -34,7 +34,13 @@ class SearchView extends StatelessWidget {
       create: (_) => SearchViewModel(),
       child: Consumer<SearchViewModel>(
         builder: (context, vm, _) {
-          final authVM = Provider.of<AuthViewModel>(context, listen: false);
+          // listen: true (default) — Search is kept alive in the bottom-nav
+          // IndexedStack, so it must subscribe to AuthViewModel like
+          // Home/Favorites already do; a one-time listen:false read here was
+          // why Search kept showing the old name/image until a full
+          // rebuild (e.g. logout/login) instead of updating immediately
+          // after a profile save.
+          final authVM = Provider.of<AuthViewModel>(context);
           final colorScheme = Theme.of(context).colorScheme;
 
           return SafeArea(
@@ -42,7 +48,7 @@ class SearchView extends StatelessWidget {
               onNotification: (n) => false,
               child: CustomScrollView(
                 // bigger cache to make scrolling silky
-                cacheExtent: 1400,
+                scrollCacheExtent: 1400,
                 slivers: [
                   // Header
                   SliverToBoxAdapter(

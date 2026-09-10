@@ -19,10 +19,24 @@ class R2ProfileImage {
   const R2ProfileImage({
     this.profileMediaId,
     this.profileImageUrl,
+    this.expiresInSeconds,
   });
 
   final String? profileMediaId;
   final String? profileImageUrl;
+
+  /// Server-declared validity window for [profileImageUrl], in seconds.
+  /// Comes directly from the Worker's `/profile-image-url` response
+  /// (`expiresInSeconds`) — never guessed client-side.
+  final int? expiresInSeconds;
+}
+
+/// An in-memory, process-lifetime cache entry for a resolved signed URL.
+class _CachedSignedUrl {
+  const _CachedSignedUrl({required this.url, required this.expiresAt});
+
+  final String url;
+  final DateTime expiresAt;
 }
 
 /// Client boundary for the production profile-image Worker.
@@ -43,6 +57,59 @@ class R2ProfileUploadService {
 
   final http.Client _http;
   final SupabaseClient _supabase;
+
+  /// In-memory signed-URL cache, keyed by the stable `profileMediaId`.
+  /// Never persisted; cleared automatically when the process exits.
+  final Map<String, _CachedSignedUrl> _urlCache = {};
+
+  /// Safety margin subtracted from the Worker-declared TTL before a cached
+  /// entry is treated as expired, so a resolution is never handed out right
+  /// at the edge of the server's own signature validity window.
+  static const Duration _expirySafetyMargin = Duration(seconds: 60);
+
+  /// Resolve the signed read URL for [expectedMediaId], reusing an unexpired
+  /// in-memory cache entry when possible instead of always calling the
+  /// Worker. Returns null when there is no media, or when the Worker's
+  /// current resolution turns out to be for a different media id than the
+  /// one the caller expected (see the race-handling note below).
+  Future<String?> resolveSignedUrl(String? expectedMediaId) async {
+    if (expectedMediaId == null || expectedMediaId.isEmpty) return null;
+
+    final cached = _urlCache[expectedMediaId];
+    if (cached != null && DateTime.now().isBefore(cached.expiresAt)) {
+      return cached.url;
+    }
+
+    final image = await getCurrentProfileImage();
+    final resolvedMediaId = image.profileMediaId;
+    final url = image.profileImageUrl;
+    if (resolvedMediaId == null || url == null || url.isEmpty) {
+      return null;
+    }
+
+    final ttlSeconds = image.expiresInSeconds;
+    final ttl = (ttlSeconds != null && ttlSeconds > 0)
+        ? Duration(seconds: ttlSeconds)
+        : Duration.zero;
+    final safeTtl =
+        ttl > _expirySafetyMargin ? ttl - _expirySafetyMargin : Duration.zero;
+    _urlCache[resolvedMediaId] = _CachedSignedUrl(
+      url: url,
+      expiresAt: DateTime.now().add(safeTtl),
+    );
+
+    // Race guard: public.profiles.profile_media_id may have changed between
+    // the caller's own database read and this request, since
+    // /profile-image-url resolves whatever is canonical *now* rather than
+    // taking a caller-supplied media id. Only hand back the URL when it
+    // actually matches what the caller expected; otherwise the correct value
+    // is now cached under resolvedMediaId for whoever asks for that id next.
+    if (resolvedMediaId != expectedMediaId) {
+      return null;
+    }
+
+    return url;
+  }
 
   /// Authorize an upload using the current authenticated Supabase user.
   Future<R2UploadAuthorization> authorizeProfileImageUpload({
@@ -118,6 +185,7 @@ class R2ProfileUploadService {
     return R2ProfileImage(
       profileMediaId: _optionalString(payload, 'profileMediaId'),
       profileImageUrl: _optionalString(payload, 'profileImageUrl'),
+      expiresInSeconds: _optionalInt(payload, 'expiresInSeconds'),
     );
   }
 
@@ -239,6 +307,13 @@ String _requiredString(Map<String, dynamic> payload, String key) {
 String? _optionalString(Map<String, dynamic> payload, String key) {
   final value = payload[key];
   return value is String && value.isNotEmpty ? value : null;
+}
+
+int? _optionalInt(Map<String, dynamic> payload, String key) {
+  final value = payload[key];
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return null;
 }
 
 class R2WorkerNotConfiguredException implements Exception {

@@ -6,6 +6,10 @@ class UserModel {
   final String email;
   final String? phoneNumber;
   final String? profileImageUrl;
+  // Provider-neutral stable media identity (Supabase: public.profiles.profile_media_id).
+  // profileImageUrl remains temporary presentation data; this field is the
+  // durable identity used to dedupe/cache signed-URL resolution.
+  final String? profileMediaId;
   final DateTime createdAt;
   final DateTime? lastLoginAt;
   final bool isEmailVerified;
@@ -19,6 +23,7 @@ class UserModel {
     required this.email,
     this.phoneNumber,
     this.profileImageUrl,
+    this.profileMediaId,
     required this.createdAt,
     this.lastLoginAt,
     this.isEmailVerified = false,
@@ -34,6 +39,7 @@ class UserModel {
       email: map['email'] ?? '',
       phoneNumber: map['phoneNumber'],
       profileImageUrl: map['profileImageUrl'],
+      profileMediaId: map['profileMediaId'],
       createdAt: _parseDate(map['createdAt']) ?? DateTime.now(),
       lastLoginAt: _parseDate(map['lastLoginAt']),
       isEmailVerified: map['isEmailVerified'] ?? false,
@@ -85,6 +91,7 @@ class UserModel {
       'email': email,
       'phoneNumber': phoneNumber,
       'profileImageUrl': profileImageUrl,
+      'profileMediaId': profileMediaId,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'lastLoginAt': lastLoginAt?.millisecondsSinceEpoch,
       'isEmailVerified': isEmailVerified,
@@ -99,6 +106,7 @@ class UserModel {
     String? email,
     String? phoneNumber,
     String? profileImageUrl,
+    String? profileMediaId,
     DateTime? lastLoginAt,
     bool? isEmailVerified,
     bool? isPhoneVerified,
@@ -111,6 +119,7 @@ class UserModel {
       email: email ?? this.email,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
+      profileMediaId: profileMediaId ?? this.profileMediaId,
       createdAt: createdAt,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,

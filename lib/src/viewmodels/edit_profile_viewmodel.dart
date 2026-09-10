@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/media_upload_service_compat.dart';
 import 'package:broker_wallet/src/services/fast_profile_upload_service.dart';
+import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
@@ -14,6 +16,7 @@ class EditProfileViewModel extends ChangeNotifier {
   final LocaleViewModel localeVM;
   final UserRepository _userRepository;
   final AuthRepository _authRepository;
+  R2ProfileUploadService? _r2ProfileUploadService;
 
   String _name;
   String _email;
@@ -30,13 +33,15 @@ class EditProfileViewModel extends ChangeNotifier {
     required String phone,
     UserRepository? userRepository,
     AuthRepository? authRepository,
+    R2ProfileUploadService? r2ProfileUploadService,
   })  : _name = name,
         _email = email,
         _phone = phone,
         _userRepository =
             userRepository ?? RepositoryProvider.instance.userRepository,
         _authRepository =
-            authRepository ?? RepositoryProvider.instance.authRepository;
+            authRepository ?? RepositoryProvider.instance.authRepository,
+        _r2ProfileUploadService = r2ProfileUploadService;
 
   // Getters
   String get name => _name;
@@ -68,14 +73,16 @@ class EditProfileViewModel extends ChangeNotifier {
       _uploadPercentage = 0.0;
       notifyListeners();
 
-      final downloadURL = await _mediaUploadService.uploadProfileImage(
-        imageFile,
-        onProgress: (progress) {
-          _uploadPercentage = progress;
-          _uploadProgress = "Uploading... ${(progress * 100).toInt()}%";
-          notifyListeners();
-        },
-      );
+      final downloadURL = SupabaseConfig.useSupabaseAuth
+          ? await _uploadProfileImageThroughR2(imageFile)
+          : await _mediaUploadService.uploadProfileImage(
+              imageFile,
+              onProgress: (progress) {
+                _uploadPercentage = progress;
+                _uploadProgress = "Uploading... ${(progress * 100).toInt()}%";
+                notifyListeners();
+              },
+            );
 
       _uploadProgress = "Upload complete!";
       _uploadPercentage = 1.0;
@@ -117,6 +124,12 @@ class EditProfileViewModel extends ChangeNotifier {
         throw Exception('You must be signed in to update your profile');
       }
 
+      // Supabase profile media is confirmed by the Worker. Do not route this
+      // mode through the Firebase/Firestore background-upload path.
+      if (SupabaseConfig.useSupabaseAuth) {
+        return await _uploadProfileImageThroughR2(imageFile);
+      }
+
       // Prepare user data for fast save (serialize complex objects for Firestore)
       final userData = {
         'name': _name.trim(),
@@ -156,6 +169,20 @@ class EditProfileViewModel extends ChangeNotifier {
 
   MediaUploadServiceCompat get _mediaUploadService =>
       MediaUploadServiceCompat();
+
+  R2ProfileUploadService get _r2ProfileUploadServiceOrCreate =>
+      _r2ProfileUploadService ??= R2ProfileUploadService();
+
+  Future<String?> _uploadProfileImageThroughR2(XFile imageFile) async {
+    await _r2ProfileUploadServiceOrCreate.uploadProfileImage(
+      imageFile: imageFile,
+    );
+
+    // This re-reads the canonical profile after Worker confirmation so the
+    // signed read URL is resolved through the existing repository flow.
+    final refreshedUser = await _authRepository.reloadUser();
+    return refreshedUser?.profileImageUrl;
+  }
 
   /// Format phone number for storage
   String _formatPhoneNumber() {
@@ -209,11 +236,14 @@ class EditProfileViewModel extends ChangeNotifier {
 
       String? profileImageUrl;
 
-      // Upload profile image if provided - USE FAST UPLOAD
+      // Upload profile image before saving profile fields. In Supabase mode
+      // the Worker owns confirmation and profile_media_id linking.
       if (profileImage != null) {
-        // Debug log suppressed: Starting FAST image upload...
-        profileImageUrl = await uploadProfileImageFast(profileImage);
-        // Debug log suppressed: Fast image upload completed: $profileImageUrl
+        if (SupabaseConfig.useSupabaseAuth) {
+          await _uploadProfileImageThroughR2(profileImage);
+        } else {
+          profileImageUrl = await uploadProfileImageFast(profileImage);
+        }
       }
 
       // Format phone number for storage
@@ -223,7 +253,11 @@ class EditProfileViewModel extends ChangeNotifier {
 
       final sanitizedName = _name.trim();
       final sanitizedPhone = formattedPhone.isEmpty ? null : formattedPhone;
-      final resolvedImageUrl = profileImageUrl ?? currentUser.profileImageUrl;
+      // Supabase profiles link media by ID in the Worker, never by a signed
+      // URL. Firebase mode keeps its legacy URL-based save behavior.
+      final resolvedImageUrl = SupabaseConfig.useSupabaseAuth
+          ? null
+          : profileImageUrl ?? currentUser.profileImageUrl;
 
       // Debug log suppressed: User model created, updating via auth repository...
       // Debug log suppressed: Updated user data (preview): {uid: ${currentUser.uid}, name: $sanitizedName, email: ${_email.trim()}, phoneNumber: $sanitizedPhone, profileImageUrl: $resolvedImageUrl}

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 
@@ -9,6 +8,13 @@ import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+
+/// Additive, three-state session/bootstrap status. This is deliberately
+/// separate from the existing `isLoading` (operation-in-progress) semantics
+/// used by login/signup/signout UI — see auth_viewmodel.dart's `status`
+/// getter. Router/AuthWrapper wiring to this enum is a Batch B follow-up;
+/// nothing in this batch changes what `isLoading` means or when it flips.
+enum AuthStatus { unknown, authenticated, unauthenticated }
 
 class AuthViewModel extends ChangeNotifier {
   final AuthRepository _authRepository;
@@ -21,6 +27,11 @@ class AuthViewModel extends ChangeNotifier {
   StreamSubscription<UserModel?>? _userStreamSubscription;
 
   String _resolvedDisplayName = '';
+
+  // Additive session/bootstrap tracking (see AuthStatus doc comment above).
+  // Set true only at the three existing points that already resolve the
+  // initial session state; never reset to false afterward.
+  bool _bootstrapKnown = false;
 
   AuthViewModel({
     AuthRepository? authRepository,
@@ -52,6 +63,24 @@ class AuthViewModel extends ChangeNotifier {
 
   bool get isEmailVerified => _currentUser?.isEmailVerified ?? false;
   String get displayName => _resolvedDisplayName;
+
+  /// Additive three-state session/bootstrap status. Does not replace
+  /// [isLoading]/[isAuthenticated] and is not yet consumed by the router or
+  /// AuthWrapper (Batch B follow-up).
+  AuthStatus get status {
+    if (!_bootstrapKnown) return AuthStatus.unknown;
+    return isAuthenticated ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+  }
+
+  /// Canonical email precedence: the live Supabase Auth session's email wins
+  /// whenever available, so a stale `public.profiles.email` mirror can never
+  /// override it. No email-change flow, no extra network calls — this only
+  /// reorders precedence between two values already fetched.
+  UserModel _applyEmailAuthority(UserModel user) {
+    final authEmail = _authRepository.currentUser?.email.trim() ?? '';
+    if (authEmail.isEmpty || authEmail == user.email) return user;
+    return user.copyWith(email: authEmail);
+  }
 
   String _extractNameFromEmail(String? email) {
     if (email == null) return '';
@@ -209,11 +238,13 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final reloaded = await _authRepository.reloadUser();
       if (reloaded != null) {
-        _currentUser = reloaded;
-        _isAuthenticated = reloaded.isEmailVerified || reloaded.isPhoneVerified;
-        _refreshDisplayName(reloaded);
-        await OfflineAuthService.instance.updateCachedUserModel(reloaded);
+        final resolved = _applyEmailAuthority(reloaded);
+        _currentUser = resolved;
+        _isAuthenticated = resolved.isEmailVerified || resolved.isPhoneVerified;
+        _refreshDisplayName(resolved);
+        await OfflineAuthService.instance.updateCachedUserModel(resolved);
         notifyListeners();
+        return resolved;
       }
       return reloaded;
     } catch (_) {
@@ -224,19 +255,7 @@ class AuthViewModel extends ChangeNotifier {
   Future<void> checkEmailVerificationStatus() async {
     final isVerified = await _authRepository.isEmailVerified();
     if (_currentUser != null && isVerified != _currentUser!.isEmailVerified) {
-      final updatedUser = UserModel(
-        uid: _currentUser!.uid,
-        name: _currentUser!.name,
-        email: _currentUser!.email,
-        phoneNumber: _currentUser!.phoneNumber,
-        profileImageUrl: _currentUser!.profileImageUrl,
-        createdAt: _currentUser!.createdAt,
-        lastLoginAt: _currentUser!.lastLoginAt,
-        isEmailVerified: isVerified,
-        isPhoneVerified: _currentUser!.isPhoneVerified,
-        subscription: _currentUser!.subscription,
-        preferences: _currentUser!.preferences,
-      );
+      final updatedUser = _currentUser!.copyWith(isEmailVerified: isVerified);
 
       // Update user in repository so the auth state stream picks it up
       try {
@@ -276,14 +295,15 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final userDoc = await _userRepository.getUserById(uid);
       if (userDoc != null) {
-        _currentUser = userDoc;
+        final resolved = _applyEmailAuthority(userDoc);
+        _currentUser = resolved;
         _isAuthenticated =
-            userDoc.isEmailVerified == true || userDoc.isPhoneVerified == true;
-        _refreshDisplayName(userDoc);
+            resolved.isEmailVerified == true || resolved.isPhoneVerified == true;
+        _refreshDisplayName(resolved);
         notifyListeners();
 
         try {
-          await OfflineAuthService.instance.updateCachedUserModel(userDoc);
+          await OfflineAuthService.instance.updateCachedUserModel(resolved);
         } catch (e) {
           // Debug log suppressed: Failed to sync cached user model: $e
         }
@@ -332,24 +352,28 @@ class AuthViewModel extends ChangeNotifier {
         final wasAuthenticated = _currentUser != null;
         final isNowAuthenticated = user != null;
         final previousUid = _currentUser?.uid;
+        final resolved = user == null ? null : _applyEmailAuthority(user);
 
-        _currentUser = user;
-        _refreshDisplayName(user);
+        _currentUser = resolved;
+        _refreshDisplayName(resolved);
 
         // Set loading to false only after first auth state change
         // This prevents premature redirects to login during app startup
         if (_isLoading) {
           _isLoading = false;
         }
+        // Additive: mark bootstrap resolved (see AuthStatus doc comment).
+        // Never reset to false afterward.
+        _bootstrapKnown = true;
 
         // Cache ownership: session state is authoritative.
         // Cache never overrides a logged out session.
-        if (user != null) {
-          if (previousUid != null && previousUid != user.uid) {
+        if (resolved != null) {
+          if (previousUid != null && previousUid != resolved.uid) {
             OfflineAuthService.instance.clearAuthCache();
           }
-          _isAuthenticated = user.isEmailVerified || user.isPhoneVerified;
-          OfflineAuthService.instance.cacheUserModel(user);
+          _isAuthenticated = resolved.isEmailVerified || resolved.isPhoneVerified;
+          OfflineAuthService.instance.cacheUserModel(resolved);
         } else {
           _isAuthenticated = false;
           OfflineAuthService.instance.clearAuthCache();
@@ -359,8 +383,8 @@ class AuthViewModel extends ChangeNotifier {
         notifyListeners();
 
         // Start listening to live user document updates when uid changes
-        if (previousUid != user?.uid) {
-          _subscribeToUserUpdates(user?.uid);
+        if (previousUid != resolved?.uid) {
+          _subscribeToUserUpdates(resolved?.uid);
         }
 
         // Log the transition for debugging (suppressed in production)
@@ -382,6 +406,8 @@ class AuthViewModel extends ChangeNotifier {
           _isAuthenticated = false;
           notifyListeners();
         }
+        // Additive: bootstrap is resolved (to unauthenticated) even on error.
+        _bootstrapKnown = true;
       });
 
       // Safety timeout - if no auth state received in 3 seconds, stop loading
@@ -391,11 +417,14 @@ class AuthViewModel extends ChangeNotifier {
           _isAuthenticated = false;
           notifyListeners();
         }
+        // Additive: bootstrap is resolved (to unauthenticated) even on timeout.
+        _bootstrapKnown = true;
       });
     } catch (e) {
       // Failed to initialize auth stream
       _isLoading = false;
       _isAuthenticated = false;
+      _bootstrapKnown = true;
       notifyListeners();
     }
   }
@@ -414,25 +443,28 @@ class AuthViewModel extends ChangeNotifier {
           return;
         }
 
-        final hasChanged = _currentUser == null ||
-            userDoc.profileImageUrl != _currentUser!.profileImageUrl ||
-            userDoc.name != _currentUser!.name ||
-            userDoc.email != _currentUser!.email ||
-            userDoc.phoneNumber != _currentUser!.phoneNumber ||
-            userDoc.isEmailVerified != _currentUser!.isEmailVerified ||
-            userDoc.isPhoneVerified != _currentUser!.isPhoneVerified;
+        final resolved = _applyEmailAuthority(userDoc);
 
-        _currentUser = userDoc;
+        final hasChanged = _currentUser == null ||
+            resolved.profileImageUrl != _currentUser!.profileImageUrl ||
+            resolved.profileMediaId != _currentUser!.profileMediaId ||
+            resolved.name != _currentUser!.name ||
+            resolved.email != _currentUser!.email ||
+            resolved.phoneNumber != _currentUser!.phoneNumber ||
+            resolved.isEmailVerified != _currentUser!.isEmailVerified ||
+            resolved.isPhoneVerified != _currentUser!.isPhoneVerified;
+
+        _currentUser = resolved;
         _isAuthenticated =
-            userDoc.isEmailVerified == true || userDoc.isPhoneVerified == true;
-        final displayNameChanged = _refreshDisplayName(userDoc);
+            resolved.isEmailVerified == true || resolved.isPhoneVerified == true;
+        final displayNameChanged = _refreshDisplayName(resolved);
 
         if (hasChanged || displayNameChanged) {
           notifyListeners();
         }
 
         try {
-          await OfflineAuthService.instance.updateCachedUserModel(userDoc);
+          await OfflineAuthService.instance.updateCachedUserModel(resolved);
         } catch (e) {}
 
         // 🔒 SECURITY: The current reconciliation implementation is a

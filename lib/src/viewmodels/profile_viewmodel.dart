@@ -8,14 +8,12 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/logout_confirmation_bottom_sheet.dart';
-import 'package:broker_wallet/src/services/fast_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/auth_service.dart';
 import 'package:broker_wallet/src/services/notification_service.dart';
 import 'package:broker_wallet/src/common/utils/phone_utils.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
-import 'dart:async';
 
 class ProfileViewModel extends ChangeNotifier {
   final ThemeViewModel themeVM;
@@ -27,15 +25,11 @@ class ProfileViewModel extends ChangeNotifier {
   final AuthService _authService = AuthService();
 
   bool _notificationsEnabled = false;
-  UserModel? _currentUser;
   bool _isLoading = true;
   bool _disposed = false;
   bool _isLinkingEmail = false;
   bool _isLinkingPhone = false;
   bool _isLoggingOut = false;
-  StreamSubscription<ProfileUploadCompletedEvent>?
-      _uploadCompletionSubscription;
-  StreamSubscription<UserModel?>? _userStreamSubscription;
 
   ProfileViewModel({
     required this.themeVM,
@@ -45,107 +39,45 @@ class ProfileViewModel extends ChangeNotifier {
   }) {
     authVM.addListener(_handleAuthViewModelChanged);
     _initializeUser();
-    _setupUploadCompletionListener();
   }
 
+  // Canonical current-user is owned by AuthViewModel; Profile only relays
+  // its notifications and reads through to the same object, so it can never
+  // diverge from Home/Search/Favorites.
   void _handleAuthViewModelChanged() {
     if (_disposed) return;
     notifyListeners();
   }
 
-  void _subscribeToUserStream(String uid) {
-    _userStreamSubscription?.cancel();
-
-    _userStreamSubscription =
-        _userRepository.getUserStream(uid).listen((userModel) {
-      if (_disposed || userModel == null) {
-        return;
-      }
-
-      _currentUser = userModel;
-      _notificationsEnabled =
-          userModel.preferences['notificationsEnabled'] as bool? ?? true;
-      _isLoading = false;
-      notifyListeners();
-    }, onError: (error) {
-      // Debug log suppressed: Failed to listen to user stream: $error
-    });
-  }
-
-  void _setupUploadCompletionListener() {
-    _uploadCompletionSubscription =
-        FastProfileUploadService.onUploadCompleted.listen((event) async {
-      // Debug log suppressed: Profile upload completed in ProfileViewModel, refreshing user data...
-
-      if (!_disposed) {
-        // Refresh user data from repository
-        await _refreshUserData();
-
-        if (context.mounted) {
-          Fluttertoast.showToast(
-            msg: 'Profile image updated successfully!',
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.green,
-            textColor: Colors.white,
-          );
-        }
-      }
-    });
-  }
-
-  Future<void> _refreshUserData() async {
-    try {
-      if (authVM.currentUser?.uid != null) {
-        final updatedUser =
-            await _userRepository.getUserById(authVM.currentUser!.uid);
-        if (updatedUser != null && !_disposed) {
-          _currentUser = updatedUser;
-          notifyListeners();
-          // Debug log suppressed: User data refreshed with new profile image
-        }
-      }
-    } catch (e) {
-      // Debug log suppressed: Failed to refresh user data: $e
-    }
-  }
-
   // Getters
   bool get notificationsEnabled => _notificationsEnabled;
   bool get isLoading => _isLoading;
-  UserModel? get currentUser => _currentUser;
+  UserModel? get currentUser => authVM.currentUser;
   String get displayName {
     final authDisplayName = authVM.displayName.trim();
     if (authDisplayName.isNotEmpty) {
       return authDisplayName;
     }
 
-    final primaryName = _currentUser?.name.trim() ?? '';
+    final primaryName = authVM.currentUser?.name.trim() ?? '';
     if (primaryName.isNotEmpty) {
       return primaryName;
     }
 
-    final emailCandidates = <String?>[
-      _currentUser?.email,
-      authVM.currentUser?.email,
-    ];
-    for (final email in emailCandidates) {
-      if (email == null) continue;
+    final email = authVM.currentUser?.email;
+    if (email != null) {
       final trimmed = email.trim();
-      if (trimmed.isEmpty) continue;
-      final atIndex = trimmed.indexOf('@');
-      if (atIndex > 0) {
-        return trimmed.substring(0, atIndex);
+      if (trimmed.isNotEmpty) {
+        final atIndex = trimmed.indexOf('@');
+        if (atIndex > 0) {
+          return trimmed.substring(0, atIndex);
+        }
+        return trimmed;
       }
-      return trimmed;
     }
 
-    final phoneCandidates = <String?>[
-      _currentUser?.phoneNumber,
-      authVM.currentUser?.phoneNumber,
-    ];
-    for (final phone in phoneCandidates) {
-      if (phone == null) continue;
+    final phone = authVM.currentUser?.phoneNumber;
+    if (phone != null) {
       final trimmedPhone = phone.trim();
       if (trimmedPhone.isNotEmpty) {
         return trimmedPhone;
@@ -155,29 +87,20 @@ class ProfileViewModel extends ChangeNotifier {
     return '';
   }
 
-  bool get isSubscribed => _currentUser?.subscription.isActive ?? false;
+  bool get isSubscribed => authVM.currentUser?.subscription.isActive ?? false;
   bool get isLinkingEmail => _isLinkingEmail;
   bool get isLinkingPhone => _isLinkingPhone;
   bool get isLoggingOut => _isLoggingOut;
-  bool get hasLinkedEmail =>
-      ((_currentUser?.email ?? '').isNotEmpty) ||
-      ((authVM.currentUser?.email ?? '').isNotEmpty);
-  bool get isEmailVerified =>
-      _currentUser?.isEmailVerified ??
-      (authVM.currentUser?.isEmailVerified ?? false);
+  bool get hasLinkedEmail => (authVM.currentUser?.email ?? '').isNotEmpty;
+  bool get isEmailVerified => authVM.currentUser?.isEmailVerified ?? false;
   bool get hasLinkedPhone =>
-      ((_currentUser?.phoneNumber ?? '').isNotEmpty) ||
-      ((authVM.currentUser?.phoneNumber ?? '').isNotEmpty);
-  bool get isPhoneVerified =>
-      _currentUser?.isPhoneVerified ??
-      (authVM.currentUser?.isPhoneVerified ?? false);
+      (authVM.currentUser?.phoneNumber ?? '').isNotEmpty;
+  bool get isPhoneVerified => authVM.currentUser?.isPhoneVerified ?? false;
 
   @override
   void dispose() {
     _disposed = true;
     authVM.removeListener(_handleAuthViewModelChanged);
-    _uploadCompletionSubscription?.cancel();
-    _userStreamSubscription?.cancel();
     super.dispose();
   }
 
@@ -188,61 +111,19 @@ class ProfileViewModel extends ChangeNotifier {
     }
   }
 
-  void _initializeUser() async {
+  void _initializeUser() {
+    // Canonical current-user state (including its profile realtime
+    // subscription) is owned entirely by AuthViewModel now — there is
+    // nothing to fetch or subscribe to here. This only derives Profile's own
+    // presentation-only preference flag from whatever AuthViewModel already
+    // holds.
     try {
-      if (authVM.currentUser != null) {
-        try {
-          if (authVM.currentUser?.uid != null) {
-            _subscribeToUserStream(authVM.currentUser!.uid);
-          }
-        } catch (e) {
-          // If repository fails, use current user from auth
-          _currentUser = authVM.currentUser;
-          // Try to create user in repository
-          if (_currentUser != null) {
-            try {
-              await _userRepository.createUser(_currentUser!);
-              _subscribeToUserStream(_currentUser!.uid);
-            } catch (e) {
-              // Ignore repository errors for now
-              // Debug log suppressed: Failed to save user to repository: $e
-            }
-          }
-        }
-      } else {
-        // Fallback user data for testing
-        _currentUser = UserModel(
-          uid: '',
-          name: '',
-          email: '',
-          phoneNumber: '',
-          createdAt: DateTime.now(),
-          lastLoginAt: DateTime.now(),
-          subscription: UserSubscription(
-            plan: 'free',
-            isActive: false,
-            features: [],
-          ),
-        );
-      }
+      _notificationsEnabled =
+          authVM.currentUser?.preferences['notificationsEnabled'] as bool? ??
+              true;
     } catch (e) {
       // Debug log suppressed: Error initializing user: $e
-      // Fallback user data
-      _currentUser = UserModel(
-        uid: 'fallback-uid',
-        name: 'User Name',
-        email: 'user@example.com',
-        createdAt: DateTime.now(),
-        lastLoginAt: DateTime.now(),
-        subscription: UserSubscription(
-          plan: 'free',
-          isActive: false,
-          features: [],
-        ),
-      );
     } finally {
-      _notificationsEnabled =
-          _currentUser?.preferences['notificationsEnabled'] as bool? ?? true;
       if (!_disposed) {
         _isLoading = false;
         notifyListeners();
@@ -259,29 +140,18 @@ class ProfileViewModel extends ChangeNotifier {
   void toggleNotifications(bool enabled) {
     if (_disposed) return;
     _notificationsEnabled = enabled;
-    // Update user preferences using repository
-    if (_currentUser != null) {
+    // Update user preferences using repository. AuthViewModel's own realtime
+    // subscription picks up the resulting row change and updates the
+    // canonical currentUser; there is no local copy to keep in sync here.
+    final current = authVM.currentUser;
+    if (current != null) {
       try {
         final updatedPreferences =
-            Map<String, dynamic>.from(_currentUser!.preferences);
+            Map<String, dynamic>.from(current.preferences);
         updatedPreferences['notificationsEnabled'] = enabled;
 
-        final updatedUser = UserModel(
-          uid: _currentUser!.uid,
-          name: _currentUser!.name,
-          email: _currentUser!.email,
-          phoneNumber: _currentUser!.phoneNumber,
-          profileImageUrl: _currentUser!.profileImageUrl,
-          createdAt: _currentUser!.createdAt,
-          lastLoginAt: _currentUser!.lastLoginAt,
-          isEmailVerified: _currentUser!.isEmailVerified,
-          isPhoneVerified: _currentUser!.isPhoneVerified,
-          subscription: _currentUser!.subscription,
-          preferences: updatedPreferences,
-        );
-
+        final updatedUser = current.copyWith(preferences: updatedPreferences);
         _userRepository.updateUser(updatedUser);
-        _currentUser = updatedUser;
       } catch (e) {
         // Debug log suppressed: Failed to update notifications preference: $e
       }
@@ -292,29 +162,16 @@ class ProfileViewModel extends ChangeNotifier {
   void changeLanguage(Locale locale) {
     if (_disposed) return;
     localeVM.setLocale(locale);
-    // Update user preferences using repository
-    if (_currentUser != null) {
+    // Update user preferences using repository (see toggleNotifications).
+    final current = authVM.currentUser;
+    if (current != null) {
       try {
         final updatedPreferences =
-            Map<String, dynamic>.from(_currentUser!.preferences);
+            Map<String, dynamic>.from(current.preferences);
         updatedPreferences['language'] = locale.languageCode;
 
-        final updatedUser = UserModel(
-          uid: _currentUser!.uid,
-          name: _currentUser!.name,
-          email: _currentUser!.email,
-          phoneNumber: _currentUser!.phoneNumber,
-          profileImageUrl: _currentUser!.profileImageUrl,
-          createdAt: _currentUser!.createdAt,
-          lastLoginAt: _currentUser!.lastLoginAt,
-          isEmailVerified: _currentUser!.isEmailVerified,
-          isPhoneVerified: _currentUser!.isPhoneVerified,
-          subscription: _currentUser!.subscription,
-          preferences: updatedPreferences,
-        );
-
+        final updatedUser = current.copyWith(preferences: updatedPreferences);
         _userRepository.updateUser(updatedUser);
-        _currentUser = updatedUser;
       } catch (e) {
         // Debug log suppressed: Failed to update language preference: $e
       }
@@ -394,10 +251,11 @@ class ProfileViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Update user data
+  // Update user data. AuthViewModel's own realtime subscription is the
+  // canonical owner and will pick up the resulting row change; this just
+  // persists it and lets that flow through.
   void updateUser(UserModel updatedUser) {
     if (_disposed) return;
-    _currentUser = updatedUser;
     notifyListeners();
 
     // Save to repository

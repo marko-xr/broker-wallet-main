@@ -67,6 +67,29 @@ class R2ProfileUploadService {
   /// at the edge of the server's own signature validity window.
   static const Duration _expirySafetyMargin = Duration(seconds: 60);
 
+  /// Bounded timeouts for every Worker/R2 request.
+  ///
+  /// [_request] already translated `TimeoutException` into a domain error, but
+  /// nothing on this path ever established a timeout, so a stalled connection
+  /// could block its caller for as long as the platform's socket defaults
+  /// allow. Metadata calls are small JSON round trips; the object PUT carries
+  /// image bytes and is given a longer budget.
+  static const Duration _metadataRequestTimeout = Duration(seconds: 15);
+  static const Duration _uploadRequestTimeout = Duration(seconds: 60);
+
+  /// The single in-flight `/profile-image-url` request, shared by every
+  /// concurrent caller.
+  ///
+  /// The Worker resolves whatever media is canonical *now* rather than a
+  /// caller-supplied id, so concurrent resolutions are all asking the same
+  /// question. Without this, several callers missing the cache in the same
+  /// moment each opened their own request.
+  Future<R2ProfileImage>? _inFlightCurrentImage;
+
+  /// Supabase user id the current [_urlCache] belongs to. Signed URLs are
+  /// per-user presentation data and must not survive a change of session.
+  String? _cacheOwnerUserId;
+
   /// Resolve the signed read URL for [expectedMediaId], reusing an unexpired
   /// in-memory cache entry when possible instead of always calling the
   /// Worker. Returns null when there is no media, or when the Worker's
@@ -153,11 +176,13 @@ class R2ProfileUploadService {
       originalFileName: imageFile.name,
     );
 
-    final putResponse = await _request(() => _http.put(
+    final putResponse = await _request(() => _http
+        .put(
           Uri.parse(authorization.presignedUrl),
           headers: {'Content-Type': contentType},
           body: bytes,
-        ));
+        )
+        .timeout(_uploadRequestTimeout));
     if (putResponse.statusCode < 200 || putResponse.statusCode >= 300) {
       throw const R2UploadException('Profile image upload was rejected.');
     }
@@ -173,12 +198,30 @@ class R2ProfileUploadService {
   }
 
   /// Resolve the current profile image's short-lived signed read URL.
-  Future<R2ProfileImage> getCurrentProfileImage() async {
+  ///
+  /// Concurrent callers share one request: the first caller starts it, every
+  /// caller that arrives while it is still open awaits the same future.
+  Future<R2ProfileImage> getCurrentProfileImage() {
+    final pending = _inFlightCurrentImage;
+    if (pending != null) return pending;
+
+    final request = _fetchCurrentProfileImage();
+    _inFlightCurrentImage = request;
+    return request.whenComplete(() {
+      if (identical(_inFlightCurrentImage, request)) {
+        _inFlightCurrentImage = null;
+      }
+    });
+  }
+
+  Future<R2ProfileImage> _fetchCurrentProfileImage() async {
     final auth = _currentAuth();
-    final response = await _request(() => _http.get(
+    final response = await _request(() => _http
+        .get(
           _endpoint('/profile-image-url'),
           headers: {'Authorization': 'Bearer ${auth.accessToken}'},
-        ));
+        )
+        .timeout(_metadataRequestTimeout));
     _ensureSuccess(response, '/profile-image-url');
 
     final payload = _decodeObject(response.body);
@@ -197,6 +240,15 @@ class R2ProfileUploadService {
     if (user == null || token == null || token.isEmpty) {
       throw const R2UploadException('No active Supabase session.');
     }
+
+    // Signed URLs are per-user. A change of session invalidates every cached
+    // resolution, including an in-flight one started for the previous user.
+    if (_cacheOwnerUserId != user.id) {
+      _cacheOwnerUserId = user.id;
+      _urlCache.clear();
+      _inFlightCurrentImage = null;
+    }
+
     return _CurrentAuth(user, token);
   }
 
@@ -205,14 +257,16 @@ class R2ProfileUploadService {
     String accessToken,
     Map<String, dynamic> body,
   ) async {
-    final response = await _request(() => _http.post(
+    final response = await _request(() => _http
+        .post(
           _endpoint(path),
           headers: {
             'Authorization': 'Bearer $accessToken',
             'Content-Type': 'application/json',
           },
           body: jsonEncode(body),
-        ));
+        )
+        .timeout(_metadataRequestTimeout));
     _ensureSuccess(response, path);
     return _decodeObject(response.body);
   }

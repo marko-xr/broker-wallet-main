@@ -8,7 +8,6 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
-import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 // Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
 
@@ -20,24 +19,11 @@ class SignInView extends StatefulWidget {
 }
 
 class _SignInViewState extends State<SignInView> {
-  bool _redirectScheduled = false;
-
-  void _handleAuthRedirect(AuthViewModel authVM) {
-    if (!mounted) return;
-
-    if (authVM.isLoading || !authVM.isAuthenticated) {
-      _redirectScheduled = false;
-      return;
-    }
-
-    if (_redirectScheduled) return;
-    _redirectScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      GoRouter.of(context).go('/home');
-    });
-  }
+  // Navigation after a successful sign-in is owned solely by the GoRouter
+  // redirect in app.dart. This screen used to schedule its own post-frame
+  // `go('/home')` as well, gated on `isLoading` — auth operation state stood in
+  // for bootstrap state — which made two authorities race for the same
+  // transition.
 
   @override
   Widget build(BuildContext context) {
@@ -45,10 +31,8 @@ class _SignInViewState extends State<SignInView> {
 
     return ChangeNotifierProvider(
       create: (_) => SignInViewModel(),
-      child: Consumer2<SignInViewModel, AuthViewModel>(
-        builder: (context, vm, authVM, _) {
-          _handleAuthRedirect(authVM);
-
+      child: Consumer<SignInViewModel>(
+        builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;
 
           return Scaffold(

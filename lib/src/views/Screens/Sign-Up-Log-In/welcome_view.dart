@@ -257,7 +257,14 @@ class _WelcomeViewState extends State<WelcomeView>
                         // Enhanced Buttons
                         _buildPrimaryButton(
                           text: localization.translate('getStarted'),
-                          onPressed: () => context.push('/sign-up'),
+                          // Replacement-style routing, matching how the auth
+                          // screens already move between each other. `push`
+                          // left Welcome sitting underneath Sign-In, so the
+                          // Navigator briefly revealed it while transitioning
+                          // to Home. BackArrowButton falls back to `/welcome`
+                          // when it cannot pop, so back navigation is
+                          // unchanged.
+                          onPressed: () => context.go('/sign-up'),
                           icon: Icons.arrow_forward_rounded,
                         ),
 
@@ -265,7 +272,7 @@ class _WelcomeViewState extends State<WelcomeView>
 
                         _buildSecondaryButton(
                           text: localization.translate('signIn'),
-                          onPressed: () => context.push('/sign-in'),
+                          onPressed: () => context.go('/sign-in'),
                           icon: Icons.login_rounded,
                         ),
 

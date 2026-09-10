@@ -162,6 +162,75 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+/// Routes that require an authenticated session.
+const _protectedRoutes = <String>{
+  '/home',
+  '/search',
+  '/favorites',
+  '/profile',
+};
+
+/// Logged-out entry screens.
+const _authRoutes = <String>{
+  '/welcome',
+  '/sign-up',
+  '/sign-in',
+};
+
+/// Flows that own their own routing and are deliberately exempt.
+const _selfRoutedFlows = <String>{
+  '/email-verification',
+  '/phone-otp',
+};
+
+/// The single authentication navigation authority.
+///
+/// AuthWrapper, SignInView and SignUpView each used to schedule their own
+/// post-frame `context.go` in addition to this redirect, so one auth
+/// transition could be acted on by several authorities at once. They no longer
+/// navigate; this function decides every general auth transition, and it is a
+/// top-level pure function so the real routing rules are directly testable.
+///
+/// [status] is bootstrap state. Auth *operation* state (a sign-in in flight)
+/// is deliberately not an input here.
+String? resolveAuthRedirect(AuthStatus status, String currentPath) {
+  // Bootstrap must resolve before any application or auth route is selected.
+  if (status == AuthStatus.unknown) {
+    return currentPath == '/' ? null : '/';
+  }
+
+  // These flows manage their own routing.
+  if (_selfRoutedFlows.contains(currentPath)) {
+    return null;
+  }
+
+  final isAuthenticated = status == AuthStatus.authenticated;
+
+  final isProtected = _protectedRoutes.any(
+    (route) => currentPath == route || currentPath.startsWith('$route/'),
+  );
+
+  if (!isAuthenticated && isProtected) {
+    return '/welcome';
+  }
+
+  // Authenticated users never sit on an auth screen. This is also what carries
+  // them off `/sign-in` once the session resolves after a successful login.
+  if (isAuthenticated && _authRoutes.contains(currentPath)) {
+    return '/home';
+  }
+
+  if (currentPath == '/') {
+    // The root path is the bootstrap gate only. Once bootstrap has resolved,
+    // this redirect is the single authority that leaves it — AuthWrapper no
+    // longer navigates, so both outcomes must be sent onward from here or the
+    // app would remain on the splash gate indefinitely.
+    return isAuthenticated ? '/home' : '/welcome';
+  }
+
+  return null;
+}
+
 GoRouter _createRouter(AuthViewModel authViewModel) {
   // Per-branch navigator keys (local is fine)
   final homeNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'homeBranch');
@@ -176,59 +245,8 @@ GoRouter _createRouter(AuthViewModel authViewModel) {
     navigatorKey: rootNavigatorKey,
     initialLocation: '/',
     refreshListenable: authViewModel,
-    redirect: (context, state) {
-      if (authViewModel.isLoading) return null;
-
-      final isAuthenticated = authViewModel.isAuthenticated;
-      final currentPath = state.uri.path;
-
-      // Debug logging for phone auth navigation issues
-      if (currentPath.contains('phone') ||
-          currentPath.contains('home') ||
-          currentPath.contains('sign')) {
-        // Router redirect debug info removed: path and auth state checks occur here
-      }
-
-      const protectedRoutes = <String>{
-        '/home',
-        '/search',
-        '/favorites',
-        '/profile',
-      };
-
-      const authRoutes = <String>{
-        '/welcome',
-        '/sign-up',
-        '/sign-in',
-      };
-
-      // Skip redirect logic for these special flow screens
-      if (currentPath == '/email-verification' || currentPath == '/phone-otp') {
-        return null;
-      }
-
-      final isProtected = protectedRoutes.any(
-        (route) => currentPath == route || currentPath.startsWith('$route/'),
-      );
-
-      if (!isAuthenticated && isProtected) {
-        return '/welcome';
-      }
-
-      if (isAuthenticated && authRoutes.contains(currentPath)) {
-        // Redirect authenticated users from auth screens to home
-        // This helps with navigation after OTP verification
-        return '/home';
-      }
-
-      // If user is authenticated and on root path, redirect to home
-      if (isAuthenticated && currentPath == '/') {
-        return '/home';
-      }
-
-      // No redirect needed
-      return null;
-    },
+    redirect: (context, state) =>
+        resolveAuthRedirect(authViewModel.status, state.uri.path),
     routes: [
       GoRoute(
         path: '/',

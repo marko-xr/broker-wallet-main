@@ -21,24 +21,9 @@ class SignUpView extends StatefulWidget {
 }
 
 class _SignUpViewState extends State<SignUpView> {
-  bool _redirectScheduled = false;
-
-  void _handleAuthRedirect(AuthViewModel authVM) {
-    if (!mounted) return;
-
-    if (authVM.isLoading || !authVM.isAuthenticated) {
-      _redirectScheduled = false;
-      return;
-    }
-
-    if (_redirectScheduled) return;
-    _redirectScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      GoRouter.of(context).go('/home');
-    });
-  }
+  // Navigation after a successful sign-up is owned solely by the GoRouter
+  // redirect in app.dart. `authVM.isLoading` is still read below, but only as
+  // auth *operation* state for the submit button — never as bootstrap state.
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +33,6 @@ class _SignUpViewState extends State<SignUpView> {
       create: (_) => SignUpViewModel(),
       child: Consumer2<SignUpViewModel, AuthViewModel>(
         builder: (context, vm, authVM, _) {
-          _handleAuthRedirect(authVM);
-
           final theme = Theme.of(context);
           final colors = theme.colorScheme;
 

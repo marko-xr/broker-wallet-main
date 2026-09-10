@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
@@ -20,16 +22,92 @@ class SupabaseAuthRepository implements AuthRepository {
   final UserRepository _userRepository;
   String? _pendingVerificationEmail;
 
+  /// Shared fan-out of authoritative session identity.
+  ///
+  /// [authStateChanges] used to be a factory getter returning a fresh `async*`
+  /// stream, so every subscriber independently re-ran a `public.profiles`
+  /// fetch (and, through it, a Cloudflare R2 signed-URL request) for the same
+  /// auth event. There is now exactly one subscription to Supabase and one
+  /// broadcast pipeline, and the events it carries are pure session identity:
+  /// no database read, no network call, no R2 resolution.
+  ///
+  /// Profile hydration is deliberately *not* performed here. It is owned by
+  /// `AuthViewModel`, which is the single canonical owner of the authenticated
+  /// `UserModel`, so hydration happens exactly once regardless of how many
+  /// components listen for identity.
+  final StreamController<UserModel?> _identityController =
+      StreamController<UserModel?>.broadcast();
+
+  StreamSubscription<AuthState>? _supabaseAuthSubscription;
+  bool _pipelineStarted = false;
+  UserModel? _latestIdentity;
+  bool _hasLatestIdentity = false;
+
   @override
-  Stream<UserModel?> get authStateChanges => _authStateStream();
+  Stream<UserModel?> get authStateChanges {
+    _startIdentityPipeline();
+    return _replayLatestThen(_identityController.stream);
+  }
 
-  Stream<UserModel?> _authStateStream() async* {
-    final initial = _client.auth.currentUser;
-    yield await _resolveAuthUser(initial);
+  /// Late subscribers must not miss the current session state, and a plain
+  /// broadcast stream does not replay anything. This attaches to the shared
+  /// broadcast stream *first* and only then hands over the cached latest
+  /// value, so no event can be dropped between replay and subscription.
+  Stream<UserModel?> _replayLatestThen(Stream<UserModel?> source) {
+    late final StreamController<UserModel?> out;
+    StreamSubscription<UserModel?>? subscription;
 
-    await for (final state in _client.auth.onAuthStateChange) {
-      yield await _resolveAuthUser(state.session?.user);
+    out = StreamController<UserModel?>(
+      onListen: () {
+        subscription = source.listen(
+          out.add,
+          onError: out.addError,
+          onDone: out.close,
+        );
+        if (_hasLatestIdentity) {
+          out.add(_latestIdentity);
+        }
+      },
+      onCancel: () async {
+        await subscription?.cancel();
+        subscription = null;
+      },
+    );
+
+    return out.stream;
+  }
+
+  void _startIdentityPipeline() {
+    if (_pipelineStarted) return;
+    _pipelineStarted = true;
+
+    // The restored session is available synchronously once Supabase has been
+    // initialized, so bootstrap no longer waits on any network round trip.
+    _publishIdentity(_client.auth.currentUser);
+
+    _supabaseAuthSubscription = _client.auth.onAuthStateChange.listen(
+      (state) => _publishIdentity(state.session?.user),
+      onError: _identityController.addError,
+    );
+  }
+
+  void _publishIdentity(User? user) {
+    final identity = user == null ? null : _fromAuthUser(user);
+    _latestIdentity = identity;
+    _hasLatestIdentity = true;
+    if (!_identityController.isClosed) {
+      _identityController.add(identity);
     }
+  }
+
+  /// Releases the shared Supabase subscription. Not part of [AuthRepository];
+  /// the repository is a process-lifetime singleton in production and this
+  /// exists so tests can tear the pipeline down deterministically.
+  Future<void> dispose() async {
+    await _supabaseAuthSubscription?.cancel();
+    _supabaseAuthSubscription = null;
+    _pipelineStarted = false;
+    await _identityController.close();
   }
 
   @override
@@ -402,27 +480,6 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<UserModel?> getUserProfile(String uid) {
     return _userRepository.getUserById(uid);
-  }
-
-  Future<UserModel?> _resolveAuthUser(User? user) async {
-    if (user == null) return null;
-
-    try {
-      final profile = await _userRepository.getUserById(user.id);
-      if (profile != null) {
-        if (kDebugMode) {
-          debugPrint('Supabase profile source: database');
-        }
-        return profile;
-      }
-    } catch (_) {
-      // Keep auth-state delivery resilient if profile loading is temporarily
-      // unavailable. RLS still protects database access independently.
-    }
-    if (kDebugMode) {
-      debugPrint('Supabase profile source: auth metadata fallback');
-    }
-    return _fromAuthUser(user);
   }
 
   UserModel _fromAuthUser(User user) {

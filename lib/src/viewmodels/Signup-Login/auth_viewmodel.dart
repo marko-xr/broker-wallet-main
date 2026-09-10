@@ -5,33 +5,51 @@ import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
+import 'package:broker_wallet/src/repositories/supabase_user_repository.dart'
+    show ProfileImageUrlResolver;
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 
-/// Additive, three-state session/bootstrap status. This is deliberately
-/// separate from the existing `isLoading` (operation-in-progress) semantics
-/// used by login/signup/signout UI — see auth_viewmodel.dart's `status`
-/// getter. Router/AuthWrapper wiring to this enum is a Batch B follow-up;
-/// nothing in this batch changes what `isLoading` means or when it flips.
+/// Bootstrap / session status.
+///
+/// Resolved from the authoritative Supabase session identity alone. It never
+/// waits on `public.profiles` hydration or on Cloudflare R2 signed-image
+/// resolution, and there is no timer that guesses at it.
 enum AuthStatus { unknown, authenticated, unauthenticated }
+
+/// Auth operation in progress. Deliberately separate from [AuthStatus]: a
+/// sign-in that is still running is an operation, not an unresolved bootstrap.
+enum AuthOperation { idle, signingIn, signingUp, signingOut }
+
+/// Progress of `public.profiles` hydration for the authenticated session.
+/// Reported independently of [AuthStatus] — a failed or slow profile read
+/// never demotes an authenticated session.
+enum ProfileHydrationStatus { unresolved, resolving, resolved, failed }
 
 class AuthViewModel extends ChangeNotifier {
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
 
+  /// Bound so a stalled `public.profiles` read reports a hydration failure
+  /// instead of leaving hydration pending forever. Authentication state is
+  /// unaffected either way.
+  static const Duration _profileHydrationTimeout = Duration(seconds: 15);
+
   UserModel? _currentUser;
-  bool _isLoading = true;
-  bool _isAuthenticated = false;
+  AuthStatus _status = AuthStatus.unknown;
+  AuthOperation _operation = AuthOperation.idle;
+  ProfileHydrationStatus _profileHydration = ProfileHydrationStatus.unresolved;
+
   StreamSubscription<UserModel?>? _authSubscription;
   StreamSubscription<UserModel?>? _userStreamSubscription;
 
   String _resolvedDisplayName = '';
 
-  // Additive session/bootstrap tracking (see AuthStatus doc comment above).
-  // Set true only at the three existing points that already resolve the
-  // initial session state; never reset to false afterward.
-  bool _bootstrapKnown = false;
+  /// Invalidates hydration and signed-image work that belongs to a session
+  /// that is no longer current.
+  int _hydrationToken = 0;
+  String? _resolvingImageMediaId;
 
   AuthViewModel({
     AuthRepository? authRepository,
@@ -54,22 +72,52 @@ class AuthViewModel extends ChangeNotifier {
   /// Returns null if not authenticated.
   String? get currentUserId => _authRepository.currentUserId;
 
-  bool get isLoading => _isLoading;
-  bool get isAuthenticated {
-    final u = _currentUser;
-    if (u == null) return false;
-    return (u.isEmailVerified == true) || (u.isPhoneVerified == true);
-  }
+  /// Auth operation state. Never bootstrap state.
+  AuthOperation get operation => _operation;
+
+  /// Retained for existing operation-driven UI (button spinners). It reflects
+  /// an in-flight auth operation only and must never be treated as bootstrap
+  /// state.
+  bool get isLoading => _operation != AuthOperation.idle;
+
+  bool get isAuthenticated => _status == AuthStatus.authenticated;
+
+  /// Progress of profile hydration for the current session.
+  ProfileHydrationStatus get profileHydration => _profileHydration;
 
   bool get isEmailVerified => _currentUser?.isEmailVerified ?? false;
   String get displayName => _resolvedDisplayName;
 
-  /// Additive three-state session/bootstrap status. Does not replace
-  /// [isLoading]/[isAuthenticated] and is not yet consumed by the router or
-  /// AuthWrapper (Batch B follow-up).
-  AuthStatus get status {
-    if (!_bootstrapKnown) return AuthStatus.unknown;
-    return isAuthenticated ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+  /// Three-state session/bootstrap status consumed by the router and
+  /// AuthWrapper.
+  AuthStatus get status => _status;
+
+  /// Recomputes [AuthStatus] from the current user's verification state.
+  ///
+  /// Preserves the existing verified-account rule exactly: a session alone is
+  /// never enough — the account must have a confirmed email or a confirmed
+  /// phone. The only thing that changed is *when* this can be answered, since
+  /// `emailConfirmedAt` / `phoneConfirmedAt` arrive with the session rather
+  /// than with the profile row.
+  void _recomputeStatus() {
+    final user = _currentUser;
+    if (user == null) {
+      _status = AuthStatus.unauthenticated;
+      return;
+    }
+    _status = (user.isEmailVerified == true) || (user.isPhoneVerified == true)
+        ? AuthStatus.authenticated
+        : AuthStatus.unauthenticated;
+  }
+
+  void _beginOperation(AuthOperation operation) {
+    _operation = operation;
+    notifyListeners();
+  }
+
+  void _endOperation() {
+    _operation = AuthOperation.idle;
+    notifyListeners();
   }
 
   /// Canonical email precedence: the live Supabase Auth session's email wins
@@ -80,6 +128,58 @@ class AuthViewModel extends ChangeNotifier {
     final authEmail = _authRepository.currentUser?.email.trim() ?? '';
     if (authEmail.isEmpty || authEmail == user.email) return user;
     return user.copyWith(email: authEmail);
+  }
+
+  /// `auth.users` is the canonical source of verification state. A profile row
+  /// that has not yet been synchronized by the database trigger must never be
+  /// able to demote a confirmed account.
+  UserModel _applySessionVerification(UserModel user) {
+    final session = _authRepository.currentUser;
+    if (session == null) return user;
+
+    final emailVerified = user.isEmailVerified || session.isEmailVerified;
+    final phoneVerified = user.isPhoneVerified || session.isPhoneVerified;
+    if (emailVerified == user.isEmailVerified &&
+        phoneVerified == user.isPhoneVerified) {
+      return user;
+    }
+    return user.copyWith(
+      isEmailVerified: emailVerified,
+      isPhoneVerified: phoneVerified,
+    );
+  }
+
+  /// Folds a fresh session identity event onto the already hydrated user.
+  ///
+  /// Supabase emits `tokenRefreshed` periodically. Those events carry session
+  /// identity only, so replacing the current user with them wholesale would
+  /// blank out the hydrated name and the resolved profile image and make them
+  /// visibly reappear a moment later.
+  UserModel _mergeSessionIdentity(UserModel existing, UserModel session) {
+    return existing.copyWith(
+      email: session.email.trim().isNotEmpty ? session.email : existing.email,
+      phoneNumber: existing.phoneNumber ?? session.phoneNumber,
+      isEmailVerified: existing.isEmailVerified || session.isEmailVerified,
+      isPhoneVerified: existing.isPhoneVerified || session.isPhoneVerified,
+    );
+  }
+
+  /// Keeps an already resolved signed image URL when a newer profile read for
+  /// the same canonical `profile_media_id` arrives without one. The signed URL
+  /// stays ephemeral in-memory presentation data; it is never persisted.
+  UserModel _preserveResolvedImage(UserModel incoming, UserModel? previous) {
+    if (previous == null || previous.uid != incoming.uid) return incoming;
+
+    final existingUrl = previous.profileImageUrl;
+    if (existingUrl == null || existingUrl.isEmpty) return incoming;
+
+    final incomingUrl = incoming.profileImageUrl;
+    if (incomingUrl != null && incomingUrl.isNotEmpty) return incoming;
+
+    final mediaId = incoming.profileMediaId;
+    if (mediaId == null || mediaId != previous.profileMediaId) return incoming;
+
+    return incoming.copyWith(profileImageUrl: existingUrl);
   }
 
   String _extractNameFromEmail(String? email) {
@@ -112,7 +212,13 @@ class AuthViewModel extends ChangeNotifier {
     return '';
   }
 
-  bool _refreshDisplayName(UserModel? candidate) {
+  /// [allowBackfill] guards the write-back of a missing profile name.
+  ///
+  /// It must only ever run against a hydrated `public.profiles` row. Running it
+  /// against a session-identity event would compare auth metadata to an empty
+  /// name that simply has not been fetched yet, and could overwrite a good
+  /// stored name.
+  bool _refreshDisplayName(UserModel? candidate, {bool allowBackfill = false}) {
     final user = candidate ?? _currentUser;
     final resolved = _computeDisplayName(user: user);
     final sanitized = resolved.trim();
@@ -122,7 +228,10 @@ class AuthViewModel extends ChangeNotifier {
       _resolvedDisplayName = sanitized;
     }
 
-    if (user != null && user.uid.isNotEmpty && user.name.trim().isEmpty) {
+    if (allowBackfill &&
+        user != null &&
+        user.uid.isNotEmpty &&
+        user.name.trim().isEmpty) {
       final authDisplayName = _authRepository.currentUser?.name.trim() ?? '';
       if (authDisplayName.isNotEmpty) {
         final updatedUser = user.copyWith(name: authDisplayName);
@@ -139,8 +248,7 @@ class AuthViewModel extends ChangeNotifier {
   Future<UserModel?> signUpWithEmail(
       String email, String password, String name) async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      _beginOperation(AuthOperation.signingUp);
 
       final userModel = await _authRepository.signUpWithEmailAndPassword(
         email: email,
@@ -159,15 +267,13 @@ class AuthViewModel extends ChangeNotifier {
         originalException: e,
       );
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _endOperation();
     }
   }
 
   Future<UserModel?> signInWithEmail(String email, String password) async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      _beginOperation(AuthOperation.signingIn);
 
       final userModel = await _authRepository.signInWithEmailAndPassword(
         email: email,
@@ -185,15 +291,13 @@ class AuthViewModel extends ChangeNotifier {
         originalException: e,
       );
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _endOperation();
     }
   }
 
   Future<UserModel?> signInWithGoogle() async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      _beginOperation(AuthOperation.signingIn);
 
       final userModel = await _authRepository.signInWithGoogle();
       return userModel;
@@ -207,15 +311,13 @@ class AuthViewModel extends ChangeNotifier {
         originalException: e,
       );
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _endOperation();
     }
   }
 
   Future<UserModel?> signInWithFacebook() async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      _beginOperation(AuthOperation.signingIn);
 
       final userModel = await _authRepository.signInWithFacebook();
       return userModel;
@@ -229,8 +331,7 @@ class AuthViewModel extends ChangeNotifier {
         originalException: e,
       );
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _endOperation();
     }
   }
 
@@ -238,13 +339,10 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final reloaded = await _authRepository.reloadUser();
       if (reloaded != null) {
-        final resolved = _applyEmailAuthority(reloaded);
-        _currentUser = resolved;
-        _isAuthenticated = resolved.isEmailVerified || resolved.isPhoneVerified;
-        _refreshDisplayName(resolved);
-        await OfflineAuthService.instance.updateCachedUserModel(resolved);
-        notifyListeners();
-        return resolved;
+        _applyProfile(reloaded, markHydrated: true);
+        await OfflineAuthService.instance
+            .updateCachedUserModel(_currentUser ?? reloaded);
+        return _currentUser;
       }
       return reloaded;
     } catch (_) {
@@ -266,7 +364,7 @@ class AuthViewModel extends ChangeNotifier {
         // Debug log suppressed: Failed to update user in repository: $e
         // Even if repository update fails, update local state
         _currentUser = updatedUser;
-        _isAuthenticated = isVerified;
+        _recomputeStatus();
         notifyListeners();
       }
     }
@@ -295,15 +393,11 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final userDoc = await _userRepository.getUserById(uid);
       if (userDoc != null) {
-        final resolved = _applyEmailAuthority(userDoc);
-        _currentUser = resolved;
-        _isAuthenticated =
-            resolved.isEmailVerified == true || resolved.isPhoneVerified == true;
-        _refreshDisplayName(resolved);
-        notifyListeners();
+        _applyProfile(userDoc, markHydrated: true);
 
         try {
-          await OfflineAuthService.instance.updateCachedUserModel(resolved);
+          await OfflineAuthService.instance
+              .updateCachedUserModel(_currentUser ?? userDoc);
         } catch (e) {
           // Debug log suppressed: Failed to sync cached user model: $e
         }
@@ -317,7 +411,7 @@ class AuthViewModel extends ChangeNotifier {
     UserModel? baseUser = _currentUser ?? _authRepository.currentUser;
 
     if (baseUser == null) {
-      _isAuthenticated = true;
+      _status = AuthStatus.authenticated;
       notifyListeners();
       return;
     }
@@ -328,7 +422,7 @@ class AuthViewModel extends ChangeNotifier {
     );
 
     _currentUser = updatedUser;
-    _isAuthenticated = true;
+    _recomputeStatus();
     _refreshDisplayName(updatedUser);
     notifyListeners();
 
@@ -344,89 +438,198 @@ class AuthViewModel extends ChangeNotifier {
     _authSubscription?.cancel();
 
     try {
-      // Listen to authentication state changes from repository with error handling
-      _authSubscription =
-          _authRepository.authStateChanges.listen((UserModel? user) {
-        // Debug log suppressed: Auth state changed: ${user?.uid} - ${user?.email}
-
-        final wasAuthenticated = _currentUser != null;
-        final isNowAuthenticated = user != null;
-        final previousUid = _currentUser?.uid;
-        final resolved = user == null ? null : _applyEmailAuthority(user);
-
-        _currentUser = resolved;
-        _refreshDisplayName(resolved);
-
-        // Set loading to false only after first auth state change
-        // This prevents premature redirects to login during app startup
-        if (_isLoading) {
-          _isLoading = false;
-        }
-        // Additive: mark bootstrap resolved (see AuthStatus doc comment).
-        // Never reset to false afterward.
-        _bootstrapKnown = true;
-
-        // Cache ownership: session state is authoritative.
-        // Cache never overrides a logged out session.
-        if (resolved != null) {
-          if (previousUid != null && previousUid != resolved.uid) {
-            OfflineAuthService.instance.clearAuthCache();
-          }
-          _isAuthenticated = resolved.isEmailVerified || resolved.isPhoneVerified;
-          OfflineAuthService.instance.cacheUserModel(resolved);
-        } else {
-          _isAuthenticated = false;
-          OfflineAuthService.instance.clearAuthCache();
-        }
-
-        // Always notify listeners when auth state changes
-        notifyListeners();
-
-        // Start listening to live user document updates when uid changes
-        if (previousUid != resolved?.uid) {
-          _subscribeToUserUpdates(resolved?.uid);
-        }
-
-        // Log the transition for debugging (suppressed in production)
-        if (!wasAuthenticated && isNowAuthenticated) {
-          // Debug log suppressed: User just signed in: ${user.email.isNotEmpty ? user.email : (user.phoneNumber ?? 'Unknown')}
-          // Debug log suppressed: Email verified: ${user.isEmailVerified}
-          // Debug log suppressed: Phone verified: ${user.isPhoneVerified}
-        } else if (wasAuthenticated && !isNowAuthenticated) {
-          // Debug log suppressed: User just signed out
-        } else if (user != null) {
-          // Debug log suppressed: User state updated: ${user.email.isNotEmpty ? user.email : (user.phoneNumber ?? 'Unknown')}
-          // Debug log suppressed: Email verified: ${user.isEmailVerified}
-          // Debug log suppressed: Phone verified: ${user.isPhoneVerified}
-        }
-      }, onError: (error) {
-        // Auth stream error - continue with unauthenticated state
-        if (_isLoading) {
-          _isLoading = false;
-          _isAuthenticated = false;
-          notifyListeners();
-        }
-        // Additive: bootstrap is resolved (to unauthenticated) even on error.
-        _bootstrapKnown = true;
-      });
-
-      // Safety timeout - if no auth state received in 3 seconds, stop loading
-      Future.delayed(const Duration(seconds: 3), () {
-        if (_isLoading) {
-          _isLoading = false;
-          _isAuthenticated = false;
-          notifyListeners();
-        }
-        // Additive: bootstrap is resolved (to unauthenticated) even on timeout.
-        _bootstrapKnown = true;
-      });
+      // The repository now delivers authoritative session identity only, with
+      // the current session replayed to every subscriber. The first event
+      // therefore requires no network round trip, and bootstrap resolves
+      // without any safety timer.
+      _authSubscription = _authRepository.authStateChanges.listen(
+        _handleSessionIdentity,
+        onError: (Object error) => _resolveBootstrapAsUnauthenticated(),
+      );
     } catch (e) {
-      // Failed to initialize auth stream
-      _isLoading = false;
-      _isAuthenticated = false;
-      _bootstrapKnown = true;
+      _resolveBootstrapAsUnauthenticated();
+    }
+  }
+
+  /// Bootstrap is resolved (to unauthenticated) when the auth pipeline itself
+  /// cannot be established.
+  ///
+  /// Every field is final before `notifyListeners()` runs. The previous
+  /// implementation assigned its bootstrap flag *after* broadcasting, so a
+  /// listener that read [status] synchronously still saw `unknown` and nothing
+  /// ever notified again.
+  void _resolveBootstrapAsUnauthenticated() {
+    _hydrationToken++;
+    _currentUser = null;
+    _status = AuthStatus.unauthenticated;
+    _profileHydration = ProfileHydrationStatus.unresolved;
+    _resolvingImageMediaId = null;
+    _refreshDisplayName(null);
+    notifyListeners();
+  }
+
+  void _handleSessionIdentity(UserModel? sessionUser) {
+    final previousUid = _currentUser?.uid;
+
+    if (sessionUser == null) {
+      _hydrationToken++;
+      _currentUser = null;
+      _status = AuthStatus.unauthenticated;
+      _profileHydration = ProfileHydrationStatus.unresolved;
+      _resolvingImageMediaId = null;
+      _refreshDisplayName(null);
+      OfflineAuthService.instance.clearAuthCache();
+      notifyListeners();
+
+      if (previousUid != null) {
+        _subscribeToUserUpdates(null);
+      }
+      return;
+    }
+
+    final isSameUser = previousUid == sessionUser.uid;
+
+    if (!isSameUser) {
+      // Cache ownership: session state is authoritative and a different user
+      // must never inherit the previous user's cached state.
+      _hydrationToken++;
+      _profileHydration = ProfileHydrationStatus.unresolved;
+      _resolvingImageMediaId = null;
+      if (previousUid != null) {
+        OfflineAuthService.instance.clearAuthCache();
+      }
+    }
+
+    final resolved = isSameUser && _currentUser != null
+        ? _mergeSessionIdentity(_currentUser!, sessionUser)
+        : sessionUser;
+
+    _currentUser = resolved;
+    _recomputeStatus();
+    _refreshDisplayName(resolved);
+    OfflineAuthService.instance.cacheUserModel(resolved);
+    notifyListeners();
+
+    if (!isSameUser) {
+      _subscribeToUserUpdates(resolved.uid);
+    }
+
+    if (_profileHydration == ProfileHydrationStatus.unresolved ||
+        _profileHydration == ProfileHydrationStatus.failed) {
+      unawaited(_hydrateProfile(resolved.uid, _hydrationToken));
+    }
+  }
+
+  /// Hydrates `public.profiles` for the authenticated session.
+  ///
+  /// Owned here, and only here, so a single hydration runs per session no
+  /// matter how many components observe auth state. Its outcome is reported
+  /// through [profileHydration]; it can never change [status].
+  Future<void> _hydrateProfile(String uid, int token) async {
+    _profileHydration = ProfileHydrationStatus.resolving;
+    notifyListeners();
+
+    try {
+      final profile = await _userRepository
+          .getUserById(uid)
+          .timeout(_profileHydrationTimeout);
+
+      if (token != _hydrationToken) return;
+
+      if (profile == null) {
+        _profileHydration = ProfileHydrationStatus.failed;
+        notifyListeners();
+        return;
+      }
+
+      _applyProfile(profile, markHydrated: true);
+      if (kDebugMode) {
+        debugPrint('Supabase profile hydration: database');
+      }
+    } catch (_) {
+      if (token != _hydrationToken) return;
+      // The authoritative session still governs authentication. Only the
+      // hydration outcome is degraded.
+      _profileHydration = ProfileHydrationStatus.failed;
       notifyListeners();
     }
+  }
+
+  /// Applies an authoritative `public.profiles` row onto the canonical user.
+  void _applyProfile(UserModel profile, {bool markHydrated = false}) {
+    final previous = _currentUser;
+    if (previous != null && previous.uid != profile.uid) return;
+
+    var resolved = _applyEmailAuthority(profile);
+    resolved = _applySessionVerification(resolved);
+    resolved = _preserveResolvedImage(resolved, previous);
+
+    final hydrationChanged = markHydrated &&
+        _profileHydration != ProfileHydrationStatus.resolved;
+    final userChanged = previous == null ||
+        resolved.profileImageUrl != previous.profileImageUrl ||
+        resolved.profileMediaId != previous.profileMediaId ||
+        resolved.name != previous.name ||
+        resolved.email != previous.email ||
+        resolved.phoneNumber != previous.phoneNumber ||
+        resolved.isEmailVerified != previous.isEmailVerified ||
+        resolved.isPhoneVerified != previous.isPhoneVerified;
+
+    _currentUser = resolved;
+    if (markHydrated) {
+      _profileHydration = ProfileHydrationStatus.resolved;
+    }
+    _recomputeStatus();
+    final displayNameChanged =
+        _refreshDisplayName(resolved, allowBackfill: true);
+
+    if (userChanged || displayNameChanged || hydrationChanged) {
+      notifyListeners();
+    }
+
+    _maybeResolveProfileImage(resolved);
+  }
+
+  /// Resolves the short-lived signed read URL for the canonical
+  /// `profile_media_id`, off the authoritative read path.
+  ///
+  /// A failure here yields an authenticated user with a valid profile and no
+  /// image — never a sign-out, a redirect, or a blocked route.
+  void _maybeResolveProfileImage(UserModel user) {
+    final repository = _userRepository;
+    if (repository is! ProfileImageUrlResolver) return;
+    final resolver = repository as ProfileImageUrlResolver;
+
+    final mediaId = user.profileMediaId;
+    if (mediaId == null || mediaId.isEmpty) {
+      _resolvingImageMediaId = null;
+      return;
+    }
+
+    final existingUrl = user.profileImageUrl;
+    if (existingUrl != null && existingUrl.isNotEmpty) return;
+    if (_resolvingImageMediaId == mediaId) return;
+
+    _resolvingImageMediaId = mediaId;
+    final token = _hydrationToken;
+
+    resolver.resolveProfileImageUrl(mediaId).then((url) {
+      if (_resolvingImageMediaId == mediaId) {
+        _resolvingImageMediaId = null;
+      }
+      if (token != _hydrationToken) return;
+      if (url == null || url.isEmpty) return;
+
+      final current = _currentUser;
+      if (current == null || current.profileMediaId != mediaId) return;
+
+      _currentUser = current.copyWith(profileImageUrl: url);
+      notifyListeners();
+    }).catchError((_) {
+      if (_resolvingImageMediaId == mediaId) {
+        _resolvingImageMediaId = null;
+      }
+    });
   }
 
   void _subscribeToUserUpdates(String? uid) {
@@ -443,28 +646,11 @@ class AuthViewModel extends ChangeNotifier {
           return;
         }
 
-        final resolved = _applyEmailAuthority(userDoc);
-
-        final hasChanged = _currentUser == null ||
-            resolved.profileImageUrl != _currentUser!.profileImageUrl ||
-            resolved.profileMediaId != _currentUser!.profileMediaId ||
-            resolved.name != _currentUser!.name ||
-            resolved.email != _currentUser!.email ||
-            resolved.phoneNumber != _currentUser!.phoneNumber ||
-            resolved.isEmailVerified != _currentUser!.isEmailVerified ||
-            resolved.isPhoneVerified != _currentUser!.isPhoneVerified;
-
-        _currentUser = resolved;
-        _isAuthenticated =
-            resolved.isEmailVerified == true || resolved.isPhoneVerified == true;
-        final displayNameChanged = _refreshDisplayName(resolved);
-
-        if (hasChanged || displayNameChanged) {
-          notifyListeners();
-        }
+        _applyProfile(userDoc, markHydrated: true);
 
         try {
-          await OfflineAuthService.instance.updateCachedUserModel(resolved);
+          await OfflineAuthService.instance
+              .updateCachedUserModel(_currentUser ?? userDoc);
         } catch (e) {}
 
         // 🔒 SECURITY: The current reconciliation implementation is a
@@ -525,13 +711,15 @@ class AuthViewModel extends ChangeNotifier {
 
   Future<void> signOut() async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      _beginOperation(AuthOperation.signingOut);
 
       await _authRepository.signOut();
       await OfflineAuthService.instance.clearAuthCache();
+      _hydrationToken++;
       _currentUser = null;
-      _isAuthenticated = false;
+      _status = AuthStatus.unauthenticated;
+      _profileHydration = ProfileHydrationStatus.unresolved;
+      _resolvingImageMediaId = null;
       _resolvedDisplayName = '';
       if (kDebugMode) {
         print('✅ AuthViewModel logout state: unauthenticated');
@@ -545,8 +733,7 @@ class AuthViewModel extends ChangeNotifier {
         originalException: e,
       );
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _endOperation();
     }
   }
 

@@ -2,12 +2,15 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/quotation/add_quotation_viewmodel.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 UserModel createTestUser(
     {required String uid, String email = 'test@example.com'}) {
@@ -48,8 +51,27 @@ class MockCanonicalAuthRepository implements AuthRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class MockCanonicalUserRepository implements UserRepository {
+  @override
+  Stream<UserModel?> getUserStream(String uid) => const Stream.empty();
+
+  @override
+  Future<UserModel?> getUserById(String uid) async => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await sb.Supabase.initialize(
+      url: 'https://unit-test.invalid',
+      anonKey: 'unit-test-anon-key',
+    );
+  });
 
   group('Canonical Authenticated User Identity Tests', () {
     late MockCanonicalAuthRepository mockRepo;
@@ -88,7 +110,10 @@ void main() {
     test(
         'AuthViewModel.currentUserId delegates directly to active AuthRepository session',
         () {
-      final authVM = AuthViewModel(authRepository: mockRepo);
+      final authVM = AuthViewModel(
+        authRepository: mockRepo,
+        userRepository: MockCanonicalUserRepository(),
+      );
 
       expect(authVM.currentUserId, isNull);
 

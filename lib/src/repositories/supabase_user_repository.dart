@@ -4,12 +4,27 @@ import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 
+/// Resolves the short-lived signed read URL for a canonical profile media id.
+///
+/// Deliberately a separate capability rather than part of [UserRepository]:
+/// a signed URL is ephemeral presentation data, it is not profile state, and
+/// it must never sit inside an authoritative `public.profiles` read. Callers
+/// feature-test for this interface, so backends without private media (the
+/// Firestore repository) need no changes.
+abstract class ProfileImageUrlResolver {
+  /// Returns a signed read URL for [profileMediaId], or null when it cannot be
+  /// resolved. Never throws: an unresolved image is a presentation outcome,
+  /// never an authentication or profile failure.
+  Future<String?> resolveProfileImageUrl(String profileMediaId);
+}
+
 /// Supabase implementation of [UserRepository].
 ///
 /// During the backend migration, identity/profile data lives in
 /// `public.profiles`. Subscription state remains server-owned and will be
 /// connected to RevenueCat in a later stage.
-class SupabaseUserRepository implements UserRepository {
+class SupabaseUserRepository
+    implements UserRepository, ProfileImageUrlResolver {
   SupabaseUserRepository({
     SupabaseClient? client,
     R2ProfileUploadService? profileImageService,
@@ -42,7 +57,7 @@ class SupabaseUserRepository implements UserRepository {
   @override
   Future<UserModel?> getUserById(String uid) async {
     final row = await _client.from(_table).select().eq('id', uid).maybeSingle();
-    return row == null ? null : await _fromProfile(row);
+    return row == null ? null : _fromProfile(row);
   }
 
   @override
@@ -73,7 +88,7 @@ class SupabaseUserRepository implements UserRepository {
         .select()
         .eq('email', email.trim().toLowerCase())
         .maybeSingle();
-    return row == null ? null : await _fromProfile(row);
+    return row == null ? null : _fromProfile(row);
   }
 
   @override
@@ -106,9 +121,12 @@ class SupabaseUserRepository implements UserRepository {
         .from(_table)
         .stream(primaryKey: const ['id'])
         .eq('id', uid)
-        .asyncMap((rows) async =>
-            rows.isEmpty ? null : await _fromProfile(rows.first));
+        .map((rows) => rows.isEmpty ? null : _fromProfile(rows.first));
   }
+
+  @override
+  Future<String?> resolveProfileImageUrl(String profileMediaId) =>
+      _resolveProfileImageUrl(profileMediaId);
 
   Map<String, dynamic> _editableColumns(UserModel user) {
     final phone = user.phoneNumber?.trim();
@@ -123,18 +141,21 @@ class SupabaseUserRepository implements UserRepository {
     };
   }
 
-  Future<UserModel> _fromProfile(Map<String, dynamic> row) async {
+  /// Maps an authoritative `public.profiles` row to a [UserModel].
+  ///
+  /// Synchronous by design. This read is on the authentication/profile
+  /// critical path, so it must never await a Cloudflare R2 signed-URL
+  /// request. `profile_media_id` stays canonical here; `profileImageUrl` is
+  /// left null and resolved separately through [resolveProfileImageUrl].
+  UserModel _fromProfile(Map<String, dynamic> row) {
     final profileMediaId = _profileMediaId(row['profile_media_id']);
-    final profileImageUrl = profileMediaId == null
-        ? null
-        : await _resolveProfileImageUrl(profileMediaId);
 
     return UserModel(
       uid: row['id'] as String? ?? '',
       name: row['name'] as String? ?? '',
       email: row['email'] as String? ?? '',
       phoneNumber: row['phone_number'] as String?,
-      profileImageUrl: profileImageUrl,
+      profileImageUrl: null,
       profileMediaId: profileMediaId,
       createdAt: _parseTimestamp(row['created_at']) ?? DateTime.now(),
       lastLoginAt: _parseTimestamp(row['last_login_at']),

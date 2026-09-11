@@ -65,14 +65,17 @@ class _SignUpViewState extends State<SignUpView> {
                   ),
                   const SizedBox(height: 34),
 
-                  // --- NEW: Phone / Email tabs ---
-                  _SignupTabs(
-                    method: vm.signupMethod,
-                    onChanged: vm.setSignupMethod,
-                    localization: localization,
-                  ),
-
-                  const SizedBox(height: 24),
+                  // Phone / Email tabs — only where phone sign-up exists.
+                  // Otherwise the screen is the email form alone, with no
+                  // dead-end phone option.
+                  if (SignUpViewModel.phoneSignUpAvailable) ...[
+                    _SignupTabs(
+                      method: vm.signupMethod,
+                      onChanged: vm.setSignupMethod,
+                      localization: localization,
+                    ),
+                    const SizedBox(height: 24),
+                  ],
 
                   // Conditional form fields based on signup method
                   if (vm.signupMethod == SignupMethod.phone) ...[

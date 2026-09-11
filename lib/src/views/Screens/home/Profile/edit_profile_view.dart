@@ -5,7 +5,10 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_verification_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_addition_dialog.dart';
+import 'package:broker_wallet/src/Views/Widgets/phone_otp_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
+import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
+import 'package:broker_wallet/src/viewmodels/phone_verification_viewmodel.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
 import 'package:broker_wallet/src/services/fast_profile_upload_service.dart';
@@ -85,29 +88,11 @@ class _EditProfileViewState extends State<EditProfileView> {
       _originalEmail = user.email; // Store original email
 
       // Get phone number from user model
-      String phoneNumber = user.phoneNumber ?? '';
-      _originalPhone = phoneNumber; // Store original phone
+      _originalPhone = user.phoneNumber ?? ''; // Store original phone
 
-      try {
-        // User model already has the correct data from repository
-        if (user.phoneNumber != null && user.phoneNumber!.isNotEmpty) {
-          phoneNumber = user.phoneNumber!;
-
-          // Format phone number for display
-          if (phoneNumber.startsWith('+971')) {
-            // Remove country code
-            phoneNumber = phoneNumber.substring(4);
-            // Add leading 0 if not present for UAE numbers
-            if (phoneNumber.length == 9 && !phoneNumber.startsWith('0')) {
-              phoneNumber = '0$phoneNumber';
-            }
-          }
-        }
-      } catch (e) {
-        // Debug log suppressed: Error processing phone number: $e
-      }
-
-      _phoneController.text = phoneNumber;
+      // Supabase Auth may hold the confirmed number as `971…` without its
+      // `+`; the shared normalizer displays every form the same way.
+      _phoneController.text = _localUaeDisplay(user.phoneNumber);
 
       // Update the UI after data is loaded
       if (mounted) {
@@ -754,8 +739,81 @@ class _EditProfileViewState extends State<EditProfileView> {
     );
   }
 
+  /// Supabase phone verification for the signed-in account.
+  ///
+  /// Two dialogs in sequence — number, then code — driven by one
+  /// [PhoneVerificationViewModel] that lives exactly as long as this flow.
+  /// Nothing is written to the profile here: the number is not persisted
+  /// anywhere until Supabase confirms it, and the confirmed number reaches the
+  /// profile through the database's own auth → profile sync.
+  ///
+  /// Navigation stays local to this flow: each dialog closes itself, and this
+  /// screen stays where it is. General auth routing is untouched.
+  Future<void> _verifyPhoneForCurrentAccount(AuthViewModel authVM) async {
+    final loc = AppLocalizations.of(context);
+    final flow = PhoneVerificationViewModel(authViewModel: authVM);
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PhoneAdditionDialog(
+          onSubmit: (phoneNumber) async {
+            final sent = await flow.sendCode(phoneNumber);
+            if (!sent) {
+              final key = flow.errorKey;
+              if (key != null) _showToast(loc.translate(key), Colors.red);
+              // Throwing keeps the number dialog open so it can be corrected;
+              // the dialog closes itself only on success.
+              throw StateError('Verification code was not sent.');
+            }
+            _showToast(loc.translate('otpSent'), Colors.green);
+          },
+        ),
+      );
+
+      if (!mounted || flow.phase != PhoneVerificationPhase.awaitingCode) {
+        return;
+      }
+
+      final verified = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ChangeNotifierProvider<PhoneVerificationViewModel>.value(
+          value: flow,
+          child: const PhoneOtpDialog(),
+        ),
+      );
+      if (verified != true || !mounted) return;
+
+      final confirmedPhone = flow.phoneE164 ?? '';
+      setState(() {
+        _originalPhone = confirmedPhone;
+        _phoneController.text = _localUaeDisplay(confirmedPhone);
+      });
+      _showToast(loc.translate('phoneVerifiedSuccessfully'), Colors.green);
+    } finally {
+      flow.dispose();
+    }
+  }
+
+  /// `0501234567` for display. Supabase Auth may store the number without its
+  /// `+`, so it is normalized first; anything else is shown as stored.
+  String _localUaeDisplay(String? phone) {
+    if (phone == null || phone.trim().isEmpty) return '';
+    if (!PhoneNumberNormalizer.isUaeMobile(phone)) return phone;
+    return '0${PhoneNumberNormalizer.normalizeUaeMobile(phone).substring(4)}';
+  }
+
   /// Show phone addition dialog (for email-only accounts)
   Future<void> _showPhoneAdditionDialog(EditProfileViewModel vm) async {
+    final authVM = context.read<AuthViewModel>();
+    if (authVM.phoneVerification != null) {
+      await _verifyPhoneForCurrentAccount(authVM);
+      return;
+    }
+
+    // Legacy Firebase backend: its own older flow, unchanged.
     await showDialog<void>(
       context: context,
       barrierDismissible: false,

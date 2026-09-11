@@ -572,12 +572,31 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  /// Phone verification for the signed-in account, where the backend can
+  /// genuinely perform it. Null for backends that cannot (legacy Firebase,
+  /// mocks), which keep their own older flow.
+  PhoneVerificationCapability? get phoneVerification {
+    final repository = _authRepository;
+    if (repository is! PhoneVerificationCapability) return null;
+    return repository as PhoneVerificationCapability;
+  }
+
+  /// Legacy Firebase phone flow only.
+  ///
+  /// With Supabase as the auth authority, phone verification is reported by
+  /// Supabase itself — `auth.users.phone_confirmed_at`, surfaced through the
+  /// session identity stream and the profile row the database trigger keeps in
+  /// step. A client must never assert it, so this does nothing in that mode.
+  ///
+  /// It also no longer fabricates [AuthStatus.authenticated] when there is no
+  /// user at all: that turned "a code was accepted somewhere" into a signed-in
+  /// app with no session. Status only ever comes from real auth state.
   Future<void> markPhoneVerified({String? phoneNumber}) async {
+    if (SupabaseConfig.useSupabaseAuth) return;
+
     UserModel? baseUser = _currentUser ?? _authRepository.currentUser;
 
     if (baseUser == null) {
-      _status = AuthStatus.authenticated;
-      notifyListeners();
       return;
     }
 

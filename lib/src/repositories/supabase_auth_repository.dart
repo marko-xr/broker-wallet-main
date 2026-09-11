@@ -12,7 +12,8 @@ import 'package:flutter/foundation.dart';
 /// Supabase implementation of [AuthRepository].
 ///
 /// Keeps user identity synchronized with `auth.users` and `public.profiles`.
-class SupabaseAuthRepository implements AuthRepository {
+class SupabaseAuthRepository
+    implements AuthRepository, PhoneVerificationCapability {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -374,7 +375,6 @@ class SupabaseAuthRepository implements AuthRepository {
     );
   }
 
-  @override
   /// Persists editable profile fields in one authoritative round trip.
   ///
   /// This used to read the row, write every editable column back from that
@@ -383,8 +383,13 @@ class SupabaseAuthRepository implements AuthRepository {
   /// columns the caller supplied. The returned row *is* the confirmation, so
   /// persistence is still verified, just without a second read. Columns that
   /// were not supplied are left untouched instead of being rewritten from a
-  /// copy of themselves — which also means a name-only save can no longer fail
-  /// on a stored phone number that does not normalize.
+  /// copy of themselves.
+  ///
+  /// [phoneNumber] is refused. The profile phone mirrors Supabase Auth's
+  /// confirmed phone, is maintained only by the database, and is not
+  /// client-writable; a phone change must go through
+  /// [PhoneVerificationCapability]. Refusing — rather than silently ignoring —
+  /// means a caller can never believe an unverified number was saved.
   ///
   /// [profileImageUrl] is intentionally ignored: in Supabase mode media is
   /// linked server-side by `profile_media_id`, never by URL.
@@ -394,6 +399,13 @@ class SupabaseAuthRepository implements AuthRepository {
     String? phoneNumber,
     String? profileImageUrl,
   }) async {
+    if (phoneNumber != null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.operationNotAllowed,
+        message: 'Phone numbers change only through phone verification.',
+      );
+    }
+
     final user = _client.auth.currentUser;
     if (user == null) {
       throw AuthException('No authenticated Supabase user.');
@@ -403,15 +415,6 @@ class SupabaseAuthRepository implements AuthRepository {
     final changes = <String, dynamic>{};
     if (sanitizedName != null) {
       changes['name'] = sanitizedName;
-    }
-    if (phoneNumber != null) {
-      // Same column mapping and normalization SupabaseUserRepository applies.
-      final phone = phoneNumber.trim();
-      changes['phone_number'] = phone.isEmpty ? null : phone;
-      changes['phone_e164'] = PhoneNumberNormalizer.normalizeOptional(
-        phoneNumber: phone,
-        countryCode: '+971',
-      );
     }
     if (changes.isEmpty) return;
 
@@ -472,6 +475,93 @@ class SupabaseAuthRepository implements AuthRepository {
       UserAttributes(email: email.trim().toLowerCase()),
     );
     await _client.auth.updateUser(UserAttributes(password: password));
+  }
+
+  /// Phone verification is a Supabase **phone change** on the signed-in
+  /// account, never a phone sign-in:
+  ///
+  ///  * `updateUser(phone:)` requires the current session — it throws when
+  ///    there is none — so the pending number is recorded against that
+  ///    account, server-side. Supabase holds it apart from the confirmed
+  ///    `auth.users.phone` until verified, so an unverified number is never
+  ///    persisted as the account's phone, and the `auth.users` → profiles sync
+  ///    trigger does not fire for it.
+  ///  * `verifyOTP(type: phoneChange)` confirms it for that same account. It
+  ///    cannot create a user; phone sign-up is disabled in this project.
+  ///
+  /// Nothing here touches `public.profiles`. The existing
+  /// `sync_auth_identity_to_profile` trigger copies the confirmed phone and
+  /// `phone_confirmed_at` across, and `is_phone_verified` is not writable by
+  /// clients at all.
+  @override
+  Future<void> requestPhoneVerification(String phoneE164) async {
+    try {
+      final phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
+      await _client.auth.updateUser(UserAttributes(phone: phone));
+    } catch (e) {
+      throw AuthFailure.fromSupabasePhoneVerification(e);
+    }
+  }
+
+  @override
+  Future<void> resendPhoneVerification(String phoneE164) async {
+    try {
+      final phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
+      if (_client.auth.currentSession == null) {
+        throw AuthSessionMissingException();
+      }
+      await _client.auth.resend(phone: phone, type: OtpType.phoneChange);
+    } catch (e) {
+      throw AuthFailure.fromSupabasePhoneVerification(e);
+    }
+  }
+
+  @override
+  Future<UserModel> confirmPhoneVerification({
+    required String phoneE164,
+    required String code,
+  }) async {
+    final String phone;
+    final AuthResponse response;
+    try {
+      phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
+      if (_client.auth.currentSession == null) {
+        throw AuthSessionMissingException();
+      }
+      response = await _client.auth.verifyOTP(
+        phone: phone,
+        token: code,
+        type: OtpType.phoneChange,
+      );
+    } catch (e) {
+      throw AuthFailure.fromSupabasePhoneVerification(e);
+    }
+
+    // An accepted code is not, by itself, proof of confirmation: a secure
+    // two-step change accepts the first code without confirming anything.
+    // Only the server reporting this exact number as the account's confirmed
+    // phone counts.
+    final user = response.user ?? _client.auth.currentUser;
+    if (user == null ||
+        user.phoneConfirmedAt == null ||
+        !_isSamePhone(user.phone, phone)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Supabase did not confirm the phone number.',
+      );
+    }
+    return _fromAuthUser(user);
+  }
+
+  /// Supabase Auth may store phones without the leading `+`, so compare the
+  /// canonical forms rather than the raw strings.
+  bool _isSamePhone(String? stored, String expectedE164) {
+    if (stored == null || stored.trim().isEmpty) return false;
+    try {
+      return PhoneNumberNormalizer.normalizeUaeMobile(stored) == expectedE164;
+    } on PhoneValidationException {
+      return false;
+    }
   }
 
   @override

@@ -28,7 +28,16 @@ class SignInViewModel extends ChangeNotifier {
   String? _passwordError;
   String? _phoneError;
   String _countryCode = '+971';
-  LoginMethod loginMethod = LoginMethod.phone;
+  /// Phone *sign-in* exists only on the legacy Firebase backend. With Supabase
+  /// as the auth authority it is not implemented — phone numbers are verified
+  /// for an already signed-in account from Edit Profile instead — so the
+  /// screen must not offer it.
+  static bool get phoneSignInAvailable => !SupabaseConfig.useSupabaseAuth;
+
+  static LoginMethod get initialLoginMethod =>
+      phoneSignInAvailable ? LoginMethod.phone : LoginMethod.email;
+
+  LoginMethod loginMethod = initialLoginMethod;
   bool _phoneFlowCompleted = false;
 
   // Getters
@@ -59,6 +68,7 @@ class SignInViewModel extends ChangeNotifier {
   }
 
   void setLoginMethod(LoginMethod method) {
+    if (method == LoginMethod.phone && !phoneSignInAvailable) return;
     loginMethod = method;
     if (method != LoginMethod.phone && _phoneError != null) {
       _phoneError = null;

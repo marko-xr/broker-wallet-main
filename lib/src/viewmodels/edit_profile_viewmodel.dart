@@ -296,7 +296,10 @@ class EditProfileViewModel extends ChangeNotifier {
 
       await _authRepository.updateUserProfile(
         name: sanitizedName,
-        phoneNumber: sanitizedPhone,
+        // With Supabase as the authority the profile phone is a server-owned
+        // mirror of the verified Auth phone; it changes only through phone
+        // verification, never through a profile save.
+        phoneNumber: SupabaseConfig.useSupabaseAuth ? null : sanitizedPhone,
         profileImageUrl: resolvedImageUrl,
       );
       // Debug log suppressed: User updated successfully via auth repository

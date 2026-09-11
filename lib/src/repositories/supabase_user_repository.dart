@@ -2,7 +2,6 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 
 /// Resolves the short-lived signed read URL for a canonical profile media id.
 ///
@@ -128,15 +127,19 @@ class SupabaseUserRepository
   Future<String?> resolveProfileImageUrl(String profileMediaId) =>
       _resolveProfileImageUrl(profileMediaId);
 
+  /// The profile columns a client may write: exactly the ones the database
+  /// grants to `authenticated`.
+  ///
+  /// `phone_number` and `phone_e164` are deliberately absent. They mirror
+  /// Supabase Auth's confirmed phone and are maintained only by the
+  /// `sync_auth_identity_to_profile` trigger; clients have no UPDATE privilege
+  /// on them. Sending them would make every save here — notification settings,
+  /// preference toggles, name backfill — fail outright, and before that it let
+  /// a stale cached phone overwrite a freshly confirmed one. Phone changes go
+  /// through `PhoneVerificationCapability` instead.
   Map<String, dynamic> _editableColumns(UserModel user) {
-    final phone = user.phoneNumber?.trim();
     return {
       'name': user.name.trim(),
-      'phone_number': phone == null || phone.isEmpty ? null : phone,
-      'phone_e164': PhoneNumberNormalizer.normalizeOptional(
-        phoneNumber: phone,
-        countryCode: '+971',
-      ),
       'preferences': user.preferences,
     };
   }

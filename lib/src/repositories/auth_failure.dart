@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
@@ -13,6 +17,23 @@ enum AuthFailureCode {
   network,
   providerUnavailable,
   operationNotAllowed,
+
+  /// The verification code was wrong or has expired. Supabase Auth reports
+  /// both as `otp_expired` ("Token has expired or is invalid"), so the two
+  /// cannot be told apart and are deliberately one outcome.
+  otpInvalidOrExpired,
+
+  /// The phone number is not a valid UAE mobile number.
+  invalidPhoneNumber,
+
+  /// The number already belongs to another account.
+  phoneAlreadyInUse,
+
+  /// SMS could not be sent: no SMS provider, or the provider failed.
+  smsUnavailable,
+
+  /// The session that started the operation is gone or no longer valid.
+  sessionExpired,
   unknown,
 }
 
@@ -203,6 +224,101 @@ class AuthFailure implements Exception {
       message: exception?.toString() ?? 'An unexpected error occurred.',
       originalException: exception,
     );
+  }
+
+  /// Maps a Supabase phone-verification failure to a typed outcome.
+  ///
+  /// Only the code is carried forward. [message] is a fixed internal string and
+  /// the original exception is deliberately not attached, so no provider
+  /// response, token or code can reach a caller that displays failures.
+  factory AuthFailure.fromSupabasePhoneVerification(Object exception) {
+    if (exception is AuthFailure) return exception;
+
+    AuthFailure typed(AuthFailureCode code, String message) =>
+        AuthFailure(code: code, message: message);
+
+    if (exception is PhoneValidationException) {
+      return typed(
+        AuthFailureCode.invalidPhoneNumber,
+        'The phone number is not a valid UAE mobile number.',
+      );
+    }
+    if (exception is sb.AuthSessionMissingException) {
+      return typed(AuthFailureCode.sessionExpired, 'No active session.');
+    }
+    if (exception is TimeoutException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    // gotrue raises this for two different things. With no status it is a
+    // transport failure — offline, DNS, a dropped connection. With a status it
+    // is a server 5xx, and gotrue has discarded the error code: an SMS
+    // provider failure (`sms_send_failed`) arrives this way, and reporting it
+    // as "check your connection" would send the user after the wrong problem.
+    // The code is still in the response body, which is read here and never
+    // shown.
+    if (exception is sb.AuthRetryableFetchException) {
+      if (exception.statusCode == null) {
+        return typed(AuthFailureCode.network, 'The request did not complete.');
+      }
+      final serverCode = _errorCodeInBody(exception.message);
+      if (serverCode == 'sms_send_failed' ||
+          serverCode == 'hook_timeout' ||
+          serverCode == 'hook_timeout_after_retry') {
+        return typed(AuthFailureCode.smsUnavailable, 'SMS is unavailable.');
+      }
+      return typed(AuthFailureCode.unknown, 'Phone verification failed.');
+    }
+    if (exception is sb.AuthException) {
+      switch (exception.code) {
+        case 'otp_expired':
+          return typed(
+            AuthFailureCode.otpInvalidOrExpired,
+            'The verification code is invalid or has expired.',
+          );
+        case 'over_sms_send_rate_limit':
+        case 'over_request_rate_limit':
+          return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+        case 'phone_exists':
+          return typed(
+            AuthFailureCode.phoneAlreadyInUse,
+            'The phone number belongs to another account.',
+          );
+        case 'sms_send_failed':
+        case 'phone_provider_disabled':
+        case 'provider_disabled':
+        case 'otp_disabled':
+          return typed(AuthFailureCode.smsUnavailable, 'SMS is unavailable.');
+        case 'validation_failed':
+          return typed(
+            AuthFailureCode.invalidPhoneNumber,
+            'The phone number was rejected.',
+          );
+        case 'session_not_found':
+        case 'session_expired':
+        case 'session_missing':
+        case 'bad_jwt':
+        case 'user_not_found':
+          return typed(AuthFailureCode.sessionExpired, 'Session is invalid.');
+      }
+      if (exception.statusCode == '429') {
+        return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+      }
+    }
+    return typed(AuthFailureCode.unknown, 'Phone verification failed.');
+  }
+
+  /// Reads the Supabase error code from a raw error body, or null.
+  static String? _errorCodeInBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        for (final key in const ['error_code', 'code']) {
+          final value = decoded[key];
+          if (value is String) return value;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Helper for providers not yet supported in the active configuration.

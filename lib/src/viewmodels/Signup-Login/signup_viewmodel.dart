@@ -56,7 +56,16 @@ class SignUpViewModel extends ChangeNotifier {
   String get email => emailController.text;
   String get password => passwordController.text;
   String get confirmPassword => confirmPasswordController.text;
-  SignupMethod signupMethod = SignupMethod.phone;
+  /// Phone *sign-up* exists only on the legacy Firebase backend. With Supabase
+  /// as the auth authority an account is created by email, and a phone number
+  /// is verified for it afterwards from Edit Profile — so the screen must not
+  /// offer phone registration.
+  static bool get phoneSignUpAvailable => !SupabaseConfig.useSupabaseAuth;
+
+  static SignupMethod get initialSignupMethod =>
+      phoneSignUpAvailable ? SignupMethod.phone : SignupMethod.email;
+
+  SignupMethod signupMethod = initialSignupMethod;
 
   // Setters updating controller text and notifying listeners.
   void setName(String value) {
@@ -74,6 +83,7 @@ class SignUpViewModel extends ChangeNotifier {
   }
 
   void setSignupMethod(SignupMethod method) {
+    if (method == SignupMethod.phone && !phoneSignUpAvailable) return;
     signupMethod = method;
     if (method == SignupMethod.phone) {
       _phoneFlowCompleted = false;

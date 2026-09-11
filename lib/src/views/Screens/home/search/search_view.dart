@@ -1,6 +1,5 @@
-import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -237,28 +236,9 @@ class _Header extends StatelessWidget {
 
     return Row(
       children: [
-        GestureDetector(
+        CurrentUserAvatar(
+          size: 48,
           onTap: () => context.push('/edit-profile'),
-          child: ClipOval(
-            child: SizedBox(
-              width: 48,
-              height: 48,
-              child: authVM.currentUser?.profileImageUrl != null &&
-                      authVM.currentUser!.profileImageUrl!.isNotEmpty
-                  ? OfflineMediaService.instance.buildOfflineAwareImage(
-                      imageUrl: authVM.currentUser!.profileImageUrl!,
-                      fit: BoxFit.cover,
-                      width: 48,
-                      height: 48,
-                    )
-                  : Image.asset(
-                      AppImages.avatarPlaceholder,
-                      fit: BoxFit.cover,
-                      width: 48,
-                      height: 48,
-                    ),
-            ),
-          ),
         ),
         const SizedBox(width: 12),
         Expanded(

@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Service to handle offline media loading for images and videos
 /// Maps Firebase Storage URLs to local file paths when offline
@@ -43,6 +44,69 @@ class OfflineMediaService {
       // 📁 Mapped URL to local file: $firebaseUrl -> $localPath (log removed)
     } catch (e) {
       // ⚠️ Failed to map URL: $e (log removed)
+    }
+  }
+
+  /// Prefix under which a stable media identity is mapped to a local file.
+  ///
+  /// [_urlMappingBox] is keyed by URL, which can never hit for a Cloudflare R2
+  /// signed URL because the signature and expiry query parameters rotate on
+  /// every resolution. A canonical `profile_media_id` does not rotate, so it is
+  /// stored under its own namespaced key in the same box.
+  static const String _mediaIdKeyPrefix = 'mediaId::';
+
+  static String _mediaIdKey(String mediaId) => '$_mediaIdKeyPrefix$mediaId';
+
+  /// Map a stable media identity (Supabase `profile_media_id`) to local bytes.
+  Future<void> mapMediaIdToLocalFile(String mediaId, String localPath) async {
+    if (mediaId.isEmpty || localPath.isEmpty) return;
+    if (!_isInitialized) {
+      await initialize();
+      if (!_isInitialized) return;
+    }
+
+    try {
+      await _urlMappingBox.put(_mediaIdKey(mediaId), localPath);
+    } catch (e) {
+      // Best effort: a missing mapping only costs a network fetch.
+    }
+  }
+
+  /// Records where the image cache stored the bytes for [mediaId].
+  ///
+  /// Without this, a cold start still shows a placeholder until a fresh signed
+  /// URL resolves, because `CachedNetworkImage` needs a URL before it will
+  /// consult its cache. Persisting the file path against the stable media
+  /// identity means the next cold start resolves it synchronously and paints
+  /// the real image with no URL and no network at all.
+  ///
+  /// Returns the local path when one is available.
+  Future<String?> warmMediaIdMapping(String? mediaId) async {
+    if (mediaId == null || mediaId.isEmpty) return null;
+
+    final existing = getLocalFilePathForMediaId(mediaId);
+    if (existing != null && File(existing).existsSync()) return existing;
+
+    try {
+      final cached = await DefaultCacheManager().getFileFromCache(mediaId);
+      final path = cached?.file.path;
+      if (path == null || !File(path).existsSync()) return null;
+      await mapMediaIdToLocalFile(mediaId, path);
+      return path;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Local file already held for a stable media identity, if any.
+  String? getLocalFilePathForMediaId(String? mediaId) {
+    if (mediaId == null || mediaId.isEmpty) return null;
+    if (!_isInitialized) return null;
+
+    try {
+      return _urlMappingBox.get(_mediaIdKey(mediaId)) as String?;
+    } catch (e) {
+      return null;
     }
   }
 
@@ -210,14 +274,40 @@ class OfflineMediaService {
   }
 
   /// Create offline-aware widget for images
+  /// [cacheKey] gives an image a stable cache identity that is independent of
+  /// its URL. Profile images pass their canonical `profile_media_id`, so a
+  /// re-signed R2 URL resolves to the same cache entry instead of missing and
+  /// re-downloading bytes the device already holds. Omitting it keeps the
+  /// previous URL-keyed behavior, which is correct for the stable Firebase
+  /// Storage URLs used by property and search imagery.
   Widget buildOfflineAwareImage({
     required String imageUrl,
+    String? cacheKey,
     BoxFit fit = BoxFit.cover,
     double? width,
     double? height,
     Widget? placeholder,
     Widget? errorWidget,
   }) {
+    // Stable-identity local bytes win over everything: they are already on
+    // disk, so they render on the first frame with no network and no
+    // placeholder, even before a refreshed signed URL has been resolved.
+    final mediaIdPath = getLocalFilePathForMediaId(cacheKey);
+    if (mediaIdPath != null) {
+      final mediaIdFile = File(mediaIdPath);
+      if (mediaIdFile.existsSync()) {
+        return Image.file(
+          mediaIdFile,
+          fit: fit,
+          width: width,
+          height: height,
+          errorBuilder: (context, error, stackTrace) {
+            return errorWidget ?? _buildDefaultErrorWidget();
+          },
+        );
+      }
+    }
+
     // ALWAYS check for local file first (for both local:// and Firebase URLs)
     // This prevents loading indicators when switching from local:// to Firebase URLs
     final localPath = getLocalFilePath(imageUrl);
@@ -241,9 +331,17 @@ class OfflineMediaService {
       return placeholder ?? _buildDefaultPlaceholder();
     }
 
+    // A caller may hold a stable cache identity but no URL yet — a profile
+    // image whose signed URL has not been resolved for this session. With no
+    // local bytes for that identity there is nothing to draw yet.
+    if (imageUrl.isEmpty) {
+      return placeholder ?? _buildDefaultPlaceholder();
+    }
+
     // For Firebase URLs, use CachedNetworkImage with preloading strategy
     return CachedNetworkImage(
       imageUrl: imageUrl,
+      cacheKey: cacheKey,
       fit: fit,
       width: width,
       height: height,

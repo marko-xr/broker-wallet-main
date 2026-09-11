@@ -6,10 +6,9 @@ import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/Views/Widgets/settings_tile.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
-import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 
 class ProfileView extends StatelessWidget {
@@ -78,30 +77,7 @@ class ProfileView extends StatelessWidget {
                           ),
                           child: Column(
                             children: [
-                              ClipOval(
-                                child: SizedBox(
-                                  width: 64,
-                                  height: 64,
-                                  child: vm.currentUser?.profileImageUrl !=
-                                              null &&
-                                          vm.currentUser!.profileImageUrl!
-                                              .isNotEmpty
-                                      ? OfflineMediaService.instance
-                                          .buildOfflineAwareImage(
-                                          imageUrl:
-                                              vm.currentUser!.profileImageUrl!,
-                                          fit: BoxFit.cover,
-                                          width: 64,
-                                          height: 64,
-                                        )
-                                      : Image.asset(
-                                          AppImages.avatarPlaceholder,
-                                          fit: BoxFit.cover,
-                                          width: 64,
-                                          height: 64,
-                                        ),
-                                ),
-                              ),
+                              const CurrentUserAvatar(size: 64),
                               const SizedBox(height: 12),
                               Text(resolvedName, style: texts.titleLarge),
                               const SizedBox(height: 4),

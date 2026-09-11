@@ -1,10 +1,9 @@
 import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
-import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import '../../../../viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_viewmodel.dart';
@@ -463,30 +462,10 @@ class FavoritesView extends StatelessWidget {
   }
 
   Widget _buildAvatar(BuildContext context, AuthViewModel authVM) {
-    final profileImage = authVM.currentUser?.profileImageUrl;
-
-    return GestureDetector(
+    return CurrentUserAvatar(
+      size: 56,
+      borderRadius: BorderRadius.circular(18),
       onTap: () => context.push('/edit-profile'),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: SizedBox(
-          width: 56,
-          height: 56,
-          child: profileImage != null && profileImage.isNotEmpty
-              ? OfflineMediaService.instance.buildOfflineAwareImage(
-                  imageUrl: profileImage,
-                  fit: BoxFit.cover,
-                  width: 56,
-                  height: 56,
-                )
-              : Image.asset(
-                  AppImages.avatarPlaceholder,
-                  fit: BoxFit.cover,
-                  width: 56,
-                  height: 56,
-                ),
-        ),
-      ),
     );
   }
 

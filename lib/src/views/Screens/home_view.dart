@@ -6,10 +6,9 @@ import 'package:broker_wallet/src/Views/Widgets/grid_item_card.dart';
 import 'package:broker_wallet/src/Views/Widgets/notification_icon.dart';
 import 'package:broker_wallet/src/Views/Widgets/filtered_items_view.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import '../../viewmodels/home_viewmodel.dart';
 import '../../viewmodels/Signup-Login/auth_viewmodel.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 
 class HomeView extends StatelessWidget {
   const HomeView({super.key});
@@ -65,28 +64,9 @@ class HomeView extends StatelessWidget {
 
     return Row(
       children: [
-        GestureDetector(
+        CurrentUserAvatar(
+          size: 48,
           onTap: () => context.push('/edit-profile'),
-          child: ClipOval(
-            child: SizedBox(
-              width: 48,
-              height: 48,
-              child: authVM.currentUser?.profileImageUrl != null &&
-                      authVM.currentUser!.profileImageUrl!.isNotEmpty
-                  ? OfflineMediaService.instance.buildOfflineAwareImage(
-                      imageUrl: authVM.currentUser!.profileImageUrl!,
-                      fit: BoxFit.cover,
-                      width: 48,
-                      height: 48,
-                    )
-                  : Image.asset(
-                      AppImages.avatarPlaceholder,
-                      fit: BoxFit.cover,
-                      width: 48,
-                      height: 48,
-                    ),
-            ),
-          ),
         ),
         const SizedBox(width: 12),
         Expanded(

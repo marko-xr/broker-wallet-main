@@ -27,6 +27,38 @@ enum AuthOperation { idle, signingIn, signingUp, signingOut }
 /// never demotes an authenticated session.
 enum ProfileHydrationStatus { unresolved, resolving, resolved, failed }
 
+/// Presentation-only description of where the current user's avatar should be
+/// drawn from. Never persisted, never sent to Supabase.
+///
+/// [mediaId] is the canonical `public.profiles.profile_media_id` and is the
+/// stable cache identity. [signedUrl] is a short-lived R2 read URL and is a
+/// fetch mechanism only — it must never be treated as identity, because its
+/// signature and expiry query parameters rotate on every resolution.
+@immutable
+class ProfileImageSource {
+  const ProfileImageSource({
+    this.mediaId,
+    this.signedUrl,
+  });
+
+  final String? mediaId;
+  final String? signedUrl;
+
+  static const ProfileImageSource empty = ProfileImageSource();
+
+  bool get hasStableIdentity => (mediaId ?? '').isNotEmpty;
+  bool get hasNetworkSource => (signedUrl ?? '').isNotEmpty;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProfileImageSource &&
+      other.mediaId == mediaId &&
+      other.signedUrl == signedUrl;
+
+  @override
+  int get hashCode => Object.hash(mediaId, signedUrl);
+}
+
 class AuthViewModel extends ChangeNotifier {
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
@@ -50,6 +82,15 @@ class AuthViewModel extends ChangeNotifier {
   /// that is no longer current.
   int _hydrationToken = 0;
   String? _resolvingImageMediaId;
+
+  /// Last-known-good `public.profiles` snapshot for the current session's uid.
+  ///
+  /// Presentation only. It fills the gap between the session resolving and
+  /// hydration landing; it is never authoritative and is discarded the moment
+  /// a real profile row arrives.
+  UserModel? _lastKnownGood;
+  bool _snapshotLoaded = false;
+  bool _lastKnownGoodApplied = false;
 
   AuthViewModel({
     AuthRepository? authRepository,
@@ -84,6 +125,21 @@ class AuthViewModel extends ChangeNotifier {
 
   /// Progress of profile hydration for the current session.
   ProfileHydrationStatus get profileHydration => _profileHydration;
+
+  /// Where the current user's avatar should be drawn from.
+  ///
+  /// Exposed separately from [UserModel] so a stable cache identity is
+  /// available to consumers without overloading `profileImageUrl`, which every
+  /// consumer already treats as a network URL and which `UserModel.toMap()`
+  /// persists.
+  ProfileImageSource get profileImage {
+    final user = _currentUser;
+    if (user == null) return ProfileImageSource.empty;
+    return ProfileImageSource(
+      mediaId: user.profileMediaId,
+      signedUrl: user.profileImageUrl,
+    );
+  }
 
   bool get isEmailVerified => _currentUser?.isEmailVerified ?? false;
   String get displayName => _resolvedDisplayName;
@@ -193,8 +249,32 @@ class AuthViewModel extends ChangeNotifier {
     return trimmed;
   }
 
+  /// True when [_currentUser]'s `name` came from `public.profiles` — either a
+  /// hydrated row or the last-known-good snapshot of one — rather than from
+  /// Supabase Auth metadata.
+  bool get _hasProfileBackedName =>
+      _profileHydration == ProfileHydrationStatus.resolved ||
+      _lastKnownGoodApplied;
+
   String _computeDisplayName({UserModel? user}) {
+    // `auth.users.raw_user_meta_data.full_name` is written once, at signup, and
+    // is never updated when the profile name changes — `updateUserProfile`
+    // writes only to `public.profiles`. It is therefore a genuinely stale
+    // value, not merely an early one, and is demoted to a last-resort fallback
+    // for accounts that have no profile data available yet.
+    //
+    // While the local snapshot read is still in flight and no profile-backed
+    // name is available, hold the previously resolved value rather than
+    // guessing. Microtasks drain before Flutter builds a frame, so the snapshot
+    // settles before anything paints and this window is not observable — but
+    // holding means that even if it were, a stale signup name could not appear.
+    if (!_hasProfileBackedName && !_snapshotLoaded) {
+      return _resolvedDisplayName;
+    }
+
     final candidates = <String?>[
+      if (_hasProfileBackedName) user?.name,
+      _lastKnownGood?.name,
       user?.name,
       _authRepository.currentUser?.name,
       _extractNameFromEmail(user?.email),
@@ -339,9 +419,9 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final reloaded = await _authRepository.reloadUser();
       if (reloaded != null) {
+        // _applyProfile owns the snapshot write; caching here as well would
+        // persist the resolved signed URL.
         _applyProfile(reloaded, markHydrated: true);
-        await OfflineAuthService.instance
-            .updateCachedUserModel(_currentUser ?? reloaded);
         return _currentUser;
       }
       return reloaded;
@@ -393,14 +473,8 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final userDoc = await _userRepository.getUserById(uid);
       if (userDoc != null) {
+        // _applyProfile owns the snapshot write.
         _applyProfile(userDoc, markHydrated: true);
-
-        try {
-          await OfflineAuthService.instance
-              .updateCachedUserModel(_currentUser ?? userDoc);
-        } catch (e) {
-          // Debug log suppressed: Failed to sync cached user model: $e
-        }
       }
     } catch (e) {
       // Debug log suppressed: Failed to sync user from repository: $e
@@ -464,8 +538,87 @@ class AuthViewModel extends ChangeNotifier {
     _status = AuthStatus.unauthenticated;
     _profileHydration = ProfileHydrationStatus.unresolved;
     _resolvingImageMediaId = null;
+    _discardLastKnownGood();
     _refreshDisplayName(null);
     notifyListeners();
+  }
+
+  /// Loads the last-known-good snapshot for exactly [uid].
+  ///
+  /// The read is scoped to the uid at the storage boundary, so a snapshot
+  /// belonging to another account is never even materialized here. It runs as
+  /// a chain of microtasks — `SharedPreferences` is warmed during app startup —
+  /// and microtasks drain before Flutter builds a frame, so it settles before
+  /// anything can paint.
+  Future<void> _loadSnapshotFor(String uid) async {
+    UserModel? snapshot;
+    try {
+      snapshot = await OfflineAuthService.instance.getProfileSnapshot(uid);
+    } catch (_) {
+      snapshot = null;
+    }
+
+    _snapshotLoaded = true;
+    _restoreLastKnownGood(uid, snapshot);
+  }
+
+  /// Applies the last-known-good snapshot for [uid] as presentation fill.
+  ///
+  /// Never authoritative, and refused whenever fresher data already exists.
+  void _restoreLastKnownGood(String uid, UserModel? snapshot) {
+    if (_lastKnownGoodApplied) return;
+
+    // Fresher data already won. A snapshot must never overwrite a hydrated
+    // profile row — this is a genuine race, since the local read and the
+    // network read are both in flight from the same moment.
+    if (_profileHydration == ProfileHydrationStatus.resolved) {
+      _snapshotSettled();
+      return;
+    }
+
+    // Strict uid isolation, re-checked after the await. Account separation must
+    // not depend on `clearAuthCache()`, which is dispatched without being
+    // awaited and may not have completed.
+    if (snapshot == null || snapshot.uid != uid) {
+      _snapshotSettled();
+      return;
+    }
+
+    final current = _currentUser;
+    if (current == null || current.uid != uid) {
+      _snapshotSettled();
+      return;
+    }
+
+    _lastKnownGood = snapshot;
+    _lastKnownGoodApplied = true;
+
+    // Only profile-owned fields are filled. Email and verification state stay
+    // with the authoritative session; a snapshot can never influence
+    // [AuthStatus].
+    final trimmedName = snapshot.name.trim();
+    _currentUser = current.copyWith(
+      name: trimmedName.isEmpty ? null : trimmedName,
+      phoneNumber: current.phoneNumber ?? snapshot.phoneNumber,
+      profileMediaId: snapshot.profileMediaId,
+    );
+
+    _refreshDisplayName(_currentUser);
+    notifyListeners();
+  }
+
+  /// Marks the snapshot read as settled without applying it, so a held
+  /// display name is recomputed instead of staying frozen.
+  void _snapshotSettled() {
+    if (_refreshDisplayName(_currentUser)) {
+      notifyListeners();
+    }
+  }
+
+  void _discardLastKnownGood() {
+    _lastKnownGood = null;
+    _lastKnownGoodApplied = false;
+    _snapshotLoaded = false;
   }
 
   void _handleSessionIdentity(UserModel? sessionUser) {
@@ -477,6 +630,7 @@ class AuthViewModel extends ChangeNotifier {
       _status = AuthStatus.unauthenticated;
       _profileHydration = ProfileHydrationStatus.unresolved;
       _resolvingImageMediaId = null;
+      _discardLastKnownGood();
       _refreshDisplayName(null);
       OfflineAuthService.instance.clearAuthCache();
       notifyListeners();
@@ -495,6 +649,7 @@ class AuthViewModel extends ChangeNotifier {
       _hydrationToken++;
       _profileHydration = ProfileHydrationStatus.unresolved;
       _resolvingImageMediaId = null;
+      _discardLastKnownGood();
       if (previousUid != null) {
         OfflineAuthService.instance.clearAuthCache();
       }
@@ -507,11 +662,18 @@ class AuthViewModel extends ChangeNotifier {
     _currentUser = resolved;
     _recomputeStatus();
     _refreshDisplayName(resolved);
-    OfflineAuthService.instance.cacheUserModel(resolved);
+    // Deliberately no cache write here. A session-identity event carries only
+    // signup-era metadata with no `profileMediaId`, so writing it would
+    // overwrite the last-known-good snapshot with exactly the degraded values
+    // the snapshot exists to prevent showing — and would leave it poisoned if
+    // hydration then failed. Only `_applyProfile` writes the snapshot.
     notifyListeners();
 
     if (!isSameUser) {
       _subscribeToUserUpdates(resolved.uid);
+      // Local, and strictly scoped to this uid. Runs alongside hydration, never
+      // ahead of it in authority.
+      unawaited(_loadSnapshotFor(resolved.uid));
     }
 
     if (_profileHydration == ProfileHydrationStatus.unresolved ||
@@ -578,6 +740,10 @@ class AuthViewModel extends ChangeNotifier {
     _currentUser = resolved;
     if (markHydrated) {
       _profileHydration = ProfileHydrationStatus.resolved;
+      // An authoritative row has landed, so the snapshot is now redundant as a
+      // display source and must not be applied late over fresher data.
+      _lastKnownGood = null;
+      _lastKnownGoodApplied = true;
     }
     _recomputeStatus();
     final displayNameChanged =
@@ -585,6 +751,15 @@ class AuthViewModel extends ChangeNotifier {
 
     if (userChanged || displayNameChanged || hydrationChanged) {
       notifyListeners();
+    }
+
+    if (markHydrated) {
+      // The single writer of the last-known-good snapshot: only a hydrated,
+      // `public.profiles`-backed model. The stored payload carries
+      // `profileMediaId` and never the signed URL.
+      unawaited(
+        OfflineAuthService.instance.cacheProfileSnapshot(resolved),
+      );
     }
 
     _maybeResolveProfileImage(resolved);
@@ -646,12 +821,8 @@ class AuthViewModel extends ChangeNotifier {
           return;
         }
 
+        // _applyProfile owns the snapshot write.
         _applyProfile(userDoc, markHydrated: true);
-
-        try {
-          await OfflineAuthService.instance
-              .updateCachedUserModel(_currentUser ?? userDoc);
-        } catch (e) {}
 
         // 🔒 SECURITY: The current reconciliation implementation is a
         // Firebase Cloud Function. Do not invoke it for a Supabase-authenticated
@@ -720,6 +891,7 @@ class AuthViewModel extends ChangeNotifier {
       _status = AuthStatus.unauthenticated;
       _profileHydration = ProfileHydrationStatus.unresolved;
       _resolvingImageMediaId = null;
+      _discardLastKnownGood();
       _resolvedDisplayName = '';
       if (kDebugMode) {
         print('✅ AuthViewModel logout state: unauthenticated');

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
@@ -600,39 +599,6 @@ class AuthService {
     }
   }
 
-  // Facebook Sign In
-  Future<UserCredential?> signInWithFacebook() async {
-    try {
-      // Trigger the sign-in flow
-      final LoginResult result = await FacebookAuth.instance.login();
-
-      if (result.status == LoginStatus.success) {
-        // Create a credential from the access token
-        final OAuthCredential facebookAuthCredential =
-            FacebookAuthProvider.credential(result.accessToken!.tokenString);
-
-        // Sign in to Firebase with the Facebook credential
-        UserCredential userCredential =
-            await _auth.signInWithCredential(facebookAuthCredential);
-
-        // Create or update user document in Firestore
-        if (userCredential.user != null) {
-          await _createOrUpdateUser(userCredential.user!);
-        }
-
-        return userCredential;
-      } else if (result.status == LoginStatus.cancelled) {
-        return null; // User cancelled
-      } else {
-        throw 'Facebook login failed: ${result.message ?? 'Unknown error'}';
-      }
-    } on FirebaseAuthException catch (e) {
-      throw _handleAuthException(e);
-    } catch (e) {
-      throw 'Facebook sign in failed: ${e.toString()}';
-    }
-  }
-
   // Reset Password
   Future<void> resetPassword(String email) async {
     try {
@@ -883,7 +849,6 @@ class AuthService {
       await Future.wait([
         _auth.signOut(),
         _googleSignIn.signOut(),
-        FacebookAuth.instance.logOut(),
       ]);
     } catch (e) {
       throw 'Sign out failed: ${e.toString()}';

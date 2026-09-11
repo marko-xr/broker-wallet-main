@@ -33,9 +33,6 @@ abstract class AuthRepository {
   /// Sign in with Google
   Future<UserModel> signInWithGoogle();
 
-  /// Sign in with Facebook
-  Future<UserModel> signInWithFacebook();
-
   /// Send email verification
   Future<void> sendEmailVerification({String? email});
 

@@ -80,12 +80,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.android.gms:play-services-auth:21.2.0'  
     implementation 'com.google.firebase:firebase-analytics'
-    
-    // Facebook SDK: Native library excluded by Flutter tree-shaking (not used in code)
-    // Note: If you enable Facebook login in the future, verify 16KB compliance
-    // The SDK's libconceal.so may cause issues (tracked in GitHub issue #1350)
-    implementation 'com.facebook.android:facebook-android-sdk:17.0.1'
-    
+
     // Add multidex support for large apps
     implementation 'androidx.multidex:multidex:2.0.1'
 

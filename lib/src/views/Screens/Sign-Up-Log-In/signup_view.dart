@@ -300,26 +300,14 @@ class _SignUpViewState extends State<SignUpView> {
                     const SizedBox(height: 24),
 
                     // Social Login Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildSocialButton(
-                            localization.translate('google'),
-                            'assets/icons/google-icon.svg',
-                            () => vm.signUpWithGoogle(context),
-                            colors,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildSocialButton(
-                            localization.translate('facebook'),
-                            'assets/icons/facebook-icon.svg',
-                            () => vm.signUpWithFacebook(context),
-                            colors,
-                          ),
-                        ),
-                      ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: _buildSocialButton(
+                        localization.translate('google'),
+                        'assets/icons/google-icon.svg',
+                        () => vm.signUpWithGoogle(context),
+                        colors,
+                      ),
                     ),
                   ],
 

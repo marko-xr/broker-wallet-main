@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
@@ -392,64 +391,6 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
-  @override
-  Future<UserModel> signInWithFacebook() async {
-    try {
-      final LoginResult result = await FacebookAuth.instance.login();
-
-      if (result.status != LoginStatus.success) {
-        throw Exception('Facebook sign in failed');
-      }
-
-      final OAuthCredential facebookAuthCredential =
-          FacebookAuthProvider.credential(result.accessToken!.tokenString);
-
-      UserCredential userCredential =
-          await _auth.signInWithCredential(facebookAuthCredential);
-
-      // Similar logic as Google sign in...
-      UserModel? existingUser =
-          await _userRepository.getUserById(userCredential.user!.uid);
-
-      if (existingUser == null) {
-        final userModel = UserModel(
-          uid: userCredential.user!.uid,
-          name: userCredential.user!.displayName ?? '',
-          email: userCredential.user!.email ?? '',
-          phoneNumber: userCredential.user!.phoneNumber,
-          profileImageUrl: userCredential.user!.photoURL,
-          createdAt: DateTime.now(),
-          lastLoginAt: DateTime.now(),
-          isEmailVerified: userCredential.user!.emailVerified,
-          isPhoneVerified: false,
-          subscription: _createDefaultSubscription(),
-          preferences: {},
-        );
-
-        await _userRepository.createUser(userModel);
-        return userModel;
-      } else {
-        final updatedUser = UserModel(
-          uid: existingUser.uid,
-          name: existingUser.name,
-          email: existingUser.email,
-          phoneNumber: existingUser.phoneNumber,
-          profileImageUrl: existingUser.profileImageUrl,
-          createdAt: existingUser.createdAt,
-          lastLoginAt: DateTime.now(),
-          isEmailVerified: userCredential.user!.emailVerified,
-          isPhoneVerified: existingUser.isPhoneVerified,
-          subscription: existingUser.subscription,
-          preferences: existingUser.preferences,
-        );
-
-        await _userRepository.updateUser(updatedUser);
-        return updatedUser;
-      }
-    } catch (e) {
-      throw Exception('Failed to sign in with Facebook: $e');
-    }
-  }
 
   @override
   Future<void> sendEmailVerification({String? email}) async {
@@ -670,17 +611,6 @@ class FirebaseAuthRepository implements AuthRepository {
         // Repository: Google sign out completed (log removed)
       } catch (e) {
         // Repository: Google sign out error (continuing) (log removed)
-      }
-
-      // Facebook sign out (handle gracefully)
-      try {
-        await FacebookAuth.instance.logOut();
-        // Repository: Facebook sign out completed (log removed)
-      } catch (e) {
-        // Repository: Facebook sign out error (continuing) (log removed)
-        if (e.toString().contains('MissingPluginException')) {
-          // Repository: Facebook Auth plugin not properly initialized - continuing with logout (log removed)
-        }
       }
       // Repository: Sign out process completed successfully (log removed)
     } catch (e) {

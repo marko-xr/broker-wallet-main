@@ -111,33 +111,6 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserModel> signInWithFacebook() async {
-    await Future.delayed(Duration(milliseconds: 500));
-
-    final user = UserModel(
-      uid: 'mock_facebook_uid_123',
-      name: 'Mock Facebook User',
-      email: 'mockuser@facebook.com',
-      phoneNumber: null,
-      profileImageUrl: 'https://via.placeholder.com/150',
-      createdAt: DateTime.now(),
-      lastLoginAt: DateTime.now(),
-      isEmailVerified: true,
-      isPhoneVerified: false,
-      subscription: UserSubscription(
-        plan: 'free',
-        isActive: true,
-        features: ['basic_listing'],
-      ),
-      preferences: {},
-    );
-
-    _currentUser = user;
-    _isSignedIn = true;
-    return user;
-  }
-
-  @override
   Future<void> sendEmailVerification({String? email}) async {
     await Future.delayed(Duration(milliseconds: 200));
     // Mock: do nothing, just simulate delay

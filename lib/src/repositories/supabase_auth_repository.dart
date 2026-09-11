@@ -236,11 +236,6 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserModel> signInWithFacebook() async {
-    throw AuthFailure.providerUnavailable('Facebook');
-  }
-
-  @override
   Future<void> sendEmailVerification({String? email}) async {
     final targetEmail = email?.trim().toLowerCase() ??
         _client.auth.currentUser?.email ??

@@ -270,18 +270,6 @@ void main() {
       );
     });
 
-    test('signInWithFacebook throws AuthFailure.providerUnavailable (not UnsupportedError)',
-        () async {
-      expect(
-        () => supabaseRepo.signInWithFacebook(),
-        throwsA(isA<AuthFailure>().having(
-          (f) => f.code,
-          'code',
-          AuthFailureCode.providerUnavailable,
-        )),
-      );
-    });
-
     test('verifyPhoneNumber throws AuthFailure.providerUnavailable',
         () async {
       expect(

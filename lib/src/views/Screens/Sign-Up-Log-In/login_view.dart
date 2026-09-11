@@ -259,26 +259,14 @@ class _SignInViewState extends State<SignInView> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildSocialButton(
-                            localization.translate('google'),
-                            'assets/icons/google-icon.svg',
-                            () => vm.signInWithGoogle(context),
-                            colors,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildSocialButton(
-                            localization.translate('facebook'),
-                            'assets/icons/facebook-icon.svg',
-                            () => vm.signInWithFacebook(context),
-                            colors,
-                          ),
-                        ),
-                      ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: _buildSocialButton(
+                        localization.translate('google'),
+                        'assets/icons/google-icon.svg',
+                        () => vm.signInWithGoogle(context),
+                        colors,
+                      ),
                     ),
                     const SizedBox(height: 30),
                     Center(

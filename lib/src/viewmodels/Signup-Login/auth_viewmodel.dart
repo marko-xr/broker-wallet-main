@@ -506,26 +506,6 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  Future<UserModel?> signInWithFacebook() async {
-    try {
-      _beginOperation(AuthOperation.signingIn);
-
-      final userModel = await _authRepository.signInWithFacebook();
-      return userModel;
-    } on AuthFailure {
-      rethrow;
-    } catch (e) {
-      if (e is AuthFailure) rethrow;
-      throw AuthFailure(
-        code: AuthFailureCode.unknown,
-        message: e.toString(),
-        originalException: e,
-      );
-    } finally {
-      _endOperation();
-    }
-  }
-
   Future<UserModel?> reloadUser() async {
     try {
       final reloaded = await _authRepository.reloadUser();

@@ -663,10 +663,6 @@ class SignUpViewModel extends ChangeNotifier {
     _showToast('Google sign up coming soon', Colors.orange);
   }
 
-  Future<void> signUpWithFacebook(BuildContext context) async {
-    _showToast('Facebook sign up coming soon', Colors.orange);
-  }
-
   void _showErrorDialog(BuildContext context, String title, String message) {
     if (context.mounted) {
       showDialog(

@@ -283,10 +283,6 @@ class SignInViewModel extends ChangeNotifier {
     _showToast('Google sign in coming soon', Colors.orange);
   }
 
-  Future<void> signInWithFacebook(BuildContext context) async {
-    _showToast('Facebook sign in coming soon', Colors.orange);
-  }
-
   void forgotPassword(BuildContext context) {
     _showToast('Forgot password coming soon', Colors.orange);
   }

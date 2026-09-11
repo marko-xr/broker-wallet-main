@@ -249,14 +249,26 @@ Minor non-blocking UX observation:
 - Do not open a new fix for this now.
 - Re-check during final Profile UX polish after upload integration is complete.
 
-Committed after FLUTTER-P2 (their real-device status is not recorded in this
-file; do not treat them as VERIFIED_RUNTIME from this list):
+AUTH / NAVIGATION / PROFILE STABILIZATION — PASS
 
-- `94e7315` unify auth profile state and R2 media updates
-- `998e31e` session-first auth bootstrap and unified navigation
-- `ca77d03` stabilize cached profile presentation
-- `905702d` immediate and resilient profile saves
-- `5534730` remove Facebook authentication
+Commits: `94e7315`, `998e31e`, `ca77d03`, `905702d`, `5534730`.
+Real-device status as recorded by the project owner in the Broker Wallet
+Master Context (2026-09-12):
+
+- Supabase canonical Auth/Profile: PASS.
+- Session-first auth bootstrap: PASS.
+- General auth navigation owned by GoRouter: PASS.
+- Authenticated cold starts 10/10: PASS.
+- No Welcome flash: PASS.
+- Login / logout / logged-out restart: PASS.
+- Profile last-known-good cold-start presentation: PASS.
+- Optimistic profile name save: PASS.
+- Optimistic profile image save: PASS.
+- Home/Profile/Search/Favorites parity: PASS.
+- Flutter profile-image integration (FLUTTER-P3): PASS.
+- Stable media-id/local-cache profile image presentation: PASS (supersedes the
+  cold-start image refresh observation above).
+- Facebook authentication removed: PASS.
 
 PHONE/OTP CHECKPOINT — DEFERRED (EXTERNAL SMS CONFIGURATION)
 

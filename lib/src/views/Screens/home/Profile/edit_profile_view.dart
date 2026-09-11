@@ -5,9 +5,10 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_verification_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_addition_dialog.dart';
+import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
 import 'package:broker_wallet/src/services/fast_profile_upload_service.dart';
-import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -17,7 +18,6 @@ import 'package:broker_wallet/src/viewmodels/edit_profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
-import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'dart:async';
 
 class EditProfileView extends StatefulWidget {
@@ -78,7 +78,9 @@ class _EditProfileViewState extends State<EditProfileView> {
 
     if (authVM.currentUser != null) {
       final user = authVM.currentUser!;
-      _nameController.text = user.name;
+      // Reopening the editor while a save is still persisting must show what
+      // the user last saved, not the value that save is replacing.
+      _nameController.text = authVM.pendingProfileName ?? user.name;
       _emailController.text = user.email;
       _originalEmail = user.email; // Store original email
 
@@ -121,26 +123,6 @@ class _EditProfileViewState extends State<EditProfileView> {
         });
       }
     }
-  }
-
-  String get _getCurrentProfileImageUrl {
-    // Always use watch to listen to changes in AuthViewModel
-    final authVM = context.watch<AuthViewModel>();
-    final authUrl = authVM.currentUser?.profileImageUrl ?? '';
-
-    // Try to get URL from ProfileViewModel as fallback
-    try {
-      final profileVM = context.read<ProfileViewModel>();
-      final profileUrl = profileVM.currentUser?.profileImageUrl ?? '';
-      // Return the most recent non-empty URL
-      if (profileUrl.isNotEmpty) {
-        return profileUrl;
-      }
-    } catch (e) {
-      // ProfileViewModel not available in this context
-    }
-
-    return authUrl;
   }
 
   @override
@@ -205,6 +187,12 @@ class _EditProfileViewState extends State<EditProfileView> {
                                           child: SizedBox(
                                             width: 100,
                                             height: 100,
+                                            // The unsaved pick previews here
+                                            // directly. Everything else — the
+                                            // confirmed image, or a saved image
+                                            // still uploading — comes from the
+                                            // same current-user source every
+                                            // other screen uses.
                                             child: _selectedImage != null
                                                 ? Image.file(
                                                     _selectedImage!,
@@ -212,23 +200,9 @@ class _EditProfileViewState extends State<EditProfileView> {
                                                     width: 100,
                                                     height: 100,
                                                   )
-                                                : _getCurrentProfileImageUrl
-                                                        .isNotEmpty
-                                                    ? OfflineMediaService
-                                                        .instance
-                                                        .buildOfflineAwareImage(
-                                                        imageUrl:
-                                                            _getCurrentProfileImageUrl,
-                                                        fit: BoxFit.cover,
-                                                        width: 100,
-                                                        height: 100,
-                                                      )
-                                                    : Image.asset(
-                                                        'assets/images/avatar-placeholder.jpg',
-                                                        fit: BoxFit.cover,
-                                                        width: 100,
-                                                        height: 100,
-                                                      ),
+                                                : const CurrentUserAvatar(
+                                                    size: 100,
+                                                  ),
                                           ),
                                         ),
                                       ),
@@ -610,11 +584,56 @@ class _EditProfileViewState extends State<EditProfileView> {
 
   /// Save profile changes (name and image only)
   Future<void> _saveProfileChanges(EditProfileViewModel vm) async {
-    // Capture context references before async operations
     if (!mounted) return;
+
+    if (SupabaseConfig.useSupabaseAuth) {
+      _saveProfileChangesOptimistically(vm);
+      return;
+    }
+
+    await _saveProfileChangesLegacy(vm);
+  }
+
+  /// Supabase mode.
+  ///
+  /// The new name and image appear everywhere on the next frame and the editor
+  /// closes at once — there is no blocking overlay. Persistence is owned by
+  /// [AuthViewModel], which outlives this route; this State is disposed on
+  /// pop, so nothing below may touch `context`, `setState` or `mounted` once
+  /// the save has been handed off.
+  void _saveProfileChangesOptimistically(EditProfileViewModel vm) {
     final authVM = context.read<AuthViewModel>();
     final navigator = Navigator.of(context);
     final router = GoRouter.of(context);
+
+    // Resolved now, while the context is alive. The outcome may arrive after
+    // this route is gone, and the toast needs no context to show.
+    final feedback = _ProfileSaveFeedback.resolve(context);
+
+    vm.name = _nameController.text;
+    final pendingSave = vm.submitProfileSave(
+      authVM: authVM,
+      imagePath: _selectedImage?.path,
+    );
+
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      router.go('/profile');
+    }
+
+    // Observes a future owned by AuthViewModel; it is not an orphaned job.
+    pendingSave?.then(feedback.show);
+  }
+
+  /// Firebase mode — the legacy blocking save, left functionally unchanged.
+  Future<void> _saveProfileChangesLegacy(EditProfileViewModel vm) async {
+    // Capture context references before async operations
+    final authVM = context.read<AuthViewModel>();
+    final navigator = Navigator.of(context);
+    final router = GoRouter.of(context);
+    final saveFailedMessage =
+        AppLocalizations.of(context).translate('profileSaveFailed');
 
     // Show overlay loading
     setState(() {
@@ -676,10 +695,8 @@ class _EditProfileViewState extends State<EditProfileView> {
       }
 
       if (mounted) {
-        _showToast(
-          'Failed to update profile: ${e.toString()}',
-          Colors.red,
-        );
+        // Localized, and never the raw exception text.
+        _showToast(saveFailedMessage, Colors.red);
       }
     }
   }
@@ -1133,5 +1150,85 @@ class _EditProfileViewState extends State<EditProfileView> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+}
+
+/// The ARB key that describes [result] to the user.
+///
+/// A partial success is never reported as a full success or a full failure:
+/// when one of two attempted parts persisted, the message says which one. When
+/// only one part was attempted, its failure is simply a failure.
+String? profileSaveFeedbackKey(ProfileSaveResult result) {
+  if (!result.nameAttempted && !result.imageAttempted) return null;
+
+  switch (result.outcome) {
+    case ProfileSaveOutcome.success:
+      return 'profileUpdated';
+    case ProfileSaveOutcome.imageFailed:
+      return result.isPartialSuccess
+          ? 'profileSaveNameSavedImageFailed'
+          : 'profileSaveFailed';
+    case ProfileSaveOutcome.nameFailed:
+      return result.isPartialSuccess
+          ? 'profileSaveImageSavedNameFailed'
+          : 'profileSaveFailed';
+    case ProfileSaveOutcome.bothFailed:
+      return 'profileSaveFailed';
+  }
+}
+
+/// Save feedback resolved while the editor's context is still alive.
+///
+/// The editor closes as soon as a save is handed off, so the outcome usually
+/// arrives after this route has been disposed. Every string and color is
+/// resolved up front, and the toast itself needs no BuildContext, so showing
+/// it later touches nothing that belonged to the disposed route.
+class _ProfileSaveFeedback {
+  const _ProfileSaveFeedback({
+    required this.messages,
+    required this.successBackground,
+    required this.successForeground,
+    required this.failureBackground,
+    required this.failureForeground,
+  });
+
+  factory _ProfileSaveFeedback.resolve(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+    return _ProfileSaveFeedback(
+      messages: {
+        for (final key in const [
+          'profileUpdated',
+          'profileSaveNameSavedImageFailed',
+          'profileSaveImageSavedNameFailed',
+          'profileSaveFailed',
+        ])
+          key: loc.translate(key),
+      },
+      successBackground: colors.primary,
+      successForeground: colors.onPrimary,
+      failureBackground: colors.error,
+      failureForeground: colors.onError,
+    );
+  }
+
+  final Map<String, String> messages;
+  final Color successBackground;
+  final Color successForeground;
+  final Color failureBackground;
+  final Color failureForeground;
+
+  void show(ProfileSaveResult result) {
+    final key = profileSaveFeedbackKey(result);
+    if (key == null) return;
+
+    final succeeded = result.outcome == ProfileSaveOutcome.success;
+    Fluttertoast.showToast(
+      msg: messages[key] ?? '',
+      toastLength: succeeded ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: succeeded ? successBackground : failureBackground,
+      textColor: succeeded ? successForeground : failureForeground,
+    );
   }
 }

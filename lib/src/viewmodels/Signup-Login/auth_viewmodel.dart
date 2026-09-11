@@ -8,8 +8,11 @@ import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/repositories/supabase_user_repository.dart'
     show ProfileImageUrlResolver;
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
+import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 /// Bootstrap / session status.
 ///
@@ -39,25 +42,89 @@ class ProfileImageSource {
   const ProfileImageSource({
     this.mediaId,
     this.signedUrl,
+    this.localFilePath,
   });
 
   final String? mediaId;
   final String? signedUrl;
 
+  /// An image the user picked and saved, shown while its upload is still in
+  /// flight. Device-local and presentation-only: it takes precedence over the
+  /// other sources, is never written into `UserModel.profileImageUrl`, and is
+  /// never persisted or sent anywhere.
+  final String? localFilePath;
+
   static const ProfileImageSource empty = ProfileImageSource();
 
   bool get hasStableIdentity => (mediaId ?? '').isNotEmpty;
   bool get hasNetworkSource => (signedUrl ?? '').isNotEmpty;
+  bool get hasLocalSource => (localFilePath ?? '').isNotEmpty;
 
   @override
   bool operator ==(Object other) =>
       other is ProfileImageSource &&
       other.mediaId == mediaId &&
-      other.signedUrl == signedUrl;
+      other.signedUrl == signedUrl &&
+      other.localFilePath == localFilePath;
 
   @override
-  int get hashCode => Object.hash(mediaId, signedUrl);
+  int get hashCode => Object.hash(mediaId, signedUrl, localFilePath);
 }
+
+/// Which parts of a profile save failed to persist.
+enum ProfileSaveOutcome { success, nameFailed, imageFailed, bothFailed }
+
+/// The honest result of a profile save: what was attempted, and what actually
+/// persisted. Deliberately carries no exception text, so nothing raw can reach
+/// user-facing UI.
+@immutable
+class ProfileSaveResult {
+  const ProfileSaveResult({
+    required this.nameAttempted,
+    required this.namePersisted,
+    required this.imageAttempted,
+    required this.imagePersisted,
+  });
+
+  /// Nothing to save.
+  static const ProfileSaveResult none = ProfileSaveResult(
+    nameAttempted: false,
+    namePersisted: false,
+    imageAttempted: false,
+    imagePersisted: false,
+  );
+
+  final bool nameAttempted;
+  final bool namePersisted;
+  final bool imageAttempted;
+  final bool imagePersisted;
+
+  ProfileSaveOutcome get outcome {
+    final nameFailed = nameAttempted && !namePersisted;
+    final imageFailed = imageAttempted && !imagePersisted;
+    if (nameFailed && imageFailed) return ProfileSaveOutcome.bothFailed;
+    if (nameFailed) return ProfileSaveOutcome.nameFailed;
+    if (imageFailed) return ProfileSaveOutcome.imageFailed;
+    return ProfileSaveOutcome.success;
+  }
+
+  /// Exactly one of two attempted parts persisted. Must be reported as
+  /// neither a full success nor a full failure.
+  bool get isPartialSuccess =>
+      nameAttempted &&
+      imageAttempted &&
+      namePersisted != imagePersisted;
+}
+
+/// Uploads a picked image and returns the `profile_media_id` the backend
+/// confirmed and linked. Throws on any failure.
+typedef ProfileImageUploader = Future<String> Function(String localImagePath);
+
+/// Binds a confirmed `profile_media_id` to local image bytes. Best effort.
+typedef ProfileMediaAdopter = Future<void> Function(
+  String mediaId,
+  String localImagePath,
+);
 
 class AuthViewModel extends ChangeNotifier {
   final AuthRepository _authRepository;
@@ -92,14 +159,45 @@ class AuthViewModel extends ChangeNotifier {
   bool _snapshotLoaded = false;
   bool _lastKnownGoodApplied = false;
 
+  // Optimistic profile save state.
+  //
+  // Presentation overrides shown between a Save tap and backend confirmation.
+  // They shadow the canonical user without mutating it, which is what makes a
+  // partial rollback possible: clearing an override is the whole rollback,
+  // because the canonical model was never changed on the optimistic path.
+  //
+  // This object owns the save job, not the route-scoped EditProfileViewModel:
+  // the editor is disposed when it pops, and this is the app-lifetime owner of
+  // the state that must be reconciled when persistence finishes.
+  String? _optimisticName;
+  int? _optimisticNameSeq;
+  String? _optimisticImagePath;
+  int? _optimisticImageSeq;
+
+  /// Orders saves. Overlapping saves are serialized so writes land in the
+  /// order they were made, and each only clears an override it still owns.
+  int _profileSaveSeq = 0;
+  int _profileSavesInFlight = 0;
+  Future<void> _profileSaveQueue = Future<void>.value();
+
+  final ProfileImageUploader? _profileImageUploader;
+  final ProfileMediaAdopter? _profileMediaAdopter;
+  R2ProfileUploadService? _r2UploadService;
+
+  bool _disposed = false;
+
   AuthViewModel({
     AuthRepository? authRepository,
     UserRepository? userRepository,
     bool autoInitialize = true,
+    ProfileImageUploader? profileImageUploader,
+    ProfileMediaAdopter? profileMediaAdopter,
   })  : _authRepository =
             authRepository ?? RepositoryProvider.instance.authRepository,
         _userRepository =
-            userRepository ?? RepositoryProvider.instance.userRepository {
+            userRepository ?? RepositoryProvider.instance.userRepository,
+        _profileImageUploader = profileImageUploader,
+        _profileMediaAdopter = profileMediaAdopter {
     if (autoInitialize) {
       _initializeAuth();
     }
@@ -138,8 +236,16 @@ class AuthViewModel extends ChangeNotifier {
     return ProfileImageSource(
       mediaId: user.profileMediaId,
       signedUrl: user.profileImageUrl,
+      localFilePath: _optimisticImagePath,
     );
   }
+
+  /// A saved name that is still being persisted, if any. The editor prefills
+  /// from this so reopening it mid-save shows what the user last saved.
+  String? get pendingProfileName => _optimisticName;
+
+  /// True while at least one profile save has not finished persisting.
+  bool get isSavingProfile => _profileSavesInFlight > 0;
 
   bool get isEmailVerified => _currentUser?.isEmailVerified ?? false;
   String get displayName => _resolvedDisplayName;
@@ -257,6 +363,11 @@ class AuthViewModel extends ChangeNotifier {
       _lastKnownGoodApplied;
 
   String _computeDisplayName({UserModel? user}) {
+    // A name the user has just saved outranks everything, including the
+    // hydrated profile, until persistence confirms or rolls it back.
+    final optimistic = _optimisticName?.trim() ?? '';
+    if (optimistic.isNotEmpty) return optimistic;
+
     // `auth.users.raw_user_meta_data.full_name` is written once, at signup, and
     // is never updated when the profile name changes — `updateUserProfile`
     // writes only to `public.profiles`. It is therefore a genuinely stale
@@ -507,6 +618,247 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  /// Saves profile changes optimistically.
+  ///
+  /// The saved [name] and picked [imagePath] are shown everywhere before this
+  /// method's first `await`, so the change is visible on the next frame. The
+  /// returned future completes when persistence finishes, with a
+  /// [ProfileSaveResult] describing exactly what persisted. It never throws.
+  ///
+  /// Name and image persist concurrently — they touch independent backend
+  /// state: `public.profiles.name` through a direct update, and
+  /// `profile_media_id` through the Worker's `/confirm`, which links media
+  /// server-side. Each failed part rolls back on its own; a part that
+  /// persisted is kept.
+  ///
+  /// Callers may leave the screen immediately. The job and its result are
+  /// owned here, and this object outlives any route.
+  Future<ProfileSaveResult> saveProfile({String? name, String? imagePath}) {
+    final uid = _currentUser?.uid;
+    final trimmedName = name?.trim() ?? '';
+    final nameAttempted = trimmedName.isNotEmpty;
+    final imageAttempted = (imagePath ?? '').isNotEmpty;
+
+    if (uid == null || uid.isEmpty || (!nameAttempted && !imageAttempted)) {
+      return Future<ProfileSaveResult>.value(ProfileSaveResult.none);
+    }
+
+    final seq = ++_profileSaveSeq;
+
+    // Optimistic presentation — synchronous, before anything is awaited.
+    if (nameAttempted) {
+      _optimisticName = trimmedName;
+      _optimisticNameSeq = seq;
+      _refreshDisplayName(_currentUser);
+    }
+    if (imageAttempted) {
+      _optimisticImagePath = imagePath;
+      _optimisticImageSeq = seq;
+    }
+    _profileSavesInFlight++;
+    notifyListeners();
+
+    final result = Completer<ProfileSaveResult>();
+    _profileSaveQueue = _profileSaveQueue.then((_) async {
+      ProfileSaveResult outcome;
+      try {
+        outcome = await _persistProfileSave(
+          uid: uid,
+          seq: seq,
+          name: nameAttempted ? trimmedName : null,
+          imagePath: imageAttempted ? imagePath : null,
+        );
+      } catch (_) {
+        // _persistProfileSave does not throw; this keeps the queue alive and
+        // the caller's future completing even if that ever changed.
+        outcome = ProfileSaveResult(
+          nameAttempted: nameAttempted,
+          namePersisted: false,
+          imageAttempted: imageAttempted,
+          imagePersisted: false,
+        );
+      }
+      _profileSavesInFlight--;
+      notifyListeners();
+      result.complete(outcome);
+    });
+
+    return result.future;
+  }
+
+  Future<ProfileSaveResult> _persistProfileSave({
+    required String uid,
+    required int seq,
+    String? name,
+    String? imagePath,
+  }) async {
+    // Both started before either is awaited, so they run concurrently.
+    final namePersisted = name == null
+        ? Future<bool>.value(false)
+        : _persistProfileName(uid: uid, seq: seq, name: name);
+    final imagePersisted = imagePath == null
+        ? Future<bool>.value(false)
+        : _persistProfileImage(uid: uid, seq: seq, imagePath: imagePath);
+
+    final persisted = await Future.wait<bool>([namePersisted, imagePersisted]);
+
+    return ProfileSaveResult(
+      nameAttempted: name != null,
+      namePersisted: persisted[0],
+      imageAttempted: imagePath != null,
+      imagePersisted: persisted[1],
+    );
+  }
+
+  /// One authoritative `public.profiles` update. No pre-read, no verify-read,
+  /// no repository re-sync, no unrelated verification check: the update's own
+  /// returned row confirms it, and the realtime profile stream reconciles the
+  /// rest.
+  Future<bool> _persistProfileName({
+    required String uid,
+    required int seq,
+    required String name,
+  }) async {
+    try {
+      await _authRepository.updateUserProfile(name: name);
+    } catch (_) {
+      // Roll back the name only, and only if this save still owns it.
+      if (_currentUser?.uid == uid && _optimisticNameSeq == seq) {
+        _optimisticName = null;
+        _optimisticNameSeq = null;
+        _refreshDisplayName(_currentUser);
+        notifyListeners();
+      }
+      return false;
+    }
+
+    // A different account is signed in now. The write belonged to the
+    // previous session; there is no presentation of ours left to reconcile.
+    final current = _currentUser;
+    if (current == null || current.uid != uid) return true;
+
+    // Adopt the persisted value into canonical state *before* clearing the
+    // override. The presented name is identical on both sides of the swap,
+    // so there is no visible change.
+    _currentUser = current.copyWith(name: name);
+    if (_optimisticNameSeq == seq) {
+      _optimisticName = null;
+      _optimisticNameSeq = null;
+    }
+    _refreshDisplayName(_currentUser);
+    _cacheSnapshotIfHydrated();
+    notifyListeners();
+    return true;
+  }
+
+  /// R2 `/authorize` → signed PUT → `/confirm`. The Worker links the media to
+  /// `public.profiles.profile_media_id` server-side; nothing here writes it.
+  Future<bool> _persistProfileImage({
+    required String uid,
+    required int seq,
+    required String imagePath,
+  }) async {
+    final String confirmedMediaId;
+    try {
+      confirmedMediaId = await (_profileImageUploader ??
+          _uploadProfileImageThroughR2)(imagePath);
+    } catch (_) {
+      // The Worker only links media after a successful /confirm, so the
+      // previously confirmed profile_media_id is still canonical. Dropping the
+      // override brings its image straight back — its bytes are still local.
+      if (_currentUser?.uid == uid && _optimisticImageSeq == seq) {
+        _optimisticImagePath = null;
+        _optimisticImageSeq = null;
+        notifyListeners();
+      }
+      return false;
+    }
+
+    if (_currentUser?.uid != uid) return true;
+
+    // Bind the confirmed identity to the bytes already on screen before the
+    // override is released, so the authoritative image is drawn from the same
+    // picture the preview showed: no download, no blank frame, no flash of the
+    // previous image.
+    try {
+      await (_profileMediaAdopter ??
+          OfflineMediaService.instance.adoptLocalFileForMediaId)(
+        confirmedMediaId,
+        imagePath,
+      );
+    } catch (_) {
+      // Best effort. Without the mapping the new image still arrives through
+      // its signed URL.
+    }
+
+    final current = _currentUser;
+    if (current == null || current.uid != uid) return true;
+
+    // The realtime row may already have delivered this media id (and possibly
+    // its signed URL); keep that. Otherwise switch identity and drop the
+    // previous image's signed URL, which must never be fetched under the new
+    // cache key.
+    if (current.profileMediaId != confirmedMediaId) {
+      _currentUser = _withProfileMedia(current, confirmedMediaId);
+      _resolvingImageMediaId = null;
+    }
+    if (_optimisticImageSeq == seq) {
+      _optimisticImagePath = null;
+      _optimisticImageSeq = null;
+    }
+    _cacheSnapshotIfHydrated();
+    notifyListeners();
+
+    // The signed URL may resolve later; the adopted local bytes already render.
+    _maybeResolveProfileImage(_currentUser!);
+    return true;
+  }
+
+  Future<String> _uploadProfileImageThroughR2(String imagePath) async {
+    final service = _r2UploadService ??= R2ProfileUploadService();
+    final result = await service.uploadProfileImage(
+      imageFile: XFile(imagePath),
+    );
+    return result.profileMediaId;
+  }
+
+  /// [UserModel.copyWith] cannot clear a field, and a stale signed URL must be
+  /// cleared when the media identity changes.
+  UserModel _withProfileMedia(UserModel user, String profileMediaId) {
+    return UserModel(
+      uid: user.uid,
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      profileImageUrl: null,
+      profileMediaId: profileMediaId,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+      isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
+      subscription: user.subscription,
+      preferences: user.preferences,
+    );
+  }
+
+  /// Keeps the last-known-good snapshot in step with a confirmed save, so a
+  /// cold start right after saving does not briefly show the previous values.
+  /// Only a hydrated, profile-backed user may be written — the same rule
+  /// `_applyProfile` enforces.
+  void _cacheSnapshotIfHydrated() {
+    final user = _currentUser;
+    if (user == null) return;
+    if (_profileHydration != ProfileHydrationStatus.resolved) return;
+    unawaited(OfflineAuthService.instance.cacheProfileSnapshot(user));
+  }
+
+  void _discardOptimisticProfile() {
+    _optimisticName = null;
+    _optimisticNameSeq = null;
+    _optimisticImagePath = null;
+    _optimisticImageSeq = null;
+  }
+
   void _initializeAuth() {
     // Cancel any existing subscription
     _authSubscription?.cancel();
@@ -619,6 +971,11 @@ class AuthViewModel extends ChangeNotifier {
     _lastKnownGood = null;
     _lastKnownGoodApplied = false;
     _snapshotLoaded = false;
+    // Optimistic save overrides are per-session presentation state too, and
+    // every path that discards the snapshot — sign-out, account switch,
+    // bootstrap failure — must discard them with it. An in-flight save that
+    // finishes later re-checks the uid and leaves the new session untouched.
+    _discardOptimisticProfile();
   }
 
   void _handleSessionIdentity(UserModel? sessionUser) {
@@ -909,8 +1266,17 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  /// Hydration, signed-URL resolution and profile saves all complete
+  /// asynchronously. None may notify a disposed object.
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     _authSubscription?.cancel();
     _userStreamSubscription?.cancel();
     super.dispose();

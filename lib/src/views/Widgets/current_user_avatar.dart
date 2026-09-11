@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -72,7 +74,20 @@ class _CurrentUserAvatarState extends State<CurrentUserAvatar> {
     );
 
     Widget child;
-    if (image.hasNetworkSource || image.hasStableIdentity) {
+    if (image.hasLocalSource) {
+      // A just-saved image whose upload is still in flight. On confirmation
+      // its bytes are adopted under the new media id, so the branch below
+      // takes over drawing the same picture; gaplessPlayback keeps this frame
+      // on screen across that hand-over.
+      child = Image.file(
+        File(image.localFilePath!),
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) => fallback,
+      );
+    } else if (image.hasNetworkSource || image.hasStableIdentity) {
       child = OfflineMediaService.instance.buildOfflineAwareImage(
         imageUrl: image.signedUrl ?? '',
         cacheKey: image.mediaId,

@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 class EditProfileViewModel extends ChangeNotifier {
   final ThemeViewModel themeVM;
@@ -178,10 +179,41 @@ class EditProfileViewModel extends ChangeNotifier {
       imageFile: imageFile,
     );
 
-    // This re-reads the canonical profile after Worker confirmation so the
-    // signed read URL is resolved through the existing repository flow.
-    final refreshedUser = await _authRepository.reloadUser();
-    return refreshedUser?.profileImageUrl;
+    // No URL is returned. This used to re-read the profile through
+    // `reloadUser()` — two more round trips — to hand back
+    // `profileImageUrl`, but the authoritative profile read no longer
+    // resolves signed URLs, so that value was always null. In Supabase mode
+    // the Worker links media by `profile_media_id` and AuthViewModel resolves
+    // the signed URL separately.
+    return null;
+  }
+
+  /// Supabase mode: hands the save to [authVM].
+  ///
+  /// This view model is route-scoped — the editor's provider disposes it when
+  /// the route pops — so it must not own persistence that is meant to outlive
+  /// the editor. [AuthViewModel] owns the job, the optimistic presentation and
+  /// its rollback, and outlives every route.
+  ///
+  /// Only what actually changed is sent: an unchanged name skips the profile
+  /// write entirely, and no image skips the R2 pipeline entirely. Returns null
+  /// when there is nothing to save.
+  Future<ProfileSaveResult>? submitProfileSave({
+    required AuthViewModel authVM,
+    String? imagePath,
+  }) {
+    final trimmedName = _name.trim();
+    final presentedName =
+        (authVM.pendingProfileName ?? authVM.currentUser?.name ?? '').trim();
+    final nameChanged = trimmedName.isNotEmpty && trimmedName != presentedName;
+    final hasImage = imagePath != null && imagePath.isNotEmpty;
+
+    if (!nameChanged && !hasImage) return null;
+
+    return authVM.saveProfile(
+      name: nameChanged ? trimmedName : null,
+      imagePath: hasImage ? imagePath : null,
+    );
   }
 
   /// Format phone number for storage

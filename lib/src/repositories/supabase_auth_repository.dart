@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
@@ -379,6 +380,20 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
+  /// Persists editable profile fields in one authoritative round trip.
+  ///
+  /// This used to read the row, write every editable column back from that
+  /// read, then read the row again to verify — three sequential requests on
+  /// the save path. It now issues a single `UPDATE … RETURNING` for only the
+  /// columns the caller supplied. The returned row *is* the confirmation, so
+  /// persistence is still verified, just without a second read. Columns that
+  /// were not supplied are left untouched instead of being rewritten from a
+  /// copy of themselves — which also means a name-only save can no longer fail
+  /// on a stored phone number that does not normalize.
+  ///
+  /// [profileImageUrl] is intentionally ignored: in Supabase mode media is
+  /// linked server-side by `profile_media_id`, never by URL.
+  @override
   Future<void> updateUserProfile({
     String? name,
     String? phoneNumber,
@@ -389,29 +404,39 @@ class SupabaseAuthRepository implements AuthRepository {
       throw AuthException('No authenticated Supabase user.');
     }
 
-    final existing = await _userRepository.getUserById(user.id);
-    if (existing == null) {
-      throw AuthException('The authenticated profile could not be loaded.');
-    }
-
     final sanitizedName = name?.trim();
+    final changes = <String, dynamic>{};
+    if (sanitizedName != null) {
+      changes['name'] = sanitizedName;
+    }
+    if (phoneNumber != null) {
+      // Same column mapping and normalization SupabaseUserRepository applies.
+      final phone = phoneNumber.trim();
+      changes['phone_number'] = phone.isEmpty ? null : phone;
+      changes['phone_e164'] = PhoneNumberNormalizer.normalizeOptional(
+        phoneNumber: phone,
+        countryCode: '+971',
+      );
+    }
+    if (changes.isEmpty) return;
 
-    await _userRepository.updateUser(
-      existing.copyWith(
-        name: sanitizedName,
-        phoneNumber: phoneNumber,
-        profileImageUrl: profileImageUrl,
-      ),
-    );
+    // RLS scopes both the write and the returned row to the caller's own
+    // profile, so an update that matched nothing comes back as null.
+    final row = await _client
+        .from('profiles')
+        .update(changes)
+        .eq('id', user.id)
+        .select('name')
+        .maybeSingle();
 
-    final refreshed = await _userRepository.getUserById(user.id);
-    if (refreshed == null) {
+    if (row == null) {
       throw const AuthFailure(
         code: AuthFailureCode.unknown,
         message: 'Profile update could not be confirmed from database.',
       );
     }
-    if (sanitizedName != null && refreshed.name.trim() != sanitizedName) {
+    final persistedName = (row['name'] as String? ?? '').trim();
+    if (sanitizedName != null && persistedName != sanitizedName) {
       throw const AuthFailure(
         code: AuthFailureCode.unknown,
         message: 'Profile name did not persist to the profile repository.',

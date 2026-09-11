@@ -72,6 +72,49 @@ class OfflineMediaService {
     }
   }
 
+  /// Binds a freshly confirmed media identity to the image the user just
+  /// picked, so the authoritative image renders from the same bytes the
+  /// optimistic preview was already showing — no download, no blank frame.
+  ///
+  /// The picked file normally lives in the image picker's cache directory,
+  /// which the OS may purge. It is copied into an app-owned directory first so
+  /// the mapping survives. If the copy fails, the picked file is mapped
+  /// directly: that still makes the transition seamless now, and
+  /// [warmMediaIdMapping] re-heals the mapping from the network cache if the
+  /// file later disappears.
+  ///
+  /// Uses its own directory rather than `local_media`, so a future
+  /// [cleanupOldFiles] run can never delete the current avatar.
+  Future<void> adoptLocalFileForMediaId(
+    String mediaId,
+    String sourcePath,
+  ) async {
+    if (mediaId.isEmpty || sourcePath.isEmpty) return;
+
+    var mappedPath = sourcePath;
+    try {
+      final source = File(sourcePath);
+      if (await source.exists()) {
+        final appDir = await getApplicationDocumentsDirectory();
+        final profileDir = Directory('${appDir.path}/profile_media');
+        if (!await profileDir.exists()) {
+          await profileDir.create(recursive: true);
+        }
+
+        final safeId = mediaId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+        final dot = sourcePath.lastIndexOf('.');
+        final extension =
+            dot > sourcePath.lastIndexOf('/') ? sourcePath.substring(dot) : '';
+        final copy = await source.copy('${profileDir.path}/$safeId$extension');
+        mappedPath = copy.path;
+      }
+    } catch (e) {
+      // Fall back to the picked file; see above.
+    }
+
+    await mapMediaIdToLocalFile(mediaId, mappedPath);
+  }
+
   /// Records where the image cache stored the bytes for [mediaId].
   ///
   /// Without this, a cold start still shows a placeholder until a fresh signed
@@ -301,6 +344,9 @@ class OfflineMediaService {
           fit: fit,
           width: width,
           height: height,
+          // Keeps the previous frame on screen while a different file decodes
+          // — e.g. an optimistic preview handing over to its adopted copy.
+          gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) {
             return errorWidget ?? _buildDefaultErrorWidget();
           },

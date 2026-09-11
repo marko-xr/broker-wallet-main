@@ -1,7 +1,7 @@
 Branch:
-recovery-profile-auth
+backend-implementation
 
-Recovery baseline started from:
+Recovery work began on `recovery-profile-auth` from baseline:
 cc0951e
 
 Verified Supabase-mode device behavior:
@@ -249,23 +249,74 @@ Minor non-blocking UX observation:
 - Do not open a new fix for this now.
 - Re-check during final Profile UX polish after upload integration is complete.
 
-NEXT CHECKPOINT ONLY:
+Committed after FLUTTER-P2 (their real-device status is not recorded in this
+file; do not treat them as VERIFIED_RUNTIME from this list):
 
-FLUTTER-P3 — wire EditProfileViewModel profile-image upload to
-R2ProfileUploadService.
+- `94e7315` unify auth profile state and R2 media updates
+- `998e31e` session-first auth bootstrap and unified navigation
+- `ca77d03` stabilize cached profile presentation
+- `905702d` immediate and resilient profile saves
+- `5534730` remove Facebook authentication
 
-Do not start UI/localization work yet.
+PHONE/OTP CHECKPOINT — DEFERRED (EXTERNAL SMS CONFIGURATION)
 
-Still excluded:
+PHONE/OTP BACKEND + APP IMPLEMENTATION = READY
+HOSTED DB SECURITY = PASS
+REAL UAE SMS DELIVERY = EXTERNAL CONFIG PENDING
+FINAL PHONE RUNTIME PASS = DEFERRED UNTIL SMS PROVIDER + UAE SENDER SETUP
 
-- EditProfileView UI changes
-- ProfileSaveResult UI
-- localization
-- legacy Firebase image cleanup
-- Password
-- Phone/OTP
-- Delete account
-- Notifications
-- Search/Favorites
-- Router
-- backend changes/deployment
+Flutter implementation (committed in `0148dbd`; CODE_PROVEN, not
+VERIFIED_RUNTIME):
+
+- Phone change uses Supabase Auth's own flow only: `updateUser(phone)`,
+  `verifyOTP(type: phoneChange)`, `resend(type: phoneChange)`.
+- `public.profiles` phone fields are a read-only mirror of Supabase Auth; the
+  app never writes them.
+- No custom OTP storage, no fake success, no account merging.
+
+Hosted Supabase phone database security — PASS:
+
+- Rollback-safe database validation
+  (`supabase/validation/phone_security_validation.sql`) passed on hosted.
+- `authenticated` cannot directly update `public.profiles.phone_number`.
+- `authenticated` cannot directly update `public.profiles.phone_e164`.
+- `authenticated` can still update allowed fields such as `name` and
+  `preferences`.
+- The `guard_pending_phone_change` trigger on `auth.users` is installed and
+  enabled.
+- Normal authenticated users cannot execute the guard or cleanup functions.
+- No pending `phone_change` existed at hosted verification time.
+- Both phone security migrations are applied in hosted migration history:
+  - `20260911000100_revoke_client_profile_phone_writes.sql`
+  - `20260911000200_guard_pending_phone_changes.sql`
+
+Real SMS delivery — EXTERNAL CONFIG PENDING:
+
+- Supabase phone verification requires a real SMS provider.
+- The Twilio account is Trial; production messaging needs an upgrade/payment.
+- Broker Wallet launches in the UAE; a UAE production sender / Sender ID is
+  required, and the business/trade license needed for it does not exist yet.
+- Decision: do not pay for or configure production SMS now just to unblock
+  development (see `docs/DECISIONS.md`).
+
+Revisit final real-device SMS acceptance only when all of these exist:
+
+- business/trade license
+- production SMS provider
+- UAE sender registration/configuration
+
+This external dependency does not block unrelated Broker Wallet work.
+
+PROJECT ORDER
+
+1. EMAIL CHANGE — next major checkpoint.
+2. PASSWORD
+3. DELETE ACCOUNT
+4. GOOGLE / APPLE — deferred until later.
+
+Facebook authentication remains removed.
+
+NOW — start the EMAIL CHANGE checkpoint with a read-only inspection; implement
+only after the plan is approved.
+
+NEXT — after Email Change passes real-device verification, start PASSWORD.

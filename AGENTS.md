@@ -20,3 +20,13 @@
 - Do not deploy/apply migrations unless explicitly requested.
 - Static/unit tests do not prove production behavior.
 - A checkpoint is completed only after real-device verification.
+- Before coding, read `AGENTS.md`, `CLAUDE.md` when present, and
+  `docs/CURRENT_CHECKPOINT.md`.
+- Before finishing a task, update the relevant durable docs when a checkpoint,
+  architecture, decision, blocker or verification status changed.
+- Database/security migrations are never production-safe from source review or
+  Flutter/Dart tests alone. Exercise them against a real or disposable database
+  (pgTAP locally, or a rollback-only validation script) before any hosted PASS.
+- Every handoff states NOW (the exact action to perform now) and NEXT (the exact
+  action after that succeeds).
+- Do not mark CODE_PROVEN work as VERIFIED_RUNTIME.

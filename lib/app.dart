@@ -31,8 +31,10 @@ import 'package:broker_wallet/src/Views/Screens/ViewLists/owners_list_view.dart'
 import 'package:broker_wallet/src/Views/Screens/ViewLists/requests_list_view.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewLists/watchmen_list_view.dart';
 
+import 'package:broker_wallet/src/Views/Screens/home/Profile/about_broker_wallet_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/edit_profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/feedback_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/info_placeholder_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/language_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/payment_selection_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/profile_view.dart';
@@ -40,6 +42,7 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/share_app_view.dart
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/my_plan_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/notification_settings_view.dart';
+import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
 
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pdfs_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_to_pdf_view.dart';
@@ -629,6 +632,19 @@ GoRouter _createRouter(AuthViewModel authViewModel) {
       GoRoute(
         path: '/share-app',
         builder: (context, state) => const ShareAppView(),
+      ),
+      GoRoute(
+        path: '/about',
+        builder: (context, state) => const AboutBrokerWalletView(),
+      ),
+      GoRoute(
+        path: '/info-placeholder',
+        builder: (context, state) {
+          final args = state.extra is InfoPlaceholderArgs
+              ? state.extra as InfoPlaceholderArgs
+              : const InfoPlaceholderArgs(title: '', message: '');
+          return InfoPlaceholderView(args: args);
+        },
       ),
     ],
   );

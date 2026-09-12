@@ -34,6 +34,9 @@ enum AuthFailureCode {
 
   /// The session that started the operation is gone or no longer valid.
   sessionExpired,
+  sameEmail,
+  accountChanged,
+  noPendingEmailChange,
   unknown,
 }
 
@@ -305,6 +308,79 @@ class AuthFailure implements Exception {
       }
     }
     return typed(AuthFailureCode.unknown, 'Phone verification failed.');
+  }
+
+  /// Maps email-change failures to fixed domain outcomes.
+  ///
+  /// Provider messages and the original exception are deliberately discarded
+  /// so an auth response, link token, or other backend detail can never be
+  /// rendered by the email-change UI.
+  factory AuthFailure.fromSupabaseEmailChange(Object exception) {
+    if (exception is AuthFailure) return exception;
+
+    AuthFailure typed(AuthFailureCode code, String message) =>
+        AuthFailure(code: code, message: message);
+
+    if (exception is TimeoutException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    if (exception is sb.AuthSessionMissingException) {
+      return typed(AuthFailureCode.sessionExpired, 'No active session.');
+    }
+    if (exception is sb.AuthRetryableFetchException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    if (exception is sb.AuthException) {
+      switch (exception.code) {
+        case 'email_address_invalid':
+        case 'validation_failed':
+          return typed(
+            AuthFailureCode.invalidEmail,
+            'The email address is not valid.',
+          );
+        case 'email_exists':
+        case 'user_already_exists':
+          return typed(
+            AuthFailureCode.emailAlreadyInUse,
+            'That email address is already in use.',
+          );
+        case 'over_email_send_rate_limit':
+        case 'over_request_rate_limit':
+        case 'too_many_requests':
+          return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+        case 'otp_expired':
+        case 'flow_state_expired':
+        case 'flow_state_not_found':
+          return typed(
+            AuthFailureCode.otpInvalidOrExpired,
+            'The confirmation link is invalid or has expired.',
+          );
+        case 'session_not_found':
+        case 'session_expired':
+        case 'session_missing':
+        case 'bad_jwt':
+        case 'user_not_found':
+          return typed(AuthFailureCode.sessionExpired, 'Session is invalid.');
+        case 'email_provider_disabled':
+        case 'email_address_not_authorized':
+        case 'user_sso_managed':
+          return typed(
+            AuthFailureCode.providerUnavailable,
+            'Email change is unavailable for this account.',
+          );
+      }
+      if (exception.statusCode == '429') {
+        return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+      }
+      final message = exception.message.toLowerCase();
+      if (message.contains('network') ||
+          message.contains('connection') ||
+          message.contains('socket') ||
+          message.contains('failed host lookup')) {
+        return typed(AuthFailureCode.network, 'The request did not complete.');
+      }
+    }
+    return typed(AuthFailureCode.unknown, 'Email change failed.');
   }
 
   /// Reads the Supabase error code from a raw error body, or null.

@@ -170,15 +170,21 @@ class HomeViewModel extends ChangeNotifier {
     }
 
     // Otherwise, wait for auth state change
-    _authSubscription ??= _authRepository.authStateChanges.listen((user) {
-      if (user != null && !_streamsInitialized) {
-        _initializeLiveStreams();
-        _streamsInitialized = true;
-      } else if (user == null && _streamsInitialized) {
-        _resetCountsForSignedOutUser();
-        _streamsInitialized = false;
-      }
-    });
+    _authSubscription ??= _authRepository.authStateChanges.listen(
+      (user) {
+        if (user != null && !_streamsInitialized) {
+          _initializeLiveStreams();
+          _streamsInitialized = true;
+        } else if (user == null && _streamsInitialized) {
+          _resetCountsForSignedOutUser();
+          _streamsInitialized = false;
+        }
+      },
+      // The repository forwards auth-stream errors; an authoritative sign-out
+      // still arrives as a null user, so there is nothing to do here but
+      // refuse to crash.
+      onError: (Object _, StackTrace __) {},
+    );
   }
 
   void _initializeSupabaseCountsWhenReady() {
@@ -188,13 +194,20 @@ class HomeViewModel extends ChangeNotifier {
       unawaited(_loadSupabaseCounts());
     }
 
-    _supabaseAuthSubscription ??= client.auth.onAuthStateChange.listen((data) {
-      if (data.session != null) {
-        unawaited(_loadSupabaseCounts());
-      } else {
-        _resetCountsForSignedOutUser();
-      }
-    });
+    _supabaseAuthSubscription ??= client.auth.onAuthStateChange.listen(
+      (data) {
+        if (data.session != null) {
+          unawaited(_loadSupabaseCounts());
+        } else {
+          _resetCountsForSignedOutUser();
+        }
+      },
+      // Supabase republishes auth failures on this stream — a failed token
+      // refresh, and every `AuthException` its deep-link observer catches.
+      // Without this handler such an error becomes an unhandled async error
+      // that crashes out of a screen that only counts rows.
+      onError: (Object _, StackTrace __) {},
+    );
     _coreMutationSubscription ??=
         CoreEntityMutationNotifier.changes.listen((_) {
       unawaited(_loadSupabaseCounts());

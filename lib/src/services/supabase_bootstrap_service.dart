@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
+import 'auth_callback_coordinator.dart';
 import 'supabase_secure_storage.dart';
 
 /// Initializes the Supabase client alongside the existing Firebase backend.
@@ -30,9 +31,20 @@ abstract final class SupabaseBootstrapService {
         publishableKey: SupabaseConfig.publishableKey,
         authOptions: FlutterAuthClientOptions(
           localStorage: SupabaseSecureStorage(),
+          // Automatic URI detection stays ON: Supabase remains the only thing
+          // that exchanges a session-bearing callback. The predicate only
+          // narrows *which* links it tries, so an error-only or message-only
+          // callback is no longer fed to `getSessionFromUrl` — that call can
+          // only throw for those, and the SDK republishes the throw as an
+          // `onAuthStateChange` stream error.
+          detectSessionInUriPredicate: supabaseShouldExchangeAuthCallback,
         ),
       ).timeout(const Duration(seconds: 10));
       _initialized = true;
+      // Owns the one application-level listener for the callbacks Supabase
+      // just declined. Started after initialization so a link that arrives
+      // during startup is still classified.
+      await AuthCallbackCoordinator.instance.start();
       return true;
     } on TimeoutException catch (error, stackTrace) {
       if (kDebugMode) {

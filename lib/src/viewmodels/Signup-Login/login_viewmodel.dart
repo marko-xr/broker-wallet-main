@@ -28,14 +28,23 @@ class SignInViewModel extends ChangeNotifier {
   String? _passwordError;
   String? _phoneError;
   String _countryCode = '+971';
-  /// Phone *sign-in* exists only on the legacy Firebase backend. With Supabase
-  /// as the auth authority it is not implemented — phone numbers are verified
-  /// for an already signed-in account from Edit Profile instead — so the
-  /// screen must not offer it.
-  static bool get phoneSignInAvailable => !SupabaseConfig.useSupabaseAuth;
+  /// Whether phone sign-in can actually complete.
+  ///
+  /// It is implemented only on the legacy Firebase backend; with Supabase as
+  /// the auth authority a phone number is verified for an already signed-in
+  /// account from Edit Profile instead.
+  ///
+  /// This reports capability only. It deliberately does **not** hide the Phone
+  /// tab: the product owner owns that UI. Where sign-in cannot complete,
+  /// [sendOTP] says so plainly rather than the screen pretending the option
+  /// does not exist.
+  static bool get phoneSignInSupported => !SupabaseConfig.useSupabaseAuth;
 
+  /// Email is the initially selected method wherever phone sign-in cannot
+  /// complete, so the screen never *opens* on a method that cannot finish.
+  /// The Phone tab is still present and selectable.
   static LoginMethod get initialLoginMethod =>
-      phoneSignInAvailable ? LoginMethod.phone : LoginMethod.email;
+      phoneSignInSupported ? LoginMethod.phone : LoginMethod.email;
 
   LoginMethod loginMethod = initialLoginMethod;
   bool _phoneFlowCompleted = false;
@@ -68,7 +77,6 @@ class SignInViewModel extends ChangeNotifier {
   }
 
   void setLoginMethod(LoginMethod method) {
-    if (method == LoginMethod.phone && !phoneSignInAvailable) return;
     loginMethod = method;
     if (method != LoginMethod.phone && _phoneError != null) {
       _phoneError = null;
@@ -122,9 +130,8 @@ class SignInViewModel extends ChangeNotifier {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
 
-    if (SupabaseConfig.useSupabaseAuth) {
-      _phoneError =
-          'Phone sign-in is not supported with Supabase yet. Please use email and password.';
+    if (!phoneSignInSupported) {
+      _phoneError = translate('phoneSignInUnavailable');
       _showToast(_phoneError!, Colors.orange);
       if (!_disposed) notifyListeners();
       return;
@@ -302,8 +309,11 @@ class SignInViewModel extends ChangeNotifier {
     UserCredential credential, {
     required String phoneE164,
   }) async {
-    if (SupabaseConfig.useSupabaseAuth) {
-      _showToast('Phone sign-in is not supported with Supabase.', Colors.red);
+    if (!phoneSignInSupported) {
+      _showToast(
+        AppLocalizations.of(context).translate('phoneSignInUnavailable'),
+        Colors.red,
+      );
       return;
     }
 

@@ -581,6 +581,15 @@ class AuthViewModel extends ChangeNotifier {
     return repository as PhoneVerificationCapability;
   }
 
+  /// Supabase-native email change for the current session. Pending state stays
+  /// in Supabase Auth (`User.newEmail`) and is never copied into UserModel as
+  /// though it were the confirmed address.
+  EmailChangeCapability? get emailChange {
+    final repository = _authRepository;
+    if (repository is! EmailChangeCapability) return null;
+    return repository as EmailChangeCapability;
+  }
+
   /// Legacy Firebase phone flow only.
   ///
   /// With Supabase as the auth authority, phone verification is reported by
@@ -869,9 +878,24 @@ class AuthViewModel extends ChangeNotifier {
       // without any safety timer.
       _authSubscription = _authRepository.authStateChanges.listen(
         _handleSessionIdentity,
-        onError: (Object error) => _resolveBootstrapAsUnauthenticated(),
+        onError: _handleAuthStreamError,
       );
     } catch (e) {
+      _resolveBootstrapAsUnauthenticated();
+    }
+  }
+
+  /// Handles an error delivered on the auth stream itself.
+  ///
+  /// Supabase republishes several non-fatal failures here — a failed token
+  /// refresh, and every `AuthException` its deep-link observer catches — so an
+  /// error on this stream is *not* evidence that the session ended. Treating it
+  /// as a sign-out is what turned an expired email link into an apparent
+  /// logout. Only an unresolved bootstrap may resolve to unauthenticated,
+  /// because there the alternative is hanging on `unknown` forever. An
+  /// authoritative sign-out still arrives as a `null` identity event.
+  void _handleAuthStreamError(Object error) {
+    if (_status == AuthStatus.unknown) {
       _resolveBootstrapAsUnauthenticated();
     }
   }

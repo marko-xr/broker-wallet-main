@@ -61,15 +61,19 @@ class FavoriteService {
       }
     });
 
-    subscription = RepositoryProvider.instance.authRepository
-        .authStateChanges
-        .listen((UserModel? user) {
-      if (user != null && !completer.isCompleted) {
-        timeoutTimer.cancel();
-        subscription.cancel();
-        completer.complete();
-      }
-    });
+    subscription =
+        RepositoryProvider.instance.authRepository.authStateChanges.listen(
+      (UserModel? user) {
+        if (user != null && !completer.isCompleted) {
+          timeoutTimer.cancel();
+          subscription.cancel();
+          completer.complete();
+        }
+      },
+      // An auth-stream error must degrade to the existing timeout path, not
+      // escape as an unhandled async error.
+      onError: (Object _, StackTrace __) {},
+    );
 
     return completer.future;
   }

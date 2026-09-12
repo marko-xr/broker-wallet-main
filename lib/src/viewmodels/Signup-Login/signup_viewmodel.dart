@@ -56,14 +56,22 @@ class SignUpViewModel extends ChangeNotifier {
   String get email => emailController.text;
   String get password => passwordController.text;
   String get confirmPassword => confirmPasswordController.text;
-  /// Phone *sign-up* exists only on the legacy Firebase backend. With Supabase
-  /// as the auth authority an account is created by email, and a phone number
-  /// is verified for it afterwards from Edit Profile — so the screen must not
-  /// offer phone registration.
-  static bool get phoneSignUpAvailable => !SupabaseConfig.useSupabaseAuth;
+  /// Whether phone registration can actually complete.
+  ///
+  /// It is implemented only on the legacy Firebase backend; with Supabase as
+  /// the auth authority an account is created by email and a phone number is
+  /// verified for it afterwards from Edit Profile.
+  ///
+  /// This reports capability only. It deliberately does **not** hide the Phone
+  /// tab: the product owner owns that UI. Where registration cannot complete,
+  /// [signUpWithPhone] says so plainly.
+  static bool get phoneSignUpSupported => !SupabaseConfig.useSupabaseAuth;
 
+  /// Email is the initially selected method wherever phone registration cannot
+  /// complete, so the screen never *opens* on a method that cannot finish. The
+  /// Phone tab is still present and selectable.
   static SignupMethod get initialSignupMethod =>
-      phoneSignUpAvailable ? SignupMethod.phone : SignupMethod.email;
+      phoneSignUpSupported ? SignupMethod.phone : SignupMethod.email;
 
   SignupMethod signupMethod = initialSignupMethod;
 
@@ -83,7 +91,6 @@ class SignUpViewModel extends ChangeNotifier {
   }
 
   void setSignupMethod(SignupMethod method) {
-    if (method == SignupMethod.phone && !phoneSignUpAvailable) return;
     signupMethod = method;
     if (method == SignupMethod.phone) {
       _phoneFlowCompleted = false;
@@ -393,9 +400,8 @@ class SignUpViewModel extends ChangeNotifier {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
 
-    if (SupabaseConfig.useSupabaseAuth) {
-      _phoneError =
-          'Phone registration is not supported with Supabase yet. Please use email and password.';
+    if (!phoneSignUpSupported) {
+      _phoneError = translate('phoneSignUpUnavailable');
       _setLoading(false);
       _showToast(_phoneError!, Colors.orange);
       if (!_disposed) notifyListeners();
@@ -545,9 +551,11 @@ class SignUpViewModel extends ChangeNotifier {
     String? name,
     required String phoneE164,
   }) async {
-    if (SupabaseConfig.useSupabaseAuth) {
+    if (!phoneSignUpSupported) {
       _showToast(
-          'Phone registration is not supported with Supabase.', Colors.red);
+        AppLocalizations.of(context).translate('phoneSignUpUnavailable'),
+        Colors.red,
+      );
       return;
     }
 

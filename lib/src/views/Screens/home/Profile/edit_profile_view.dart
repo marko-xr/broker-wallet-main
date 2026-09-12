@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_addition_dialog.dart';
+import 'package:broker_wallet/src/Views/Widgets/email_change_pending_sheet.dart';
+import 'package:broker_wallet/src/Views/Widgets/email_change_sheet.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_verification_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_otp_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
+import 'package:broker_wallet/src/common/utils/rtl_utils.dart';
 import 'package:broker_wallet/src/viewmodels/phone_verification_viewmodel.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
@@ -18,6 +21,7 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/profile_text_field.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/edit_profile_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/email_change_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
@@ -40,6 +44,7 @@ class _EditProfileViewState extends State<EditProfileView> {
   bool _isSaving = false; // Track save operation for overlay
   String _originalEmail = '';
   String _originalPhone = '';
+  EmailChangeViewModel? _emailChangeViewModel;
   StreamSubscription<ProfileUploadCompletedEvent>?
       _uploadCompletionSubscription;
 
@@ -47,10 +52,39 @@ class _EditProfileViewState extends State<EditProfileView> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isInitialized) {
+      _setupEmailChangeState();
       _initializeUserData();
       _setupUploadCompletionListener();
       _isInitialized = true;
     }
+  }
+
+  void _setupEmailChangeState() {
+    final authVM = context.read<AuthViewModel>();
+    final flow = EmailChangeViewModel(gateway: authVM.emailChange);
+    _emailChangeViewModel = flow;
+    flow.addListener(_onEmailChangeStateChanged);
+    _onEmailChangeStateChanged();
+  }
+
+  void _onEmailChangeStateChanged() {
+    final flow = _emailChangeViewModel;
+    final confirmedEmail = flow?.confirmedEmail ?? '';
+    if (confirmedEmail.isNotEmpty && confirmedEmail != _originalEmail) {
+      _originalEmail = confirmedEmail;
+      _emailController.text = confirmedEmail;
+    }
+    // A change can complete while this screen is open but the pending sheet is
+    // not — the user returns from their mail app straight onto Edit Profile.
+    // The sheet consumes the flag when it is open, so this fires at most once.
+    if (flow != null && flow.justCompleted && mounted) {
+      flow.acknowledgeCompletion();
+      _showToast(
+        AppLocalizations.of(context).translate('emailChangeCompleted'),
+        Theme.of(context).colorScheme.primary,
+      );
+    }
+    if (mounted) setState(() {});
   }
 
   void _setupUploadCompletionListener() {
@@ -143,144 +177,14 @@ class _EditProfileViewState extends State<EditProfileView> {
                   ? const Center(child: CircularProgressIndicator())
                   : SafeArea(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(26),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Profile Card with Image Picker
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: colors.surface,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                children: [
-                                  Stack(
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: colors.primary
-                                                .withValues(alpha: 0.3),
-                                            width: 3,
-                                          ),
-                                        ),
-                                        child: ClipOval(
-                                          child: SizedBox(
-                                            width: 100,
-                                            height: 100,
-                                            // The unsaved pick previews here
-                                            // directly. Everything else — the
-                                            // confirmed image, or a saved image
-                                            // still uploading — comes from the
-                                            // same current-user source every
-                                            // other screen uses.
-                                            child: _selectedImage != null
-                                                ? Image.file(
-                                                    _selectedImage!,
-                                                    fit: BoxFit.cover,
-                                                    width: 100,
-                                                    height: 100,
-                                                  )
-                                                : const CurrentUserAvatar(
-                                                    size: 100,
-                                                  ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        bottom: 4,
-                                        right: 4,
-                                        child: GestureDetector(
-                                          onTap: _pickImage,
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  colors.primary,
-                                                  colors.primary
-                                                      .withValues(alpha: 0.8),
-                                                ],
-                                              ),
-                                              shape: BoxShape.circle,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: colors.primary
-                                                      .withValues(alpha: 0.3),
-                                                  blurRadius: 8,
-                                                  offset: const Offset(0, 2),
-                                                ),
-                                              ],
-                                            ),
-                                            padding: const EdgeInsets.all(8),
-                                            child: const Icon(
-                                              Icons.camera_alt_rounded,
-                                              color: Colors.white,
-                                              size: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                      _nameController.text.isNotEmpty
-                                          ? _nameController.text
-                                          : 'User Name',
-                                      style: texts.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      )),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                      _emailController.text.isNotEmpty
-                                          ? _emailController.text
-                                          : 'user@example.com',
-                                      style: texts.bodyMedium?.copyWith(
-                                        color: colors.onSurface
-                                            .withValues(alpha: 0.7),
-                                      )),
-                                  const SizedBox(height: 8),
-
-                                  // Image selection hint
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          colors.primary.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.info_outline,
-                                          size: 16,
-                                          color: colors.primary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          loc.translate('tapToChangePhoto'),
-                                          style: texts.bodySmall?.copyWith(
-                                            color: colors.primary,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            _buildIdentityHeader(colors, texts, loc),
                             const SizedBox(height: 24),
 
-                            // Form Fields
-                            Text(loc.translate('name'),
-                                style: texts.titleMedium),
+                            _SectionLabel(loc.translate('personalInformation')),
                             const SizedBox(height: 8),
                             ProfileTextField(
                               controller: _nameController,
@@ -288,26 +192,27 @@ class _EditProfileViewState extends State<EditProfileView> {
                               iconAsset: 'assets/icons/profile.svg',
                               isSvg: true,
                             ),
-                            const SizedBox(height: 16),
-                            Text(loc.translate('email'),
-                                style: texts.titleMedium),
+                            const SizedBox(height: 20),
+
+                            _SectionLabel(loc.translate('email')),
                             const SizedBox(height: 8),
                             _buildEmailSection(context, vm, colors, texts, loc),
-                            const SizedBox(height: 16),
-                            Text(loc.translate('phoneNumber'),
-                                style: texts.titleMedium),
+                            const SizedBox(height: 20),
+
+                            _SectionLabel(loc.translate('phoneNumber')),
                             const SizedBox(height: 8),
                             _buildPhoneSection(context, vm, colors, texts, loc),
-                            const SizedBox(height: 80),
+                            const SizedBox(height: 28),
 
-                            // Save Button
+                            // Save owns the name and photo only. Email and
+                            // phone are their own confirmed flows and must not
+                            // appear to depend on this button.
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: _isSaving
                                     ? null
                                     : () async {
-                                        // Only save name and image changes
                                         await _saveProfileChanges(vm);
                                       },
                                 style: ElevatedButton.styleFrom(
@@ -316,15 +221,23 @@ class _EditProfileViewState extends State<EditProfileView> {
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
-                                  elevation: 2,
+                                  elevation: 0,
                                 ),
                                 child: Text(
                                   loc.translate('saveChanges'),
                                   style: texts.labelLarge
                                       ?.copyWith(color: Colors.white),
                                 ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              loc.translate('editProfileSaveScope'),
+                              textAlign: TextAlign.center,
+                              style: texts.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -359,6 +272,123 @@ class _EditProfileViewState extends State<EditProfileView> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Compact identity header.
+  ///
+  /// Avatar, name, and the confirmed email as secondary text — enough to say
+  /// whose account this is without the header owning a third of the screen.
+  /// The camera badge keeps the existing tap target; the text button beside it
+  /// makes the same action discoverable without a separate hint chip.
+  ///
+  /// Image-picking logic is untouched: this only changes presentation.
+  Widget _buildIdentityHeader(
+    ColorScheme colors,
+    TextTheme texts,
+    AppLocalizations loc,
+  ) {
+    final name = _nameController.text.trim();
+    final email = _originalEmail.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: colors.primary.withValues(alpha: 0.3),
+                    width: 3,
+                  ),
+                ),
+                child: ClipOval(
+                  child: SizedBox(
+                    width: 84,
+                    height: 84,
+                    // The unsaved pick previews here directly. Everything
+                    // else — the confirmed image, or a saved image still
+                    // uploading — comes from the same current-user source
+                    // every other screen uses.
+                    child: _selectedImage != null
+                        ? Image.file(
+                            _selectedImage!,
+                            fit: BoxFit.cover,
+                            width: 84,
+                            height: 84,
+                          )
+                        : const CurrentUserAvatar(size: 84),
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                bottom: 0,
+                end: 0,
+                child: GestureDetector(
+                  onTap: _pickImage,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: colors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: colors.surface, width: 2),
+                    ),
+                    padding: const EdgeInsets.all(7),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      color: Colors.white,
+                      size: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            name.isNotEmpty ? name : loc.translate('name'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: texts.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (email.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            // An address is never Arabic text, so it stays LTR inside an RTL
+            // layout while the rest of the header follows the locale.
+            ForceDirectionality(
+              direction: TextDirection.ltr,
+              child: Text(
+                email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: texts.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: _pickImage,
+            icon: const Icon(Icons.photo_camera_outlined, size: 16),
+            label: Text(loc.translate('changePhoto')),
+            style: TextButton.styleFrom(
+              foregroundColor: colors.primary,
+              visualDensity: VisualDensity.compact,
+              textStyle: texts.labelLarge,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -739,6 +769,67 @@ class _EditProfileViewState extends State<EditProfileView> {
     );
   }
 
+  /// Starts Supabase's authenticated replacement-email flow.
+  ///
+  /// A successful request closes the form and hands the user straight to the
+  /// pending sheet, which is where the two-mailbox explanation and every
+  /// recovery action live.
+  Future<void> _showEmailChangeSheet() async {
+    final flow = _emailChangeViewModel;
+    if (flow == null || !flow.isAvailable) return;
+    flow.clearMessages();
+
+    final requested = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EmailChangeSheet(viewModel: flow),
+    );
+    if (requested != true || !mounted) return;
+
+    if (flow.isPending) {
+      await _showEmailChangePendingSheet();
+      return;
+    }
+    final notice = flow.noticeKey;
+    if (notice != null && mounted) {
+      _showToast(
+        AppLocalizations.of(context).translate(notice),
+        Theme.of(context).colorScheme.primary,
+      );
+    }
+  }
+
+  /// Opens the focused pending sheet.
+  ///
+  /// "Use a different email" reopens the request sheet: GoTrue's own
+  /// `sendEmailChange` regenerates both confirmation tokens and resets the
+  /// confirmation status, so a fresh request genuinely replaces the pending
+  /// one rather than stacking a second request on top of it.
+  Future<void> _showEmailChangePendingSheet() async {
+    final flow = _emailChangeViewModel;
+    if (flow == null || !flow.isAvailable) return;
+    flow.clearMessages();
+
+    final completed = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EmailChangePendingSheet(
+        viewModel: flow,
+        onUseDifferentEmail: _showEmailChangeSheet,
+      ),
+    );
+    if (completed == true && mounted) {
+      _showToast(
+        AppLocalizations.of(context).translate('emailChangeCompleted'),
+        Theme.of(context).colorScheme.primary,
+      );
+    }
+  }
+
   /// Supabase phone verification for the signed-in account.
   ///
   /// Two dialogs in sequence — number, then code — driven by one
@@ -1018,56 +1109,161 @@ class _EditProfileViewState extends State<EditProfileView> {
       );
     }
 
-    // If user has email, show read-only display
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.outline.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(12),
-        color: colors.surface,
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.email_outlined,
-              color: colors.onSurfaceVariant,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  loc.translate('email'),
-                  style: texts.bodySmall?.copyWith(
+    final emailChange = _emailChangeViewModel;
+    final confirmedEmail = emailChange?.confirmedEmail.isNotEmpty == true
+        ? emailChange!.confirmedEmail
+        : _originalEmail;
+    final canChangeEmail =
+        SupabaseConfig.useSupabaseAuth && emailChange?.isAvailable == true;
+    final pending = emailChange?.isPending == true;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 8, 12),
+          decoration: _fieldCardDecoration(colors),
+          child: Row(
+            children: [
+              _FieldLeadingIcon(
+                icon: Icons.email_outlined,
+                colors: colors,
+              ),
+              const SizedBox(width: 12),
+              // The confirmed address stays the primary identity on this row
+              // for the whole pending window, so nothing here can imply the
+              // new address is already in force.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      loc.translate('currentEmail'),
+                      style: texts.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    // A long address must shrink to one tidy line rather than
+                    // wrapping and pushing the row's action out of reach.
+                    ForceDirectionality(
+                      direction: TextDirection.ltr,
+                      child: Text(
+                        confirmedEmail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: texts.bodyMedium?.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (canChangeEmail && !pending)
+                TextButton(
+                  onPressed: emailChange?.isBusy == true
+                      ? null
+                      : _showEmailChangeSheet,
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.primary,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  child: Text(loc.translate('change')),
+                )
+              else if (!canChangeEmail)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: Icon(
+                    Icons.lock_outline,
                     color: colors.onSurfaceVariant,
+                    size: 16,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _originalEmail,
-                  style: texts.bodyLarge?.copyWith(
-                    color: colors.onSurface,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
-          Icon(
-            Icons.lock_outline,
-            color: colors.onSurfaceVariant,
-            size: 16,
-          ),
+        ),
+        if (pending) ...[
+          const SizedBox(height: 8),
+          _buildPendingEmailIndicator(emailChange!, colors, texts, loc),
         ],
+      ],
+    );
+  }
+
+  /// One compact line, not a status panel.
+  ///
+  /// Everything explanatory and every recovery action lives in the pending
+  /// sheet behind "View", so Edit Profile stays a settings screen.
+  Widget _buildPendingEmailIndicator(
+    EmailChangeViewModel flow,
+    ColorScheme colors,
+    TextTheme texts,
+    AppLocalizations loc,
+  ) {
+    return Material(
+      color: colors.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _showEmailChangePendingSheet,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 8, 10),
+          child: Row(
+            children: [
+              Icon(
+                Icons.schedule_rounded,
+                size: 16,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      loc.translate('emailChangePendingTitle'),
+                      style: texts.labelMedium?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Text(
+                        flow.pendingEmail ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: texts.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                loc.translate('view'),
+                style: texts.labelLarge?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: colors.primary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1080,100 +1276,77 @@ class _EditProfileViewState extends State<EditProfileView> {
     TextTheme texts,
     AppLocalizations loc,
   ) {
-    // If user has no phone originally, show Add Phone button
+    // No phone yet: one actionable row that opens the existing Add Phone flow.
     if (_originalPhone.isEmpty) {
-      return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          color: colors.primary.withValues(alpha: 0.05),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () async {
-              await _showPhoneAdditionDialog(vm);
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: colors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.phone_outlined,
-                      color: colors.primary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          loc.translate('addPhoneNumber'),
-                          style: texts.titleSmall?.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+          onTap: () async {
+            await _showPhoneAdditionDialog(vm);
+          },
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
+            decoration: _fieldCardDecoration(colors),
+            child: Row(
+              children: [
+                _FieldLeadingIcon(
+                  icon: Icons.phone_outlined,
+                  colors: colors,
+                  emphasized: true,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        loc.translate('addPhoneNumber'),
+                        style: texts.bodyMedium?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          loc.translate('tapToAddPhoneNumber'),
-                          style: texts.bodySmall?.copyWith(
-                            color: colors.onSurface.withValues(alpha: 0.6),
-                          ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        loc.translate('tapToAddPhoneNumber'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: texts.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    color: colors.primary,
-                    size: 16,
-                  ),
-                ],
-              ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: colors.primary,
+                  size: 20,
+                ),
+              ],
             ),
           ),
         ),
       );
     }
 
-    // If user has phone, show read-only display
+    // Confirmed number. Read-only here by design: the number is owned by
+    // Supabase Auth's own verification flow, not by this form's Save.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.outline.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(12),
-        color: colors.surface,
-      ),
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
+      decoration: _fieldCardDecoration(colors),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.phone_outlined,
-              color: colors.onSurfaceVariant,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
+          _FieldLeadingIcon(icon: Icons.phone_outlined, colors: colors),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   loc.translate('phoneNumber'),
@@ -1181,11 +1354,17 @@ class _EditProfileViewState extends State<EditProfileView> {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _originalPhone,
-                  style: texts.bodyLarge?.copyWith(
-                    color: colors.onSurface,
+                const SizedBox(height: 1),
+                ForceDirectionality(
+                  direction: TextDirection.ltr,
+                  child: Text(
+                    _originalPhone,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: texts.bodyMedium?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -1201,9 +1380,19 @@ class _EditProfileViewState extends State<EditProfileView> {
     );
   }
 
+  /// One card treatment shared by the email and phone rows, so neither reads as
+  /// more important than the other.
+  BoxDecoration _fieldCardDecoration(ColorScheme colors) => BoxDecoration(
+        border: Border.all(color: colors.outline.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(12),
+        color: colors.surface,
+      );
+
   @override
   void dispose() {
     _uploadCompletionSubscription?.cancel();
+    _emailChangeViewModel?.removeListener(_onEmailChangeStateChanged);
+    _emailChangeViewModel?.dispose();
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -1287,6 +1476,67 @@ class _ProfileSaveFeedback {
       gravity: ToastGravity.BOTTOM,
       backgroundColor: succeeded ? successBackground : failureBackground,
       textColor: succeeded ? successForeground : failureForeground,
+    );
+  }
+}
+
+/// A section heading for the account form.
+///
+/// Small, quiet and consistent, so the headings group the fields instead of
+/// competing with the values inside them.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 4, bottom: 2),
+      child: Text(
+        text.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+}
+
+/// The small square icon that opens each account row.
+///
+/// Kept modest on purpose: the value beside it is the content, the icon is
+/// only a marker. [emphasized] tints it for a row that is an invitation to act
+/// rather than a statement of fact.
+class _FieldLeadingIcon extends StatelessWidget {
+  const _FieldLeadingIcon({
+    required this.icon,
+    required this.colors,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final ColorScheme colors;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: emphasized
+            ? colors.primary.withValues(alpha: 0.10)
+            : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        icon,
+        color: emphasized ? colors.primary : colors.onSurfaceVariant,
+        size: 18,
+      ),
     );
   }
 }

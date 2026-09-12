@@ -13,7 +13,10 @@ import 'package:flutter/foundation.dart';
 ///
 /// Keeps user identity synchronized with `auth.users` and `public.profiles`.
 class SupabaseAuthRepository
-    implements AuthRepository, PhoneVerificationCapability {
+    implements
+        AuthRepository,
+        PhoneVerificationCapability,
+        EmailChangeCapability {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -39,16 +42,36 @@ class SupabaseAuthRepository
   /// components listen for identity.
   final StreamController<UserModel?> _identityController =
       StreamController<UserModel?>.broadcast();
+  final StreamController<EmailChangeState?> _emailChangeController =
+      StreamController<EmailChangeState?>.broadcast();
 
   StreamSubscription<AuthState>? _supabaseAuthSubscription;
   bool _pipelineStarted = false;
   UserModel? _latestIdentity;
   bool _hasLatestIdentity = false;
+  EmailChangeState? _latestEmailChange;
+  bool _hasLatestEmailChange = false;
 
   @override
   Stream<UserModel?> get authStateChanges {
     _startIdentityPipeline();
     return _replayLatestThen(_identityController.stream);
+  }
+
+  @override
+  EmailChangeState? get currentEmailChange {
+    final user = _client.auth.currentUser;
+    if (user == null) return null;
+    final latest = _latestEmailChange;
+    return latest?.ownerUid == user.id
+        ? latest
+        : _emailChangeFromAuthUser(user);
+  }
+
+  @override
+  Stream<EmailChangeState?> get emailChangeChanges {
+    _startIdentityPipeline();
+    return _replayLatestEmailChangeThen(_emailChangeController.stream);
   }
 
   /// Late subscribers must not miss the current session state, and a plain
@@ -68,6 +91,32 @@ class SupabaseAuthRepository
         );
         if (_hasLatestIdentity) {
           out.add(_latestIdentity);
+        }
+      },
+      onCancel: () async {
+        await subscription?.cancel();
+        subscription = null;
+      },
+    );
+
+    return out.stream;
+  }
+
+  Stream<EmailChangeState?> _replayLatestEmailChangeThen(
+    Stream<EmailChangeState?> source,
+  ) {
+    late final StreamController<EmailChangeState?> out;
+    StreamSubscription<EmailChangeState?>? subscription;
+
+    out = StreamController<EmailChangeState?>(
+      onListen: () {
+        subscription = source.listen(
+          out.add,
+          onError: out.addError,
+          onDone: out.close,
+        );
+        if (_hasLatestEmailChange) {
+          out.add(_latestEmailChange);
         }
       },
       onCancel: () async {
@@ -100,6 +149,13 @@ class SupabaseAuthRepository
     if (!_identityController.isClosed) {
       _identityController.add(identity);
     }
+
+    final emailChange = _emailChangeFromAuthUser(user);
+    _latestEmailChange = emailChange;
+    _hasLatestEmailChange = true;
+    if (!_emailChangeController.isClosed) {
+      _emailChangeController.add(emailChange);
+    }
   }
 
   /// Releases the shared Supabase subscription. Not part of [AuthRepository];
@@ -110,12 +166,15 @@ class SupabaseAuthRepository
     _supabaseAuthSubscription = null;
     _pipelineStarted = false;
     await _identityController.close();
+    await _emailChangeController.close();
   }
 
   @override
   UserModel? get currentUser {
     final user = _client.auth.currentUser;
-    return user == null ? null : _fromAuthUser(user);
+    if (user == null) return null;
+    final latest = _latestIdentity;
+    return latest?.uid == user.id ? latest : _fromAuthUser(user);
   }
 
   @override
@@ -447,19 +506,131 @@ class SupabaseAuthRepository
     required String newEmail,
     required String currentPassword,
   }) async {
-    final current = _client.auth.currentUser;
-    final currentEmail = current?.email;
-    if (current == null || currentEmail == null || currentEmail.isEmpty) {
-      throw AuthException('No authenticated email user.');
+    // Compatibility for the backend-neutral legacy contract. Supabase email
+    // change is session-owned and does not require a second password sign-in;
+    // every Supabase path converges on the capability below.
+    await requestEmailChange(newEmail);
+  }
+
+  @override
+  Future<EmailChangeState> requestEmailChange(String newEmail) async {
+    final initiatingUser = _client.auth.currentUser;
+    final ownerUid = initiatingUser?.id;
+    final currentEmail = initiatingUser?.email?.trim().toLowerCase() ?? '';
+    if (ownerUid == null ||
+        currentEmail.isEmpty ||
+        _client.auth.currentSession == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active email session.',
+      );
     }
 
-    await _client.auth.signInWithPassword(
-      email: currentEmail,
-      password: currentPassword,
-    );
-    await _client.auth.updateUser(
-      UserAttributes(email: newEmail.trim().toLowerCase()),
-    );
+    final normalizedEmail = newEmail.trim().toLowerCase();
+    if (normalizedEmail == currentEmail) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sameEmail,
+        message: 'The new email matches the current email.',
+      );
+    }
+
+    final UserResponse response;
+    try {
+      response = await _client.auth.updateUser(
+        UserAttributes(email: normalizedEmail),
+        emailRedirectTo: SupabaseConfig.authCallbackUri,
+      );
+    } catch (error) {
+      throw AuthFailure.fromSupabaseEmailChange(error);
+    }
+
+    final liveUid = _client.auth.currentUser?.id;
+    final responseUser = response.user;
+    if (liveUid != ownerUid ||
+        responseUser == null ||
+        responseUser.id != ownerUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+
+    return _emailChangeFromAuthUser(responseUser)!;
+  }
+
+  @override
+  Future<EmailChangeState> resendEmailChange() async {
+    final state = currentEmailChange;
+    final ownerUid = state?.ownerUid;
+    final pendingEmail = state?.pendingEmail;
+    final confirmedEmail = state?.confirmedEmail ?? '';
+    if (ownerUid == null ||
+        confirmedEmail.isEmpty ||
+        _client.auth.currentSession == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    if (pendingEmail == null || pendingEmail.isEmpty) {
+      throw const AuthFailure(
+        code: AuthFailureCode.noPendingEmailChange,
+        message: 'There is no pending email change.',
+      );
+    }
+
+    try {
+      // The *confirmed* address, not the pending one. GoTrue's resend handler
+      // finds the account with `FindUserByEmailAndAudience` over `users.email`,
+      // which still holds the confirmed address while a change is pending; it
+      // then sends to the stored `user.EmailChange` itself. Passing the pending
+      // address here matches no account, so the resend silently does nothing.
+      await _client.auth.resend(
+        type: OtpType.emailChange,
+        email: confirmedEmail,
+        emailRedirectTo: SupabaseConfig.authCallbackUri,
+      );
+    } catch (error) {
+      throw AuthFailure.fromSupabaseEmailChange(error);
+    }
+
+    if (_client.auth.currentUser?.id != ownerUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+    return currentEmailChange!;
+  }
+
+  @override
+  Future<EmailChangeState?> refreshEmailChange() async {
+    final ownerUid = _client.auth.currentUser?.id;
+    if (ownerUid == null || _client.auth.currentSession == null) return null;
+
+    final UserResponse response;
+    try {
+      response = await _client.auth.getUser();
+    } catch (error) {
+      throw AuthFailure.fromSupabaseEmailChange(error);
+    }
+
+    final user = response.user;
+    if (_client.auth.currentUser?.id != ownerUid ||
+        user == null ||
+        user.id != ownerUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+
+    // `getUser()` is the authoritative network read but does not update the
+    // SDK's stored session user. Publishing it through the existing single
+    // identity pipeline refreshes AuthViewModel without adding another auth
+    // listener or creating a second email authority.
+    _publishIdentity(user);
+    return _emailChangeFromAuthUser(user);
   }
 
   @override
@@ -606,6 +777,20 @@ class SupabaseAuthRepository
       isPhoneVerified: _authUserPhoneVerified(user),
       subscription: _compatibilitySubscription(),
       preferences: const {},
+    );
+  }
+
+  EmailChangeState? _emailChangeFromAuthUser(User? user) {
+    if (user == null) return null;
+    final confirmedEmail = user.email?.trim().toLowerCase() ?? '';
+    final rawPending = user.newEmail?.trim().toLowerCase() ?? '';
+    final pendingEmail =
+        rawPending.isEmpty || rawPending == confirmedEmail ? null : rawPending;
+    return EmailChangeState(
+      ownerUid: user.id,
+      confirmedEmail: confirmedEmail,
+      pendingEmail: pendingEmail,
+      requestedAt: DateTime.tryParse(user.emailChangeSentAt ?? ''),
     );
   }
 

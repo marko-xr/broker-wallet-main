@@ -1,6 +1,47 @@
 import 'package:broker_wallet/src/data/models/user_model.dart';
 export 'auth_failure.dart';
 
+/// Authoritative email state for the currently signed-in account.
+///
+/// [confirmedEmail] is always Supabase Auth's current `auth.users.email`.
+/// [pendingEmail] is the SDK's `User.newEmail` projection and is presentation
+/// state only until Supabase confirms the change.
+class EmailChangeState {
+  const EmailChangeState({
+    required this.ownerUid,
+    required this.confirmedEmail,
+    this.pendingEmail,
+    this.requestedAt,
+  });
+
+  final String ownerUid;
+  final String confirmedEmail;
+  final String? pendingEmail;
+  final DateTime? requestedAt;
+
+  bool get isPending => pendingEmail != null && pendingEmail!.isNotEmpty;
+}
+
+/// Changes the email address of the **currently signed-in** Supabase account.
+///
+/// Implementations must derive ownership from the live session, retain the
+/// confirmed address until the backend changes it, and expose pending state
+/// from the backend rather than from durable client storage.
+abstract class EmailChangeCapability {
+  EmailChangeState? get currentEmailChange;
+
+  Stream<EmailChangeState?> get emailChangeChanges;
+
+  /// Starts a backend-owned email change for the current account.
+  Future<EmailChangeState> requestEmailChange(String newEmail);
+
+  /// Resends the backend-owned pending email-change confirmation message(s).
+  Future<EmailChangeState> resendEmailChange();
+
+  /// Refreshes email state from Supabase Auth for the current session.
+  Future<EmailChangeState?> refreshEmailChange();
+}
+
 /// Verifies a phone number for the **currently signed-in** user.
 ///
 /// Every operation acts on the account of the live session — never on a

@@ -119,6 +119,10 @@ dependencies:
   firebase_messaging: ^16.0.3
   flutter_local_notifications: ^19.5.0
   supabase_flutter: 2.17.2
+  # Direct dependency because the app owns one auth deep-link listener of its
+  # own (see AuthCallbackCoordinator). `AppLinks()` is a singleton, so this
+  # shares supabase_flutter's stream rather than adding a native listener.
+  app_links: 7.2.1
 
 
 dev_dependencies:

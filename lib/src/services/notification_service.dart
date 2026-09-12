@@ -106,16 +106,21 @@ class NotificationService {
     messaging.onTokenRefresh.listen(_handleTokenRefresh);
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedRemoteMessage);
-    _authSubscription ??= _authRepository.authStateChanges.listen((user) async {
-      if (user != null) {
-        _lastAuthenticatedUserId = user.uid;
-        await _syncInitialToken();
-      } else {
-        final previousUserId = _lastAuthenticatedUserId;
-        _lastAuthenticatedUserId = null;
-        await _clearTokenForUser(previousUserId);
-      }
-    });
+    _authSubscription ??= _authRepository.authStateChanges.listen(
+      (user) async {
+        if (user != null) {
+          _lastAuthenticatedUserId = user.uid;
+          await _syncInitialToken();
+        } else {
+          final previousUserId = _lastAuthenticatedUserId;
+          _lastAuthenticatedUserId = null;
+          await _clearTokenForUser(previousUserId);
+        }
+      },
+      // Token bookkeeping must never turn an auth-stream error into an
+      // unhandled async error. A real sign-out still arrives as a null user.
+      onError: (Object _, StackTrace __) {},
+    );
 
     final initialMessage = await messaging.getInitialMessage();
     if (initialMessage != null) {

@@ -66,17 +66,17 @@ class _SignInViewState extends State<SignInView> {
                   ),
                   const SizedBox(height: 34),
 
-                  // Phone / Email tabs — only where phone sign-in exists.
-                  // Otherwise the screen is the email form alone, with no
-                  // dead-end phone option.
-                  if (SignInViewModel.phoneSignInAvailable) ...[
-                    _LoginTabs(
-                      method: vm.loginMethod,
-                      onChanged: vm.setLoginMethod,
-                      localization: localization,
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                  // Phone / Email tabs. Restored at the product owner's
+                  // request: this UI is theirs, and where phone sign-in cannot
+                  // complete the screen says so on submit rather than hiding
+                  // the option.
+                  _LoginTabs(
+                    method: vm.loginMethod,
+                    onChanged: vm.setLoginMethod,
+                    localization: localization,
+                  ),
+
+                  const SizedBox(height: 24),
 
                   // --- conditional form ---
                   if (vm.loginMethod == LoginMethod.phone) ...[

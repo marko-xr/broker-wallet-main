@@ -25,6 +25,10 @@ const _validationScript = 'supabase/validation/phone_security_validation.sql';
 
 String _read(String path) => File(path).readAsStringSync();
 
+Map<String, dynamic> _arb(String language) => jsonDecode(
+      _read('lib/src/common/localization/app_$language.arb'),
+    ) as Map<String, dynamic>;
+
 /// SQL without comments, so assertions are about statements, not prose.
 String _sqlStatements(String path) => _read(path)
     .split('\n')
@@ -474,44 +478,88 @@ void main() {
     });
   });
 
-  group('Sign-in and sign-up offer no dead-end phone option', () {
-    test('login defaults to email and cannot switch to phone', () {
-      expect(SignInViewModel.phoneSignInAvailable, isFalse);
-      expect(SignInViewModel.initialLoginMethod, LoginMethod.email);
-
+  group('Phone sign-in and sign-up UI is present and honest', () {
+    // The Phone tab was hidden in 0148dbd. The product owner did not authorize
+    // that removal and has asked for it back, so these tests now guard the
+    // restored UI and the truthfulness of its unavailable state.
+    test('the phone tab is selectable on login', () {
       final vm = SignInViewModel();
-      expect(vm.loginMethod, LoginMethod.email);
+      expect(vm.loginMethod, LoginMethod.email,
+          reason: 'the screen must not open on a method that cannot finish');
       vm.setLoginMethod(LoginMethod.phone);
+      expect(vm.loginMethod, LoginMethod.phone,
+          reason: 'the product owner owns this UI; it must be reachable');
+      vm.setLoginMethod(LoginMethod.email);
       expect(vm.loginMethod, LoginMethod.email);
       vm.dispose();
     });
 
-    test('sign-up defaults to email and cannot switch to phone', () {
-      expect(SignUpViewModel.phoneSignUpAvailable, isFalse);
-      expect(SignUpViewModel.initialSignupMethod, SignupMethod.email);
-
+    test('the phone tab is selectable on sign-up', () {
       final vm = SignUpViewModel();
       expect(vm.signupMethod, SignupMethod.email);
       vm.setSignupMethod(SignupMethod.phone);
+      expect(vm.signupMethod, SignupMethod.phone);
+      vm.setSignupMethod(SignupMethod.email);
       expect(vm.signupMethod, SignupMethod.email);
       vm.dispose();
     });
 
-    test('the phone tabs render only where phone sign-in exists', () {
-      final login = _read('lib/src/views/Screens/Sign-Up-Log-In/login_view.dart');
-      final loginGate = login.indexOf('if (SignInViewModel.phoneSignInAvailable)');
-      expect(loginGate, isNonNegative);
-      expect(login.indexOf('_LoginTabs(', loginGate), greaterThan(loginGate));
-      expect(login.indexOf('_LoginTabs('), greaterThan(loginGate),
-          reason: 'no ungated tab bar');
+    test('phone auth still reports its real capability, which is unsupported',
+        () {
+      // Restoring the UI must not imply the backend exists. Phone auth is
+      // legacy-Firebase only; with Supabase as the auth authority it cannot
+      // complete, and nothing here may claim otherwise.
+      expect(SignInViewModel.phoneSignInSupported, isFalse);
+      expect(SignUpViewModel.phoneSignUpSupported, isFalse);
+      expect(SignInViewModel.initialLoginMethod, LoginMethod.email);
+      expect(SignUpViewModel.initialSignupMethod, SignupMethod.email);
+    });
+
+    test('the phone tabs render unconditionally again', () {
+      final login =
+          _read('lib/src/views/Screens/Sign-Up-Log-In/login_view.dart');
+      expect(login, contains('_LoginTabs('));
+      expect(login, isNot(contains('if (SignInViewModel.phoneSignInAvailable)')),
+          reason: 'the visibility gate was removed at the owner request');
 
       final signup =
           _read('lib/src/views/Screens/Sign-Up-Log-In/signup_view.dart');
-      final signupGate =
-          signup.indexOf('if (SignUpViewModel.phoneSignUpAvailable)');
-      expect(signupGate, isNonNegative);
-      expect(signup.indexOf('_SignupTabs('), greaterThan(signupGate),
-          reason: 'no ungated tab bar');
+      expect(signup, contains('_SignupTabs('));
+      expect(
+          signup, isNot(contains('if (SignUpViewModel.phoneSignUpAvailable)')));
+    });
+
+    test('the unavailable message is localized, never hard-coded', () {
+      for (final path in [
+        'lib/src/viewmodels/Signup-Login/login_viewmodel.dart',
+        'lib/src/viewmodels/Signup-Login/signup_viewmodel.dart',
+      ]) {
+        final source = _read(path);
+        expect(source, isNot(contains('is not supported with Supabase')),
+            reason: '$path still hard-codes an English production string');
+      }
+      final en = _arb('en');
+      final ar = _arb('ar');
+      for (final key in ['phoneSignInUnavailable', 'phoneSignUpUnavailable']) {
+        expect(en[key], isA<String>(), reason: 'en: $key');
+        expect(ar[key], isA<String>(), reason: 'ar: $key');
+      }
+    });
+
+    test('no fake phone authentication was introduced', () {
+      // Restoring presentation is not permission to invent the backend.
+      final login =
+          _read('lib/src/viewmodels/Signup-Login/login_viewmodel.dart');
+      final signup =
+          _read('lib/src/viewmodels/Signup-Login/signup_viewmodel.dart');
+      expect(login, contains('phoneSignInSupported'));
+      expect(signup, contains('phoneSignUpSupported'));
+      for (final source in [login, signup]) {
+        expect(source, isNot(contains('signInWithOtp')),
+            reason: 'no new Supabase phone auth architecture in this task');
+        expect(source, isNot(contains('verifyOTP(')),
+            reason: 'phone OTP belongs to the signed-in phone-change flow');
+      }
     });
   });
 }

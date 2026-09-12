@@ -16,6 +16,12 @@
 - Preserve Firebase behavior only for sections not yet migrated.
 - One checkpoint/problem at a time.
 - Do not modify unrelated features.
+- Do not remove, hide, redesign or alter existing user-facing UI or features
+  unless the product owner explicitly authorized that UI change. A feature whose
+  backend is unfinished, deferred or legacy is still the owner's to keep:
+  report the real runtime capability instead of hiding the entry point.
+- A scoped UI task authorizes only the screens it names. Report anything else
+  worth changing as backlog; do not implement it.
 - Do not commit unless explicitly requested.
 - Do not deploy/apply migrations unless explicitly requested.
 - Static/unit tests do not prove production behavior.

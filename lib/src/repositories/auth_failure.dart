@@ -37,6 +37,17 @@ enum AuthFailureCode {
   sameEmail,
   accountChanged,
   noPendingEmailChange,
+
+  /// The current password supplied for a password change was rejected.
+  invalidCurrentPassword,
+
+  /// The new password is already the account's current password.
+  samePassword,
+
+  /// The backend wants a fresh reauthentication before the password may be
+  /// changed — Supabase's "Secure password change" setting.
+  reauthenticationRequired,
+
   unknown,
 }
 
@@ -381,6 +392,101 @@ class AuthFailure implements Exception {
       }
     }
     return typed(AuthFailureCode.unknown, 'Email change failed.');
+  }
+
+  /// Maps a Supabase password failure to a fixed domain outcome.
+  ///
+  /// Provider messages and the original exception are deliberately discarded,
+  /// exactly as in [AuthFailure.fromSupabaseEmailChange]: nothing that a
+  /// password screen renders may carry backend prose, a token, a nonce or the
+  /// password itself.
+  ///
+  /// [AuthWeakPasswordException] is checked before the general
+  /// [sb.AuthException] branch because it is a subclass of it, and its
+  /// `reasons` list is deliberately not carried: the local policy already
+  /// tells the user what a password needs, in their own language.
+  factory AuthFailure.fromSupabasePassword(Object exception) {
+    if (exception is AuthFailure) return exception;
+
+    AuthFailure typed(AuthFailureCode code, String message) =>
+        AuthFailure(code: code, message: message);
+
+    if (exception is TimeoutException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    if (exception is sb.AuthSessionMissingException) {
+      return typed(AuthFailureCode.sessionExpired, 'No active session.');
+    }
+    if (exception is sb.AuthWeakPasswordException) {
+      return typed(AuthFailureCode.weakPassword, 'The password is too weak.');
+    }
+    if (exception is sb.AuthRetryableFetchException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    if (exception is sb.AuthException) {
+      switch (exception.code) {
+        case 'weak_password':
+        case 'validation_failed':
+          return typed(
+            AuthFailureCode.weakPassword,
+            'The password is too weak.',
+          );
+        case 'same_password':
+          return typed(
+            AuthFailureCode.samePassword,
+            'The new password matches the current one.',
+          );
+        // GoTrue reports a rejected `current_password` as a credential
+        // mismatch. This branch is only reachable once the hosted
+        // "require current password" setting is enabled, which is also the
+        // only configuration in which the app collects a current password.
+        case 'invalid_credentials':
+          return typed(
+            AuthFailureCode.invalidCurrentPassword,
+            'The current password is incorrect.',
+          );
+        case 'reauthentication_needed':
+        case 'reauthentication_not_valid':
+          return typed(
+            AuthFailureCode.reauthenticationRequired,
+            'Reauthentication is required.',
+          );
+        case 'over_email_send_rate_limit':
+        case 'over_request_rate_limit':
+        case 'too_many_requests':
+          return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+        case 'otp_expired':
+        case 'flow_state_expired':
+        case 'flow_state_not_found':
+          return typed(
+            AuthFailureCode.otpInvalidOrExpired,
+            'The link is invalid or has expired.',
+          );
+        case 'session_not_found':
+        case 'session_expired':
+        case 'session_missing':
+        case 'bad_jwt':
+        case 'user_not_found':
+          return typed(AuthFailureCode.sessionExpired, 'Session is invalid.');
+        case 'email_provider_disabled':
+        case 'signup_disabled':
+          return typed(
+            AuthFailureCode.providerUnavailable,
+            'Password operations are unavailable for this account.',
+          );
+      }
+      if (exception.statusCode == '429') {
+        return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+      }
+      final message = exception.message.toLowerCase();
+      if (message.contains('network') ||
+          message.contains('connection') ||
+          message.contains('socket') ||
+          message.contains('failed host lookup')) {
+        return typed(AuthFailureCode.network, 'The request did not complete.');
+      }
+    }
+    return typed(AuthFailureCode.unknown, 'The password operation failed.');
   }
 
   /// Reads the Supabase error code from a raw error body, or null.

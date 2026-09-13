@@ -17,6 +17,7 @@ class NotificationViewModel extends ChangeNotifier {
   int _unreadCount = 0;
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  bool _feedUnavailable = false;
   String? _userId;
 
   List<NotificationModel> get notifications => _notifications;
@@ -24,6 +25,11 @@ class NotificationViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isLoadingMore => _isLoadingMore;
   bool get isEmpty => _notifications.isEmpty && !_isLoading;
+
+  /// True when the live notification feed could not be established. Presented
+  /// as "no notifications" rather than as an error, because nothing about the
+  /// account is wrong.
+  bool get isFeedUnavailable => _feedUnavailable;
 
   void attachUser(String? userId) {
     if (_userId == userId) {
@@ -35,6 +41,7 @@ class NotificationViewModel extends ChangeNotifier {
     _unreadSubscription?.cancel();
     _notifications = const [];
     _unreadCount = 0;
+    _feedUnavailable = false;
     _isLoading = true;
     notifyListeners();
 
@@ -44,17 +51,44 @@ class NotificationViewModel extends ChangeNotifier {
       return;
     }
 
-    _notificationSubscription =
-        _repository.watchLatestNotifications(userId).listen((items) {
-      _notifications = items;
-      _isLoading = false;
-      notifyListeners();
-    });
+    // Both subscriptions carry an `onError`. A Supabase Realtime channel that
+    // is refused — `RealtimeSubscribeException`, a dropped socket, a filter the
+    // server rejects — otherwise surfaces as an unhandled async error that
+    // pauses the debugger repeatedly and can reach the user as a crash. A
+    // notification feed failing is never a reason to change what the app shows
+    // about the account, so the handlers settle the loading state and nothing
+    // else: no sign-out, no auth mutation, and no logging of the payload.
+    _notificationSubscription = _repository
+        .watchLatestNotifications(userId)
+        .listen(
+      (items) {
+        _notifications = items;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (Object error) => _handleFeedError(userId, error),
+    );
 
-    _unreadSubscription = _repository.watchUnreadCount(userId).listen((count) {
-      _unreadCount = count;
-      notifyListeners();
-    });
+    _unreadSubscription = _repository.watchUnreadCount(userId).listen(
+      (count) {
+        _unreadCount = count;
+        notifyListeners();
+      },
+      onError: (Object error) => _handleFeedError(userId, error),
+    );
+  }
+
+  /// Records that the notification feed is unavailable for [userId].
+  ///
+  /// Deliberately narrow. It never touches authentication, never clears the
+  /// session, and never rethrows. The error's runtime type is kept for
+  /// diagnostics; its message is not, because a provider error can carry a
+  /// filter, a row or a token fragment.
+  void _handleFeedError(String userId, Object error) {
+    if (_userId != userId) return;
+    _feedUnavailable = true;
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> loadMore() async {

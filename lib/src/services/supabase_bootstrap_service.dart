@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 
 import 'auth_callback_coordinator.dart';
+import 'password_recovery_state_store.dart';
 import 'supabase_secure_storage.dart';
 
 /// Initializes the Supabase client alongside the existing Firebase backend.
@@ -41,6 +42,12 @@ abstract final class SupabaseBootstrapService {
         ),
       ).timeout(const Duration(seconds: 10));
       _initialized = true;
+      // Must complete before the auth pipeline publishes its first identity.
+      // A recovery session restored from storage announces itself as an
+      // ordinary `initialSession`, so this is the only thing that can tell the
+      // router the restored session is a recovery, and it has to be readable
+      // synchronously by the time the first redirect runs.
+      await PasswordRecoveryStateStore.prime();
       // Owns the one application-level listener for the callbacks Supabase
       // just declined. Started after initialization so a link that arrives
       // during startup is still classified.

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config/supabase_config.dart';
+
 /// What an incoming `brokerwallet://auth/callback` deep link actually is.
 ///
 /// Supabase's own deep-link observer only ever *exchanges* a link; everything
@@ -37,9 +39,23 @@ class AuthCallbackEvent {
     required this.kind,
     this.errorCode,
     this.error,
+    this.isPasswordRecovery = false,
   });
 
   final AuthCallbackKind kind;
+
+  /// Whether this callback arrived at the dedicated password-recovery address.
+  ///
+  /// This is ownership, not a hint. Supabase is told to send recovery links to
+  /// [SupabaseConfig.passwordRecoveryCallbackUri] and nothing else is, so a
+  /// callback at that address belongs to password recovery and a callback at
+  /// [SupabaseConfig.authCallbackUri] does not â whatever parameters either
+  /// carries, and whatever GoTrue chose to include or omit.
+  ///
+  /// It deliberately replaces an earlier `type` hint: GoTrue does not
+  /// guarantee a `type` parameter on an error redirect, so that signal could
+  /// never be relied on for ownership.
+  final bool isPasswordRecovery;
 
   /// Supabase's `error_code`, e.g. `otp_expired`. Never a message.
   final String? errorCode;
@@ -49,8 +65,8 @@ class AuthCallbackEvent {
 
   /// Safe to log: contains no token, address or provider prose.
   @override
-  String toString() =>
-      'AuthCallbackEvent(${kind.name}, error: $error, errorCode: $errorCode)';
+  String toString() => 'AuthCallbackEvent(${kind.name}, error: $error, '
+      'errorCode: $errorCode, passwordRecovery: $isPasswordRecovery)';
 }
 
 /// Merges the query and fragment parameters of an auth callback.
@@ -99,17 +115,45 @@ AuthCallbackKind classifyAuthCallback(Uri uri) {
 bool supabaseShouldExchangeAuthCallback(Uri uri) =>
     classifyAuthCallback(uri) == AuthCallbackKind.session;
 
+/// The address Supabase is told to send password-recovery links to.
+final Uri _passwordRecoveryCallback =
+    Uri.parse(SupabaseConfig.passwordRecoveryCallbackUri);
+
+/// A path with any trailing slash removed, so `/x` and `/x/` compare equal.
+String _normalizedPath(Uri uri) {
+  final path = uri.path;
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.substring(0, path.length - 1);
+  }
+  return path;
+}
+
+/// Whether [uri] is the dedicated password-recovery callback.
+///
+/// Scheme, host and path must all match exactly. Scheme and host are compared
+/// case-insensitively because the OS may normalise them; the path is compared
+/// exactly, apart from a trailing slash, so no other auth callback can match.
+/// No parameter of the link participates, which is what makes this usable on an
+/// expired link that carries nothing but an error code.
+bool isPasswordRecoveryCallback(Uri uri) =>
+    uri.scheme.toLowerCase() == _passwordRecoveryCallback.scheme &&
+    uri.host.toLowerCase() == _passwordRecoveryCallback.host &&
+    _normalizedPath(uri) == _normalizedPath(_passwordRecoveryCallback);
+
 /// Builds the application-owned event for a callback Supabase will not exchange.
 AuthCallbackEvent describeAuthCallback(Uri uri) {
   final kind = classifyAuthCallback(uri);
+  final isRecovery = isPasswordRecoveryCallback(uri);
+
   if (kind != AuthCallbackKind.error) {
-    return AuthCallbackEvent(kind: kind);
+    return AuthCallbackEvent(kind: kind, isPasswordRecovery: isRecovery);
   }
   final parameters = _callbackParameters(uri);
   return AuthCallbackEvent(
     kind: kind,
     error: parameters['error'],
     errorCode: parameters['error_code'],
+    isPasswordRecovery: isRecovery,
   );
 }
 

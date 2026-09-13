@@ -122,6 +122,10 @@ class EmailChangeViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// through the shared auth-event pipeline, not through this path.
   void _handleAuthCallback(AuthCallbackEvent event) {
     if (!isAvailable) return;
+    // Password recovery has its own callback address. A callback that arrived
+    // there is never this flow's, so an expired recovery link can no longer
+    // surface as an email-change error.
+    if (event.isPasswordRecovery) return;
 
     switch (event.kind) {
       case AuthCallbackKind.session:

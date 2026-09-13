@@ -71,6 +71,95 @@ abstract class PhoneVerificationCapability {
   });
 }
 
+
+/// A password-recovery session that Supabase established from a recovery deep
+/// link.
+///
+/// Its existence means GoTrue exchanged a `type=recovery` callback and the
+/// client now holds a real session for [ownerUid]. It is authoritative
+/// identity, not a client guess: the uid comes from the session Supabase
+/// created, never from the link.
+class PasswordRecoverySession {
+  const PasswordRecoverySession({
+    required this.ownerUid,
+    required this.startedAt,
+  });
+
+  final String ownerUid;
+  final DateTime startedAt;
+}
+
+/// Password operations for a backend that owns passwords itself.
+///
+/// A separate capability rather than part of [AuthRepository] for the same
+/// reason as [PhoneVerificationCapability]: the legacy Firebase contract is
+/// shaped around its own reauthentication model and stays unchanged, and only
+/// a backend that can genuinely perform these operations implements this.
+abstract class PasswordCapability {
+  /// Whether the backend verifies [changePassword]'s `currentPassword`.
+  ///
+  /// This is a *backend* property, not a UI preference. When it is false the
+  /// current password is neither collected nor sent, because sending a value
+  /// the server will not check — or checking it client-side with a second
+  /// sign-in — would claim a guarantee that does not exist.
+  bool get verifiesCurrentPassword;
+
+  /// Requests a password-reset email for [email].
+  ///
+  /// Completes normally whether or not an account exists. Callers must present
+  /// one message for both outcomes: the result of this call is not permitted
+  /// to reveal whether an address is registered.
+  Future<void> requestPasswordReset(String email);
+
+  /// Changes the password of the **currently signed-in** account.
+  ///
+  /// Ownership comes from the live session, and the account the change lands
+  /// on is re-checked against the account that started it. [currentPassword]
+  /// is sent only when [verifiesCurrentPassword] is true. Throws
+  /// [AuthFailure].
+  Future<void> changePassword({
+    required String newPassword,
+    String? currentPassword,
+  });
+
+  /// Recovery sessions Supabase established from a recovery deep link.
+  ///
+  /// Fed by the repository's existing single Supabase auth subscription, so
+  /// observing recovery adds no second auth listener and no second session
+  /// authority.
+  Stream<PasswordRecoverySession> get passwordRecoverySessions;
+
+  /// Whether the live session exists **only** to set a new password.
+  ///
+  /// Synchronous on purpose. A recovery session is a perfectly valid session at
+  /// the transport level, so the application must be able to ask this in the
+  /// same turn it learns about the session. Asking on a second stream lets the
+  /// router see an authenticated session before it learns that the session is a
+  /// recovery, which is exactly how a recovery link reached Home.
+  ///
+  /// Implementations must have this answer correct *before* they publish the
+  /// identity for that session, and must bind it to the account it belongs to
+  /// so it can never describe a different one.
+  bool get isPasswordRecoveryActive;
+
+  /// Ends a recovery, whether it completed or was cancelled.
+  ///
+  /// Clears the recovery marker and signs the recovery session out, so a
+  /// session that existed only to reset a password never survives as an
+  /// ordinary logged-in session. Safe to call when there is nothing to end.
+  Future<void> endPasswordRecovery();
+}
+
+/// The password capability of [repository], or null when its backend has none.
+///
+/// Shaped like `AuthViewModel.phoneVerification` and `.emailChange`: the cast
+/// is explicit because [PasswordCapability] is not a subtype of
+/// [AuthRepository], so an `is` test cannot promote across the two.
+PasswordCapability? passwordCapabilityOf(AuthRepository? repository) {
+  if (repository is! PasswordCapability) return null;
+  return repository as PasswordCapability;
+}
+
 /// Abstract repository interface for authentication operations
 /// This allows us to easily switch between different authentication backends
 /// (Firebase, Supabase, etc.) without changing business logic

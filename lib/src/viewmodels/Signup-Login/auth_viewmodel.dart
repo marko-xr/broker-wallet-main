@@ -137,6 +137,14 @@ class AuthViewModel extends ChangeNotifier {
 
   UserModel? _currentUser;
   AuthStatus _status = AuthStatus.unknown;
+
+  /// Whether the current session exists only to set a new password.
+  ///
+  /// Captured from the repository in the same turn the session identity is
+  /// applied, so [status] and this flag are always a single consistent
+  /// snapshot. That is what makes it impossible for the router to see an
+  /// authenticated session before it sees that the session is a recovery.
+  bool _passwordRecoveryActive = false;
   AuthOperation _operation = AuthOperation.idle;
   ProfileHydrationStatus _profileHydration = ProfileHydrationStatus.unresolved;
 
@@ -220,6 +228,14 @@ class AuthViewModel extends ChangeNotifier {
   bool get isLoading => _operation != AuthOperation.idle;
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
+
+  /// True while the live session is a Supabase password-recovery session.
+  ///
+  /// A recovery session is authenticated at the Supabase transport level but is
+  /// deliberately **not** application-authenticated: while this is true the
+  /// only reachable screen is the reset screen. It is published together with
+  /// [status] by the single notification this class already emits.
+  bool get isPasswordRecoveryActive => _passwordRecoveryActive;
 
   /// Progress of profile hydration for the current session.
   ProfileHydrationStatus get profileHydration => _profileHydration;
@@ -581,6 +597,22 @@ class AuthViewModel extends ChangeNotifier {
     return repository as PhoneVerificationCapability;
   }
 
+  /// Password operations for backends that own passwords themselves.
+  PasswordCapability? get passwordCapability {
+    final repository = _authRepository;
+    if (repository is! PasswordCapability) return null;
+    return repository as PasswordCapability;
+  }
+
+  /// Re-reads recovery ownership from the repository.
+  ///
+  /// Always called immediately before `notifyListeners()` on a session change,
+  /// never on a timer and never from a second stream.
+  void _refreshPasswordRecovery() {
+    _passwordRecoveryActive = passwordCapability?.isPasswordRecoveryActive
+        ?? false;
+  }
+
   /// Supabase-native email change for the current session. Pending state stays
   /// in Supabase Auth (`User.newEmail`) and is never copied into UserModel as
   /// though it were the confirmed address.
@@ -911,6 +943,7 @@ class AuthViewModel extends ChangeNotifier {
     _hydrationToken++;
     _currentUser = null;
     _status = AuthStatus.unauthenticated;
+    _passwordRecoveryActive = false;
     _profileHydration = ProfileHydrationStatus.unresolved;
     _resolvingImageMediaId = null;
     _discardLastKnownGood();
@@ -1008,6 +1041,7 @@ class AuthViewModel extends ChangeNotifier {
       _hydrationToken++;
       _currentUser = null;
       _status = AuthStatus.unauthenticated;
+      _passwordRecoveryActive = false;
       _profileHydration = ProfileHydrationStatus.unresolved;
       _resolvingImageMediaId = null;
       _discardLastKnownGood();
@@ -1041,6 +1075,10 @@ class AuthViewModel extends ChangeNotifier {
 
     _currentUser = resolved;
     _recomputeStatus();
+    // Read in the same turn as the identity it describes. The repository has
+    // already resolved recovery ownership for this session before publishing
+    // the identity, so there is no window in which this is stale.
+    _refreshPasswordRecovery();
     _refreshDisplayName(resolved);
     // Deliberately no cache write here. A session-identity event carries only
     // signup-era metadata with no `profileMediaId`, so writing it would

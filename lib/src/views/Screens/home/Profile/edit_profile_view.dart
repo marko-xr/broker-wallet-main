@@ -5,6 +5,7 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_change_pending_sheet.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_change_sheet.dart';
+import 'package:broker_wallet/src/Views/Widgets/change_password_sheet.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_verification_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_otp_dialog.dart';
@@ -21,6 +22,9 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/profile_text_field.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/edit_profile_viewmodel.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:broker_wallet/src/viewmodels/change_password_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/email_change_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
@@ -202,6 +206,11 @@ class _EditProfileViewState extends State<EditProfileView> {
                             _SectionLabel(loc.translate('phoneNumber')),
                             const SizedBox(height: 8),
                             _buildPhoneSection(context, vm, colors, texts, loc),
+                            const SizedBox(height: 20),
+
+                            _SectionLabel(loc.translate('password')),
+                            const SizedBox(height: 8),
+                            _buildPasswordSection(context, colors, texts, loc),
                             const SizedBox(height: 28),
 
                             // Save owns the name and photo only. Email and
@@ -1377,6 +1386,94 @@ class _EditProfileViewState extends State<EditProfileView> {
           ),
         ],
       ),
+    );
+  }
+
+  /// The account's password row.
+  ///
+  /// Deliberately the same actionable card as the "Add phone number" row, with
+  /// the same decoration, leading icon and chevron, so the new section reads as
+  /// part of the existing form rather than as something bolted on. The password
+  /// itself is never shown, and Save does not own it: changing it is its own
+  /// confirmed flow, exactly like email and phone.
+  Widget _buildPasswordSection(
+    BuildContext context,
+    ColorScheme colors,
+    TextTheme texts,
+    AppLocalizations loc,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _openChangePasswordSheet,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
+          decoration: _fieldCardDecoration(colors),
+          child: Row(
+            children: [
+              _FieldLeadingIcon(
+                icon: Icons.lock_outline,
+                colors: colors,
+                emphasized: true,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      loc.translate('changePassword'),
+                      style: texts.bodyMedium?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      loc.translate('changePasswordRowHint'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: texts.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.primary,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openChangePasswordSheet() async {
+    final repository = RepositoryProvider.instance.authRepository;
+    final viewModel = ChangePasswordViewModel(
+      gateway: passwordCapabilityOf(repository),
+      authRepository: repository,
+    );
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChangePasswordSheet(viewModel: viewModel),
+    );
+    viewModel.dispose();
+    if (changed != true || !mounted) return;
+    final loc = AppLocalizations.of(context);
+    Fluttertoast.showToast(
+      msg: loc.translate('passwordUpdated'),
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
+import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,8 @@ class SupabaseAuthRepository
     implements
         AuthRepository,
         PhoneVerificationCapability,
-        EmailChangeCapability {
+        EmailChangeCapability,
+        PasswordCapability {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -45,7 +47,22 @@ class SupabaseAuthRepository
   final StreamController<EmailChangeState?> _emailChangeController =
       StreamController<EmailChangeState?>.broadcast();
 
+  /// Recovery sessions, fanned out from the same single Supabase auth
+  /// subscription as identity. Deliberately not replayed to late
+  /// subscribers: a recovery session is an event in time, and replaying a
+  /// stale one would re-open the reset screen long after the reset finished.
+  final StreamController<PasswordRecoverySession> _passwordRecoveryController =
+      StreamController<PasswordRecoverySession>.broadcast();
+
   StreamSubscription<AuthState>? _supabaseAuthSubscription;
+
+  /// The account whose live session is a password recovery, or null.
+  ///
+  /// Assigned before the matching identity is published, so a consumer that
+  /// reads [isPasswordRecoveryActive] while handling that identity sees the
+  /// truth for the same session rather than the previous one.
+  String? _passwordRecoveryUid;
+
   bool _pipelineStarted = false;
   UserModel? _latestIdentity;
   bool _hasLatestIdentity = false;
@@ -132,14 +149,76 @@ class SupabaseAuthRepository
     if (_pipelineStarted) return;
     _pipelineStarted = true;
 
+    // A recovery session that survived process death carries no marker of its
+    // own: `recoverSession` restores it and announces `initialSession`, the
+    // same event an ordinary restored session produces. The persisted owner id
+    // is therefore read *first*, so the very first identity this pipeline
+    // publishes already knows what kind of session it belongs to.
+    _passwordRecoveryUid = PasswordRecoveryStateStore.ownerUid;
+
     // The restored session is available synchronously once Supabase has been
     // initialized, so bootstrap no longer waits on any network round trip.
     _publishIdentity(_client.auth.currentUser);
 
     _supabaseAuthSubscription = _client.auth.onAuthStateChange.listen(
-      (state) => _publishIdentity(state.session?.user),
+      _handleAuthState,
       onError: _identityController.addError,
     );
+  }
+
+  /// The one place a Supabase auth event is interpreted.
+  ///
+  /// Identity is published for every event, exactly as before. A password
+  /// recovery is additionally announced, because it is the only event that
+  /// tells the application the session it just received came from a recovery
+  /// link rather than from an ordinary sign-in. Nothing here creates,
+  /// refreshes or invalidates a session.
+  void _handleAuthState(AuthState state) {
+    final user = state.session?.user;
+
+    // Recovery ownership is resolved BEFORE the identity is published. This
+    // ordering is the fix for the real-device failure: publishing identity
+    // first let `AuthViewModel` reach `authenticated`, and the router reach
+    // Home, a microtask before anything could say the session was a recovery.
+    PasswordRecoverySession? started;
+    switch (state.event) {
+      case AuthChangeEvent.passwordRecovery:
+        // Supabase emits this only after it has exchanged a `type=recovery`
+        // callback, so the uid is authoritative session identity. A recovery
+        // event without a session cannot be acted on and is dropped.
+        if (user != null) {
+          _passwordRecoveryUid = user.id;
+          unawaited(PasswordRecoveryStateStore.remember(user.id));
+          started = PasswordRecoverySession(
+            ownerUid: user.id,
+            startedAt: DateTime.now().toUtc(),
+          );
+        }
+      case AuthChangeEvent.signedIn:
+      case AuthChangeEvent.signedOut:
+        // An ordinary sign-in and an authoritative sign-out both end any
+        // recovery. Clearing on `signedIn` is what stops a marker left behind
+        // by an abandoned recovery from following the account into its next
+        // normal session.
+        _clearPasswordRecovery();
+      case _:
+        break;
+    }
+
+    _publishIdentity(user);
+
+    if (started != null && !_passwordRecoveryController.isClosed) {
+      _passwordRecoveryController.add(started);
+    }
+  }
+
+  void _clearPasswordRecovery() {
+    if (_passwordRecoveryUid == null &&
+        PasswordRecoveryStateStore.ownerUid == null) {
+      return;
+    }
+    _passwordRecoveryUid = null;
+    unawaited(PasswordRecoveryStateStore.forget());
   }
 
   void _publishIdentity(User? user) {
@@ -167,6 +246,7 @@ class SupabaseAuthRepository
     _pipelineStarted = false;
     await _identityController.close();
     await _emailChangeController.close();
+    await _passwordRecoveryController.close();
   }
 
   @override
@@ -373,19 +453,116 @@ class SupabaseAuthRepository
     return isEmailVerified();
   }
 
+  /// Compatibility for the backend-neutral legacy contract. Every Supabase
+  /// path converges on [requestPasswordReset], so the generic contract and the
+  /// capability cannot drift apart.
   @override
-  Future<void> sendPasswordResetEmail(String email) async {
+  Future<void> sendPasswordResetEmail(String email) =>
+      requestPasswordReset(email);
+
+  // ---------------------------------------------------------------------------
+  // PasswordCapability
+  // ---------------------------------------------------------------------------
+
+  /// Sending a current password that the server will not check would claim a
+  /// verification that never happens, so this follows the hosted setting and
+  /// nothing else.
+  @override
+  bool get verifiesCurrentPassword =>
+      SupabaseConfig.requireCurrentPasswordOnChange;
+
+  @override
+  Future<void> requestPasswordReset(String email) async {
     try {
-      await _client.auth.resetPasswordForEmail(email.trim().toLowerCase());
-    } on AuthException catch (e) {
-      throw AuthFailure.fromSupabase(e);
-    } catch (e) {
-      if (e is AuthFailure) rethrow;
-      throw AuthFailure(
-        code: AuthFailureCode.unknown,
-        message: 'Failed to send password reset email: $e',
-        originalException: e,
+      await _client.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        // Deliberately *not* the shared auth callback. A recovery link that
+        // succeeds is identifiable from `AuthChangeEvent.passwordRecovery`,
+        // but one that has expired is never exchanged at all and comes back
+        // as a bare error redirect. Giving recovery its own address is what
+        // lets the application recognise that case without guessing.
+        redirectTo: SupabaseConfig.passwordRecoveryCallbackUri,
       );
+    } catch (e) {
+      throw AuthFailure.fromSupabasePassword(e);
+    }
+  }
+
+  /// Changes the password of the account that owns the live session.
+  ///
+  /// The account is captured before the call and re-checked after it, against
+  /// the session itself rather than any caller-supplied id, so a sign-out or
+  /// an account switch that lands mid-request can never be reported as a
+  /// successful change on the wrong account.
+  ///
+  /// This is the same call for an ordinary Change Password and for the final
+  /// step of a recovery, because Supabase treats a recovery session as a
+  /// normal session â which is exactly why the recovery *context* is tracked
+  /// separately by the application rather than inferred here.
+  @override
+  Future<void> changePassword({
+    required String newPassword,
+    String? currentPassword,
+  }) async {
+    final user = _client.auth.currentUser;
+    if (user == null || _client.auth.currentSession == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    final ownerUid = user.id;
+
+    final UserResponse response;
+    try {
+      response = await _client.auth.updateUser(
+        UserAttributes(
+          password: newPassword,
+          currentPassword: verifiesCurrentPassword ? currentPassword : null,
+        ),
+      );
+    } catch (e) {
+      throw AuthFailure.fromSupabasePassword(e);
+    }
+
+    final updated = response.user;
+    if (updated == null ||
+        updated.id != ownerUid ||
+        _client.auth.currentUser?.id != ownerUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+  }
+
+  @override
+  Stream<PasswordRecoverySession> get passwordRecoverySessions {
+    _startIdentityPipeline();
+    return _passwordRecoveryController.stream;
+  }
+
+  /// True only while the live session is the one the recovery was established
+  /// for. Binding to the uid means a marker can never describe a session that
+  /// belongs to someone else, and a signed-out client is never "in recovery".
+  @override
+  bool get isPasswordRecoveryActive {
+    _startIdentityPipeline();
+    final uid = _passwordRecoveryUid;
+    if (uid == null) return false;
+    return _client.auth.currentUser?.id == uid;
+  }
+
+  @override
+  Future<void> endPasswordRecovery() async {
+    _clearPasswordRecovery();
+    if (_client.auth.currentSession == null) return;
+    try {
+      await _client.auth.signOut();
+    } catch (_) {
+      // The recovery marker is already gone, so the gate is released either
+      // way. A sign-out that cannot reach the server must not strand the user
+      // on the reset screen.
     }
   }
 

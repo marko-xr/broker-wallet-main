@@ -9,8 +9,11 @@ import 'package:broker_wallet/src/services/auth_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/common/utils/phone_utils.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/repositories/auth_failure.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/password_reset_request_viewmodel.dart';
+import 'package:broker_wallet/src/views/Widgets/password_reset_request_sheet.dart';
 
 enum LoginMethod { phone, email }
 
@@ -300,8 +303,38 @@ class SignInViewModel extends ChangeNotifier {
     _showToast('Google sign in coming soon', Colors.orange);
   }
 
-  void forgotPassword(BuildContext context) {
-    _showToast('Forgot password coming soon', Colors.orange);
+  /// Opens the password-reset request sheet.
+  ///
+  /// This is the Login screen's existing "Forgot password?" action, which until
+  /// now only reported that the feature was unavailable. Nothing about the
+  /// Login layout changes: only what this action does.
+  ///
+  /// The typed email is carried in as a convenience. It is never used to look
+  /// the account up, and the sheet reports the same outcome whether or not the
+  /// address belongs to an account.
+  Future<void> forgotPassword(BuildContext context) async {
+    final repository = RepositoryProvider.instance.authRepository;
+    final gateway = passwordCapabilityOf(repository);
+    if (gateway == null) {
+      _showToast(
+        AppLocalizations.of(context).translate('passwordResetUnavailable'),
+        Colors.red,
+      );
+      return;
+    }
+
+    final initialEmail = emailController.text.trim();
+    final viewModel = PasswordResetRequestViewModel(gateway: gateway);
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PasswordResetRequestSheet(
+        viewModel: viewModel,
+        initialEmail: initialEmail,
+      ),
+    );
+    viewModel.dispose();
   }
 
   Future<void> _handlePhoneCredential(

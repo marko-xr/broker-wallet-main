@@ -20,6 +20,12 @@ reaches a commit and `git diff --check` stays clean — but `dart format` and
 plain `diff` will report those lines as changed. Treat a format/diff hit whose
 content is byte-identical as a line-ending artifact, not a defect.
 
+Known trap: `pumpEventQueue()` hangs inside `testWidgets`. The test body runs
+in a fake-async zone, so the event queue only advances when the tester pumps.
+In a widget test, pump the widget first and then drive streams with
+`await tester.pump()` / `pumpAndSettle()`; keep `pumpEventQueue()` for plain
+`test()` bodies, where it works normally.
+
 Known trap: an `AuthException` from Supabase's deep-link observer does not
 reach you as a thrown exception. `SupabaseAuth._handleDeeplink` catches it and
 calls `notifyException`, which re-publishes it as an *error on the

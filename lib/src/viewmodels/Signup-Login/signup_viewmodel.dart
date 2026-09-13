@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/services/auth_service.dart';
+import 'package:broker_wallet/src/common/utils/password_policy.dart';
 import 'package:broker_wallet/src/common/utils/phone_utils.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
@@ -239,23 +240,28 @@ class SignUpViewModel extends ChangeNotifier {
       }
     }
 
-    // Validate password.
-    if (password.isEmpty) {
-      _passwordError = 'Password is required';
+    // Validate password against the one canonical policy, so Sign-up, Change
+    // Password and Reset Password can never disagree about what a valid
+    // password is. The rules are the ones Sign-up already enforced; the
+    // messages below are its existing strings, unchanged, because this is a
+    // validation change and not a Sign-up UI change.
+    final passwordValidation = PasswordPolicy.validate(password);
+    if (!passwordValidation.isValid) {
       isValid = false;
-    } else if (password.length < 8) {
-      _passwordError = 'Password must be at least 8 characters';
-      isValid = false;
-    } else {
-      // Check password strength
-      final hasUppercase = password.contains(RegExp(r'[A-Z]'));
-      final hasLowercase = password.contains(RegExp(r'[a-z]'));
-      final hasDigits = password.contains(RegExp(r'[0-9]'));
-
-      if (!hasUppercase || !hasLowercase || !hasDigits) {
-        _passwordError =
-            'Password must contain uppercase, lowercase, and numbers';
-        isValid = false;
+      switch (passwordValidation.violation!) {
+        case PasswordViolation.empty:
+          _passwordError = 'Password is required';
+        case PasswordViolation.tooLong:
+          _passwordError = 'Password must be at most '
+              '${PasswordPolicy.maxLengthBytes} characters';
+        case PasswordViolation.requirementsUnmet:
+          _passwordError = password.length < PasswordPolicy.minLength
+              ? 'Password must be at least ${PasswordPolicy.minLength} characters'
+              : 'Password must contain uppercase, lowercase, and numbers';
+        case PasswordViolation.confirmationEmpty:
+        case PasswordViolation.mismatch:
+          // Reported by the confirmation field below, never here.
+          break;
       }
     }
 

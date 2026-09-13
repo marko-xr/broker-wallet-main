@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/signup_view.dart'
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/login_view.dart';
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/email_verification_view.dart';
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/phone_otp_view.dart';
+import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/reset_password_view.dart';
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/welcome_view.dart';
 
 import 'package:broker_wallet/src/Views/Screens/ViewAdd/add_brokers_view.dart';
@@ -83,6 +84,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
@@ -105,7 +107,9 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     final authVM = Provider.of<AuthViewModel>(context, listen: false);
-    _router = _createRouter(authVM);
+    final recoveryVM =
+        Provider.of<PasswordRecoveryViewModel>(context, listen: false);
+    _router = _createRouter(authVM, recoveryVM);
   }
 
   @override
@@ -180,6 +184,9 @@ const _authRoutes = <String>{
   '/sign-in',
 };
 
+/// The Supabase password-recovery destination. Guarded, never linked to.
+const String _resetPasswordRoute = '/reset-password';
+
 /// Flows that own their own routing and are deliberately exempt.
 const _selfRoutedFlows = <String>{
   '/email-verification',
@@ -196,10 +203,40 @@ const _selfRoutedFlows = <String>{
 ///
 /// [status] is bootstrap state. Auth *operation* state (a sign-in in flight)
 /// is deliberately not an input here.
-String? resolveAuthRedirect(AuthStatus status, String currentPath) {
+///
+/// [passwordRecoveryActive] is true only while a Supabase password recovery is
+/// unresolved. A recovery link produces a genuine session, so without this
+/// input the ordinary rules below would send the user straight to `/home` and
+/// the reset screen could never appear. It defaults to false, which is exactly
+/// the behaviour this function had before recovery existed.
+String? resolveAuthRedirect(
+  AuthStatus status,
+  String currentPath, {
+  bool passwordRecoveryActive = false,
+}) {
+  // The recovery gate is evaluated FIRST, ahead of the bootstrap gate.
+  //
+  // A password-recovery session is a real Supabase session, so every rule below
+  // would happily treat it as a normal login and route it to Home. It is also
+  // known before bootstrap resolves — it is restored from the persisted marker
+  // and from the auth event itself — so deferring it to the bootstrap gate is
+  // what let Home appear for a moment on a real device. While a recovery is
+  // unresolved there is exactly one reachable screen.
+  if (passwordRecoveryActive) {
+    return currentPath == _resetPasswordRoute ? null : _resetPasswordRoute;
+  }
+
   // Bootstrap must resolve before any application or auth route is selected.
   if (status == AuthStatus.unknown) {
     return currentPath == '/' ? null : '/';
+  }
+
+  // Without an active recovery the reset screen is not a place anyone may be.
+  // This is what stops it being opened as ordinary authenticated navigation.
+  // A finished or cancelled recovery always lands on Sign In rather than
+  // Welcome or Home: the password just changed, so the next step is to use it.
+  if (currentPath == _resetPasswordRoute) {
+    return status == AuthStatus.authenticated ? '/home' : '/sign-in';
   }
 
   // These flows manage their own routing.
@@ -234,7 +271,10 @@ String? resolveAuthRedirect(AuthStatus status, String currentPath) {
   return null;
 }
 
-GoRouter _createRouter(AuthViewModel authViewModel) {
+GoRouter _createRouter(
+  AuthViewModel authViewModel,
+  PasswordRecoveryViewModel passwordRecoveryViewModel,
+) {
   // Per-branch navigator keys (local is fine)
   final homeNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'homeBranch');
   final searchNavigatorKey =
@@ -247,9 +287,23 @@ GoRouter _createRouter(AuthViewModel authViewModel) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/',
-    refreshListenable: authViewModel,
-    redirect: (context, state) =>
-        resolveAuthRedirect(authViewModel.status, state.uri.path),
+    // Both inputs to `resolveAuthRedirect` must be able to re-run it. Merging
+    // them keeps GoRouter the single navigation authority instead of giving
+    // password recovery a router of its own.
+    refreshListenable: Listenable.merge(
+      [authViewModel, passwordRecoveryViewModel],
+    ),
+    redirect: (context, state) => resolveAuthRedirect(
+      authViewModel.status,
+      state.uri.path,
+      // Two sources, and deliberately so. `AuthViewModel` answers for a live
+      // recovery *session* and publishes that answer in the same notification
+      // as the session itself, which is what removes the race. The view model
+      // answers only for a recovery that has no session at all — a dead link —
+      // where there is nothing for the router to mistake for a login.
+      passwordRecoveryActive: authViewModel.isPasswordRecoveryActive ||
+          passwordRecoveryViewModel.holdsRoute,
+    ),
     routes: [
       GoRoute(
         path: '/',
@@ -292,6 +346,11 @@ GoRouter _createRouter(AuthViewModel authViewModel) {
           }
           return PhoneOtpView(args: args);
         },
+      ),
+
+      GoRoute(
+        path: _resetPasswordRoute,
+        builder: (context, state) => const ResetPasswordView(),
       ),
 
       GoRoute(

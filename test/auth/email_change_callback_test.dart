@@ -24,6 +24,14 @@ final _expiredCallback = Uri.parse(
 );
 final _sessionCallback =
     Uri.parse('brokerwallet://auth/callback?code=pkce-auth-code');
+
+/// An expired *password-recovery* link. Same parameters as [_expiredCallback],
+/// different address. Email Change must leave it alone.
+final _expiredRecoveryCallback = Uri.parse(
+  'brokerwallet://auth/reset-password'
+  '?error=access_denied&error_code=otp_expired'
+  '&error_description=Email+link+is+invalid+or+has+expired',
+);
 final _implicitSessionCallback = Uri.parse(
   'brokerwallet://auth/callback#access_token=header.payload.sig&refresh_token=r'
   '&expires_in=3600&token_type=bearer',
@@ -427,6 +435,48 @@ void main() {
       expect(event.toString(), isNot(contains('Email link is invalid')));
       expect(event.error, 'access_denied');
       expect(event.errorCode, 'otp_expired');
+    });
+
+    test('an expired password-recovery callback is left to password recovery',
+        () async {
+      // Before recovery had its own address this callback was
+      // indistinguishable from an expired email-change link, so it surfaced
+      // here as an email-change failure. It must now be ignored entirely.
+      final gateway = _Gateway(_pending());
+      addTearDown(gateway.close);
+      final callbacks = StreamController<AuthCallbackEvent>.broadcast();
+      addTearDown(callbacks.close);
+      final vm = _viewModel(gateway, callbacks.stream);
+      addTearDown(vm.dispose);
+      await pumpEventQueue();
+
+      final refreshesBefore = gateway.refreshes;
+      callbacks.add(describeAuthCallback(_expiredRecoveryCallback));
+      await pumpEventQueue();
+
+      expect(vm.errorKey, isNull);
+      expect(vm.noticeKey, isNull);
+      expect(gateway.refreshes, refreshesBefore,
+          reason: 'a callback at another flow address must not even trigger '
+              'an authoritative re-read here');
+      expect(vm.isPending, isTrue);
+    });
+
+    test('an expired email-change callback is still handled here', () async {
+      // The other half of the same guarantee: narrowing ownership must not
+      // stop Email Change from reporting its own dead link.
+      final gateway = _Gateway(_pending());
+      addTearDown(gateway.close);
+      final callbacks = StreamController<AuthCallbackEvent>.broadcast();
+      addTearDown(callbacks.close);
+      final vm = _viewModel(gateway, callbacks.stream);
+      addTearDown(vm.dispose);
+      await pumpEventQueue();
+
+      callbacks.add(describeAuthCallback(_expiredCallback));
+      await pumpEventQueue();
+
+      expect(vm.errorKey, 'emailChangeLinkExpired');
     });
 
     test('no fake server cancellation exists anywhere in the flow', () {

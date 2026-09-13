@@ -8,6 +8,8 @@ import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
 import 'package:broker_wallet/src/services/notification_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/signup_viewmodel.dart';
@@ -269,6 +271,19 @@ void main() async {
           lazy: true, // This ensures it's only created when first accessed
         ),
         // HomeViewModel must be lazy to avoid Firestore access before auth is ready
+        // Password recovery must be listening before any deep link can arrive,
+        // so this one is deliberately not lazy. It observes the repository's
+        // existing auth pipeline and adds no second session authority.
+        ChangeNotifierProvider(
+          create: (_) {
+            final repository = RepositoryProvider.instance.authRepository;
+            return PasswordRecoveryViewModel(
+              gateway: passwordCapabilityOf(repository),
+              authRepository: repository,
+            );
+          },
+          lazy: false,
+        ),
         ChangeNotifierProvider(
           create: (_) => HomeViewModel(),
           lazy: true,
@@ -296,7 +311,13 @@ void main() async {
             notifier ??= NotificationViewModel(
               repository: RepositoryProvider.instance.notificationRepository,
             );
-            notifier.attachUser(authVM.currentUser?.uid);
+            // A recovery session must not start any account-scoped background
+            // work. The router already keeps Home unreachable; passing null
+            // here means the Realtime notification channel is never opened
+            // even if some other surface were to read this provider.
+            notifier.attachUser(
+              authVM.isPasswordRecoveryActive ? null : authVM.currentUser?.uid,
+            );
             return notifier;
           },
         ),

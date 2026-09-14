@@ -65,7 +65,7 @@ class SettingsTile extends StatelessWidget {
             children: [
               if (switchLabel != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsetsDirectional.only(end: 8),
                   child: Text(
                     switchLabel!,
                     style: texts.bodySmall!.copyWith(

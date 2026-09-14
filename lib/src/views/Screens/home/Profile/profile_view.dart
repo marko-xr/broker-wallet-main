@@ -36,6 +36,13 @@ class ProfileView extends StatelessWidget {
           final resolvedName = vm.displayName.isNotEmpty
               ? vm.displayName
               : localization.translate('favoritesGuestUser');
+          final email = vm.currentUser?.email.trim() ?? '';
+          final phone = vm.currentUser?.phoneNumber?.trim() ?? '';
+          final identity = email.isNotEmpty
+              ? email
+              : phone.isNotEmpty
+                  ? phone
+                  : localization.translate('profileIdentityUnavailable');
 
           // Show loading state while user data is being fetched
           if (vm.isLoading) {
@@ -85,8 +92,7 @@ class ProfileView extends StatelessWidget {
                               const SizedBox(height: 12),
                               Text(resolvedName, style: texts.titleLarge),
                               const SizedBox(height: 4),
-                              Text(vm.currentUser?.email ?? 'user@example.com',
-                                  style: texts.bodyMedium),
+                              Text(identity, style: texts.bodyMedium),
                               const SizedBox(height: 12),
                               TextButton(
                                 onPressed: vm.editProfile,
@@ -226,13 +232,7 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.support_agent_rounded,
                               title: localization.translate('helpSupport'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title: localization.translate('helpSupport'),
-                                message: localization
-                                    .translate('helpSupportPlaceholder'),
-                                icon: Icons.support_agent_rounded,
-                              ),
+                              onTap: () => context.push('/help-support'),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -240,13 +240,7 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.privacy_tip_rounded,
                               title: localization.translate('privacyPolicy'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title: localization.translate('privacyPolicy'),
-                                message: localization
-                                    .translate('privacyPolicyPlaceholder'),
-                                icon: Icons.privacy_tip_rounded,
-                              ),
+                              onTap: () => context.push('/privacy-policy'),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -254,14 +248,7 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.description_rounded,
                               title: localization.translate('termsConditions'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title:
-                                    localization.translate('termsConditions'),
-                                message: localization
-                                    .translate('termsConditionsPlaceholder'),
-                                icon: Icons.description_rounded,
-                              ),
+                              onTap: () => context.push('/terms-conditions'),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -318,13 +305,7 @@ class ProfileView extends StatelessWidget {
                               materialIcon: Icons.shield_outlined,
                               title: localization.translate('security'),
                               subtitle: localization.translate('securityHint'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title: localization.translate('security'),
-                                message: localization
-                                    .translate('securityPlaceholder'),
-                                icon: Icons.shield_outlined,
-                              ),
+                              onTap: () => context.push('/security'),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -358,8 +339,9 @@ class ProfileView extends StatelessWidget {
                               iconAsset: SvgIcon.logOut,
                               isSvg: true,
                               title: localization.translate('logout'),
-                              subtitle:
-                                  vm.isLoggingOut ? 'Signing out...' : null,
+                              subtitle: vm.isLoggingOut
+                                  ? localization.translate('signingOut')
+                                  : null,
                               hasTrailing: vm.isLoggingOut,
                               trailingWidget: vm.isLoggingOut
                                   ? SizedBox(

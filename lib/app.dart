@@ -36,9 +36,12 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/about_broker_wallet
 import 'package:broker_wallet/src/Views/Screens/home/Profile/edit_profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/feedback_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/info_placeholder_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/help_support_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/legal_information_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/language_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/payment_selection_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/profile_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/share_app_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/my_plan_view.dart';
@@ -665,6 +668,22 @@ GoRouter _createRouter(
       GoRoute(
         path: '/edit-profile',
         builder: (context, state) => const EditProfileView(),
+      ),
+      GoRoute(
+        path: '/help-support',
+        builder: (context, state) => const HelpSupportView(),
+      ),
+      GoRoute(
+        path: '/security',
+        builder: (context, state) => const SecurityView(),
+      ),
+      GoRoute(
+        path: '/privacy-policy',
+        builder: (context, state) => const PrivacyPolicyView(),
+      ),
+      GoRoute(
+        path: '/terms-conditions',
+        builder: (context, state) => const TermsConditionsView(),
       ),
       GoRoute(
         path: '/subscription',

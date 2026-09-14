@@ -920,8 +920,8 @@ void main() {
     });
 
     test(
-        'Profile keeps its rows and order; only the Delete Account action '
-        'changed', () {
+        'Profile keeps its rows and approved destinations while Delete Account '
+        'remains unchanged', () {
       final source =
           File('lib/src/views/Screens/home/Profile/profile_view.dart')
               .readAsStringSync();
@@ -942,10 +942,7 @@ void main() {
         'viewQuotaUsage',
         'supportInformation',
         'helpSupport',
-        'helpSupport',
         'privacyPolicy',
-        'privacyPolicy',
-        'termsConditions',
         'termsConditions',
         'aboutBrokerWallet',
         'contactUs',
@@ -955,7 +952,6 @@ void main() {
         'privacySecurityAccount',
         'security',
         'securityHint',
-        'security',
         'exportData',
         'exportDataHint',
         'exportData',
@@ -963,6 +959,13 @@ void main() {
         'deleteAccountHint',
         'logout',
       ]);
+      expect(source, contains("onTap: () => context.push('/help-support')"));
+      expect(source, contains("onTap: () => context.push('/privacy-policy')"));
+      expect(
+        source,
+        contains("onTap: () => context.push('/terms-conditions')"),
+      );
+      expect(source, contains("onTap: () => context.push('/security')"));
       expect(source, contains('onTap: () => showDeleteAccountFlow(context)'));
       expect(source.contains('deleteAccountUnavailable'), isFalse);
       expect(source, contains('onTap: vm.isLoggingOut ? null : vm.logout'));

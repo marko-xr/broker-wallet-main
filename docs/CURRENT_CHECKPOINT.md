@@ -2118,3 +2118,54 @@ NEXT — owner decisions, in any order: run the deferred lost-response /
 cut-network scenario with a disposable account if and when chosen; decommission
 the staging Worker, bucket and secrets per `staging-bootstrap/README.md`. Google
 / Apple remain deferred in the project order.
+
+PROFILE COMPLETION 1 — VERIFIED_REAL_DEVICE (2026-09-14)
+
+Implemented only the authorized Profile/Settings scope:
+
+- Added Help & Support, Security Center, Privacy Policy and Terms & Conditions
+  destinations, with new standalone GoRouter routes.
+- Help & Support links only to real existing destinations; Contact Us remains
+  the existing honest placeholder.
+- Security Center reads the current `AuthViewModel`/`UserModel` presentation
+  state and reuses `/edit-profile` plus the verified
+  `showDeleteAccountFlow(context)` flow. It introduces no Auth or Supabase
+  implementation.
+- Privacy Policy and Terms & Conditions are localized pre-release legal shells;
+  no legal/contact content was invented.
+- Removed the fake `user@example.com` fallback, localized logout progress and
+  failure text, and corrected SettingsTile's RTL chevron and switch-label
+  directional padding.
+
+Static evidence:
+
+- Focused `test/profile/profile_completion_one_ui_test.dart`: PASS (5/5).
+- Updated `test/account/delete_account_test.dart` only after owner approval:
+  it continues to protect the Profile row order and the existing verified
+  Delete Account action, and now also asserts the four authorized Profile
+  routes instead of the retired placeholder navigation.
+- Directly affected Delete Account source-contract test: PASS (33/33).
+- `flutter test`: PASS (406/406).
+- `flutter analyze`: 0 errors, 0 warnings and 112 pre-existing infos.
+- `git diff --check`: PASS.
+
+Physical-device acceptance reported by the owner: PASS.
+
+- English Light: PASS.
+- English Dark: PASS.
+- Arabic RTL: PASS, including layout, directional chevrons and no clipped text.
+- Profile, Help & Support, Security, Privacy Policy and Terms & Conditions:
+  PASS.
+- Navigation and back behavior: PASS.
+- Security opens the existing Delete Account sheet unchanged: PASS.
+- No fake `user@example.com` presentation, crash, or unexpected protected-UI
+  regression: PASS.
+
+Status: VERIFIED_REAL_DEVICE. The static gates above remain passing at their
+recorded evidence level.
+
+NOW — retain this verified Profile Completion 1 state; no source/test change is
+required for this documentation sync.
+
+NEXT — begin only the owner-approved next checkpoint, keeping this acceptance
+evidence intact.

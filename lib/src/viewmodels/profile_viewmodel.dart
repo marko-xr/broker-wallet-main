@@ -230,7 +230,7 @@ class ProfileViewModel extends ChangeNotifier {
 
       if (!_disposed && context.mounted) {
         Fluttertoast.showToast(
-          msg: 'Logout failed. Please try again.',
+          msg: AppLocalizations.of(context).translate('logoutFailed'),
           toastLength: Toast.LENGTH_LONG,
           gravity: ToastGravity.BOTTOM,
           backgroundColor: Colors.red,

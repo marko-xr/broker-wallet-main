@@ -20,8 +20,8 @@ import 'dart:async';
 
 class FavoritesViewModel extends ChangeNotifier {
   final OptimisticFavoritesService? _optimisticFavoritesService;
-  final FavoriteService _favoriteService = FavoriteService();
-  final OfferService _offerService = OfferService();
+  final FavoriteService _favoriteService;
+  final OfferService _offerService;
   final RequestService _requestService = RequestService();
   final OwnerService _ownerService = OwnerService();
   final OfficeService _officeService = OfficeService();
@@ -76,8 +76,13 @@ class FavoritesViewModel extends ChangeNotifier {
   bool get hasUnfilteredData =>
       _allFavorites.isNotEmpty || _cachedFavorites.isNotEmpty;
 
-  FavoritesViewModel({OptimisticFavoritesService? optimisticFavoritesService})
-      : _optimisticFavoritesService = optimisticFavoritesService {
+  FavoritesViewModel({
+    OptimisticFavoritesService? optimisticFavoritesService,
+    FavoriteService? favoriteService,
+    OfferService? offerService,
+  })  : _optimisticFavoritesService = optimisticFavoritesService,
+        _favoriteService = favoriteService ?? FavoriteService(),
+        _offerService = offerService ?? OfferService() {
     _initializeAndLoadFavorites();
 
     // Listen to changes in the optimistic favorites service
@@ -179,11 +184,13 @@ class FavoritesViewModel extends ChangeNotifier {
     // Load cached data synchronously if available
     _loadCachedFavoritesSync();
 
+    final shouldLoadColdFavorites = _cachedFavorites.isEmpty;
+
     // Initialize cache and load fresh data asynchronously
-    _initializeCacheAsync();
+    _initializeCacheAsync(skipInitialLoad: shouldLoadColdFavorites);
 
     // If no cached data and no loading state, load fresh data immediately
-    if (_cachedFavorites.isEmpty && !_isLoading) {
+    if (shouldLoadColdFavorites && !_isLoading) {
       _loadFreshFavoritesImmediately();
     }
   }
@@ -209,7 +216,7 @@ class FavoritesViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _initializeCacheAsync() async {
+  Future<void> _initializeCacheAsync({required bool skipInitialLoad}) async {
     try {
       // Ensure authentication is ready before proceeding
       await _favoriteService.waitForAuthReady();
@@ -222,7 +229,9 @@ class FavoritesViewModel extends ChangeNotifier {
       // Always load fresh data to ensure we have the latest
       // If we have cached data, this will happen in background
       // If we don't have cached data, this will show the loading state
-      await loadFavorites();
+      if (!skipInitialLoad) {
+        await loadFavorites();
+      }
     } catch (e) {
       _isLoading = false;
       _error = 'Failed to load favorites';

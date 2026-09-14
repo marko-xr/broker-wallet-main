@@ -2169,3 +2169,19 @@ required for this documentation sync.
 
 NEXT — begin only the owner-approved next checkpoint, keeping this acceptance
 evidence intact.
+
+FAVORITES COLD-LOAD DEDUPLICATION = CODE_PROVEN
+
+- Cold/no-cache duplicate initialization was source-confirmed.
+- Empty-cache construction now starts one authoritative Favorites load.
+- Warm-cache path still performs one background authoritative refresh.
+- Manual refresh and optimistic mutation paths remain unchanged.
+- Targeted Favorites tests pass.
+- Full Flutter suite passes.
+- Analyzer has 0 errors / 0 warnings.
+- Profile RTL test contained contradictory assertions and was corrected
+  TEST-ONLY; production SettingsTile/UI was not changed.
+- No runtime performance gain is claimed yet.
+- Physical-device/Profile-mode Favorites acceptance remains pending.
+
+Status: CODE_PROVEN. Not VERIFIED_RUNTIME or VERIFIED_REAL_DEVICE.

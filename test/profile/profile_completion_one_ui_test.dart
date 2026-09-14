@@ -108,7 +108,7 @@ void main() {
     );
     await tester.pump();
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
-    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byIcon(Icons.chevron_left), findsNothing);
 
     await tester.pumpWidget(
       _app(
@@ -124,7 +124,7 @@ void main() {
     );
     await tester.pump();
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
-    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byIcon(Icons.chevron_left), findsNothing);
   });
 
   testWidgets('Help and legal destinations construct with localized content',

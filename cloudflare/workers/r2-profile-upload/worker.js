@@ -1,4 +1,15 @@
 import { AwsClient } from 'aws4fetch';
+import {
+  ACCOUNT_DELETE_PATH,
+  AccountDeletionError,
+  MAX_SIGNING_DELAY_MS,
+  SIGNED_PUT_TTL_SECONDS,
+  assertPresignedWithin,
+  assertUploadsAllowed,
+  handleAccountDeletion,
+  runDeletionFinalizer,
+} from './account_deletion.js';
+import { stagingRequestAllowed } from './staging_gate.js';
 
 /**
  * Private profile-image lifecycle worker.
@@ -7,20 +18,39 @@ import { AwsClient } from 'aws4fetch';
  *   POST /authorize
  *   POST /confirm
  *   GET  /profile-image-url
+ *   POST /account/delete   (see account_deletion.js)
+ *
+ * Scheduled:
+ *   account deletion finalizer (see account_deletion.js)
  */
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const PUT_URL_TTL_SECONDS = 300;
+// Shared with account deletion, whose finalization window is derived from it.
+const PUT_URL_TTL_SECONDS = SIGNED_PUT_TTL_SECONDS;
 const GET_URL_TTL_SECONDS = 900;
 const PENDING_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 const SIGNATURE_BYTES_TO_READ = 64;
 const MEDIA_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return corsResponse(null, 204, env);
 
+    // Staging only (no-op when STAGING_TEST_KEY is not bound, as in production).
+    // Runs before any Supabase, R2 or account logic.
+    if (!(await stagingRequestAllowed(request, env))) {
+      return corsResponse({ error: 'Forbidden' }, 403, env);
+    }
+
     const path = new URL(request.url).pathname;
+    if (request.method === 'POST' && path === ACCOUNT_DELETE_PATH) {
+      // Handed to waitUntil as well, so a client that disconnects mid-request
+      // does not cancel a deletion between its R2 cleanup and its auth delete.
+      // The handler never rejects and returns only fixed error codes.
+      const deletion = handleAccountDeletion(request, env, { respond: corsResponse });
+      ctx?.waitUntil?.(deletion);
+      return deletion;
+    }
     try {
       if (request.method === 'POST' && path === '/authorize') return await handleAuthorize(request, env);
       if (request.method === 'POST' && path === '/confirm') return await handleConfirm(request, env);
@@ -34,6 +64,12 @@ export default {
         env,
       );
     }
+  },
+
+  // Server-owned completion of account deletions. Needs no client and accepts
+  // no client identity; see runDeletionFinalizer.
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runDeletionFinalizer(env));
   },
 };
 
@@ -72,6 +108,11 @@ async function handleAuthorize(request, env) {
   }
 
   try {
+    // Account deletion quarantine. The clock is read BEFORE the check and the
+    // signature date is bounded by it, so every URL issued here expires before
+    // any deletion job that this check could have missed is finalized.
+    const quarantineCheckedAt = Date.now();
+    await assertUploadsAllowed(userId, env);
     const presignedUrl = await createPresignedR2Url({
       env,
       method: 'PUT',
@@ -79,6 +120,7 @@ async function handleAuthorize(request, env) {
       contentType,
       expiresInSeconds: PUT_URL_TTL_SECONDS,
     });
+    assertPresignedWithin(presignedUrl, quarantineCheckedAt + MAX_SIGNING_DELAY_MS);
     return corsResponse(
       { presignedUrl, mediaObjectId, objectKey, expiresInSeconds: PUT_URL_TTL_SECONDS },
       200,
@@ -87,6 +129,12 @@ async function handleAuthorize(request, env) {
     );
   } catch (error) {
     await bestEffortDeletePendingMedia(mediaObjectId, userId, env);
+    if (error instanceof AccountDeletionError) {
+      throw new WorkerError(
+        error.code === 'deletion_in_progress' ? 'Account deletion in progress' : 'Upload authorization unavailable',
+        error.status,
+      );
+    }
     throw error;
   }
 }

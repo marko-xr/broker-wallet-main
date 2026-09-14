@@ -141,6 +141,74 @@ class OfflineMediaService {
     }
   }
 
+  /// Removes locally held profile avatars after an account is deleted.
+  ///
+  /// With [mediaIds] null, every `mediaId::` mapping, the image-cache entry
+  /// keyed by each of those ids, and the app-owned `profile_media` directory
+  /// are removed. These are re-downloadable presentation caches that are not
+  /// partitioned by account, so clearing all of them costs another account on
+  /// this device at most one avatar download. With [mediaIds] given, only those
+  /// identities are removed — used when a different account is already signed
+  /// in. Best effort throughout.
+  Future<void> forgetProfileMedia({Iterable<String>? mediaIds}) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    final targets = <String>{
+      ...?mediaIds?.where((id) => id.isNotEmpty),
+    };
+    if (_isInitialized && mediaIds == null) {
+      try {
+        for (final key in _urlMappingBox.keys) {
+          if (key is String && key.startsWith(_mediaIdKeyPrefix)) {
+            targets.add(key.substring(_mediaIdKeyPrefix.length));
+          }
+        }
+      } catch (e) {
+        // Fall through with whatever was collected.
+      }
+    }
+
+    for (final mediaId in targets) {
+      final mappedPath = getLocalFilePathForMediaId(mediaId);
+      if (mappedPath != null && mediaIds != null) {
+        try {
+          final file = File(mappedPath);
+          if (mappedPath.contains('/profile_media/') && await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          // Best effort.
+        }
+      }
+      try {
+        await DefaultCacheManager().removeFile(mediaId);
+      } catch (e) {
+        // Best effort.
+      }
+      if (_isInitialized) {
+        try {
+          await _urlMappingBox.delete(_mediaIdKey(mediaId));
+        } catch (e) {
+          // Best effort.
+        }
+      }
+    }
+
+    if (mediaIds == null) {
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final profileDir = Directory('${appDir.path}/profile_media');
+        if (await profileDir.exists()) {
+          await profileDir.delete(recursive: true);
+        }
+      } catch (e) {
+        // Best effort.
+      }
+    }
+  }
+
   /// Local file already held for a stable media identity, if any.
   String? getLocalFilePathForMediaId(String? mediaId) {
     if (mediaId == null || mediaId.isEmpty) return null;

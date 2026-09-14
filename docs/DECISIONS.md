@@ -158,3 +158,139 @@
   notification-feed failure must settle its own loading state and nothing else —
   it is never a reason to change authentication state, and its provider message
   must not be logged or rendered.
+- Account deletion is server-owned and runs in the existing
+  `r2-profile-upload` Worker (`POST /account/delete`), not in a Supabase Edge
+  Function. It must delete the account's R2 objects before `auth.users`, because
+  the cascade removes the `media_objects` rows that record them, and the Worker
+  is the only existing boundary that already holds both the R2 binding and the
+  Supabase server secret. Never give Supabase an R2 credential or Flutter any
+  credential to make deletion work elsewhere. This is this project's design, not
+  a Supabase-prescribed pattern.
+- The account to delete comes only from the bearer token as verified by
+  `GET /auth/v1/user`. A client-supplied user id is never used; one that differs
+  from the verified account is refused. Media is inventoried only by
+  `media_objects.owner_id = verified uid` and the `profiles/<uid>/` prefix, and a
+  row outside that bucket or prefix stops deletion before anything is removed —
+  unknown media is never guessed at and never orphaned silently.
+- Deletion is confirmed by re-verifying the account password server-side,
+  inside the Worker, against the verified account's own email. It is never done
+  with a client-side `signInWithPassword` on the app's Supabase client: the
+  pinned `gotrue` saves that session and emits `signedIn`, which would replace
+  the live session and clear password-recovery state. `reauthenticate()` only
+  sends a nonce that GoTrue consumes in a password update, so it proves nothing
+  for deletion. Accounts without an email identity are refused
+  (`reauthentication_unsupported`) until their provider has its own
+  confirmation.
+- A password-recovery session can never delete an account: the route
+  quarantine keeps the flow unreachable, the view model refuses it, and the
+  Worker refuses a token whose `amr` includes `recovery`.
+- Once `auth.users` is deleted, the deleted account's token authorizes
+  nothing. The Worker never decodes a rejected token to choose an account, and
+  a retry after deletion gets `session_expired` with no cleanup. Every action
+  after the auth delete is authorized by a server-owned
+  `public.account_deletion_jobs` row, created from the Supabase-verified id
+  before the account is deleted, with no foreign key so it survives the
+  cascade, readable and writable only by `service_role`. The R2 prefix comes
+  from that row. (An earlier design recovered lost responses by trusting the
+  `sub` of a token Supabase Auth had rejected; it was withdrawn for exactly this
+  reason.)
+- Order is fixed: authority -> password -> claim job (`quarantined`) -> R2
+  inventory and deletion, proven by an empty prefix listing -> job to
+  `auth_delete_pending` by compare-and-set -> auth admin delete, with any
+  ambiguous result settled by reading the user back -> job to `auth_deleted`:
+  this bucket's existing job is advanced by compare-and-set, an absent job is
+  recreated with a conflict-ignoring insert, and another bucket's job is never
+  merge-overwritten. Every failure before the auth delete cancels the job, so an
+  account that was not deleted is never left unable to upload.
+- Upload quarantine is structural: `/authorize` reads the clock (t0), refuses if
+  a job exists (failing closed if the table cannot be read), signs, and refuses
+  a URL dated more than 60 s after t0. The maximum signed PUT lifetime is
+  therefore 300 s TTL + 60 s = 360 s after t0.
+- `cleanup_not_before` is never set by the request path or defaulted from the
+  database clock. The cron finalizer stamps it, on its own Cloudflare clock
+  read after it has listed the job as `auth_deleted`, as stamp + 360 s + a
+  120 s safety margin (`CLEANUP_WINDOW_MS` = 480 s), and sweeps only at or
+  after that time. The stamp follows the job's commit, which follows every
+  quarantine check that could have missed it, so no Postgres clock takes part.
+  The only clock assumption left is agreement within 120 s among Cloudflare
+  clocks (the signing isolate, R2's validation and the cron isolate). Never
+  shorten the margin, lengthen the PUT TTL, remove the signing bound, or read
+  the stamp before the listing without redoing this argument.
+- Each job records its `bucket`. JOB OWNERSHIP INVARIANT: a job may be mutated
+  (claimed, reused, advanced, stamped, cancelled, finalized or recreated) only by
+  the Worker whose `R2_BUCKET_NAME` equals the job's `bucket`. Every
+  compare-and-set and delete filters on it. A job owned by another bucket blocks
+  the request with `deletion_in_progress` before any R2 or auth action, and is
+  never overwritten: `recordAuthDeleted` advances by compare-and-set and
+  recreates an absent row only with an insert that ignores conflicts, never a
+  merge upsert. Reading is deliberately not bucket-scoped: `/authorize` refuses
+  uploads while a job exists for the account in ANY bucket. `user_id` stays the
+  one-account primary key.
+- A staging Worker that reaches real Supabase data is protected by explicit
+  access control, never by an unpublished URL. When `STAGING_TEST_KEY` is bound
+  (staging only), every HTTP request except a CORS preflight must present it in
+  `X-Broker-Wallet-Staging-Key` before any Supabase, R2 or account logic runs.
+  Otherwise the fixed response is 403, and a bound-but-empty key denies
+  everything. The comparison is SHA-256 digests without an early exit. The key
+  is never logged or returned, and it adds to, never replaces, the user's JWT and
+  password. Production never binds it, so production behaviour is unchanged.
+- A new Worker whose config lists required secrets is bootstrapped by claiming
+  its name with a do-nothing placeholder (`staging-bootstrap/`), storing the
+  secrets on it, creating its bucket, and only then deploying the real code.
+  Never deploy real code first and add secrets afterwards: Wrangler refuses to
+  deploy without them, and each `wrangler secret put` deploys a version
+  immediately.
+- The finalizer is a Worker cron trigger that uses the server secret and job
+  rows only. Jobs are deleted when finalized or cancelled; nothing is retained
+  about a completed deletion. An `auth_delete_pending` or `quarantined` job is
+  cancelled only when Supabase Auth reports the account still exists and the
+  job is over an hour old. The migration must be applied before the Worker
+  version that reads the table is deployed, because `/authorize` fails closed.
+- The Supabase secret key (`sb_secret_...`) is sent only in the `apikey`
+  header, on server-to-Supabase calls, including the Auth admin API. It is never
+  sent as `Authorization: Bearer`. A user JWT travels only as
+  `Authorization: Bearer`, paired with the publishable key.
+- SECURITY INVARIANT (same discipline as password recovery): a session whose
+  account has a deletion of unknown outcome is never application-
+  authenticated. `AccountDeletionStateStore` is primed at startup and holds the
+  account id written immediately before the request. When a newly applied
+  session identity matches it, `AuthViewModel` quarantines the session in the
+  same turn, before notifying: `status` stays `unknown`, `currentUser` is null,
+  and no hydration, profile subscription, snapshot or notification feed starts,
+  so GoRouter holds `/`. Reconciliation then ALWAYS ends that session on the
+  device. Supabase Auth's `getUser()` answer decides only the wording:
+  `user_not_found` is a deletion; exists, rejected or unanswered is "signed
+  out, sign in again to check". Ambiguity is never success, and a still-
+  existing account signs in again as an ordinary session. The marker is
+  cleared once no session for that account remains on the device. A session
+  that is already application-authenticated (its own in-app deletion flow) is
+  not re-quarantined. No timer or delay holds the quarantine; the only bound is
+  a 15 s timeout on the single `getUser()` network read. Independently, the
+  pinned `gotrue` removes the session and emits `signedOut` when a refresh fails
+  with a non-retryable error, which a deleted account's refresh token always
+  does.
+- Hosted verification of Worker triggers runs on a separate staging Worker
+  (`r2-profile-upload-staging`, its own bucket and revocable keys, no route),
+  never by attaching an unverified cron to the production Worker. A preview
+  version (`wrangler versions upload`) does not receive Cron Triggers.
+  Production gets the code and its trigger together, and only after staging
+  passes.
+- Deletion is immediate and permanent (`should_soft_delete: false`). APPROVED
+  by the product owner, 2026-09-13: no grace period and no soft-delete account
+  lifecycle. The existing `deleted_at` columns are sync tombstones, not an
+  account lifecycle.
+- Product owner decisions, 2026-09-13: device-local Toolkit PDFs are preserved
+  on account deletion; RevenueCat data retention is deferred until RevenueCat is
+  live; retained audit/security history must not contain direct personal
+  identifiers (email, phone, name) — a SET NULL foreign key is not enough if the
+  payload names the person; Google, Apple and phone reauthentication for
+  deletion is future provider-specific work. No UAE retention requirement has
+  been specified and none may be assumed.
+- After the server reports deletion, `AuthViewModel.completeAccountDeletion`
+  ends local state for that uid only. It never signs out a different account
+  that is signed in by then, and it is not left authenticated by a sign-out that
+  cannot reach the server. Local cleanup is an explicit inventory
+  (`DeletedAccountLocalDataCleaner`); language and theme are device preferences
+  and are kept. Never replace it with a wipe of all app storage.
+- Deleting an account is not a subscription cancellation or refund, and the UI
+  says so. Any future RevenueCat integration must not infer one from a deletion.

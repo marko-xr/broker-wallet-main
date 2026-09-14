@@ -4,6 +4,8 @@ import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
+import 'package:broker_wallet/src/services/account_deletion_service.dart'
+    show AccountExistence, AccountExistenceProbe;
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -18,7 +20,8 @@ class SupabaseAuthRepository
         AuthRepository,
         PhoneVerificationCapability,
         EmailChangeCapability,
-        PasswordCapability {
+        PasswordCapability,
+        AccountExistenceProbe {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -599,6 +602,43 @@ class SupabaseAuthRepository
     if (kDebugMode) {
       print('✅ Supabase logout completed');
       print('✅ Supabase session after logout: absent');
+    }
+  }
+
+  /// Supabase Auth's own answer about the live session's account.
+  ///
+  /// `getUser()` is a network read that, in the pinned `gotrue`, neither
+  /// refreshes nor removes the session, so asking cannot change anything.
+  /// Only the server's `user_not_found` code is taken to mean the account is
+  /// gone; any other rejection only means the session is unusable.
+  @override
+  Future<AccountExistence> probeCurrentAccount() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null || _client.auth.currentSession == null) {
+      return AccountExistence.sessionInvalid;
+    }
+    try {
+      // A bound on one network read, not a guard against a race: the session
+      // is already quarantined and nothing is published while this waits. A
+      // read that cannot finish is reported as unknown, which ends the session
+      // without claiming a deletion.
+      final response =
+          await _client.auth.getUser().timeout(const Duration(seconds: 15));
+      return response.user?.id == uid
+          ? AccountExistence.exists
+          : AccountExistence.sessionInvalid;
+    } on AuthSessionMissingException {
+      return AccountExistence.sessionInvalid;
+    } on AuthRetryableFetchException {
+      return AccountExistence.unknown;
+    } on AuthException catch (error) {
+      if (error.code == 'user_not_found') return AccountExistence.deleted;
+      const rejected = {'401', '403', '404'};
+      return rejected.contains(error.statusCode)
+          ? AccountExistence.sessionInvalid
+          : AccountExistence.unknown;
+    } catch (_) {
+      return AccountExistence.unknown;
     }
   }
 

@@ -63,6 +63,62 @@ character classes, Secure password change OFF and Require current password
 OFF. Leaked-password protection is unavailable on the current Free plan. No
 agent changed any hosted setting.
 
+Delete Account status:
+
+- `account_deletion_jobs` migration: APPLIED + VERIFIED_HOSTED.
+- Staging Worker (`r2-profile-upload-staging`): the access gate, R2
+  authorize / PUT / confirm / signed GET, correct-password hard delete, and the
+  deleted user's old-JWT retry returning 401 `session_expired` are
+  VERIFIED_RUNTIME.
+- Hosted: removal of the `auth.users`, profile and media rows, and the cron
+  stamping `cleanup_not_before` then removing the deletion job, are
+  VERIFIED_HOSTED.
+- Production Worker `r2-profile-upload`: version
+  `f5bdf3eb-400e-488f-930b-d3c5e78a0624` deployed at 100% traffic, with rollback
+  target `491a5e0f-6b51-4ca9-8d33-8164bcfec348`. `media-api.brokerwallet.ae` is
+  attached, the `*/5 * * * *` cron is deployed, and `STAGING_TEST_KEY` is not
+  bound. No-JWT smoke returns 401 on `/authorize`, `/profile-image-url` and
+  `/account/delete` (`session_expired`).
+- Production normal Delete Account happy path and wrong-password path:
+  VERIFIED_RUNTIME + VERIFIED_HOSTED + VERIFIED_REAL_DEVICE (2026-09-14, one
+  disposable account).
+  - Wrong password leaves the account, profile and image intact.
+  - Correct password lands on Welcome with no Home and no stale
+    profile/name/image, including after force-stop and cold restart.
+  - The old credentials no longer sign in.
+  - Hosted afterwards: no auth user, no profile, 0 `media_objects`, 0 deletion
+    jobs, and the production finalizer completed.
+- Dedicated lost-response / cut-network scenario: NOT RUN / DEFERRED. The
+  lost-response marker and bootstrap quarantine are CODE_PROVEN only.
+- Staging infrastructure is temporarily retained.
+
+The existing Profile row opens a two-step confirmation (what is deleted, then
+password plus an explicit acknowledgement). Deletion runs server-side in the
+existing `r2-profile-upload` Worker: the account comes only from the verified
+session token, the password is re-verified there, the account's R2 objects are
+removed and proven gone, and only then is `auth.users` deleted so the database
+cascade removes the profile and owned data. Flutter never holds a server
+credential and never sends a user id. After success, `AuthViewModel` ends local
+state for that account and clears an explicit inventory of user-scoped caches,
+keeping language and theme.
+
+Work that must happen after the account is gone is authorized by a
+server-owned `account_deletion_jobs` row, never by the deleted account's token.
+The row blocks new signed upload URLs while a deletion runs, and a scheduled
+Worker finalizer sweeps the account's R2 prefix once every previously issued
+URL has expired.
+
+The application now also distinguishes a session whose account has a deletion
+of unknown outcome. If a restored or newly signed-in session belongs to the
+account named by the local pending-deletion marker, `AuthViewModel`
+quarantines it in the same turn: it is never application-authenticated, GoRouter
+holds the bootstrap route, and nothing account-scoped starts. It asks Supabase
+Auth what happened, and always ends that session on the device, reporting a
+deletion only when Supabase Auth says the account is gone. The job-table
+migration is applied and hosted-verified, and the production Worker is deployed.
+That lost-response path has not been exercised at runtime (NOT RUN / DEFERRED;
+see `docs/CURRENT_CHECKPOINT.md`).
+
 The Realtime `RealtimeSubscribeException` on `public.notifications` observed
 during the first failed recovery test did not reproduce after the quarantine
 fix, in recovery, after a normal login, or in Notifications. It is recorded as

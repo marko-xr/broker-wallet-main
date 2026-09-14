@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
+import 'account_deletion_state_store.dart';
 import 'auth_callback_coordinator.dart';
 import 'password_recovery_state_store.dart';
 import 'supabase_secure_storage.dart';
@@ -48,6 +49,9 @@ abstract final class SupabaseBootstrapService {
       // router the restored session is a recovery, and it has to be readable
       // synchronously by the time the first redirect runs.
       await PasswordRecoveryStateStore.prime();
+      // Same requirement: a restored session whose account has a deletion of
+      // unknown outcome must be recognised before its identity is applied.
+      await AccountDeletionStateStore.prime();
       // Owns the one application-level listener for the callbacks Supabase
       // just declined. Started after initialization so a link that arrives
       // during startup is still classified.

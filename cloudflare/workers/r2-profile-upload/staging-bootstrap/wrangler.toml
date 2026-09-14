@@ -1,0 +1,9 @@
+# First-time bootstrap placeholder for the staging Worker ONLY.
+# Deploy with: wrangler deploy --config staging-bootstrap/wrangler.toml
+# (from cloudflare/workers/r2-profile-upload). It is replaced by the real
+# `wrangler deploy --env staging` once the staging secrets exist.
+name = "r2-profile-upload-staging"
+main = "placeholder.js"
+compatibility_date = "2024-11-01"
+workers_dev = false
+preview_urls = false

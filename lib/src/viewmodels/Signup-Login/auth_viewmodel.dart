@@ -7,6 +7,14 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/repositories/supabase_user_repository.dart'
     show ProfileImageUrlResolver;
+import 'package:broker_wallet/src/services/account_deletion_service.dart'
+    show
+        AccountDeletionConvergence,
+        AccountDeletionSession,
+        AccountExistence,
+        AccountExistenceProbe;
+import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
+import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
@@ -126,7 +134,7 @@ typedef ProfileMediaAdopter = Future<void> Function(
   String localImagePath,
 );
 
-class AuthViewModel extends ChangeNotifier {
+class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
 
@@ -191,6 +199,7 @@ class AuthViewModel extends ChangeNotifier {
   final ProfileImageUploader? _profileImageUploader;
   final ProfileMediaAdopter? _profileMediaAdopter;
   R2ProfileUploadService? _r2UploadService;
+  final DeletedAccountLocalDataCleaner? _deletedAccountCleaner;
 
   bool _disposed = false;
 
@@ -200,12 +209,14 @@ class AuthViewModel extends ChangeNotifier {
     bool autoInitialize = true,
     ProfileImageUploader? profileImageUploader,
     ProfileMediaAdopter? profileMediaAdopter,
+    DeletedAccountLocalDataCleaner? deletedAccountCleaner,
   })  : _authRepository =
             authRepository ?? RepositoryProvider.instance.authRepository,
         _userRepository =
             userRepository ?? RepositoryProvider.instance.userRepository,
         _profileImageUploader = profileImageUploader,
-        _profileMediaAdopter = profileMediaAdopter {
+        _profileMediaAdopter = profileMediaAdopter,
+        _deletedAccountCleaner = deletedAccountCleaner {
     if (autoInitialize) {
       _initializeAuth();
     }
@@ -217,6 +228,7 @@ class AuthViewModel extends ChangeNotifier {
   /// Canonical authenticated user ID.
   /// Delegates directly to the active AuthRepository session.
   /// Returns null if not authenticated.
+  @override
   String? get currentUserId => _authRepository.currentUserId;
 
   /// Auth operation state. Never bootstrap state.
@@ -235,6 +247,7 @@ class AuthViewModel extends ChangeNotifier {
   /// deliberately **not** application-authenticated: while this is true the
   /// only reachable screen is the reset screen. It is published together with
   /// [status] by the single notification this class already emits.
+  @override
   bool get isPasswordRecoveryActive => _passwordRecoveryActive;
 
   /// Progress of profile hydration for the current session.
@@ -278,6 +291,12 @@ class AuthViewModel extends ChangeNotifier {
   /// `emailConfirmedAt` / `phoneConfirmedAt` arrive with the session rather
   /// than with the profile row.
   void _recomputeStatus() {
+    // A quarantined session is never application-authenticated, whatever else
+    // tries to recompute status while it is being reconciled.
+    if (_accountDeletionQuarantineUid != null) {
+      _status = AuthStatus.unknown;
+      return;
+    }
     final user = _currentUser;
     if (user == null) {
       _status = AuthStatus.unauthenticated;
@@ -609,8 +628,8 @@ class AuthViewModel extends ChangeNotifier {
   /// Always called immediately before `notifyListeners()` on a session change,
   /// never on a timer and never from a second stream.
   void _refreshPasswordRecovery() {
-    _passwordRecoveryActive = passwordCapability?.isPasswordRecoveryActive
-        ?? false;
+    _passwordRecoveryActive = _accountDeletionQuarantineUid == null &&
+        (passwordCapability?.isPasswordRecoveryActive ?? false);
   }
 
   /// Supabase-native email change for the current session. Pending state stays
@@ -1042,6 +1061,7 @@ class AuthViewModel extends ChangeNotifier {
       _currentUser = null;
       _status = AuthStatus.unauthenticated;
       _passwordRecoveryActive = false;
+      _accountDeletionQuarantineUid = null;
       _profileHydration = ProfileHydrationStatus.unresolved;
       _resolvingImageMediaId = null;
       _discardLastKnownGood();
@@ -1056,6 +1076,15 @@ class AuthViewModel extends ChangeNotifier {
     }
 
     final isSameUser = previousUid == sessionUser.uid;
+
+    // Evaluated before anything about the session is applied or published. A
+    // session that is already application-authenticated is the same user and is
+    // not re-quarantined: its own in-app deletion flow reconciles it.
+    if (!isSameUser && AccountDeletionStateStore.ownerUid == sessionUser.uid) {
+      _enterAccountDeletionQuarantine(sessionUser.uid);
+      return;
+    }
+    _accountDeletionQuarantineUid = null;
 
     if (!isSameUser) {
       // Cache ownership: session state is authoritative and a different user
@@ -1137,6 +1166,8 @@ class AuthViewModel extends ChangeNotifier {
 
   /// Applies an authoritative `public.profiles` row onto the canonical user.
   void _applyProfile(UserModel profile, {bool markHydrated = false}) {
+    // No profile row may re-populate a quarantined session.
+    if (_accountDeletionQuarantineUid != null) return;
     final previous = _currentUser;
     if (previous != null && previous.uid != profile.uid) return;
 
@@ -1325,6 +1356,183 @@ class AuthViewModel extends ChangeNotifier {
     } finally {
       _endOperation();
     }
+  }
+
+  /// Ends local state for [deletedUid] after the server deleted that account.
+  ///
+  /// Only ever called with a server-authoritative deletion, so the session
+  /// being ended can no longer do anything. Unlike [signOut] it therefore never
+  /// leaves the application authenticated: a sign-out call that cannot reach
+  /// the server does not matter, because the pinned `gotrue` removes the local
+  /// session before it contacts the server and ignores the 401/403/404 a
+  /// deleted user produces.
+  ///
+  /// If a *different* account is signed in by the time this runs, that session
+  /// is left alone and only data keyed to [deletedUid] is cleared — a deletion
+  /// started by one account can never sign out or wipe another.
+  ///
+  /// State is reset before local caches are cleared: bumping the hydration
+  /// token and cancelling the profile subscription first means no late
+  /// hydration, image resolution or snapshot write for the deleted account can
+  /// land after its data has been removed. GoRouter then resolves the
+  /// unauthenticated state to the ordinary logged-out entry.
+  @override
+  Future<void> completeAccountDeletion(String deletedUid) async {
+    if (deletedUid.isEmpty) return;
+
+    final liveUid = _authRepository.currentUserId;
+    final ownsLiveSession = liveUid == null || liveUid == deletedUid;
+    final profileMediaIds = <String>[
+      if (_currentUser?.uid == deletedUid &&
+          (_currentUser?.profileMediaId ?? '').isNotEmpty)
+        _currentUser!.profileMediaId!,
+    ];
+
+    if (ownsLiveSession) {
+      _beginOperation(AuthOperation.signingOut);
+      try {
+        // Application state is ended first and synchronously, before the
+        // repository call can yield. Nothing that arrives while the sign-out
+        // is in flight — including a different account signing in — is
+        // overwritten afterwards.
+        _hydrationToken++;
+        _currentUser = null;
+        _status = AuthStatus.unauthenticated;
+        _passwordRecoveryActive = false;
+        _accountDeletionQuarantineUid = null;
+        _profileHydration = ProfileHydrationStatus.unresolved;
+        _resolvingImageMediaId = null;
+        _discardLastKnownGood();
+        _resolvedDisplayName = '';
+        _subscribeToUserUpdates(null);
+        notifyListeners();
+        if (liveUid != null) {
+          try {
+            await _authRepository.signOut();
+          } catch (_) {
+            // See above: the local session is removed before the server call.
+          }
+        }
+      } finally {
+        _endOperation();
+      }
+    }
+
+    final stillSignedIn = _authRepository.currentUserId;
+    // The marker is only needed while a session for the account remains on
+    // this device; once it is gone there is nothing left to quarantine.
+    if (stillSignedIn != deletedUid) {
+      await AccountDeletionStateStore.forgetIfOwnedBy(deletedUid);
+    }
+
+    await (_deletedAccountCleaner ?? DeletedAccountLocalDataCleaner()).clear(
+      deletedUid: deletedUid,
+      // Re-read: a different account may have signed in during the sign-out,
+      // and its single-slot caches are not the deleted account's to clear.
+      wasSignedInAccount:
+          ownsLiveSession && (stillSignedIn == null || stillSignedIn == deletedUid),
+      profileMediaIds: profileMediaIds,
+    );
+  }
+
+  /// Whether the most recently applied session belongs to an account with a
+  /// deletion of unknown outcome, and is therefore quarantined.
+  ///
+  /// While true, [status] is [AuthStatus.unknown], [currentUser] is null, and
+  /// no profile hydration, profile subscription, snapshot or account-scoped
+  /// feed starts, so GoRouter holds the bootstrap route and never resolves an
+  /// application route for the session.
+  bool get isAccountDeletionReconciling => _accountDeletionQuarantineUid != null;
+
+  String? _accountDeletionQuarantineUid;
+
+  /// Quarantines a newly applied session for [uid], in the same turn the
+  /// identity arrives and before any listener is notified. The decision is a
+  /// synchronous read of the primed marker, so there is no window in which the
+  /// router can observe an authenticated state for the session first.
+  void _enterAccountDeletionQuarantine(String uid) {
+    final reconciling = _accountDeletionQuarantineUid == uid;
+    _hydrationToken++;
+    _accountDeletionQuarantineUid = uid;
+    _currentUser = null;
+    _status = AuthStatus.unknown;
+    _passwordRecoveryActive = false;
+    _profileHydration = ProfileHydrationStatus.unresolved;
+    _resolvingImageMediaId = null;
+    _discardLastKnownGood();
+    _subscribeToUserUpdates(null);
+    _resolvedDisplayName = '';
+    notifyListeners();
+    if (!reconciling) unawaited(reconcileAccountDeletion(uid));
+  }
+
+  /// Settles a deletion of [uid] whose outcome this device never learned, and
+  /// always ends the session for [uid] on this device.
+  ///
+  /// Supabase Auth's answer for the live session decides only what is said
+  /// about it, never whether the session survives:
+  ///  * the account does not exist -> [AccountDeletionConvergence.deleted];
+  ///  * the account exists, the session is rejected, or there is no answer ->
+  ///    [AccountDeletionConvergence.sessionEnded]. An account that still exists
+  ///    signs in again and may retry; ambiguity is never taken as success.
+  ///
+  /// If a different account holds the live session, nothing is done and
+  /// [AccountDeletionConvergence.none] is returned — before the check, and
+  /// again after it. Concurrent calls for [uid] share one run. Nothing here
+  /// deletes or unlocks anything on a server.
+  @override
+  Future<AccountDeletionConvergence> reconcileAccountDeletion(String uid) {
+    if (uid.isEmpty) return Future.value(AccountDeletionConvergence.none);
+    final inFlight = _deletionReconciliation;
+    if (inFlight != null && _deletionReconciliationUid == uid) return inFlight;
+    final liveUid = _authRepository.currentUserId;
+    if (liveUid != null && liveUid != uid) {
+      return Future.value(AccountDeletionConvergence.none);
+    }
+
+    late final Future<AccountDeletionConvergence> run;
+    run = _runDeletionReconciliation(uid).whenComplete(() {
+      if (identical(_deletionReconciliation, run)) {
+        _deletionReconciliation = null;
+        _deletionReconciliationUid = null;
+      }
+    });
+    _deletionReconciliation = run;
+    _deletionReconciliationUid = uid;
+    return run;
+  }
+
+  Future<AccountDeletionConvergence>? _deletionReconciliation;
+  String? _deletionReconciliationUid;
+
+  Future<AccountDeletionConvergence> _runDeletionReconciliation(
+    String uid,
+  ) async {
+    var existence = AccountExistence.unknown;
+    final repository = _authRepository;
+    if (repository is AccountExistenceProbe) {
+      try {
+        existence =
+            await (repository as AccountExistenceProbe).probeCurrentAccount();
+      } catch (_) {
+        existence = AccountExistence.unknown;
+      }
+    }
+
+    // A different account signed in meanwhile: the answer is not about [uid]
+    // and that session is never touched.
+    final liveUid = _authRepository.currentUserId;
+    if (liveUid != null && liveUid != uid) {
+      if (_accountDeletionQuarantineUid == uid) {
+        _accountDeletionQuarantineUid = null;
+      }
+      return AccountDeletionConvergence.none;
+    }
+
+    await completeAccountDeletion(uid);
+    return existence == AccountExistence.deleted
+        ? AccountDeletionConvergence.deleted
+        : AccountDeletionConvergence.sessionEnded;
   }
 
   /// Hydration, signed-URL resolution and profile saves all complete

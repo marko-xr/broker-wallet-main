@@ -9,6 +9,7 @@ import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
 import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
@@ -350,8 +351,7 @@ class ProfileView extends StatelessWidget {
                               title: localization.translate('deleteAccount'),
                               subtitle:
                                   localization.translate('deleteAccountHint'),
-                              onTap: () =>
-                                  _showDeleteAccountUnavailable(context),
+                              onTap: () => showDeleteAccountFlow(context),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -416,29 +416,6 @@ class ProfileView extends StatelessWidget {
     context.push(
       '/info-placeholder',
       extra: InfoPlaceholderArgs(title: title, message: message, icon: icon),
-    );
-  }
-
-  /// Delete Account is UI-only in this checkpoint: no Supabase deletion,
-  /// no auth.users/public.profiles/media removal is performed. Tapping the
-  /// row only communicates that the feature is coming, never that the
-  /// account was deleted.
-  void _showDeleteAccountUnavailable(BuildContext context) {
-    final localization = AppLocalizations.of(context);
-    final colors = Theme.of(context).colorScheme;
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: Icon(Icons.delete_outline_rounded, color: colors.error),
-        title: Text(localization.translate('deleteAccount')),
-        content: Text(localization.translate('deleteAccountUnavailable')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(localization.translate('ok')),
-          ),
-        ],
-      ),
     );
   }
 }

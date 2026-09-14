@@ -5,6 +5,14 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = true
 
+# Account deletion finalizer (account_deletion.js: runDeletionFinalizer).
+# Production end state. Do NOT deploy the production Worker with this until the
+# staging Worker below has passed, and the account_deletion_jobs migration has
+# been applied. Deploy the code and this trigger together (`wrangler deploy`):
+# a preview version from `wrangler versions upload` does not receive it.
+[triggers]
+crons = ["*/5 * * * *"]
+
 # Private profile-image bucket. The MEDIA_BUCKET binding is used only by worker.js.
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
@@ -26,4 +34,43 @@ required = [
   "SUPABASE_SECRET_KEY",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY"
+]
+
+# -----------------------------------------------------------------------------
+# Staging: a SEPARATE Worker (`r2-profile-upload-staging`) for verifying account
+# deletion and its cron before anything changes on the production Worker.
+# Deploy only with `--env staging`. It has no route or custom domain; it is
+# reachable only at its workers.dev URL, which no production build uses. It
+# writes to its own bucket, and the finalizer only acts on jobs whose `bucket`
+# matches, so it can never finalize production jobs or touch production
+# objects. Its secrets are set separately with `--env staging`.
+# STAGING_TEST_KEY (staging only, never production) gates every HTTP request:
+# the caller must send it in `X-Broker-Wallet-Staging-Key` (staging_gate.js).
+# First-time bootstrap: the four secrets must exist BEFORE the first
+# `wrangler deploy --env staging` (see staging-bootstrap/README.md).
+# -----------------------------------------------------------------------------
+[env.staging]
+workers_dev = true
+preview_urls = false
+
+[env.staging.triggers]
+crons = ["*/5 * * * *"]
+
+[[env.staging.r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "broker-wallet-media-staging"
+
+[env.staging.vars]
+SUPABASE_URL = "https://rbvcnvqpdqrhywcgxkne.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz"
+R2_BUCKET_NAME = "broker-wallet-media-staging"
+R2_S3_ENDPOINT = "https://cb2f5eeef339651f8c7d94dd04866726.r2.cloudflarestorage.com"
+ALLOWED_ORIGIN = "*"
+
+[env.staging.secrets]
+required = [
+  "SUPABASE_SECRET_KEY",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "STAGING_TEST_KEY"
 ]

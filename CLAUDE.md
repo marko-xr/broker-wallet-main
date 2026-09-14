@@ -34,3 +34,12 @@ forwarding it, such as `AuthRepository.authStateChanges` — without an `onError
 turns it into an unhandled async error far from its cause. Always pass
 `onError`, and never treat an auth-stream error as a sign-out: a real sign-out
 arrives as a null identity event.
+
+Known trap: the `r2-profile-upload` Worker's `node_modules` is not part of
+source control. It may exist locally after `npm ci`, stays gitignored, and must
+never be committed. Without it `worker.js` (which imports `aws4fetch`) cannot be
+loaded by Node, so the account-deletion logic lives in `account_deletion.js`,
+whose tests must keep running with no install: keep that module free of
+`aws4fetch` and of any other package import. Run the tests with `npm test` or a bare `node --test`
+from that directory; on Node 24 `node --test test/` fails because a directory
+argument is treated as a module path.

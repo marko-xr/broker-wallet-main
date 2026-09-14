@@ -118,6 +118,25 @@ class OfflineAuthService {
     }
   }
 
+  /// Removes the last-known-good snapshot only if it belongs to [uid].
+  ///
+  /// Used after an account is deleted while a different account may already
+  /// own the single snapshot slot, which must not be cleared on its behalf.
+  Future<void> clearProfileSnapshotIfOwnedBy(String uid) async {
+    if (uid.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final snapshotJson = prefs.getString(_profileSnapshotKey);
+      if (snapshotJson == null) return;
+      final snapshotMap = json.decode(snapshotJson) as Map<String, dynamic>;
+      if (snapshotMap['uid'] == uid) {
+        await prefs.remove(_profileSnapshotKey);
+      }
+    } catch (e) {
+      // Best effort. An unreadable snapshot is never applied to any account.
+    }
+  }
+
   /// Clear cached auth state (for sign out)
   Future<void> clearAuthCache() async {
     try {

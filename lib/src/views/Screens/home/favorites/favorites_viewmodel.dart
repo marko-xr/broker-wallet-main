@@ -53,6 +53,16 @@ class FavoritesViewModel extends ChangeNotifier {
   bool _disposed = false;
   bool _cacheInitialized = false;
 
+  // The canonical-identity generation active when this instance was built.
+  // If `AuthViewModel._handleSessionIdentity` advances the generation later
+  // (the account signed out, or a different account signed in), any fetch
+  // this instance already had in flight is for the wrong account and must
+  // not publish or cache its result — see `_isCurrentForAccount`.
+  final int _creationGeneration = FavoriteService.currentAccountGeneration;
+  bool get _isCurrentForAccount =>
+      !_disposed &&
+      FavoriteService.currentAccountGeneration == _creationGeneration;
+
   List<FavoriteItem> get favorites => _filteredFavorites;
   List<FavoriteItem> get cachedFavorites => _cachedFavorites;
   List<FavoriteItem> get displayFavorites {
@@ -127,17 +137,31 @@ class FavoritesViewModel extends ChangeNotifier {
   Future<void> _refreshImmediately() async {
     if (_disposed) return;
 
+    // Captured before the fetch dispatches, so a per-key mutation that races
+    // this refresh (including one already in flight right now) can be
+    // detected once the fetch's result is about to be applied. The empty
+    // fallback is never actually consulted: `_syncOptimisticServiceWithLoadedFavorites`
+    // returns immediately when `_optimisticFavoritesService` is null, before
+    // this value would be used.
+    final mutationSnapshot = _optimisticFavoritesService
+            ?.snapshotMutationVersions() ??
+        (versions: const <String, int>{}, pendingKeys: const <String>{});
+
     try {
       // Don't show loading state - this should be seamless
       final favoriteMetadata =
           await _favoriteService.getAllFavoritesWithMetadata();
 
-      if (_disposed) return;
+      if (!_isCurrentForAccount) return;
 
       // If no favorites, clear everything and update UI
       if (favoriteMetadata.values.every((metaList) => metaList.isEmpty)) {
-        _allFavorites = [];
-        _cachedFavorites = [];
+        final reconciled = _reconcileFetchedFavorites(
+          const [],
+          mutationSnapshot: mutationSnapshot,
+        );
+        _allFavorites = reconciled;
+        _cachedFavorites = reconciled;
         _applyFilter();
         _safeNotifyListeners();
         return;
@@ -147,19 +171,29 @@ class FavoritesViewModel extends ChangeNotifier {
       final favorites =
           await _loadFavoritesWithLimitedConcurrency(favoriteMetadata);
 
-      if (!_disposed) {
+      if (_isCurrentForAccount) {
         favorites.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-        _allFavorites = favorites;
-        _cachedFavorites = favorites;
+        final reconciled = _reconcileFetchedFavorites(
+          favorites,
+          mutationSnapshot: mutationSnapshot,
+        );
+        _allFavorites = reconciled;
+        _cachedFavorites = reconciled;
         _applyFilter();
 
         // Update optimistic service state to keep it in sync
-        _syncOptimisticServiceWithLoadedFavorites(favorites);
+        _syncOptimisticServiceWithLoadedFavorites(
+          reconciled,
+          mutationSnapshot: mutationSnapshot,
+        );
 
         _safeNotifyListeners();
 
         // Update cache in background
-        _favoriteService.cacheFavorites(favorites);
+        _favoriteService.cacheFavorites(
+          reconciled,
+          expectedGeneration: _creationGeneration,
+        );
       }
     } catch (e) {
       // Don't show error to user - this is a background operation
@@ -167,7 +201,11 @@ class FavoritesViewModel extends ChangeNotifier {
     }
   }
 
-  void _syncOptimisticServiceWithLoadedFavorites(List<FavoriteItem> favorites) {
+  void _syncOptimisticServiceWithLoadedFavorites(
+    List<FavoriteItem> favorites, {
+    required ({Map<String, int> versions, Set<String> pendingKeys})
+        mutationSnapshot,
+  }) {
     if (_optimisticFavoritesService == null) return;
 
     // Group favorites by type for batch updates
@@ -176,8 +214,64 @@ class FavoritesViewModel extends ChangeNotifier {
       favoritesByType.putIfAbsent(favorite.type, () => []).add(favorite.id);
     }
 
-    // Update optimistic service state
-    _optimisticFavoritesService.updateLoadedFavorites(favoritesByType);
+    // Update optimistic service state. Guarded both by this instance's own
+    // creation generation (a no-op if the account has since moved on) and by
+    // `mutationSnapshot` — captured by the caller *before* the fetch that
+    // produced `favorites` began — so a per-key mutation that raced this
+    // fetch is never overwritten by this now-stale bulk result.
+    _optimisticFavoritesService.updateLoadedFavorites(
+      favoritesByType,
+      expectedGeneration: _creationGeneration,
+      mutationSnapshot: mutationSnapshot,
+    );
+  }
+
+  // Reconciles a freshly fetched favorites list against the current
+  // in-memory list so that a mutation (add/remove) which started or
+  // completed after `mutationSnapshot` was captured is never overwritten by
+  // this now-stale fetch — in either direction. For a key whose mutation
+  // version has moved on (or is still pending) since the snapshot, the
+  // *current* list's membership for that key wins; every other key defers to
+  // the fetch, which is authoritative for anything not racing a mutation.
+  // Keys are the union of both lists, so this fixes stale presence (a fetch
+  // that still lists a just-removed item) and stale absence (a fetch that
+  // predates a just-added item) symmetrically.
+  List<FavoriteItem> _reconcileFetchedFavorites(
+    List<FavoriteItem> fetched, {
+    required ({Map<String, int> versions, Set<String> pendingKeys})
+        mutationSnapshot,
+  }) {
+    final service = _optimisticFavoritesService;
+    if (service == null) return fetched;
+
+    final snapshotNow = service.snapshotMutationVersions();
+
+    String keyOf(FavoriteItem item) => '${item.type}_${item.id}';
+
+    bool isAffected(String key) {
+      if (mutationSnapshot.pendingKeys.contains(key)) return true;
+      if (snapshotNow.pendingKeys.contains(key)) return true;
+      final before = mutationSnapshot.versions[key] ?? 0;
+      final now = snapshotNow.versions[key] ?? 0;
+      return before != now;
+    }
+
+    final fetchedByKey = {for (final item in fetched) keyOf(item): item};
+    final currentByKey = {for (final item in _allFavorites) keyOf(item): item};
+    final allKeys = {...fetchedByKey.keys, ...currentByKey.keys};
+
+    final reconciled = <FavoriteItem>[];
+    for (final key in allKeys) {
+      if (isAffected(key)) {
+        final preserved = currentByKey[key];
+        if (preserved != null) reconciled.add(preserved);
+      } else {
+        final authoritative = fetchedByKey[key];
+        if (authoritative != null) reconciled.add(authoritative);
+      }
+    }
+    reconciled.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    return reconciled;
   }
 
   void _initializeAndLoadFavorites() {
@@ -279,10 +373,12 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadFreshFavoritesImmediately() async {
-    if (_disposed) return;
+    if (!_isCurrentForAccount) return;
 
     // Ensure authentication is ready before proceeding
     await _favoriteService.waitForAuthReady();
+
+    if (!_isCurrentForAccount) return;
 
     // Set loading state only if we truly have no data
     if (_cachedFavorites.isEmpty) {
@@ -292,16 +388,27 @@ class FavoritesViewModel extends ChangeNotifier {
     }
 
     try {
+      // Captured immediately before the fetch dispatches, so a per-key
+      // mutation that races it (including one already in flight) can be
+      // detected once the fetch's result is about to be applied.
+      final mutationSnapshot = _optimisticFavoritesService
+              ?.snapshotMutationVersions() ??
+          (versions: const <String, int>{}, pendingKeys: const <String>{});
+
       // Get favorite metadata (IDs with timestamps) from Firestore
       final favoriteMetadata =
           await _favoriteService.getAllFavoritesWithMetadata();
 
-      if (_disposed) return;
+      if (!_isCurrentForAccount) return;
 
       // If no favorites, update state and return
       if (favoriteMetadata.values.every((metaList) => metaList.isEmpty)) {
-        _allFavorites = [];
-        _cachedFavorites = [];
+        final reconciled = _reconcileFetchedFavorites(
+          const [],
+          mutationSnapshot: mutationSnapshot,
+        );
+        _allFavorites = reconciled;
+        _cachedFavorites = reconciled;
         _applyFilter();
         _safeNotifyListeners();
         return;
@@ -311,17 +418,27 @@ class FavoritesViewModel extends ChangeNotifier {
       final favorites =
           await _loadFavoritesWithLimitedConcurrency(favoriteMetadata);
 
-      if (!_disposed) {
+      if (_isCurrentForAccount) {
         favorites.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-        _allFavorites = favorites;
-        _cachedFavorites = favorites; // Also update cached for display
+        final reconciled = _reconcileFetchedFavorites(
+          favorites,
+          mutationSnapshot: mutationSnapshot,
+        );
+        _allFavorites = reconciled;
+        _cachedFavorites = reconciled; // Also update cached for display
         _applyFilter();
 
         // Cache the data for future instant loads
-        await _favoriteService.cacheFavorites(favorites);
+        await _favoriteService.cacheFavorites(
+          reconciled,
+          expectedGeneration: _creationGeneration,
+        );
 
         // Update optimistic service state to keep it in sync
-        _syncOptimisticServiceWithLoadedFavorites(favorites);
+        _syncOptimisticServiceWithLoadedFavorites(
+          reconciled,
+          mutationSnapshot: mutationSnapshot,
+        );
 
         _safeNotifyListeners();
       }
@@ -381,7 +498,7 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   Future<void> loadFavorites() async {
-    if (_disposed) return;
+    if (!_isCurrentForAccount) return;
 
     // Don't set loading state if we already have cached data
     if (_cachedFavorites.isEmpty) {
@@ -394,9 +511,16 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadFreshFavorites() async {
-    if (_disposed) return;
+    if (!_isCurrentForAccount) return;
 
     try {
+      // Captured immediately before the fetch dispatches, so a per-key
+      // mutation that races it (including one already in flight) can be
+      // detected once the fetch's result is about to be applied.
+      final mutationSnapshot = _optimisticFavoritesService
+              ?.snapshotMutationVersions() ??
+          (versions: const <String, int>{}, pendingKeys: const <String>{});
+
       final favoriteMetadata =
           await _favoriteService.getAllFavoritesWithMetadata();
       final List<FavoriteItem> favorites = [];
@@ -444,16 +568,26 @@ class FavoritesViewModel extends ChangeNotifier {
       await Future.wait(futures);
 
       // Sort by added date and update state
-      if (!_disposed) {
+      if (_isCurrentForAccount) {
         favorites.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-        _allFavorites = favorites;
+        final reconciled = _reconcileFetchedFavorites(
+          favorites,
+          mutationSnapshot: mutationSnapshot,
+        );
+        _allFavorites = reconciled;
         _applyFilter();
 
         // Update optimistic service state to keep it in sync
-        _syncOptimisticServiceWithLoadedFavorites(favorites);
+        _syncOptimisticServiceWithLoadedFavorites(
+          reconciled,
+          mutationSnapshot: mutationSnapshot,
+        );
 
         // Cache the fresh data for future instant loads
-        await _favoriteService.cacheFavorites(favorites);
+        await _favoriteService.cacheFavorites(
+          reconciled,
+          expectedGeneration: _creationGeneration,
+        );
 
         _safeNotifyListeners();
       }
@@ -767,7 +901,7 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    if (_disposed) return;
+    if (!_isCurrentForAccount) return;
 
     _isRefreshing = true;
     _safeNotifyListeners();
@@ -776,11 +910,13 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   Future<void> removeFavorite(FavoriteItem favorite) async {
-    if (_disposed) return;
+    if (!_isCurrentForAccount) return;
 
     try {
       // Remove from Firestore
       await _favoriteService.removeFromFavorites(favorite.id, favorite.type);
+
+      if (!_isCurrentForAccount) return;
 
       // Immediately remove from local lists
       _allFavorites.removeWhere(
@@ -792,7 +928,10 @@ class FavoritesViewModel extends ChangeNotifier {
       _applyFilter();
 
       // Update cache
-      await _favoriteService.cacheFavorites(_allFavorites);
+      await _favoriteService.cacheFavorites(
+        _allFavorites,
+        expectedGeneration: _creationGeneration,
+      );
 
       _safeNotifyListeners();
     } catch (e) {
@@ -801,7 +940,13 @@ class FavoritesViewModel extends ChangeNotifier {
   }
 
   void _safeNotifyListeners() {
-    if (!_disposed) {
+    // Centralizes the account-generation guard: once the canonical identity
+    // has moved on from whichever account this instance was built for, every
+    // notification path (loading flips, errors, filters, loaded results)
+    // becomes a no-op, the same way a disposed instance already is. This is
+    // a no-op change for a session with no account transition, since
+    // `_isCurrentForAccount` is then identical to `!_disposed`.
+    if (_isCurrentForAccount) {
       notifyListeners();
     }
   }

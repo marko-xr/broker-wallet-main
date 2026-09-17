@@ -5,6 +5,8 @@ import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
+import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
+    show FavoriteService;
 
 typedef ProfileMediaForgetter = Future<void> Function({
   Iterable<String>? mediaIds,
@@ -21,13 +23,17 @@ typedef ProfileMediaForgetter = Future<void> Function({
 ///  * the `saved_items_offline` / `user_data_offline` entries for that id;
 ///  * the legacy `local_profile` / `pending_profile_uploads` entries for that
 ///    id;
-///  * that account's own profile avatar cache entries.
+///  * that account's own profile avatar cache entries;
+///  * that account's own Favorites cache box (`cached_favorites_<uid>`, see
+///    `FavoriteService.boxNameForUid`) — deleted from disk outright rather
+///    than merely cleared, and safe to do unconditionally because the box
+///    name is unique to this uid and can never be a different, currently
+///    signed-in account's box.
 ///
 /// Only when the deleted account was the one signed in on this device, because
 /// these single-slot caches belong to whichever account was signed in:
 ///  * the cached user model and auth flag;
 ///  * cached item counts;
-///  * the cached favorites box;
 ///  * every profile avatar cache entry and the `profile_media` directory.
 ///
 /// Deliberately kept: language (`languageCode`) and theme (`themeMode`), which
@@ -49,7 +55,6 @@ class DeletedAccountLocalDataCleaner {
     'local_profile',
     'pending_profile_uploads',
   ];
-  static const String _favoritesBox = 'cached_favorites';
 
   Future<void> clear({
     required String deletedUid,
@@ -71,6 +76,9 @@ class DeletedAccountLocalDataCleaner {
         if (Hive.isBoxOpen(box)) await Hive.box(box).delete(deletedUid);
       });
     }
+    await _step(
+      () => Hive.deleteBoxFromDisk(FavoriteService.boxNameForUid(deletedUid)),
+    );
 
     if (!wasSignedInAccount) {
       await _step(() => _forgetProfileMedia(mediaIds: profileMediaIds));
@@ -79,9 +87,6 @@ class DeletedAccountLocalDataCleaner {
 
     await _step(OfflineAuthService.instance.clearAuthCache);
     await _step(CountCacheService.instance.clearCache);
-    await _step(() async {
-      if (Hive.isBoxOpen(_favoritesBox)) await Hive.box(_favoritesBox).clear();
-    });
     await _step(() => _forgetProfileMedia());
   }
 

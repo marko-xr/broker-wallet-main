@@ -34,7 +34,7 @@ class FakeFavoriteService extends FavoriteService {
   }
 
   @override
-  Future<void> initializeCache() async {
+  Future<void> initializeCache({String? uidOverride}) async {
     cacheInitializationCount++;
   }
 
@@ -53,7 +53,10 @@ class FakeFavoriteService extends FavoriteService {
   }
 
   @override
-  Future<void> cacheFavorites(List<FavoriteItem> favorites) async {
+  Future<void> cacheFavorites(
+    List<FavoriteItem> favorites, {
+    required int expectedGeneration,
+  }) async {
     cacheWrites.add(List<FavoriteItem>.from(favorites));
   }
 }

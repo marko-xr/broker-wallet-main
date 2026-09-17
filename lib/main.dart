@@ -118,9 +118,31 @@ Future<void> initializeAppServices() async {
     // CountCacheService init failed (log removed)
   }
 
-  // Initialize favorites cache with timeout
+  // Register the Favorites cache model's adapter once, globally — this is a
+  // type-level registration and does not depend on which box (or which
+  // account's box) is opened later.
   Hive.registerAdapter(CachedFavoriteItemAdapter());
-  await Hive.openBox<CachedFavoriteItem>('cached_favorites');
+
+  // The Favorites cache is now namespaced per account (see
+  // FavoriteService.boxNameForUid) so it is opened lazily, per signed-in uid,
+  // by FavoriteService.initializeCache() itself — not eagerly here, since no
+  // identity is known yet at this point in startup. The box this used to
+  // open unconditionally, under the fixed name 'cached_favorites'
+  // (FavoriteService.legacyBoxName), predates that account-isolation fix and
+  // must never be opened or read again: doing so would resurface whichever
+  // account's data was last cached under it, with no way to confirm it still
+  // belongs to whoever is signed in now.
+  //
+  // It is deliberately left in place rather than deleted: its rows cannot be
+  // attributed to an account from the legacy schema alone, so there is
+  // nothing safe to migrate, and removing it is not required for isolation —
+  // the new implementation is safe purely by never referencing that name
+  // again. Deleting it was tried and reverted: it destroyed real,
+  // already-cached data on first launch with no security benefit. Leaving it
+  // untouched means the first launch of this account-isolation build may
+  // still require an authoritative Supabase reload before Favorites paints —
+  // preserving the old box does not restore the old instant warm-cache
+  // behavior, it only avoids deleting data unnecessarily.
 
   // Initialize favorites service in background - don't block startup
   _initializeFavoritesServiceAsync();
@@ -297,10 +319,23 @@ void main() async {
           lazy: true,
         ),
 
-        // Add OptimisticFavoritesService
-        ChangeNotifierProvider(
-          create: (_) => OptimisticFavoritesService(),
+        // OptimisticFavoritesService holds in-memory, account-scoped favorite
+        // flags shared across every screen. Unlike the on-disk cache (now
+        // namespaced per account), this map is a singleton for the app's
+        // whole lifetime, so it must be told when the canonical identity
+        // changes — the same reason NotificationViewModel below is a
+        // ChangeNotifierProxyProvider rather than a plain one. `??=` (as
+        // NotificationViewModel already does) guarantees the same instance
+        // is always returned after the first build, so no existing
+        // `addListener` subscription is ever lost or recreated.
+        ChangeNotifierProxyProvider<AuthViewModel, OptimisticFavoritesService>(
           lazy: true,
+          create: (_) => OptimisticFavoritesService(),
+          update: (_, authVM, service) {
+            service ??= OptimisticFavoritesService();
+            service.syncAccountGeneration();
+            return service;
+          },
         ),
         ChangeNotifierProxyProvider<AuthViewModel, NotificationViewModel>(
           lazy: true,

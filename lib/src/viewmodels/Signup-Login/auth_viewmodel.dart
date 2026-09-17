@@ -20,6 +20,8 @@ import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
+    show FavoriteService;
 import 'package:image_picker/image_picker.dart' show XFile;
 
 /// Bootstrap / session status.
@@ -1067,6 +1069,14 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
       _discardLastKnownGood();
       _refreshDisplayName(null);
       OfflineAuthService.instance.clearAuthCache();
+      // Cache ownership, same reasoning as clearAuthCache above: a Favorites
+      // cache and in-flight fetch belong to whichever account was signed in
+      // and must never surface for whoever signs in next. This is the single
+      // canonical point every session end is recognized — an explicit
+      // sign-out and an authoritative server-side session invalidation both
+      // arrive here as a null identity — so it protects every account
+      // transition, not only the one started by `signOut()`.
+      unawaited(FavoriteService.invalidateForAccountChange());
       notifyListeners();
 
       if (previousUid != null) {
@@ -1095,6 +1105,11 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
       _discardLastKnownGood();
       if (previousUid != null) {
         OfflineAuthService.instance.clearAuthCache();
+        // A different account's session arrived directly, without an
+        // intervening null identity event. Same cache-ownership rule as
+        // above: the previous account's Favorites cache and any in-flight
+        // fetch it started must not be inherited by this new session.
+        unawaited(FavoriteService.invalidateForAccountChange());
       }
     }
 

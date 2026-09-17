@@ -2185,3 +2185,458 @@ FAVORITES COLD-LOAD DEDUPLICATION = CODE_PROVEN
 - Physical-device/Profile-mode Favorites acceptance remains pending.
 
 Status: CODE_PROVEN. Not VERIFIED_RUNTIME or VERIFIED_REAL_DEVICE.
+
+CORE ENTITY DATA READINESS — VERIFIED_REAL_DEVICE + VERIFIED_HOSTED (2026-09-15/16)
+
+The product owner tested all six entities on a physical Android device.
+Hosted Supabase read-back was performed separately. Statuses below are the
+owner's observations, not inferences from tests.
+
+Broker:
+
+- Create, Read/List, Edit, Soft Delete: VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+
+Office:
+
+- Create, Read/List, Edit, Soft Delete: VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+- Create/Edit with phone: VERIFIED_REAL_DEVICE + VERIFIED_HOSTED, retested
+  after the phone_e164 hotfix below.
+
+Watchman:
+
+- Create with phone, Read/List, Edit with phone, Soft Delete:
+  VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+
+Owner:
+
+- Create with phone, Read/List, Edit with phone, Soft Delete:
+  VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+- No-media path only. Owner media remains deferred.
+
+Request:
+
+- Create with phone, Read/List, Edit with phone, Soft Delete:
+  VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+- Request areas were saved and updated successfully; hosted `request_areas`
+  read-back confirmed child records and ordinal ordering.
+
+Offer:
+
+- Create with phone, Read/List, Edit with phone, Soft Delete:
+  VERIFIED_REAL_DEVICE + VERIFIED_HOSTED.
+- Offer areas were saved and updated successfully; hosted `offer_areas`
+  read-back confirmed child records and ordinal ordering.
+- No-media path only. Offer media remains deferred.
+
+These are scoped CRUD/read-back verifications for the six listed entities on
+one physical device and one hosted project. They are not a statement of
+complete public-release readiness, and they do not include cross-account
+authorization negative tests or exhaustive failure-recovery testing — no such
+evidence exists yet.
+
+PHONE E.164 CONSTRAINT HOTFIX — APPLIED + VERIFIED_HOSTED
+
+The malformed `phone_e164_format` CHECK constraints on `profiles`,
+`requests`, `offers`, `owners`, `offices`, `brokers` and `watchmen` (over-
+escaped regex, previously rejecting every valid E.164 number — see the
+migration's own header comment for the full root-cause explanation) were
+corrected by
+`supabase/migrations/20260915000100_fix_phone_e164_format_constraints.sql`,
+using `^[+][1-9][0-9]{6,14}$`.
+
+- Hosted status: APPLIED + VERIFIED_HOSTED.
+- RLS and column grants were checked after the migration; unchanged.
+- Office phone Create/Edit was subsequently verified on the real device and
+  against the hosted database (see Office above).
+- No phone normalization, Auth, RLS or Flutter code was modified for this
+  hotfix.
+
+MIGRATION-HISTORY RECONCILIATION — commit `0d7fb17`
+
+Three local migration filenames were renamed to match the timestamps already
+applied on hosted Supabase, with no content change (confirmed: three 100%
+identical renames, 0 insertions/0 deletions):
+
+- `20260911181050_revoke_client_profile_phone_writes.sql`
+- `20260911181112_guard_pending_phone_changes.sql`
+- `20260913175221_account_deletion_jobs.sql`
+
+The owner confirmed the post-rename Supabase dry-run reported "Remote
+database is up to date." No old migration was rerun and no remote history
+was repaired.
+
+REMAINING LIMITATIONS — explicitly deferred or unverified
+
+- Owner media and Offer media.
+- Subscription and quota enforcement.
+- Phone Login/Signup backend authentication (legacy-Firebase only; see the
+  PHONE LOGIN / SIGNUP sections above).
+- Final UAE SMS acceptance.
+- Other existing release/security checkpoints not listed above.
+
+NOW — nothing is pending on CORE ENTITY DATA READINESS; this documentation
+sync is the closing action.
+
+NEXT — FAVORITES COLD-LOAD DEDUPLICATION — REAL-DEVICE VERIFICATION.
+
+The Favorites deduplication change (`2372896 perf: deduplicate favorites cold
+load`) is CODE_PROVEN: targeted tests passed, but real-device performance
+verification was deferred because real entity data was not ready. That
+dependency is now resolved for the six tested basic CRUD flows above — it is
+not, by itself, proof that Favorites persistence or migration works, since
+Favorites has not yet been runtime-verified at all.
+
+Before any Favorites testing or further optimization, the next checkpoint
+must first verify, on a real device:
+
+- The currently reachable Favorites route.
+- The current backend used by Favorites.
+- Which entity types Favorites actually supports.
+- How an actual favorite is created and persisted.
+- Cold empty-cache behavior.
+- Warm-cache behavior.
+- Refresh after an optimistic favorite mutation.
+
+Do not assume core CRUD verification automatically proves Favorites
+persistence or migration. Do not claim measurable performance improvement
+without before/after evidence. No new optimization should be performed
+before this runtime verification is complete.
+
+FAVORITES CREATE PERMISSION FIX — VERIFIED_REAL_DEVICE (2026-09-16)
+
+Real-device Favorites verification found that adding a Favorite failed with
+`PostgrestException(message: permission denied for table favorite_brokers,
+code: 42501, ...)`. Root cause, confirmed from the installed `postgrest`
+client source: the existing `FavoriteService.addToFavorites` used a bare
+`.upsert({...})`, which defaults to `Prefer: resolution=merge-duplicates` —
+PostgREST executes that as `INSERT ... ON CONFLICT DO UPDATE`, which Postgres
+requires UPDATE privilege for at plan time even when no row actually
+conflicts. Hosted `authenticated` has SELECT/INSERT(owner_id,
+target_id)/DELETE on all six `favorite_*` tables but no UPDATE anywhere — a
+deliberate, consistent contract across all six tables, not an oversight.
+
+Fix: the same call now passes `ignoreDuplicates: true`, which PostgREST
+executes as `INSERT ... ON CONFLICT DO NOTHING` — needs only INSERT privilege,
+matches the existing grants exactly, and is naturally idempotent on a
+double-tap or a concurrent retry (no error, no duplicate row, `added_at`
+untouched on an already-existing row). No database migration, GRANT, or RLS
+change was made or is required. `removeFromFavorites` and `isFavorite` were
+unaffected (never used upsert).
+
+Static evidence: a client-level regression test constructs a real
+`SupabaseClient` against a recording mock transport (the same harness
+pattern as `test/auth/phone_verification_test.dart`) and asserts the
+outgoing request is `POST` with `Prefer: resolution=ignore-duplicates`, that
+the body never carries `added_at`, and that a repeated call completes without
+throwing.
+
+Real-device verification (owner, 2026-09-16): Add Broker Favorite, correct
+heart state, correct item in the Favorites list, correct Broker details,
+persistence after navigation, persistence after force-stop and restart,
+Remove Favorite, absence after refresh, previous 42501 error gone, no crash.
+Independent hosted read-back confirmed one `favorite_brokers` row existed
+after addition and zero rows existed after removal, with the underlying
+Broker record untouched.
+
+Status: VERIFIED_REAL_DEVICE for the tested Broker Favorite create/persist/
+remove flow. Not a statement about the other five Favorite entity types, and
+not a statement about Favorites cold-load performance, which remained a
+separate, still-open question at this point.
+
+FAVORITES ACCOUNT ISOLATION — VERIFIED_REAL_DEVICE (2026-09-16/17)
+
+Investigating the permission fix surfaced a separate, pre-existing defect:
+the local Favorites cache was a single Hive box (`cached_favorites`), shared
+across every account that ever signed in on a device, with no owner field in
+its `CachedFavoriteItem` schema and no clearing on ordinary sign-out — a
+code-proven cross-account exposure path. A companion, smaller finding:
+`OptimisticFavoritesService` (the in-memory optimistic favorite-flag map) is
+a singleton created once at the app root and was never told about account
+transitions either; its own `clearState()` method had zero call sites.
+
+Rejected design: an intermediate design kept the single shared box and added
+a durably persisted "owner uid" marker (mirroring `PasswordRecoveryStateStore`
+/`AccountDeletionStateStore`), read-gating cache trust on a marker match. A
+dedicated crash-safety review rejected this before implementation: Hive and
+`shared_preferences` are two independent storage backends with independently
+non-atomic durability, so a hard process kill could let one account's Hive
+write durably commit while the marker store still named the previous
+account — a genuine cross-account read on the next launch, provable by
+direct trace, not merely theoretical. This design was never implemented and
+is not the current architecture.
+
+Implemented architecture: **account-scoped Hive boxes**. Each canonical
+Supabase uid gets its own box, `cached_favorites_<uid>`
+(`FavoriteService.boxNameForUid`). There is no shared mutable file and
+nothing that can fall out of sync with anything else — an account's cache
+"ownership" is the box's name, which only that account's own uid can ever
+produce or open. `DeletedAccountLocalDataCleaner` now deletes the deleted
+account's own box precisely, unconditionally (safe unconditionally, since
+box names are disjoint — an improvement on the old code, which only cleared
+the shared box when the deleted account happened to be the one signed in).
+
+The pre-existing, unscoped `cached_favorites` box is deliberately **retained
+on disk, never opened, read, migrated, or deleted** by the new code. Its rows
+cannot be attributed to any account from the legacy schema, so there is
+nothing safe to migrate; deleting it was implemented once, found to destroy
+real, already-cached data with no isolation benefit (isolation comes
+entirely from never referencing that name again), and was reverted before
+any device test. Preserving it does not restore the old instant warm-cache
+experience: the first Favorites open under the new per-uid box name always
+cold-loads once, for every account, including one that had cached data under
+the old scheme.
+
+Additional protections, layered on top of box naming:
+
+- An in-memory, monotonic account-generation counter
+  (`FavoriteService.currentAccountGeneration`), bumped synchronously by
+  `AuthViewModel._handleSessionIdentity` at both of its existing
+  cache-ownership points (a null identity, and a different uid arriving
+  directly) — the single canonical point every identity transition is
+  recognized, not only explicit sign-out, so it also covers a server-side
+  session invalidation.
+- `cacheFavorites` and `OptimisticFavoritesService.updateLoadedFavorites`
+  both require (not merely accept) an `expectedGeneration` argument, so a
+  fetch or optimistic-sync that started under one account cannot write its
+  result after a later account is current — closes a real gap found during
+  review, where `updateLoadedFavorites` had no such guard at all while
+  `toggleFavorite`/`initializeFavoriteStatus` already did.
+- `initializeCache()` re-checks both the live canonical uid and the
+  generation immediately after its `Hive.openBox` await, before assigning
+  the active cache reference — proven against the actual race (a transition
+  while the box is still opening) by a test that starts the call, forces the
+  transition mid-flight, then awaits it; the opened box is left untouched
+  (never closed) since Hive tracks it globally by name.
+- `OptimisticFavoritesService` gained `syncAccountGeneration()`, wired into
+  `main.dart` by converting its Provider registration to a
+  `ChangeNotifierProxyProvider<AuthViewModel, OptimisticFavoritesService>` —
+  the same `??=`-preserves-the-same-instance shape already in production for
+  `NotificationViewModel` — so `clearState()` (previously unreachable) now
+  actually runs on a real identity transition, without losing any existing
+  listener subscription.
+
+STATIC TEST EVIDENCE
+
+- Favorites tests: 20/20 PASS (permission-fix client-level tests, the
+  pre-existing cold-load dedup suite unmodified in behavior, and the new
+  account-isolation suite: box-naming isolation, simulated-restart
+  cross-account read safety, same-account restart, the generation guard, and
+  the `initializeCache` race).
+- Targeted `flutter analyze` on every changed file: PASS, no issues.
+- `git diff --check`: PASS, only the known generated-plugin-registrant
+  line-ending drift, no real whitespace errors.
+- Full `test/auth/`: 284/288 PASS. Full `test/account/`: 49/50 PASS. **Not**
+  claiming either full suite passes.
+
+PRE-EXISTING TEST FAILURES (five, unrelated, not fixed here)
+
+All traced to commit `0d7fb17` (`chore: reconcile Supabase migration
+timestamps`), which renamed three migration files with zero content change.
+Four tests in `test/auth/phone_security_hardening_test.dart` and one in
+`test/account/delete_account_test.dart` read migration files from disk by a
+hardcoded pre-rename path (`File(path).readAsStringSync()`); all five predate
+`0d7fb17` in their own last-modified commit and are untouched by any Favorites
+work. Not migrations or tests to fix in this checkpoint.
+
+SAMSUNG DEVICE VERIFICATION (owner-reported, 2026-09-17)
+
+Test 3 — Single account, all reported PASS: app starts on the correct
+account; initial Favorites state correct; Add Broker Favorite; correct Broker
+details; persistence after navigation; persistence after force-stop and
+restart; Remove Favorite and refresh; no 42501 error; no crash; no Provider
+error.
+
+Test 4 — Cross-account isolation, all reported PASS, full sequence: Account A
+signs in and adds a self-owned test Broker to Favorites; Account A signs out
+normally (no app-data clear); Account B signs in and opens Favorites
+immediately; Account B does not display Account A's Favorites, including no
+observed temporary/flash appearance; the app is closed and restarted while
+on Account B; Account B's Favorites state remains correct; Account B signs
+out; Account A signs in again; Account A sees only its own Favorites.
+
+Status: **VERIFIED_REAL_DEVICE — OWNER-REPORTED** for this tested
+single-account and cross-account UI behavior. Account B's own ability to
+independently create and persist a favorite of its own was not part of the
+tested sequence above and is not claimed.
+
+HOSTED EVIDENCE AND LIMITS: The permission-fix flow (Broker add/remove) has a
+hosted Supabase read-back from 2026-09-16, before the account-isolation
+device tests. **No new hosted read-back was performed after Test 4** — the
+cross-account result above is UI-observed only, not cross-checked against
+`favorite_*` row ownership in the hosted database.
+
+UNVERIFIED SCENARIOS — explicitly not claimed:
+
+- No process-crash or disk-corruption scenario was exercised on the physical
+  device; the `initializeCache` race is proven only by an automated test
+  against a temp-directory Hive instance, not on-device.
+- Interrupted writes (kill mid-write) were not exercised on a physical
+  device.
+- Not every `ChangeNotifierProxyProvider` scheduling edge case or optimistic-
+  state race has dedicated automated coverage — `syncAccountGeneration`'s
+  Provider wiring is verified by source inspection and by analogy to the
+  already-working `NotificationViewModel` pattern, not by a widget test.
+- Favorites functionality for the other five entity types (Requests, Offers,
+  Owners, Offices, Watchmen) was not exercised on this device — only Broker.
+- No performance measurement was taken in Profile mode; no cold-load speed
+  claim is made.
+- Full `test/auth/` and `test/account/` suites are not claimed to pass (see
+  pre-existing failures above).
+- Broker Wallet is not claimed production-ready by any of this work.
+
+NOW — nothing is pending on FAVORITES ACCOUNT ISOLATION; this documentation
+sync is the closing action. No commit or push was performed as part of any
+step in this checkpoint.
+
+NEXT — FAVORITES REMAINING ENTITY TYPES — READ-ONLY READINESS REVIEW.
+
+Only Broker has been verified end to end (create-permission fix, persistence,
+removal, and cross-account isolation) on a real device. Requests, Offers,
+Owners, Offices and Watchmen share the same `FavoriteService`/
+`OptimisticFavoritesService` code paths and the same hosted RLS shape
+(ownership-scoped `favorite_*` tables), so the fixes above almost certainly
+apply to all six uniformly — but this has not been exercised for the other
+five, and must not be assumed. The next checkpoint should be read-only:
+inspect the five remaining entity types' favorite/unfavorite UI entry points,
+confirm nothing about them differs from Broker in a way that would evade the
+fixes in this checkpoint, and identify the smallest additional real-device
+verification step needed — without modifying production code or touching
+hosted data.
+
+---
+
+## FAVORITES FINAL ACCEPTANCE — DOCUMENTATION CLOSURE
+
+Closes two implementation checkpoints that ran after FAVORITES ACCOUNT
+ISOLATION above and were not previously documented (both were
+implementation-only tasks with no doc-update authorization at the time), plus
+the owner's final Samsung device acceptance that followed both.
+
+STALE-HEART REGRESSION (checkpoint: FAVORITES STALE HEART SCOPED
+IMPLEMENTATION)
+
+Root cause: an asynchronous ordering race in `OptimisticFavoritesService`
+between a user mutation (`toggleFavorite`, Add/Remove) and a status read
+(`initializeFavoriteStatus`/`updateLoadedFavorites`). A read dispatched before
+a removal but resolving after it could publish stale pre-removal server truth
+over the removal's own correct result, making a successfully removed item
+show a selected heart again. An initial design proposal (a single shared
+per-key version bumped by both reads and mutations) was rejected before
+implementation: it would have let a later-starting read wrongly supersede an
+already in-flight mutation's own successful result. The implemented fix uses
+two independent per-key counters — `_mutationVersion` (bumped only by
+`toggleFavorite`) and `_readVersion` (bumped only by a read) — so a read can
+never invalidate a mutation, in either direction, while two overlapping reads
+for the same key still agree on which is newest. Files changed:
+`lib/src/services/optimistic_favorites_service.dart` only. New tests:
+`test/favorites/optimistic_favorites_service_ordering_test.dart` (9 tests,
+`Completer`-gated controllable fakes against the real production ordering
+logic).
+
+STALE-LIST FLICKER REGRESSION (checkpoint: FAVORITES STALE LIST
+RECONCILIATION FIX)
+
+A second, distinct regression found after the heart fix: the Favorites
+*list* (not the heart icon) could still show a removed item reappear, or a
+newly added item briefly disappear, because `FavoritesViewModel`'s three
+bulk-fetch paths (`_refreshImmediately`, `_loadFreshFavoritesImmediately`,
+`_loadFreshFavorites`) all assigned `_allFavorites = <fetched result>`
+unconditionally once any fetch resolved — gated only by account generation,
+never by which fetch was more recent or what had mutated since it started.
+Fix: a new `_reconcileFetchedFavorites` helper reconciles a fetch's result
+against the current list using the existing
+`OptimisticFavoritesService.snapshotMutationVersions()` API (no changes to
+that service were needed). For each key in the union of the fetched and
+current lists, a key whose mutation was pending at fetch-start, is pending
+now, or whose mutation version has changed since the snapshot defers to the
+*current* list; every other key defers to the fetch. This protects both
+stale presence (a fetch that still lists a just-removed item) and stale
+absence (a fetch that predates a just-added item) symmetrically, without
+fabricating any item data. All three fetch paths, including each one's
+empty-favorites branch, now thread the same reconciled result through list
+assignment, filtered/display state, the optimistic-service sync call, and
+the cache write. File changed: only
+`lib/src/views/Screens/home/favorites/favorites_viewmodel.dart` (the single
+pre-authorized production file for that checkpoint). New tests:
+`test/favorites/favorites_list_reconciliation_test.dart` — 10 deterministic
+tests covering stale-remove and stale-add protection, pending-mutation
+protection, consecutive removals with an unrelated item updating normally,
+out-of-order overlapping fetches, failed-mutation behavior, empty-state
+stability, account-transition safety, and same-id-different-type
+independence. Pre-fix failure evidence: rather than resetting the git working
+tree, the four reconciliation edits were temporarily reverted in place (via
+the same edit tooling, with the exact original content snapshotted first),
+the new test file was rerun, and the exact original content was then
+restored and diff-verified byte-for-byte. **7 of the 10 new tests failed
+against the pre-fix code**, reproducing the exact remove-reappear/disappear
+symptom; the other 3 (empty-state, account-transition, same-id-different-type)
+passed either way since those particular paths did not strictly require
+reconciliation.
+
+The Favorites-card removal path performing two separate DELETE calls
+(identified during an earlier review) remains **unmodified, known technical
+debt** — not addressed in either of these two checkpoints, and not implied
+to be fixed by the owner's acceptance below. It is not to be actioned without
+a separately scoped checkpoint or an explicit reliability/performance
+justification.
+
+STATIC TEST EVIDENCE (both checkpoints combined)
+
+- `flutter test test/favorites/`: **39/39 PASS** (10 account-isolation + 3
+  create-upsert + 10 list-reconciliation + 9 ordering + 7 initial-load).
+- Targeted `flutter analyze` on every changed file: PASS, no issues.
+- `git diff --check`: PASS — only the known generated-plugin-registrant and
+  edited-file line-ending drift (LF-will-become-CRLF warnings), no real
+  whitespace or conflict-marker errors.
+- Not claiming a full application test suite PASS; the five pre-existing,
+  unrelated migration-filename test failures documented in the FAVORITES
+  ACCOUNT ISOLATION closure above remain outside Favorites scope and were not
+  re-investigated here.
+
+SAMSUNG DEVICE VERIFICATION — FINAL ACCEPTANCE (owner-reported)
+
+The owner completed a further Samsung device test ("Samsung Test 7") after
+the stale-list reconciliation fix and reported: Favorites addition works;
+removal works correctly; removed items no longer reappear temporarily;
+multiple-item removal works; the current removal experience is acceptable;
+no new issue was reported during this final acceptance pass. The owner's own
+words: "Now everything is good ... I test and everything is working well."
+
+Status: **VERIFIED_REAL_DEVICE — OWNER-REPORTED** for the stale-heart
+regression and the stale-list flicker/reappear regression, on the tested
+scenarios (single- and multi-item Favorites add/remove). This is an
+owner-reported observation, not a new automated log, timing measurement, or
+independently captured device trace.
+
+HOSTED EVIDENCE AND LIMITS: unchanged from the FAVORITES ACCOUNT ISOLATION
+closure above — the most recent hosted Supabase read-back predates the
+stale-heart and stale-list fixes. **No new hosted read-back was performed**
+after either of these two UI/state-layer fixes; both are UI-observed
+device evidence only.
+
+KNOWN NON-BLOCKING TECHNICAL DEBT AND OUTSTANDING RISKS — explicitly not
+claimed resolved by this closure:
+
+- The Favorites-card double-DELETE path (above) — unmodified.
+- Office, Owner and Request screens still lack the independently identified
+  on-mount `initializeFavoriteStatus` calls that Broker (and, per source,
+  presumably Offer/Watchmen) already have — unless current source now proves
+  otherwise, this has not been re-checked in either of these two checkpoints
+  and those three screens were **not modified**.
+- No process-crash or interrupted-write scenario was exercised on the
+  physical device for either fix.
+- Full `test/auth/` and `test/account/` suites were not newly rerun in either
+  checkpoint.
+- Favorites functionality for entity types other than Broker was not part of
+  the owner's reported Samsung Test 7 sequence above.
+- Application-wide production readiness is not claimed.
+
+NOW — nothing is pending on FAVORITES FINAL ACCEPTANCE; this documentation
+sync is the closing action. No file was staged, committed, or pushed as part
+of this checkpoint or the two implementation checkpoints it closes out.
+
+NEXT — FAVORITES SCOPED COMMIT PREPARATION — READ-ONLY REVIEW. Prepare an
+exact file-level staging and commit plan for owner approval, isolating the
+Favorites-related changes from unrelated documentation edits and from
+generated-plugin registrant drift. No staging or committing happens until
+that review is explicitly approved.

@@ -11,6 +11,7 @@ import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
+import 'r2_offer_media_upload_service.dart';
 
 /// Supabase CRUD adapter for the six core Broker Wallet entity tables.
 ///
@@ -18,11 +19,29 @@ import 'core_entity_payload_builder.dart';
 /// therefore the ownership/security boundary. Core rows use soft delete via
 /// `deleted_at`; hard delete is intentionally not granted to client sessions.
 class SupabaseCoreEntitiesService {
-  SupabaseCoreEntitiesService({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client;
+  SupabaseCoreEntitiesService({
+    SupabaseClient? client,
+    R2OfferMediaUploadService? offerMedia,
+  })  : _client = client ?? Supabase.instance.client,
+        _offerMedia = offerMedia ?? R2OfferMediaUploadService();
 
   final SupabaseClient _client;
+  final R2OfferMediaUploadService _offerMedia;
   static const Uuid _uuid = Uuid();
+
+  /// Best-effort: an Offer's core fields must still display even if the
+  /// media Worker is briefly unreachable, so a failure here is swallowed to
+  /// an empty list rather than propagated — the same tolerance the rest of
+  /// this class already gives read paths against transient failures.
+  Future<List<String>> _fetchOfferMediaDisplayUrls(String offerId) async {
+    try {
+      final media = await _offerMedia.getOfferMedia(offerId);
+      return media.map((item) => item.url).toList(growable: false);
+    } catch (e) {
+      _debugLog('offer.media', 'media fetch failed for display: $e');
+      return const [];
+    }
+  }
 
   String generateId() => _uuid.v4();
 
@@ -268,7 +287,16 @@ class SupabaseCoreEntitiesService {
         .eq('id', id)
         .isFilter('deleted_at', null)
         .limit(1);
-    return rows.isEmpty ? null : _offerFromRow(rows.first);
+    if (rows.isEmpty) return null;
+    final offer = _offerFromRow(rows.first);
+
+    // Single-offer reads (detail/edit screens, Favorites cards, search
+    // results) populate real signed media URLs; the bulk list fetch below
+    // deliberately does not, to avoid an unbounded fan-out of per-offer
+    // Worker calls for a whole list at once.
+    final mediaUrls = await _fetchOfferMediaDisplayUrls(id);
+    if (mediaUrls.isEmpty) return offer;
+    return offer.copyWith(mediaUrls: mediaUrls, mediaUrl: mediaUrls.first);
   }
 
   OfferModel _offerFromRow(Map<String, dynamic> row) => OfferModel(

@@ -2640,3 +2640,181 @@ exact file-level staging and commit plan for owner approval, isolating the
 Favorites-related changes from unrelated documentation edits and from
 generated-plugin registrant drift. No staging or committing happens until
 that review is explicitly approved.
+
+(Editorial note: the Favorites commit above was subsequently approved,
+staged, and committed as `3fb9634`; a full cross-account RLS metadata review
+and an Office SELECT integration-test harness followed as separate
+checkpoints, documented in this file's own commit history rather than
+retroactively inserted here.)
+
+---
+
+## OFFER PRIVATE MEDIA — SOURCE IMPLEMENTATION (uncommitted)
+
+Implements Offer-only private media upload, persistence, secure retrieval and
+display, extending the existing, already-production-verified profile-image
+Supabase + private Cloudflare R2 architecture. Owner media is explicitly out
+of scope. **Not deployed. Not hosted-verified. Not device-verified.**
+
+WORKER PRODUCTION COMPATIBILITY: confirmed before any change — the
+repository's `cloudflare/workers/r2-profile-upload/worker.js` already
+contains the full production route set (`/authorize`, `/confirm`,
+`/profile-image-url`, `/account/delete`, and the scheduled deletion
+finalizer), matching what is actually deployed. All additions below are
+strictly additive to that file; no existing route, handler, or the
+account-deletion/cron logic in `account_deletion.js`/`staging_gate.js` was
+modified.
+
+WHAT WAS IMPLEMENTED:
+
+- Three new Worker routes on the same production Worker: `POST
+  /offer-media/authorize`, `POST /offer-media/confirm`, `GET /offer-media`.
+  Each independently verifies the Supabase access token and, server-side,
+  that the authenticated user owns the target Offer (`owns` check via a
+  service-role `offers` query, not a client-supplied id) before touching
+  anything.
+- Offer media objects are stored at
+  `profiles/<uid>/offers/<offerId>/<mediaId>.<ext>` — deliberately nested
+  under the *existing* profile-image account prefix rather than a new
+  top-level one. `account_deletion.js`'s `removeAccountMedia` inventories
+  every `media_objects` row for a deleted account and throws
+  `media_cleanup_failed` for any row whose key falls outside that single
+  per-account prefix; a separate `offers/...` prefix would have broken
+  account deletion for any user who ever attached offer media. Nesting keeps
+  offer media inside the existing account-deletion sweep with **no change**
+  to `account_deletion.js`.
+- Confirm links the upload into `offer_media` (idempotent insert, `Prefer:
+  resolution=ignore-duplicates`, mirroring the existing Favorites insert
+  pattern) *before* marking the media object `ready` — deliberately, so a
+  failed link leaves the row `pending_upload`, where the existing
+  `bestEffortDeleteInvalidObjectAndMarkFailed` cleanup path (shared with the
+  profile-image code, unmodified) still correctly matches and fails closed
+  instead of leaving an orphaned `ready`-but-unlinked object. A retry after
+  a client-visible failure is safe: the link insert is idempotent and the
+  mark-ready step re-applies against the still-`pending_upload` row.
+- `GET /offer-media` returns fresh, short-lived signed R2 GET URLs
+  (15-minute TTL, same as profile images) for the offer's confirmed media —
+  never a permanently public URL, never a persisted signed URL.
+- New `lib/src/services/r2_offer_media_upload_service.dart`, mirroring
+  `R2ProfileUploadService`'s shape (bounded timeouts, sanitized exceptions,
+  no token/response logging).
+- `lib/src/services/ScreenServices/offer_service.dart`:
+  `saveOfferWithMediaFast` no longer throws `StateError` for Supabase mode.
+  It now saves the Offer row first (create or update, decided by an existing
+  read rather than a new parameter, since the call site could not be
+  changed — see below), then uploads attached files one at a time. The Offer
+  row's own success is never rolled back for a media failure; failed
+  file(s) are collected and surfaced as a thrown `StateError` naming the
+  offer as saved and listing which photo(s) failed, so the existing
+  unmodified error toast in `add_offers_viewmodel.dart` shows a true,
+  specific failure instead of a false blanket success. New uploads append
+  after whatever media the offer already has (ordinal continuity across
+  edit sessions).
+- `lib/src/services/supabase_core_entities_service.dart`: `getOffer(id)`
+  (single-offer reads — detail/edit screens, Favorites cards, search
+  results) now populates real signed `mediaUrls`/`mediaUrl`, tolerating a
+  Worker failure by falling back to the empty list rather than breaking the
+  read. The bulk `_fetchOffers()` list/grid fetch is **deliberately left
+  unchanged** (still empty media) to avoid an unbounded per-offer Worker
+  fan-out for a whole list at once — a named, deliberate limitation, not an
+  oversight.
+
+A LATENT BUG THIS EXPOSED AND FIXED: before this checkpoint,
+`saveOfferWithMediaFast` under Supabase mode was unreachable whenever any
+file was attached (it always threw first), so its plain-INSERT call to
+`saveOffer` for an *already-existing* offer id (the edit-with-new-media
+case) had never actually been exercised — it would have violated the
+primary key. `_saveOfferWithMediaSupabase` now checks whether the offer
+already exists and calls `updateOffer` instead of `saveOffer` in that case.
+
+DATABASE MIGRATION REQUIRED: **NO.** `owner_media`/`offer_media`,
+`media_objects`, their RLS policies, grants, and the
+`validate_media_attachment_ownership` ownership trigger already existed
+(confirmed in the CORE ENTITY CROSS-ACCOUNT RLS OWNERSHIP review) and are
+unmodified.
+
+STATIC CHECKS: `dart format` (new file formatted; the one pre-existing
+over-length line in `offer_service.dart` left untouched, matching this
+repo's documented pre-existing-deviation policy); targeted `flutter
+analyze` on all three Dart files — no issues; `node --check worker.js` —
+syntax OK; the existing `cloudflare/workers/r2-profile-upload` test suite
+(`node --test`, 55 tests covering `account_deletion.js`/`staging_gate.js`,
+none of which this checkpoint touched) — 55/55 still pass; `git diff
+--check` — clean (only the pre-existing generated-plugin line-ending
+drift).
+
+WHAT REMAINS UNVERIFIED: no real upload was performed; no staging or
+production Worker deployment occurred; no hosted Supabase mutation ran; no
+device or emulator was used. A successful static analysis/syntax check is
+**CODE_PROVEN**, not production verification. Offer media is **not**
+production-ready.
+
+EXACT NEXT CHECKPOINT — OFFER PRIVATE MEDIA STAGING ACCEPTANCE: deploy the
+three new routes to the existing `r2-profile-upload-staging` Worker only
+(never production directly), then exercise authorize → PUT → confirm → list
+end to end against a disposable test Offer, verifying: a same-account round
+trip displays the uploaded image; a cross-account attempt to authorize,
+confirm, or list against another account's Offer is refused; an account
+deletion for a user with attached offer media still completes and leaves
+its `profiles/<uid>/` prefix empty. Only after that passes should production
+deployment be considered, as its own separately approved step.
+
+---
+
+## OFFER PRIVATE MEDIA — STAGING API ACCEPTANCE (owner-executed)
+
+Deployed to the existing staging Worker (`r2-profile-upload-staging`, version
+`5934a60d-bf74-42fe-b3ef-c92fac5dfb15`, bucket `broker-wallet-media-staging`)
+and exercised end to end by the owner from a local, owner-run PowerShell
+procedure (never executed by an agent) using an explicitly approved,
+disposable Account A / Account B pair and a disposable test Offer.
+
+**Status: VERIFIED_HOSTED (API level), owner-executed.** All steps reported
+PASS: the staging gate correctly rejects a request with no key; a request
+with a valid key but no authentication is still rejected; Account A
+authorizes an upload for its own Offer; the real selected JPEG uploads
+directly to private staging R2 via the presigned URL; the upload confirms
+successfully; Account A's authorized list returns it; the returned signed
+GET URL retrieves the image; the downloaded bytes' SHA-256 matches the
+original file exactly; Account B is denied with 404 on authorize, confirm,
+and list against Account A's Offer and media. Production Worker
+(`f5bdf3eb-400e-488f-930b-d3c5e78a0624`) was not touched and remains on its
+prior version throughout.
+
+**Exact test-artifact database read-back: PENDING.** The owner-executed run
+created exactly one `media_objects` row (bucket
+`broker-wallet-media-staging`), one `offer_media` association, and one R2
+object in that bucket. A row-level reconciliation (offer ownership, media
+bucket/status/owner match, exactly one association) was designed and is
+ready to run the moment the owner supplies the specific `offerId` and
+`mediaObjectId` from their local run — not yet supplied, so this specific
+reconciliation is not yet closed, distinct from the API-level PASS above.
+
+**Flutter real-device acceptance: NOT VERIFIED.** The staging run exercised
+the Worker's HTTP contract directly; no Flutter code, on any device or
+simulator, has executed the Offer Media upload/display path yet.
+
+**Production deployment: NOT PERFORMED.** Production remains on
+`f5bdf3eb-400e-488f-930b-d3c5e78a0624`, unchanged.
+
+**Staging test artifacts: retained, cleanup not authorized.** The one
+`media_objects` row, one `offer_media` association, and one R2 object created
+by the acceptance run remain in the shared Supabase database (staging and
+production share one project) and the staging bucket. No SQL delete, no R2
+delete, and no account operation has been performed. Retention is not
+characterized as indefinitely safe by default — it is an open decision for
+the owner, to be resolved by either accepting it as a standing regression
+fixture or approving a dedicated, dependency-ordered cleanup checkpoint
+(delete the `offer_media` row, then the `media_objects` row, then the R2
+object, each followed by a read-back).
+
+**Do not mark Offer Media production-ready.** Only the Worker-side contract
+is now real-world proven; the Flutter client path and production deployment
+remain unverified and unperformed respectively.
+
+NOW — nothing further is pending on Worker-side staging verification.
+
+NEXT — reconcile the exact test artifacts once the owner supplies the
+`offerId`/`mediaObjectId`, then prepare a separately approved production
+deployment (its own checkpoint, gated on that reconciliation and, at the
+owner's discretion, on a Flutter real-device pass first).

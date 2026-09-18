@@ -8,6 +8,7 @@ import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../fast_media_upload_service.dart';
 import '../map_data_cache_service.dart';
+import '../r2_offer_media_upload_service.dart';
 import '../supabase_core_entities_service.dart';
 
 class OfferService {
@@ -16,6 +17,8 @@ class OfferService {
   final _mapDataCache = MapDataCacheService();
   final FastMediaUploadService _fastUploadService = FastMediaUploadService();
   SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+  final R2OfferMediaUploadService _offerMediaUpload =
+      R2OfferMediaUploadService();
 
   String? get _currentUserId =>
       RepositoryProvider.instance.authRepository.currentUserId;
@@ -60,12 +63,11 @@ class OfferService {
     String? offerId,
   }) async {
     if (SupabaseConfig.useSupabaseAuth) {
-      if (mediaFiles.isNotEmpty) {
-        throw StateError(
-          'Media upload is disabled until the Cloudflare R2 migration batch is applied.',
-        );
-      }
-      return _supabase.saveOffer(offer, offerId: offerId);
+      return _saveOfferWithMediaSupabase(
+        offer: offer,
+        mediaFiles: mediaFiles,
+        offerId: offerId,
+      );
     }
 
     if (_currentUserId == null) throw Exception('User not authenticated');
@@ -101,6 +103,74 @@ class OfferService {
       collection: 'offers',
       documentId: offerId,
     );
+  }
+
+  /// Saves (creates or updates) the Offer row itself first — exactly the
+  /// same path as [saveOffer]/[updateOffer], so an Offer with no attached
+  /// media always behaves as before — then uploads any attached files
+  /// through the private R2 Worker one at a time.
+  ///
+  /// The Offer row's own success is never rolled back for a media failure:
+  /// losing already-entered Offer data because one photo failed to upload
+  /// would be worse than losing the photo. Instead, any file that fails to
+  /// upload or confirm is collected and surfaced as a thrown exception after
+  /// the Offer itself is safely saved, so the caller's existing error UI
+  /// (`add_offers_viewmodel.dart`'s save handler) shows a clear failure
+  /// rather than a false "saved successfully" for attachments that did not
+  /// actually save. The user can re-open Edit and retry just the media.
+  Future<String> _saveOfferWithMediaSupabase({
+    required OfferModel offer,
+    required List<File> mediaFiles,
+    String? offerId,
+  }) async {
+    final resolvedId = offerId ?? _supabase.generateId();
+    final existing = await _supabase.getOffer(resolvedId);
+
+    final String savedOfferId;
+    if (existing == null) {
+      savedOfferId = await _supabase.saveOffer(offer, offerId: resolvedId);
+    } else {
+      await _supabase.updateOffer(resolvedId, offer);
+      savedOfferId = resolvedId;
+    }
+
+    if (mediaFiles.isEmpty) return savedOfferId;
+
+    // New uploads are appended after whatever this offer already has, so a
+    // second edit session's attachments do not collide on ordinal with the
+    // first's.
+    var nextOrdinal = 0;
+    try {
+      final currentMedia = await _offerMediaUpload.getOfferMedia(savedOfferId);
+      nextOrdinal = currentMedia.length;
+    } catch (_) {
+      // Best-effort only: worst case a collision fails that one file closed
+      // (rejected, not silently dropped) rather than corrupting anything.
+    }
+
+    final failedFileNames = <String>[];
+    for (final file in mediaFiles) {
+      try {
+        await _offerMediaUpload.uploadOfferMediaFile(
+          offerId: savedOfferId,
+          file: file,
+          ordinal: nextOrdinal,
+        );
+        nextOrdinal += 1;
+      } catch (e) {
+        failedFileNames.add(file.path.split(Platform.pathSeparator).last);
+      }
+    }
+
+    if (failedFileNames.isNotEmpty) {
+      throw StateError(
+        'Offer saved, but ${failedFileNames.length} of ${mediaFiles.length} '
+        'photo(s) failed to upload (${failedFileNames.join(', ')}). '
+        'Edit the offer to retry.',
+      );
+    }
+
+    return savedOfferId;
   }
 
   Future<void> removeMediaUrls(String offerId, List<String> urlsToRemove) async {

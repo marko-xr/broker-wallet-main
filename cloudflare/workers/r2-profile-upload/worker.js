@@ -12,16 +12,31 @@ import {
 import { stagingRequestAllowed } from './staging_gate.js';
 
 /**
- * Private profile-image lifecycle worker.
+ * Private profile-image and offer-media lifecycle worker.
  *
  * Public endpoints:
- *   POST /authorize
- *   POST /confirm
- *   GET  /profile-image-url
+ *   POST /authorize              (profile image)
+ *   POST /confirm                (profile image)
+ *   GET  /profile-image-url      (profile image)
+ *   POST /offer-media/authorize
+ *   POST /offer-media/confirm
+ *   GET  /offer-media
  *   POST /account/delete   (see account_deletion.js)
  *
  * Scheduled:
  *   account deletion finalizer (see account_deletion.js)
+ *
+ * Offer media deliberately reuses the profile image's own R2 object-key
+ * prefix, `profiles/<uid>/...` (nesting under it as
+ * `profiles/<uid>/offers/<offerId>/<mediaId>.<ext>`), rather than a separate
+ * top-level prefix. `account_deletion.js`'s `removeAccountMedia` inventories
+ * every `media_objects` row for the account and requires every object key to
+ * start with that same per-account prefix — see its own comment: "a key
+ * outside the account's prefix... deletion stops rather than orphan it." A
+ * separate `offers/...` prefix would make that check throw
+ * `media_cleanup_failed` for any account that ever attached offer media,
+ * breaking account deletion. Nesting under the existing prefix keeps offer
+ * media inside the account-deletion sweep with no change to that file.
  */
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -55,6 +70,9 @@ export default {
       if (request.method === 'POST' && path === '/authorize') return await handleAuthorize(request, env);
       if (request.method === 'POST' && path === '/confirm') return await handleConfirm(request, env);
       if (request.method === 'GET' && path === '/profile-image-url') return await handleProfileImageUrl(request, env);
+      if (request.method === 'POST' && path === '/offer-media/authorize') return await handleOfferMediaAuthorize(request, env);
+      if (request.method === 'POST' && path === '/offer-media/confirm') return await handleOfferMediaConfirm(request, env);
+      if (request.method === 'GET' && path === '/offer-media') return await handleOfferMediaList(request, env);
       return corsResponse({ error: 'Not found' }, 404, env);
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
@@ -253,6 +271,228 @@ async function handleProfileImageUrl(request, env) {
   );
 }
 
+async function handleOfferMediaAuthorize(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+
+  const body = await readJson(request);
+  const { offerId, contentType, contentLength, originalFileName } = body;
+  if (typeof offerId !== 'string' || !MEDIA_ID_PATTERN.test(offerId)) {
+    throw new WorkerError('offerId is required', 400);
+  }
+  if (!isAllowedContentType(contentType)) {
+    throw new WorkerError('Unsupported content type', 400);
+  }
+  if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > MAX_IMAGE_BYTES) {
+    throw new WorkerError('contentLength must be an integer between 1 and 10485760 bytes', 400);
+  }
+
+  await assertOwnsOffer(offerId, userId, env);
+  await bestEffortCleanupAbandonedPending(userId, env);
+
+  const mediaObjectId = crypto.randomUUID();
+  const objectKey = offerObjectKey(userId, offerId, mediaObjectId, contentType);
+  const insertRes = await supabaseServiceFetch(env, 'POST', '/rest/v1/media_objects', {
+    id: mediaObjectId,
+    owner_id: userId,
+    bucket: env.R2_BUCKET_NAME,
+    object_key: objectKey,
+    media_type: 'image',
+    content_type: contentType,
+    size_bytes: contentLength,
+    original_file_name: sanitizeOriginalFileName(originalFileName),
+    status: 'pending_upload',
+  });
+  if (!insertRes.ok) {
+    throw new WorkerError('Failed to create pending media metadata', 502);
+  }
+
+  try {
+    const quarantineCheckedAt = Date.now();
+    await assertUploadsAllowed(userId, env);
+    const presignedUrl = await createPresignedR2Url({
+      env,
+      method: 'PUT',
+      objectKey,
+      contentType,
+      expiresInSeconds: PUT_URL_TTL_SECONDS,
+    });
+    assertPresignedWithin(presignedUrl, quarantineCheckedAt + MAX_SIGNING_DELAY_MS);
+    return corsResponse(
+      { presignedUrl, mediaObjectId, objectKey, expiresInSeconds: PUT_URL_TTL_SECONDS },
+      200,
+      env,
+      { 'Cache-Control': 'no-store' },
+    );
+  } catch (error) {
+    await bestEffortDeletePendingMedia(mediaObjectId, userId, env);
+    if (error instanceof AccountDeletionError) {
+      throw new WorkerError(
+        error.code === 'deletion_in_progress' ? 'Account deletion in progress' : 'Upload authorization unavailable',
+        error.status,
+      );
+    }
+    throw error;
+  }
+}
+
+async function handleOfferMediaConfirm(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const { offerId, mediaObjectId, role, ordinal } = await readJson(request);
+  if (typeof offerId !== 'string' || !MEDIA_ID_PATTERN.test(offerId)) {
+    throw new WorkerError('offerId is required', 400);
+  }
+  if (typeof mediaObjectId !== 'string' || !MEDIA_ID_PATTERN.test(mediaObjectId)) {
+    throw new WorkerError('mediaObjectId is required', 400);
+  }
+  const resolvedRole = typeof role === 'string' && role.trim() ? role.trim() : 'gallery';
+  const resolvedOrdinal = Number.isInteger(ordinal) && ordinal >= 0 ? ordinal : 0;
+
+  await assertOwnsOffer(offerId, userId, env);
+
+  const row = await loadOwnedMedia(mediaObjectId, userId, env);
+  if (row.bucket !== env.R2_BUCKET_NAME || !isExpectedOfferObjectKey(row, userId, offerId)) {
+    throw new WorkerError('Media object is not in the configured offer-media location', 409);
+  }
+  if (row.status === 'ready') {
+    // 'ready' is only ever reached below, after the offer_media link already
+    // succeeded — see the ordering note further down. A retry that arrives
+    // after the client missed the first response is therefore already fully
+    // done; nothing further to do.
+    return corsResponse({ offerId, mediaObjectId, alreadyConfirmed: true }, 200, env);
+  }
+  if (row.status !== 'pending_upload') {
+    throw new WorkerError(`Unexpected media status: ${row.status}`, 409);
+  }
+
+  const r2Object = await env.MEDIA_BUCKET.head(row.object_key);
+  if (!r2Object) {
+    await rejectInvalidUpload(row, userId, env, 'Object not found in R2');
+  }
+  if (r2Object.size < 1 || r2Object.size > MAX_IMAGE_BYTES) {
+    await rejectInvalidUpload(row, userId, env, 'R2 object size is invalid');
+  }
+
+  const signatureObject = await env.MEDIA_BUCKET.get(row.object_key, {
+    range: { offset: 0, length: SIGNATURE_BYTES_TO_READ },
+  });
+  if (!signatureObject) {
+    await rejectInvalidUpload(row, userId, env, 'R2 object body not found');
+  }
+  const signatureBytes = new Uint8Array(await signatureObject.arrayBuffer());
+  const detectedContentType = detectImageMimeFromBytes(signatureBytes);
+  const observedContentType = r2Object.httpMetadata?.contentType ?? null;
+  if (
+    !detectedContentType ||
+    detectedContentType !== row.content_type ||
+    (observedContentType !== null && observedContentType !== row.content_type)
+  ) {
+    await rejectInvalidUpload(row, userId, env, 'Uploaded image type does not match authorized metadata');
+  }
+
+  // Linked to the offer BEFORE being marked ready — deliberately, so that if
+  // this insert fails, the media row is still 'pending_upload' and the
+  // existing bestEffortDeleteInvalidObjectAndMarkFailed helper's own
+  // `status=eq.pending_upload` guard (shared with the profile-image path)
+  // still correctly matches it, rather than needing a second, separately
+  // guarded cleanup path. A row linked-but-not-yet-ready is invisible to
+  // /offer-media (it filters on status='ready'), so this ordering is safe to
+  // observe mid-flight, and idempotent to retry: ignoreDuplicates makes a
+  // second insert of the same link a no-op.
+  const linkRes = await supabaseServiceFetch(
+    env,
+    'POST',
+    '/rest/v1/offer_media',
+    { offer_id: offerId, media_id: mediaObjectId, role: resolvedRole, ordinal: resolvedOrdinal },
+    { ignoreDuplicates: true },
+  );
+  if (!linkRes.ok) {
+    await rejectInvalidUpload(row, userId, env, 'Failed to attach media to the offer');
+  }
+
+  const markReadyRes = await supabaseServiceFetch(
+    env,
+    'PATCH',
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&owner_id=eq.${encodeURIComponent(userId)}&status=eq.pending_upload`,
+    { status: 'ready', size_bytes: r2Object.size, content_type: observedContentType || detectedContentType },
+  );
+  if (!markReadyRes.ok) {
+    // The link now exists but the row is stuck 'pending_upload'. Not
+    // silently reported as success: the client sees this failure and a
+    // retry re-enters this same function, re-validates the still-pending
+    // row, and safely retries just the mark-ready step (the link insert
+    // above is idempotent).
+    throw new WorkerError('Failed to mark offer media ready', 502);
+  }
+
+  return corsResponse({ offerId, mediaObjectId }, 200, env);
+}
+
+async function handleOfferMediaList(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const offerId = new URL(request.url).searchParams.get('offerId');
+  if (typeof offerId !== 'string' || !MEDIA_ID_PATTERN.test(offerId)) {
+    throw new WorkerError('offerId is required', 400);
+  }
+
+  await assertOwnsOffer(offerId, userId, env);
+
+  const linksRes = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&select=media_id,role,ordinal,media_objects(id,bucket,object_key,status,content_type)&order=ordinal.asc`,
+  );
+  if (!linksRes.ok) throw new WorkerError('Failed to read offer media', 502);
+  const links = (await linksRes.json()) ?? [];
+
+  const media = [];
+  for (const link of links) {
+    const object = link.media_objects;
+    if (!object || object.status !== 'ready') continue;
+    if (object.bucket !== env.R2_BUCKET_NAME || !isExpectedOfferObjectKey(object, userId, offerId)) continue;
+    const url = await createPresignedR2Url({
+      env,
+      method: 'GET',
+      objectKey: object.object_key,
+      expiresInSeconds: GET_URL_TTL_SECONDS,
+    });
+    media.push({ mediaObjectId: object.id, role: link.role, ordinal: link.ordinal, url });
+  }
+
+  return corsResponse(
+    { offerId, media, expiresInSeconds: GET_URL_TTL_SECONDS },
+    200,
+    env,
+    { 'Cache-Control': 'no-store' },
+  );
+}
+
+async function assertOwnsOffer(offerId, userId, env) {
+  const offerRes = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/offers?id=eq.${encodeURIComponent(offerId)}&owner_id=eq.${encodeURIComponent(userId)}&deleted_at=is.null&select=id`,
+  );
+  if (!offerRes.ok) throw new WorkerError('Failed to verify offer ownership', 502);
+  const rows = await offerRes.json();
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new WorkerError('Offer not found or not owned by user', 404);
+  }
+}
+
+function offerObjectKey(userId, offerId, mediaObjectId, contentType) {
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' }[contentType];
+  // Deliberately nested under the existing profile-image account prefix —
+  // see the file header comment for why.
+  return `profiles/${userId}/offers/${offerId}/${mediaObjectId}.${extension}`;
+}
+
+function isExpectedOfferObjectKey(row, userId, offerId) {
+  return isAllowedContentType(row.content_type) && row.object_key === offerObjectKey(userId, offerId, row.id, row.content_type);
+}
+
 async function verifySupabaseTokenAndGetUserId(request, env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
     throw new WorkerError('Missing Supabase public runtime configuration', 500);
@@ -312,10 +552,16 @@ async function createPresignedR2Url({ env, method, objectKey, contentType, expir
 
 async function supabaseServiceFetch(env, method, path, body, options = {}) {
   if (!env.SUPABASE_SECRET_KEY) throw new WorkerError('Missing Supabase server secret', 500);
+  const preferParts = [options.preferRepresentation ? 'return=representation' : 'return=minimal'];
+  // ON CONFLICT DO NOTHING instead of PostgREST's default merge-duplicates,
+  // matching the same client-side pattern already used for Favorites inserts
+  // (see FavoriteService.addToFavorites) — makes a retried offer_media link
+  // insert idempotent instead of erroring on the primary key.
+  if (options.ignoreDuplicates) preferParts.push('resolution=ignore-duplicates');
   const headers = {
     apikey: env.SUPABASE_SECRET_KEY,
     'Content-Type': 'application/json',
-    Prefer: options.preferRepresentation ? 'return=representation' : 'return=minimal',
+    Prefer: preferParts.join(','),
   };
   return fetch(`${env.SUPABASE_URL}${path}`, {
     method,

@@ -1845,6 +1845,7 @@
   "forSale": "FOR SALE",
   "offerDeletedSuccessfully": "Offer deleted successfully",
   "failedToDeleteOffer": "Failed to delete offer",
+  "offerSavedMediaPartialFailure": "The offer was saved, but one or more photos could not be uploaded. Edit the offer to retry.",
 
   "propertyOwner": "Property Owner",
   "propertyOwnerCaps": "PROPERTY OWNER",

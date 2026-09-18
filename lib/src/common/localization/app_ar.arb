@@ -1772,6 +1772,7 @@
 
   "offerDeletedSuccessfully": "تم حذف العرض بنجاح",
   "failedToDeleteOffer": "فشل في حذف العرض",
+  "offerSavedMediaPartialFailure": "تم حفظ العرض، لكن تعذّر رفع صورة واحدة أو أكثر. يمكنك تعديل العرض لإعادة المحاولة.",
 
   "propertyOwner": "مالك العقار",
   "propertyOwnerCaps": "مالك العقار",

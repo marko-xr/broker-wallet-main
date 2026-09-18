@@ -9,12 +9,32 @@ import '../../services/core_entity_payload_builder.dart';
 class CoreEntityErrorMessage {
   CoreEntityErrorMessage._();
 
-  static String save(Object error, String entity, {required bool isUpdate}) {
+  static String save(
+    Object error,
+    String entity, {
+    required bool isUpdate,
+    String Function(String key)? translate,
+  }) {
     if (error is PhoneValidationException) {
       return 'Please enter a valid phone number.';
     }
     if (error is CoreEntityValidationException) {
       return error.message;
+    }
+    // Matches only the specific partial-upload StateError thrown by
+    // OfferService._saveOfferWithMediaSupabase (offer_service.dart), never a
+    // raw file name, path, or the failure count from that message: the $entity
+    // itself is already saved by the time that error is thrown, so the
+    // generic save-failure message below would falsely claim total failure.
+    // Only this branch is localized; every other message in this class is
+    // unchanged, pre-existing English-only technical debt.
+    if (error is StateError &&
+        error.message.contains('photo(s) failed to upload')) {
+      if (translate != null) {
+        return translate('offerSavedMediaPartialFailure');
+      }
+      return 'The $entity was saved, but one or more photos could not be '
+          'uploaded. Edit the $entity to retry.';
     }
     if (error is StateError && error.message.contains('session')) {
       return 'Your session has expired. Please sign in again.';

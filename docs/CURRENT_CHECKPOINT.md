@@ -2818,3 +2818,120 @@ NEXT — reconcile the exact test artifacts once the owner supplies the
 `offerId`/`mediaObjectId`, then prepare a separately approved production
 deployment (its own checkpoint, gated on that reconciliation and, at the
 owner's discretion, on a Flutter real-device pass first).
+
+---
+
+## OFFER MEDIA — PARTIAL-UPLOAD ERROR MESSAGE CORRECTION (uncommitted)
+
+Owner-approved hosted reconciliation (separate from this correction, not
+repeated here) subsequently found real Samsung device evidence: one `ready`
+production media object/association for a newly created test Offer, and seven
+`failed` `media_objects` rows (six on an edited test Offer, one on the created
+test Offer) — all rejected during the Worker's `/offer-media/confirm` step,
+never linked into `offer_media`. The exact per-object Worker rejection reason
+is not persisted anywhere and could not be recovered; the image-format/
+signature root cause behind those seven failures **remains unresolved** and is
+explicitly out of scope for this checkpoint.
+
+PROVEN DEFECT (source-confirmed, now corrected): `OfferService.
+_saveOfferWithMediaSupabase` (`lib/src/services/ScreenServices/
+offer_service.dart`) always saves/updates the Offer row first and only then
+uploads attached media; a media-upload failure throws a specific `StateError`
+naming the offer as saved and listing the failed file(s). The generic mapper
+in `lib/src/common/utils/core_entity_error_message.dart` had no case for that
+message, so it fell through to the same generic "Unable to update/save the
+offer" text used for a total Offer-persistence failure — falsely implying the
+Offer itself was not saved.
+
+CORRECTION: `CoreEntityErrorMessage.save` gained one additional `StateError`
+branch, matched only on the distinctive, grep-confirmed-unique substring
+`'photo(s) failed to upload'` (present nowhere else in the codebase), placed
+before the existing `'session'` StateError branch. It returns a fixed,
+non-localized string — consistent with every other branch already in this
+class, none of which are localized — stating that the entity was saved but
+one or more photos could not be uploaded, without echoing the original
+message, any file name, or any path. No other branch, no `offer_service.dart`
+logic, and no unrelated CRUD module's error mapping were touched.
+
+STATIC TEST EVIDENCE: new `test/common/core_entity_error_message_test.dart`,
+8/8 PASS — the known partial-upload StateError maps correctly; the raw failed
+file name is not leaked into the mapped message; the pre-existing session,
+permission (Postgrest `42501`), and timeout mappings are unchanged; an
+unrelated `StateError` (`removeMediaUrls`'s R2-migration-pending message) and
+an ordinary total-failure `StateError` both still fall through to the
+original generic message. Targeted `flutter analyze` on both changed/added
+files: no issues. `git status`/`git diff --check`: only this one production
+file and the one new test file changed, plus the known unrelated generated-
+plugin-registrant drift; clean, no line-ending errors.
+
+NOT PERFORMED: no Flutter real-device verification of this specific message
+change; no Worker/Cloudflare change; no Supabase migration or mutation; no
+cleanup of the seven failed `media_objects` rows (still present, still
+awaiting an owner decision); no image-format/signature fix; no git add,
+commit, or push.
+
+NOW — superseded by the localization completion below.
+
+NEXT — see the localization addendum's own NOW/NEXT.
+
+### ADDENDUM — EN/AR LOCALIZATION OF THE PARTIAL-FAILURE MESSAGE (uncommitted)
+
+A same-day follow-up review found that the correction above, while accurate,
+returned a hard-coded English-only string with no path to Arabic — the
+project's own `AGENTS.md` rule ("Do not hard-code production UI strings when
+localization exists") was not actually satisfied, only reproduced against
+existing technical debt in the same call path (the neighboring success/
+validation toasts in this same viewmodel are equally hard-coded English and
+remain untouched, out of scope). This addendum closes only the localization
+gap for the one message this checkpoint introduced.
+
+CORRECTION:
+- One new key, `offerSavedMediaPartialFailure`, added to both
+  `lib/src/common/localization/app_en.arb` and
+  `lib/src/common/localization/app_ar.arb` (the project's manually-loaded
+  JSON/ARB localization system — no code generation step exists or was
+  needed). English: "The offer was saved, but one or more photos could not be
+  uploaded. Edit the offer to retry." Arabic: "تم حفظ العرض، لكن تعذّر رفع صورة
+  واحدة أو أكثر. يمكنك تعديل العرض لإعادة المحاولة."
+- `CoreEntityErrorMessage.save` gained one new optional named parameter,
+  `String Function(String key)? translate`, defaulting to `null`. It is
+  consulted only inside the existing partial-upload branch; every other
+  branch and every other existing caller (`add_watchmen_viewmodel.dart`,
+  `add_requested_viewmodel.dart`, `add_owners_viewmodel.dart`,
+  `add_offices_viewmodel.dart`, `add_brokers_viewmodel.dart` — none of which
+  were modified) is unaffected, since an optional named parameter is
+  backward-compatible and none of them pass it. When `translate` is `null`
+  the exact previous English string is still returned, unchanged.
+- `add_offers_viewmodel.dart`'s single `CoreEntityErrorMessage.save` call site
+  now passes `context.mounted ? AppLocalizations.of(context).translate :
+  null` — obtained only while the context is still valid, falling back to the
+  existing English text otherwise. No other line in this file changed: Offer
+  save ordering, persistence, media upload, navigation, and success handling
+  are untouched, as is every other hard-coded string in the file.
+
+STATIC TEST EVIDENCE: `test/common/core_entity_error_message_test.dart`
+extended to 13/13 PASS, adding: the English-translator case, the
+Arabic-translator case, the no-translator English-fallback case, and a case
+proving a filesystem path / R2-object-key-shaped / signed-URL-query-shaped
+fragment embedded in the underlying exception still cannot reach the
+user-facing message; plus a new small group that reads both `.arb` files
+directly from disk and asserts the new key exists, is valid JSON, and its
+Arabic value differs from the English one. Targeted `flutter analyze` on all
+four changed Dart files: no issues. `git diff --check`: clean. `git status`:
+only the four approved production files plus the test file and this doc
+changed, plus the known unrelated generated-plugin-registrant drift.
+
+NOT PERFORMED: no Flutter real-device verification of either the message
+text or its Arabic rendering; no Worker/Cloudflare change; no Supabase
+mutation; no cleanup of the seven failed `media_objects` rows (still
+retained); no image-format/signature fix (root cause remains unresolved); no
+git add, commit, or push; no unrelated localization technical debt addressed.
+
+NOW — nothing further is pending on this message-mapping/localization
+correction itself; it remains uncommitted pending owner review.
+
+NEXT — owner real-device confirmation, in both English and Arabic app
+language, that a known photo-upload failure now shows the correct localized
+partial-success message; separately, and only when explicitly approved,
+investigate the unresolved image-format/signature root cause behind the
+seven failed records.

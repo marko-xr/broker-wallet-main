@@ -762,10 +762,15 @@ class AddOffersViewModel extends ChangeNotifier
         await _handleAddMode(context, mediaFilesToUpload);
       }
     } catch (e) {
+      // Only obtained when the context is still valid; an unmounted context
+      // falls back to CoreEntityErrorMessage's existing English text.
+      final translate =
+          context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
         e,
         'offer',
         isUpdate: isEditMode,
+        translate: translate,
       );
       if (context.mounted) {
         _showToast(_error!, Colors.red);

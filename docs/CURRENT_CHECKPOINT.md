@@ -2927,11 +2927,109 @@ mutation; no cleanup of the seven failed `media_objects` rows (still
 retained); no image-format/signature fix (root cause remains unresolved); no
 git add, commit, or push; no unrelated localization technical debt addressed.
 
-NOW — nothing further is pending on this message-mapping/localization
-correction itself; it remains uncommitted pending owner review.
+NOW — superseded by the byte-signature correction below for the image-format
+question specifically; the localization correction above is unaffected and
+remains its own pending item.
 
-NEXT — owner real-device confirmation, in both English and Arabic app
-language, that a known photo-upload failure now shows the correct localized
-partial-success message; separately, and only when explicitly approved,
-investigate the unresolved image-format/signature root cause behind the
-seven failed records.
+NEXT — see the byte-signature correction's own NOW/NEXT.
+
+---
+
+## OFFER MEDIA — CLIENT-SIDE BYTE-SIGNATURE MIME DETECTION (uncommitted)
+
+A follow-up, read-only diagnosis (commit `18eeb6a8...` was the baseline, and
+was independently confirmed pushed via `git ls-remote` against the live
+remote, not just owner-reported) traced the historical seven failed
+production `media_objects` records to a proven source-level defect, distinct
+from the message-mapping issue above: `R2OfferMediaUploadService` determined
+the upload's Content-Type from the file name's extension only, never from
+the file's actual bytes, while the Worker's `/offer-media/confirm` step
+independently verifies the real byte signature and rejects any mismatch.
+`image_picker`'s `imageQuality`/`maxWidth`/`maxHeight` options (already in use
+for every camera/gallery pick) are documented to re-encode the file, which
+can change its actual bytes while the temp file's extension is unrelated —
+a plausible but **not independently proven** explanation for the seven
+historical failures, since the Worker never persisted a rejection reason and
+the original Samsung test files are not available on this machine (a
+bounded, read-only search of local `Downloads`/`Pictures`/`Desktop` for files
+matching the seven records' exact byte sizes found nothing).
+
+CORRECTION (JPEG, PNG, WebP only — HEIC deliberately deferred, see below):
+- New file `lib/src/services/image_signature_detector.dart`: a small,
+  dependency-free, pure function that inspects a file's real leading bytes
+  for the JPEG (`FF D8 FF`), PNG (8-byte signature), and WebP
+  (`RIFF....WEBP`) container signatures — the same three physical formats
+  the Worker's own `detectImageMimeFromBytes` already checks, written
+  independently rather than transliterated from the Worker's JavaScript.
+  Returns `null` for anything else or for too few bytes; never decodes the
+  image data past the signature and never reads a file name.
+- `lib/src/services/r2_offer_media_upload_service.dart`:
+  `_contentTypeForFileName(path)` (extension-only) replaced by
+  `_resolveContentType(path, bytes)`, called with the same `bytes` already
+  read once by `uploadOfferMediaFile` — no second file read. It uses the
+  detector's answer as the authoritative Content-Type sent to both
+  `/offer-media/authorize` and the signed PUT's `Content-Type` header, so
+  they can no longer disagree with the file's real bytes or with each other.
+  Object-key generation is unaffected: verified from `worker.js` that
+  `offerObjectKey`'s extension is derived entirely from the `contentType`
+  field the client sends, never from the original file name, so a more
+  accurate detected type produces a correctly-matching object key
+  automatically, with no separate consistency fix needed.
+- **HEIC is an explicit, deliberate exception, not an oversight.** The new
+  byte detector does not recognize HEIC signatures (out of scope for this
+  checkpoint, and HEIC/HEIF conversion was explicitly excluded). Extending it
+  would have silently changed behavior for a format whose *display* — not
+  just upload — is separately unproven (`CachedNetworkImage`'s underlying
+  Skia decoders have no built-in HEIC support on Android). To avoid
+  regressing currently-accepted HEIC uploads, `_resolveContentType` falls
+  back to the exact previous extension-trusted classification for `.heic`
+  files only, byte-for-byte unchanged from before this checkpoint. This is
+  flagged as a deliberately deferred decision, not a silent gap: a dedicated
+  HEIC/HEIF checkpoint (covering both upload and guaranteed display) needs
+  its own explicit owner approval.
+- Every other Offer Media behavior — the 10 MiB limit
+  (`R2OfferMediaUploadService.maxImageBytes`, unchanged), authorization,
+  ownership checks, Create/Edit persistence ordering, the partial-failure
+  message correction above, EN/AR localization, image picker settings, and
+  no re-encoding of JPEG/PNG/WebP bytes — is untouched.
+
+STATIC TEST EVIDENCE: two new files, 17/17 PASS.
+`test/services/image_signature_detector_test.dart` (8 tests) proves correct
+detection against **real, decodable** JPEG/PNG/WebP bytes generated at test
+time with the already-present `package:image` (no new dependency), plus
+null-safe rejection of unknown/empty/too-short/RIFF-but-not-WebP input.
+`test/services/r2_offer_media_upload_service_test.dart` (9 tests), using a
+real `SupabaseClient` with a locally-set session (the same
+`setInitialSession` seam already used by
+`test/auth/phone_verification_test.dart` — no new dependency, no mocking
+library) and an injected `http.MockClient` (the constructor's pre-existing
+`httpClient` parameter), proves: a `.jpg`-named file with real PNG bytes is
+sent as `image/png` and vice versa for `.webp`/JPEG; unrecognized bytes are
+rejected before any HTTP request is made at all; the rejection message is
+the fixed string `'Unsupported offer image type.'`, containing neither the
+file's real path nor its byte content; the detected MIME is identical on
+both the authorize call and the PUT's `Content-Type` header; the original
+byte length is unchanged through both; the 10 MiB constant is unchanged; a
+`.heic` file is still declared `image/heic` regardless of its actual bytes,
+proving the no-regression guarantee; and a full authorize → PUT → confirm
+round trip still succeeds for a genuinely valid JPEG. Targeted `flutter
+analyze` on all four changed/added Dart files: no issues. `git diff --check`:
+clean (only the known unrelated generated-plugin-registrant line-ending
+drift).
+
+NOT PERFORMED: no Worker change (the Worker's own byte-signature check is
+unmodified and unweakened — this correction makes the client agree with it,
+not the other way around); no Cloudflare deployment or logging change; no
+Supabase mutation; no cleanup of the seven failed `media_objects` rows (still
+retained, cause still not independently proven); no HEIC/HEIF conversion or
+whitelist expansion; no image picker/compression change; no real-device
+upload, Samsung or otherwise; no git add, commit, or push.
+
+NOW — nothing further is pending on this byte-signature correction itself;
+it remains uncommitted, alongside the still-uncommitted localization
+correction above, pending owner review of both.
+
+NEXT — owner decision on HEIC/HEIF (convert to JPEG for guaranteed display,
+or verify decode/display compatibility before deciding), then real-device
+acceptance covering ordinary phone photos in both Create and Edit before any
+claim of production readiness for Offer Media images.

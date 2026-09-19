@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
+import 'package:broker_wallet/src/services/image_signature_detector.dart';
 
 /// One piece of confirmed, displayable Offer media: a short-lived signed
 /// read URL plus the stable identifiers needed to correlate it, never the
@@ -71,7 +72,7 @@ class R2OfferMediaUploadService {
     int ordinal = 0,
   }) async {
     final bytes = await file.readAsBytes();
-    final contentType = _contentTypeForFileName(file.path);
+    final contentType = _resolveContentType(file.path, bytes);
     _validateContentType(contentType);
     _validateContentLength(bytes.length);
 
@@ -222,23 +223,29 @@ class R2OfferMediaUploadService {
     return normalized.contains('/') ? normalized.split('/').last : normalized;
   }
 
-  String _contentTypeForFileName(String path) {
+  /// Determines the real Content-Type to declare for [bytes] — the same
+  /// bytes already read from [path] and about to be uploaded — from their
+  /// actual signature rather than trusting the file name. [bytes] is not
+  /// read again; only the already-in-memory buffer is inspected.
+  ///
+  /// HEIC is a deliberate, unchanged exception: [ImageSignatureDetector]
+  /// does not recognize it (out of scope for this checkpoint), so a
+  /// `.heic`-named file still falls back to the exact extension-trusted
+  /// classification this method previously used for every format, keeping
+  /// existing HEIC uploads working exactly as before rather than silently
+  /// rejecting them.
+  String _resolveContentType(String path, List<int> bytes) {
+    final detected = ImageSignatureDetector.detectMimeType(bytes);
+    if (detected != null) return detected;
+
+    if (_fileExtension(path) == 'heic') return 'image/heic';
+
+    throw const R2UploadException('Unsupported offer image type.');
+  }
+
+  String _fileExtension(String path) {
     final name = _fileName(path);
-    final extension =
-        name.contains('.') ? name.split('.').last.toLowerCase() : '';
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'heic':
-        return 'image/heic';
-      default:
-        throw const R2UploadException('Unsupported offer image type.');
-    }
+    return name.contains('.') ? name.split('.').last.toLowerCase() : '';
   }
 }
 

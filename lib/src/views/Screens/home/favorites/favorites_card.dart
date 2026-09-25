@@ -702,7 +702,13 @@ class _FavoriteCardState extends State<FavoriteCard>
   void _navigateToDetails(BuildContext context) {
     switch (widget.favorite.type) {
       case 'offers':
-        context.push('/offers-details', extra: widget.favorite.originalData);
+        final offerId = widget.favorite.id.trim();
+        if (offerId.isNotEmpty) {
+          context.push(
+            '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
+            extra: widget.favorite.originalData,
+          );
+        }
         break;
       case 'requests':
         context.push('/requested-details', extra: widget.favorite.originalData);

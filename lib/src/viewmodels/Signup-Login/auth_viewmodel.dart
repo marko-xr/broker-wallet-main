@@ -20,6 +20,8 @@ import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart'
+    show MediaCacheManager;
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
 import 'package:image_picker/image_picker.dart' show XFile;
@@ -1077,6 +1079,11 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
       // arrive here as a null identity — so it protects every account
       // transition, not only the one started by `signOut()`.
       unawaited(FavoriteService.invalidateForAccountChange());
+      // Same cache-ownership rule for private Offer photos: release the
+      // previous account's decoded images and providers rather than leaving
+      // them resident. Their keys are account-scoped, so the next session
+      // could never address them; this is about not retaining them.
+      MediaCacheManager.invalidateForAccountChange();
       notifyListeners();
 
       if (previousUid != null) {
@@ -1110,6 +1117,7 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
         // above: the previous account's Favorites cache and any in-flight
         // fetch it started must not be inherited by this new session.
         unawaited(FavoriteService.invalidateForAccountChange());
+        MediaCacheManager.invalidateForAccountChange();
       }
     }
 

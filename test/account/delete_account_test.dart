@@ -11,6 +11,8 @@ import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/delete_account_viewmodel.dart';
+import 'package:broker_wallet/src/services/offline_media_service.dart'
+    show OfferMediaCleanupReport;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -167,6 +169,26 @@ class _MediaForgetter {
 
   Future<void> call({Iterable<String>? mediaIds}) async {
     calls.add(mediaIds?.toList());
+  }
+}
+
+/// Records which account's locally held Offer media was asked to be forgotten,
+/// and what the cleanup reported back.
+class _OfferMediaForgetter {
+  _OfferMediaForgetter({this.result, this.throws = false});
+
+  final List<String?> calls = [];
+
+  /// What the cleanup claims it managed to remove.
+  final OfferMediaCleanupReport? result;
+
+  /// Whether the cleanup fails outright, which `_step` swallows.
+  final bool throws;
+
+  Future<OfferMediaCleanupReport> call({String? ownerId}) async {
+    calls.add(ownerId);
+    if (throws) throw const FileSystemException('cleanup unavailable');
+    return result ?? const OfferMediaCleanupReport.empty();
   }
 }
 
@@ -588,13 +610,16 @@ void main() {
     Future<AuthViewModel> signedIn(
       _AuthRepository repo,
       _UserRepository users,
-      _MediaForgetter media,
-    ) async {
+      _MediaForgetter media, [
+      _OfferMediaForgetter? offerMedia,
+    ]) async {
       final vm = AuthViewModel(
         authRepository: repo,
         userRepository: users,
-        deletedAccountCleaner:
-            DeletedAccountLocalDataCleaner(forgetProfileMedia: media.call),
+        deletedAccountCleaner: DeletedAccountLocalDataCleaner(
+          forgetProfileMedia: media.call,
+          forgetOfferMedia: (offerMedia ?? _OfferMediaForgetter()).call,
+        ),
       );
       repo.emit(repo.currentUser);
       await Future<void>.delayed(Duration.zero);
@@ -619,7 +644,8 @@ void main() {
 
       final repo = _AuthRepository(user: _user(_alice, mediaId: 'media-1'));
       final media = _MediaForgetter();
-      final vm = await signedIn(repo, _UserRepository(), media);
+      final offerMedia = _OfferMediaForgetter();
+      final vm = await signedIn(repo, _UserRepository(), media, offerMedia);
       addTearDown(() async {
         vm.dispose();
         await repo.dispose();
@@ -639,6 +665,8 @@ void main() {
       expect(prefs.getString('password_recovery_owner_uid'), isNull);
       expect(PasswordRecoveryStateStore.ownerUid, isNull);
       expect(media.calls, [null], reason: 'all avatar caches are cleared');
+      expect(offerMedia.calls, [_alice],
+          reason: "only the deleted account's own Offer media is forgotten");
 
       // Device preferences and device-local documents survive.
       expect(prefs.getString('languageCode'), 'ar');
@@ -670,7 +698,8 @@ void main() {
       });
       final repo = _AuthRepository(user: _user(_bob));
       final media = _MediaForgetter();
-      final vm = await signedIn(repo, _UserRepository(), media);
+      final offerMedia = _OfferMediaForgetter();
+      final vm = await signedIn(repo, _UserRepository(), media, offerMedia);
       addTearDown(() async {
         vm.dispose();
         await repo.dispose();
@@ -687,6 +716,8 @@ void main() {
       expect(media.calls.single, isEmpty,
           reason: 'only the deleted account\'s own avatar ids, of which '
               'none are known here');
+      expect(offerMedia.calls, [_alice],
+          reason: "the signed-in account's own Offer media stays untouched");
     });
 
     test('a late profile read cannot resurrect the deleted account', () async {
@@ -974,6 +1005,62 @@ void main() {
         1,
         reason: 'the existing destructive treatment is unchanged',
       );
+    });
+  });
+
+  group('Account deletion reports its Offer-media cleanup honestly', () {
+    Future<OfferMediaCleanupReport> runClear(
+      _OfferMediaForgetter offerMedia,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      return DeletedAccountLocalDataCleaner(
+        forgetProfileMedia: ({mediaIds}) async {},
+        forgetOfferMedia: offerMedia.call,
+      ).clear(deletedUid: _alice, wasSignedInAccount: true);
+    }
+
+    test('a clean removal is reported as complete', () async {
+      final offerMedia = _OfferMediaForgetter(
+        result: const OfferMediaCleanupReport(
+          catalogueEntriesRemoved: 1,
+          cacheEntriesRemoved: 1,
+          originalsRemoved: 1,
+          failures: 0,
+          sweepCompleted: true,
+        ),
+      );
+
+      final report = await runClear(offerMedia);
+
+      expect(offerMedia.calls, [_alice]);
+      expect(report.isComplete, isTrue);
+      expect(report.originalsRemoved, 1);
+    });
+
+    test('originals left behind are never reported as a success', () async {
+      final offerMedia = _OfferMediaForgetter(
+        result: const OfferMediaCleanupReport(
+          catalogueEntriesRemoved: 1,
+          cacheEntriesRemoved: 0,
+          originalsRemoved: 0,
+          failures: 1,
+          sweepCompleted: true,
+        ),
+      );
+
+      final report = await runClear(offerMedia);
+
+      expect(report.isComplete, isFalse);
+    });
+
+    test('a cleanup that throws is reported as incomplete, not as done',
+        () async {
+      // `_step` swallows the failure by design so deletion still finishes;
+      // the report must still say that private originals may remain.
+      final report = await runClear(_OfferMediaForgetter(throws: true));
+
+      expect(report.isComplete, isFalse);
+      expect(report.sweepCompleted, isFalse);
     });
   });
 }

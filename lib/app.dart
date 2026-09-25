@@ -178,6 +178,8 @@ const _protectedRoutes = <String>{
   '/search',
   '/favorites',
   '/profile',
+  '/offers-details',
+  '/offers-details-by-id',
 };
 
 /// Logged-out entry screens.
@@ -272,6 +274,47 @@ String? resolveAuthRedirect(
   }
 
   return null;
+}
+
+/// Stable location for an Offer Details route.
+String offerDetailsLocation(String offerId) =>
+    '/offers-details-by-id/${Uri.encodeComponent(offerId)}';
+
+/// Compatibility redirect for the former extra-only route.
+///
+/// A surviving model is used only for its identity. Missing or malformed
+/// arguments return to the root bootstrap gate, where the existing auth,
+/// recovery, and account-deletion policy selects the safe destination.
+String redirectLegacyOfferDetailsRoute(GoRouterState state) {
+  final extra = state.extra;
+  final offerId = extra is OfferModel ? extra.id?.trim() : null;
+  if (offerId == null || offerId.isEmpty) return '/';
+  return offerDetailsLocation(offerId);
+}
+
+/// Selects a matching optional model for immediate rendering.
+///
+/// The ID in the route remains authoritative. A missing or mismatched extra
+/// is ignored so it can never display a different Offer.
+OfferModel? matchingOfferDetailsExtra(Object? extra, String offerId) {
+  if (extra is! OfferModel || extra.id?.trim() != offerId) return null;
+  return extra;
+}
+
+/// Builder for the canonical ID-based Offer Details route.
+Widget buildOfferDetailsByIdRoute(
+  BuildContext context,
+  GoRouterState state,
+) {
+  final offerId = state.pathParameters['id']?.trim() ?? '';
+  final initialOffer = matchingOfferDetailsExtra(state.extra, offerId);
+  if (initialOffer != null) {
+    // Models supplied by lists/search/favorites are intentionally not treated
+    // as fully resolved. The details screen performs its normal authoritative
+    // refresh (or uses its existing short-lived resolved cache).
+    return OffersDetailsView(offer: initialOffer);
+  }
+  return OfferDetailsLoader(offerId: offerId);
 }
 
 GoRouter _createRouter(
@@ -598,18 +641,12 @@ GoRouter _createRouter(
       ),
       GoRoute(
         path: '/offers-details',
-        builder: (context, state) {
-          final offer = state.extra as OfferModel;
-          return OffersDetailsView(offer: offer);
-        },
+        redirect: (context, state) => redirectLegacyOfferDetailsRoute(state),
       ),
-      // Route for navigating by ID (used by notifications)
+      // Canonical route for all Offer Details navigation.
       GoRoute(
         path: '/offers-details-by-id/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return _OfferDetailsLoader(offerId: id);
-        },
+        builder: buildOfferDetailsByIdRoute,
       ),
       GoRoute(
         path: '/owners-details',
@@ -728,23 +765,53 @@ GoRouter _createRouter(
   );
 }
 
-/// Loader widget that fetches an offer by ID and displays the details view
-class _OfferDetailsLoader extends StatefulWidget {
-  const _OfferDetailsLoader({required this.offerId});
+typedef OfferDetailsLoad = Future<OfferModel?> Function(String offerId);
+typedef LoadedOfferDetailsBuilder = Widget Function(
+  BuildContext context,
+  OfferModel offer,
+  bool initialOfferIsResolved,
+);
+
+/// Loads an Offer's authoritative core fields through the existing authorized
+/// ID-based service path. Private media is resolved by [OffersDetailsView]
+/// after the screen is usable, so signed-URL latency cannot block navigation.
+///
+/// The optional callbacks are narrow test seams; production always uses
+/// [OfferService.getOfferMetadata] and [OffersDetailsView].
+class OfferDetailsLoader extends StatefulWidget {
+  const OfferDetailsLoader({
+    super.key,
+    required this.offerId,
+    this.loadOffer,
+    this.detailsBuilder,
+  });
+
   final String offerId;
+  final OfferDetailsLoad? loadOffer;
+  final LoadedOfferDetailsBuilder? detailsBuilder;
 
   @override
-  State<_OfferDetailsLoader> createState() => _OfferDetailsLoaderState();
+  State<OfferDetailsLoader> createState() => _OfferDetailsLoaderState();
 }
 
-class _OfferDetailsLoaderState extends State<_OfferDetailsLoader> {
+class _OfferDetailsLoaderState extends State<OfferDetailsLoader> {
   late Future<OfferModel?> _offerFuture;
-  final _offerService = OfferService();
 
   @override
   void initState() {
     super.initState();
-    _offerFuture = _offerService.getOffer(widget.offerId);
+    _offerFuture = _loadOffer();
+  }
+
+  Future<OfferModel?> _loadOffer() async {
+    final offerId = widget.offerId.trim();
+    if (offerId.isEmpty) return null;
+
+    final loader = widget.loadOffer ?? OfferService().getOfferMetadata;
+    final offer = await loader(offerId);
+    // The route ID is authoritative even if a defective/custom data source
+    // were ever to return a different row.
+    return offer?.id?.trim() == offerId ? offer : null;
   }
 
   @override
@@ -753,13 +820,11 @@ class _OfferDetailsLoaderState extends State<_OfferDetailsLoader> {
       future: _offerFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: CircularProgressIndicator()),
-          );
+          return const _OfferDetailsMetadataLoading();
         }
 
         if (snapshot.hasError || snapshot.data == null) {
+          final loc = AppLocalizations.of(context);
           return Scaffold(
             appBar: AppBar(),
             body: Center(
@@ -769,13 +834,19 @@ class _OfferDetailsLoaderState extends State<_OfferDetailsLoader> {
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 16),
                   Text(
-                    'Offer not found',
+                    loc.translate('offerNotFound'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => context.pop(),
-                    child: const Text('Go Back'),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    },
+                    child: Text(loc.translate('goBack')),
                   ),
                 ],
               ),
@@ -783,8 +854,84 @@ class _OfferDetailsLoaderState extends State<_OfferDetailsLoader> {
           );
         }
 
-        return OffersDetailsView(offer: snapshot.data!);
+        final offer = snapshot.data!;
+        final detailsBuilder = widget.detailsBuilder;
+        if (detailsBuilder != null) {
+          return detailsBuilder(context, offer, true);
+        }
+        return OffersDetailsView(
+          offer: offer,
+          initialOfferIsResolved: true,
+        );
       },
+    );
+  }
+}
+
+/// A themed, localized metadata loading state for an ID-only Offer route.
+///
+/// This is intentionally not the image-loading state. Once the authorized
+/// Offer row resolves, the real details layout renders immediately and media
+/// continues independently inside its header.
+class _OfferDetailsMetadataLoading extends StatelessWidget {
+  const _OfferDetailsMetadataLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final placeholder = colors.surfaceContainerHighest;
+
+    return Scaffold(
+      backgroundColor: colors.surface,
+      appBar: AppBar(backgroundColor: colors.surface),
+      body: Semantics(
+        label: loc.translate('loading'),
+        liveRegion: true,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 180,
+                decoration: BoxDecoration(
+                  color: placeholder,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: CircularProgressIndicator(color: colors.primary),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                height: 22,
+                width: 180,
+                decoration: BoxDecoration(
+                  color: placeholder,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                height: 84,
+                decoration: BoxDecoration(
+                  color: placeholder,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                loc.translate('loading'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

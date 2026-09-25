@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +14,8 @@ import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
+import 'offer_media_cache_identity.dart';
+import 'offline_media_service.dart';
 import 'r2_offer_media_upload_service.dart';
 
 /// Supabase CRUD adapter for the six core Broker Wallet entity tables.
@@ -28,20 +33,6 @@ class SupabaseCoreEntitiesService {
   final SupabaseClient _client;
   final R2OfferMediaUploadService _offerMedia;
   static const Uuid _uuid = Uuid();
-
-  /// Best-effort: an Offer's core fields must still display even if the
-  /// media Worker is briefly unreachable, so a failure here is swallowed to
-  /// an empty list rather than propagated — the same tolerance the rest of
-  /// this class already gives read paths against transient failures.
-  Future<List<String>> _fetchOfferMediaDisplayUrls(String offerId) async {
-    try {
-      final media = await _offerMedia.getOfferMedia(offerId);
-      return media.map((item) => item.url).toList(growable: false);
-    } catch (e) {
-      _debugLog('offer.media', 'media fetch failed for display: $e');
-      return const [];
-    }
-  }
 
   String generateId() => _uuid.v4();
 
@@ -271,7 +262,10 @@ class SupabaseCoreEntitiesService {
     return rows.map(_offerFromRow).toList(growable: false);
   }
 
-  Future<OfferModel?> getOffer(String id) async {
+  /// Reads only the authoritative Offer row. Private-media URL signing is a
+  /// separate operation so an otherwise usable details screen never waits on
+  /// the media Worker before it can render.
+  Future<OfferModel?> getOfferMetadata(String id) async {
     final ownerId = _requireUserId();
     final rows = await _client
         .from('offers')
@@ -287,16 +281,249 @@ class SupabaseCoreEntitiesService {
         .eq('id', id)
         .isFilter('deleted_at', null)
         .limit(1);
+    if (_client.auth.currentUser?.id != ownerId) {
+      throw StateError('The authenticated account changed during the read.');
+    }
     if (rows.isEmpty) return null;
-    final offer = _offerFromRow(rows.first);
+    return _offerFromRow(rows.first);
+  }
+
+  /// The signed-in account, or null when there is no session.
+  ///
+  /// Exposed so presentation can read this device's remembered Offer media for
+  /// the *current* account without reaching into Supabase itself.
+  String? get currentOwnerId => _client.auth.currentUser?.id;
+
+  /// What this device already holds for [offerId], with no network at all.
+  ///
+  /// Synchronous: it is read while building Offer Details' first frame. Each
+  /// entry carries its durable media id and, when the bytes are already on
+  /// disk, the file holding them — which is what lets the image paint before
+  /// any signed URL exists. Entries whose bytes are not held locally are
+  /// dropped, so this never promises content it cannot draw.
+  List<OfferMediaRef> cachedOfferMedia(String offerId) {
+    final ownerId = currentOwnerId;
+    if (ownerId == null || ownerId.isEmpty) return const <OfferMediaRef>[];
+
+    final offline = OfflineMediaService.instance;
+    final ids = offline.readOfferMediaCatalog(
+      ownerId: ownerId,
+      offerId: offerId,
+    );
+
+    final refs = <OfferMediaRef>[];
+    for (final id in ids) {
+      final cacheKey = offerMediaCacheKey(ownerId: ownerId, mediaObjectId: id);
+      if (cacheKey == null) continue;
+      final path = _localPathFor(cacheKey);
+      if (path == null) continue;
+      refs.add(OfferMediaRef(
+        mediaObjectId: id,
+        cacheKey: cacheKey,
+        localFilePath: path,
+      ));
+    }
+    return refs;
+  }
+
+  /// Resolves the current confirmed private media for an Offer.
+  ///
+  /// Needs only the Offer id and the owning account, never the Offer row, so
+  /// it can run *concurrently* with the authoritative metadata read instead of
+  /// waiting behind it. Ownership is still enforced twice: the live session
+  /// must match [ownerId] here, and the Worker independently re-verifies
+  /// ownership server-side before it signs anything.
+  ///
+  /// Media ids and URLs come from one response and are replaced atomically, so
+  /// an empty response clears old media instead of retaining stale URLs.
+  ///
+  /// On success the durable ids are remembered for this account and the bytes
+  /// are warmed into the shared image cache under their stable key, which is
+  /// what makes the next open instant.
+  Future<OfferMediaResolution> resolveOfferMedia({
+    required String offerId,
+    required String ownerId,
+  }) async {
+    final id = offerId.trim();
+    if (id.isEmpty) {
+      throw StateError('Offer identity is required.');
+    }
+    final sessionOwnerId = _requireUserId();
+    if (ownerId.isEmpty || ownerId != sessionOwnerId) {
+      throw StateError('The current session does not own this Offer.');
+    }
+
+    final List<R2OfferMediaItem> mediaItems;
+    try {
+      mediaItems = await _offerMedia.getOfferMedia(id);
+    } on R2OfferMediaHttpException catch (error) {
+      throw await _classifyMediaFailure(error, id, sessionOwnerId);
+    } catch (_) {
+      // Offline, a timeout, or anything else that establishes nothing about
+      // this account's access. Locally held media is left exactly as it is.
+      throw const OfferMediaException(OfferMediaFailureKind.transient);
+    }
+    if (_client.auth.currentUser?.id != sessionOwnerId) {
+      throw StateError(
+        'The authenticated account changed during media resolution.',
+      );
+    }
+
+    final refs = <OfferMediaRef>[
+      for (final item in mediaItems)
+        _refFor(
+          ownerId: sessionOwnerId,
+          mediaObjectId: item.mediaObjectId,
+          signedUrl: item.url,
+          isVideo: item.mediaType == 'video',
+        ),
+    ];
+
+    unawaited(_rememberOfferMediaCatalog(id, sessionOwnerId, refs));
+    return OfferMediaResolution(
+      offerId: id,
+      ownerId: sessionOwnerId,
+      items: refs,
+    );
+  }
+
+  /// Turns a Worker status into the one classification presentation may act
+  /// on, and removes locally held bytes only when access is actually proven
+  /// gone.
+  ///
+  /// The Worker answers 404 for "no such Offer for this account" only after
+  /// its ownership query has succeeded and returned no row; an upstream
+  /// failure answers 502 instead. A 401 means the access token was rejected,
+  /// which is a session problem and never proof that access to this Offer was
+  /// revoked, so it deletes nothing.
+  ///
+  /// An expired signed R2 URL cannot reach this code at all: that 403 is
+  /// raised by R2 while the image itself is being fetched, on the cache
+  /// manager's path, never on this Worker API call.
+  Future<OfferMediaException> _classifyMediaFailure(
+    R2OfferMediaHttpException error,
+    String offerId,
+    String ownerId,
+  ) async {
+    if (error.isUnauthenticated) {
+      return const OfferMediaException(OfferMediaFailureKind.unauthenticated);
+    }
+    if (!error.isAccessDenied) {
+      return const OfferMediaException(OfferMediaFailureKind.transient);
+    }
+    if (_client.auth.currentUser?.id != ownerId) {
+      // The account changed while the request was in flight, so this answer
+      // says nothing about either account. Remove nothing.
+      return const OfferMediaException(OfferMediaFailureKind.transient);
+    }
+    await _forgetOfferMediaLocally(offerId, ownerId);
+    return const OfferMediaException(OfferMediaFailureKind.accessDenied);
+  }
+
+  /// Drops this device's copy of one Offer's media for [ownerId].
+  ///
+  /// Scoped to that account and that Offer: another account's originals and
+  /// this account's other Offers are untouched.
+  Future<void> _forgetOfferMediaLocally(String offerId, String ownerId) async {
+    final offline = OfflineMediaService.instance;
+    try {
+      await offline.reconcileOfferMediaCatalog(
+        ownerId: ownerId,
+        offerId: offerId,
+        mediaObjectIds: const <String>[],
+      );
+    } catch (e) {
+      _debugLog('offer.media', 'local media removal incomplete');
+    }
+  }
+
+  /// One media item with its stable key and, when the bytes are already on
+  /// this device, the file holding them — so the display layer can prefer
+  /// local bytes over re-fetching a URL it was just handed.
+  OfferMediaRef _refFor({
+    required String ownerId,
+    required String mediaObjectId,
+    String? signedUrl,
+    bool isVideo = false,
+  }) {
+    final cacheKey = offerMediaCacheKey(
+      ownerId: ownerId,
+      mediaObjectId: mediaObjectId,
+    );
+    return OfferMediaRef(
+      mediaObjectId: mediaObjectId,
+      cacheKey: cacheKey,
+      signedUrl: signedUrl,
+      localFilePath: _localPathFor(cacheKey),
+      isVideo: isVideo,
+    );
+  }
+
+  /// The local file holding [cacheKey]'s bytes, if this device still has it.
+  String? _localPathFor(String? cacheKey) {
+    if (cacheKey == null) return null;
+    final path =
+        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
+    if (path == null || path.isEmpty) return null;
+    return File(path).existsSync() ? path : null;
+  }
+
+  /// Persists the durable identity of [refs] for this account.
+  ///
+  /// Only the identity, never the bytes: this runs on every Offer Details
+  /// open, and downloading an entire gallery the viewer may never scroll to
+  /// would spend their data to fill a cache. The bytes are fetched by the
+  /// gallery for what it actually shows, under this same identity.
+  ///
+  /// Best effort and off the critical path — the screen has already rendered
+  /// from the signed URLs by the time this matters. Its only job is to let the
+  /// *next* open find those bytes without a network round trip first.
+  Future<void> _rememberOfferMediaCatalog(
+    String offerId,
+    String ownerId,
+    List<OfferMediaRef> refs,
+  ) async {
+    try {
+      // Replaces the remembered set and removes whatever this response no
+      // longer lists; display order is preserved by passing the ordered list.
+      await OfflineMediaService.instance.reconcileOfferMediaCatalog(
+        ownerId: ownerId,
+        offerId: offerId,
+        mediaObjectIds: [for (final ref in refs) ref.mediaObjectId],
+      );
+    } catch (e) {
+      _debugLog('offer.media', 'media catalogue update skipped');
+    }
+  }
+
+  /// Legacy whole-model contract used by list, Favorites, search and edit
+  /// callers. Offer Details uses the split reads above instead.
+  Future<OfferModel> resolveOfferMediaFor(OfferModel offer) async {
+    final media = await resolveOfferMedia(
+      offerId: offer.id?.trim() ?? '',
+      ownerId: offer.userId,
+    );
+    return applyOfferMedia(offer, media);
+  }
+
+  Future<OfferModel?> getOffer(String id) async {
+    final offer = await getOfferMetadata(id);
+    if (offer == null) return null;
 
     // Single-offer reads (detail/edit screens, Favorites cards, search
     // results) populate real signed media URLs; the bulk list fetch below
     // deliberately does not, to avoid an unbounded fan-out of per-offer
-    // Worker calls for a whole list at once.
-    final mediaUrls = await _fetchOfferMediaDisplayUrls(id);
-    if (mediaUrls.isEmpty) return offer;
-    return offer.copyWith(mediaUrls: mediaUrls, mediaUrl: mediaUrls.first);
+    // Worker calls for a whole list at once. Existing callers retain the
+    // historical best-effort contract: metadata still returns if media
+    // resolution fails. Offer Details uses the strict split methods above so
+    // it can present a localized, recoverable media error instead.
+    try {
+      return await resolveOfferMediaFor(offer);
+    } catch (_) {
+      if (_client.auth.currentUser?.id != offer.userId) return null;
+      _debugLog('offer.media', 'media fetch failed for display');
+      return offer;
+    }
   }
 
   OfferModel _offerFromRow(Map<String, dynamic> row) => OfferModel(

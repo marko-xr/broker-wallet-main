@@ -40,6 +40,42 @@ import { stagingRequestAllowed } from './staging_gate.js';
  */
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_OFFER_VIDEO_BYTES = 100 * 1024 * 1024;
+// Owner decision: at most 10 media items (images and videos together) per
+// Offer. Enforced atomically at confirm time by the `offer_media`
+// unique (offer_id, role, ordinal) constraint: every Offer item is linked
+// under role 'gallery' into one of exactly this many ordinal slots, so two
+// concurrent confirms can never both take the last slot.
+const MAX_MEDIA_PER_OFFER = 10;
+// Owner decision: three minutes per video, enforced here on the trusted
+// server, not only in the app. The tolerance absorbs encoder rounding (a clip
+// the camera reports as 3:00 can measure a few tens of milliseconds over).
+const MAX_VIDEO_DURATION_MS = 3 * 60 * 1000;
+const VIDEO_DURATION_TOLERANCE_MS = 1000;
+// Bounds on reading an ISO base-media file's box structure: a video's `moov`
+// box may sit at the end of the file (phone cameras usually write it last), so
+// it is reached by walking top-level box headers, each a tiny ranged read,
+// rather than by downloading the file.
+const MAX_BOX_WALK_STEPS = 24;
+const BOX_HEADER_BYTES = 16;
+const MOOV_SCAN_BYTES = 512;
+const OFFER_MEDIA_ROLE = 'gallery';
+// Offer media only. Profile images keep their own image-only allowlist
+// (isAllowedContentType below), which this table deliberately does not touch.
+const OFFER_MEDIA_TYPES = {
+  'image/jpeg': { extension: 'jpg', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+  'image/png': { extension: 'png', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+  'image/webp': { extension: 'webp', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+  'image/heic': { extension: 'heic', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+  'video/mp4': { extension: 'mp4', mediaType: 'video', maxBytes: MAX_OFFER_VIDEO_BYTES },
+  'video/quicktime': { extension: 'mov', mediaType: 'video', maxBytes: MAX_OFFER_VIDEO_BYTES },
+  'video/3gpp': { extension: '3gp', mediaType: 'video', maxBytes: MAX_OFFER_VIDEO_BYTES },
+};
+// ISO base-media `ftyp` brands, matched case-sensitively as written in the
+// file. HEIF image brands are handled by detectImageMimeFromBytes.
+const MP4_BRANDS = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP', 'dash', 'mmp4', 'MSNV', 'f4v ']);
+const QUICKTIME_BRANDS = new Set(['qt  ']);
+const THREE_GPP_BRANDS = new Set(['3gp4', '3gp5', '3gp6', '3gp7', '3ge6', '3ge7', '3gg6']);
 // Shared with account deletion, whose finalization window is derived from it.
 const PUT_URL_TTL_SECONDS = SIGNED_PUT_TTL_SECONDS;
 const GET_URL_TTL_SECONDS = 900;
@@ -77,7 +113,9 @@ export default {
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
       return corsResponse(
-        { error: error instanceof WorkerError ? error.message : 'Internal error' },
+        error instanceof WorkerError
+          ? { error: error.message, ...(error.code ? { code: error.code } : {}) }
+          : { error: 'Internal error' },
         error instanceof WorkerError ? error.status : 500,
         env,
       );
@@ -280,15 +318,24 @@ async function handleOfferMediaAuthorize(request, env) {
   if (typeof offerId !== 'string' || !MEDIA_ID_PATTERN.test(offerId)) {
     throw new WorkerError('offerId is required', 400);
   }
-  if (!isAllowedContentType(contentType)) {
-    throw new WorkerError('Unsupported content type', 400);
+  if (!isAllowedOfferContentType(contentType)) {
+    throw new WorkerError('Unsupported content type', 400, 'unsupported_media_type');
   }
-  if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > MAX_IMAGE_BYTES) {
-    throw new WorkerError('contentLength must be an integer between 1 and 10485760 bytes', 400);
+  const offerType = OFFER_MEDIA_TYPES[contentType];
+  if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > offerType.maxBytes) {
+    throw new WorkerError(
+      `contentLength must be an integer between 1 and ${offerType.maxBytes} bytes`,
+      400,
+      offerType.mediaType === 'video' ? 'video_too_large' : 'image_too_large',
+    );
   }
 
   await assertOwnsOffer(offerId, userId, env);
   await bestEffortCleanupAbandonedPending(userId, env);
+  // Early, friendly refusal so a full Offer never transfers a 100 MB upload
+  // for nothing. Not the atomic guarantee: that is the ordinal-slot
+  // allocation in handleOfferMediaConfirm.
+  await assertOfferMediaCapacity(offerId, userId, env);
 
   const mediaObjectId = crypto.randomUUID();
   const objectKey = offerObjectKey(userId, offerId, mediaObjectId, contentType);
@@ -297,7 +344,7 @@ async function handleOfferMediaAuthorize(request, env) {
     owner_id: userId,
     bucket: env.R2_BUCKET_NAME,
     object_key: objectKey,
-    media_type: 'image',
+    media_type: offerType.mediaType,
     content_type: contentType,
     size_bytes: contentLength,
     original_file_name: sanitizeOriginalFileName(originalFileName),
@@ -319,7 +366,13 @@ async function handleOfferMediaAuthorize(request, env) {
     });
     assertPresignedWithin(presignedUrl, quarantineCheckedAt + MAX_SIGNING_DELAY_MS);
     return corsResponse(
-      { presignedUrl, mediaObjectId, objectKey, expiresInSeconds: PUT_URL_TTL_SECONDS },
+      {
+        presignedUrl,
+        mediaObjectId,
+        objectKey,
+        mediaType: offerType.mediaType,
+        expiresInSeconds: PUT_URL_TTL_SECONDS,
+      },
       200,
       env,
       { 'Cache-Control': 'no-store' },
@@ -346,8 +399,12 @@ async function handleOfferMediaConfirm(request, env) {
   if (typeof mediaObjectId !== 'string' || !MEDIA_ID_PATTERN.test(mediaObjectId)) {
     throw new WorkerError('mediaObjectId is required', 400);
   }
-  const resolvedRole = typeof role === 'string' && role.trim() ? role.trim() : 'gallery';
-  const resolvedOrdinal = Number.isInteger(ordinal) && ordinal >= 0 ? ordinal : 0;
+  // The client's role/ordinal are no longer trusted: every Offer item is
+  // linked as 'gallery' into a server-chosen slot (see linkOfferMediaIntoSlot),
+  // which is what makes the per-Offer limit atomic. Accepted and ignored so
+  // older clients that still send them keep working.
+  void role;
+  void ordinal;
 
   await assertOwnsOffer(offerId, userId, env);
 
@@ -370,7 +427,8 @@ async function handleOfferMediaConfirm(request, env) {
   if (!r2Object) {
     await rejectInvalidUpload(row, userId, env, 'Object not found in R2');
   }
-  if (r2Object.size < 1 || r2Object.size > MAX_IMAGE_BYTES) {
+  const offerType = OFFER_MEDIA_TYPES[row.content_type];
+  if (r2Object.size < 1 || r2Object.size > offerType.maxBytes) {
     await rejectInvalidUpload(row, userId, env, 'R2 object size is invalid');
   }
 
@@ -381,14 +439,35 @@ async function handleOfferMediaConfirm(request, env) {
     await rejectInvalidUpload(row, userId, env, 'R2 object body not found');
   }
   const signatureBytes = new Uint8Array(await signatureObject.arrayBuffer());
-  const detectedContentType = detectImageMimeFromBytes(signatureBytes);
+  const detectedContentType = detectOfferMediaMimeFromBytes(signatureBytes);
   const observedContentType = r2Object.httpMetadata?.contentType ?? null;
   if (
     !detectedContentType ||
     detectedContentType !== row.content_type ||
     (observedContentType !== null && observedContentType !== row.content_type)
   ) {
-    await rejectInvalidUpload(row, userId, env, 'Uploaded image type does not match authorized metadata');
+    await rejectInvalidUpload(row, userId, env, 'Uploaded media type does not match authorized metadata');
+  }
+
+  // A video's real duration is measured from the uploaded bytes themselves.
+  // The app checks this too, but a client check is a courtesy, not a rule: the
+  // only enforcement that binds every caller is this one.
+  let durationMs = null;
+  if (offerType.mediaType === 'video') {
+    durationMs = await readVideoDurationMs(row.object_key, r2Object.size, env);
+    if (durationMs === null) {
+      await rejectInvalidUpload(
+        row,
+        userId,
+        env,
+        'Video duration could not be read',
+        422,
+        'unsupported_media_type',
+      );
+    }
+    if (durationMs > MAX_VIDEO_DURATION_MS + VIDEO_DURATION_TOLERANCE_MS) {
+      await rejectInvalidUpload(row, userId, env, 'Video is longer than the limit', 422, 'video_too_long');
+    }
   }
 
   // Linked to the offer BEFORE being marked ready — deliberately, so that if
@@ -400,22 +479,18 @@ async function handleOfferMediaConfirm(request, env) {
   // /offer-media (it filters on status='ready'), so this ordering is safe to
   // observe mid-flight, and idempotent to retry: ignoreDuplicates makes a
   // second insert of the same link a no-op.
-  const linkRes = await supabaseServiceFetch(
-    env,
-    'POST',
-    '/rest/v1/offer_media',
-    { offer_id: offerId, media_id: mediaObjectId, role: resolvedRole, ordinal: resolvedOrdinal },
-    { ignoreDuplicates: true },
-  );
-  if (!linkRes.ok) {
-    await rejectInvalidUpload(row, userId, env, 'Failed to attach media to the offer');
-  }
+  await linkOfferMediaIntoSlot(row, offerId, userId, env);
 
   const markReadyRes = await supabaseServiceFetch(
     env,
     'PATCH',
     `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&owner_id=eq.${encodeURIComponent(userId)}&status=eq.pending_upload`,
-    { status: 'ready', size_bytes: r2Object.size, content_type: observedContentType || detectedContentType },
+    {
+      status: 'ready',
+      size_bytes: r2Object.size,
+      content_type: observedContentType || detectedContentType,
+      ...(durationMs === null ? {} : { duration_ms: durationMs }),
+    },
   );
   if (!markReadyRes.ok) {
     // The link now exists but the row is stuck 'pending_upload'. Not
@@ -427,6 +502,185 @@ async function handleOfferMediaConfirm(request, env) {
   }
 
   return corsResponse({ offerId, mediaObjectId }, 200, env);
+}
+
+/**
+ * The duration of an ISO base-media video (MP4/MOV/3GP) in milliseconds, read
+ * from its `moov > mvhd` header, or null when it cannot be determined.
+ *
+ * Deliberately reads only box headers and one small window around `mvhd`,
+ * never the media data: a 100 MB video costs a handful of ranged reads of a
+ * few hundred bytes. Failing to parse returns null and the caller fails
+ * closed — a file whose structure cannot be read is not accepted.
+ */
+async function readVideoDurationMs(objectKey, objectSize, env) {
+  try {
+    let offset = 0;
+    for (let step = 0; step < MAX_BOX_WALK_STEPS && offset + 8 <= objectSize; step += 1) {
+      const header = await readBytes(objectKey, offset, BOX_HEADER_BYTES, env);
+      if (!header || header.length < 8) return null;
+
+      const type = String.fromCharCode(header[4], header[5], header[6], header[7]);
+      let size = readUint32(header, 0);
+      let headerSize = 8;
+      if (size === 1) {
+        if (header.length < 16) return null;
+        // 64-bit size: the high word is only relevant for boxes far larger
+        // than anything accepted here, so a set high word means "past the end".
+        if (readUint32(header, 8) !== 0) return null;
+        size = readUint32(header, 12);
+        headerSize = 16;
+      } else if (size === 0) {
+        size = objectSize - offset; // extends to end of file
+      }
+      if (size < headerSize) return null;
+
+      if (type === 'moov') {
+        const moov = await readBytes(objectKey, offset + headerSize, Math.min(size - headerSize, MOOV_SCAN_BYTES), env);
+        return moov ? parseMvhdDurationMs(moov) : null;
+      }
+      offset += size;
+    }
+    return null;
+  } catch (error) {
+    console.error('[r2-profile-upload] video duration read failed', error);
+    return null;
+  }
+}
+
+/** The duration in [moovBytes], found by locating its `mvhd` child. */
+function parseMvhdDurationMs(moovBytes) {
+  for (let i = 0; i + 4 <= moovBytes.length; i += 1) {
+    if (
+      moovBytes[i] !== 0x6d || // m
+      moovBytes[i + 1] !== 0x76 || // v
+      moovBytes[i + 2] !== 0x68 || // h
+      moovBytes[i + 3] !== 0x64 // d
+    ) {
+      continue;
+    }
+    const body = i + 4;
+    if (body >= moovBytes.length) return null;
+    const version = moovBytes[body];
+    // version/flags (4), then creation and modification times, timescale,
+    // duration — 32-bit fields in version 0, 64-bit times in version 1.
+    const timescaleAt = body + 4 + (version === 1 ? 16 : 8);
+    if (version === 1) {
+      if (timescaleAt + 12 > moovBytes.length) return null;
+      const timescale = readUint32(moovBytes, timescaleAt);
+      if (readUint32(moovBytes, timescaleAt + 4) !== 0) return null; // implausibly long
+      const duration = readUint32(moovBytes, timescaleAt + 8);
+      return timescale > 0 ? Math.round((duration / timescale) * 1000) : null;
+    }
+    if (timescaleAt + 8 > moovBytes.length) return null;
+    const timescale = readUint32(moovBytes, timescaleAt);
+    const duration = readUint32(moovBytes, timescaleAt + 4);
+    if (timescale === 0 || duration === 0xffffffff) return null;
+    return Math.round((duration / timescale) * 1000);
+  }
+  return null;
+}
+
+async function readBytes(objectKey, offset, length, env) {
+  if (length <= 0) return null;
+  const part = await env.MEDIA_BUCKET.get(objectKey, { range: { offset, length } });
+  if (!part) return null;
+  return new Uint8Array(await part.arrayBuffer());
+}
+
+function readUint32(bytes, offset) {
+  return (
+    ((bytes[offset] << 24) >>> 0) +
+    (bytes[offset + 1] << 16) +
+    (bytes[offset + 2] << 8) +
+    bytes[offset + 3]
+  );
+}
+
+/**
+ * Links a validated upload to its Offer in the first free ordinal slot, and
+ * is the atomic enforcement of MAX_MEDIA_PER_OFFER.
+ *
+ * Every Offer item is linked as role 'gallery' with an ordinal in
+ * [0, MAX_MEDIA_PER_OFFER). The existing `offer_media` unique
+ * (offer_id, role, ordinal) constraint lets only one insert own each slot, so
+ * however many confirms race, at most MAX_MEDIA_PER_OFFER can succeed: a
+ * loser gets 409 (unique violation) and tries the next free slot, and when no
+ * slot is left the upload is rejected and cleaned up. No migration and no
+ * count-then-insert race.
+ *
+ * `on_conflict=offer_id,media_id` with ignore-duplicates keeps a retried
+ * confirm of an already-linked item idempotent without masking a slot
+ * collision, which is a different unique constraint and still raises.
+ */
+async function linkOfferMediaIntoSlot(row, offerId, userId, env) {
+  const linksRes = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&select=media_id,role,ordinal`,
+  );
+  if (!linksRes.ok) {
+    // Leave the row pending: a retry re-enters here safely.
+    throw new WorkerError('Failed to read offer media', 502);
+  }
+  const links = (await linksRes.json()) ?? [];
+  if (links.some((link) => link.media_id === row.id)) return;
+  if (links.length >= MAX_MEDIA_PER_OFFER) {
+    await rejectInvalidUpload(row, userId, env, 'Offer media limit reached', 409, 'offer_media_limit_reached');
+  }
+
+  const taken = new Set(
+    links.filter((link) => link.role === OFFER_MEDIA_ROLE).map((link) => link.ordinal),
+  );
+  for (let slot = 0; slot < MAX_MEDIA_PER_OFFER; slot += 1) {
+    if (taken.has(slot)) continue;
+    const linkRes = await supabaseServiceFetch(
+      env,
+      'POST',
+      '/rest/v1/offer_media?on_conflict=offer_id,media_id',
+      { offer_id: offerId, media_id: row.id, role: OFFER_MEDIA_ROLE, ordinal: slot },
+      { ignoreDuplicates: true },
+    );
+    if (linkRes.ok) return;
+    if (linkRes.status === 409) continue; // slot won by a concurrent confirm
+    await rejectInvalidUpload(row, userId, env, 'Failed to attach media to the offer');
+  }
+  await rejectInvalidUpload(row, userId, env, 'Offer media limit reached', 409, 'offer_media_limit_reached');
+}
+
+/**
+ * Refuses an authorize when the Offer already holds, or is currently
+ * receiving, MAX_MEDIA_PER_OFFER items. Counts linked items plus this
+ * account's still-pending uploads for this Offer that are younger than the
+ * abandoned-upload cutoff, so an interrupted upload stops counting once it is
+ * old enough to be cleaned up rather than blocking the Offer forever.
+ */
+async function assertOfferMediaCapacity(offerId, userId, env) {
+  const linksRes = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&select=media_id`,
+  );
+  if (!linksRes.ok) throw new WorkerError('Failed to read offer media', 502);
+  const linkedIds = new Set(((await linksRes.json()) ?? []).map((link) => link.media_id));
+
+  const prefix = `profiles/${userId}/offers/${offerId}/`;
+  const pendingRes = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}&status=eq.pending_upload&object_key=like.${encodeURIComponent(prefix)}*&select=id,created_at`,
+  );
+  if (!pendingRes.ok) throw new WorkerError('Failed to read pending offer media', 502);
+  const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
+  const pendingInFlight = ((await pendingRes.json()) ?? []).filter((pending) => {
+    if (linkedIds.has(pending.id)) return false;
+    const createdAt = Date.parse(pending.created_at);
+    return Number.isNaN(createdAt) || createdAt > cutoff;
+  });
+
+  if (linkedIds.size + pendingInFlight.length >= MAX_MEDIA_PER_OFFER) {
+    throw new WorkerError('Offer media limit reached', 409, 'offer_media_limit_reached');
+  }
 }
 
 async function handleOfferMediaList(request, env) {
@@ -458,7 +712,14 @@ async function handleOfferMediaList(request, env) {
       objectKey: object.object_key,
       expiresInSeconds: GET_URL_TTL_SECONDS,
     });
-    media.push({ mediaObjectId: object.id, role: link.role, ordinal: link.ordinal, url });
+    media.push({
+      mediaObjectId: object.id,
+      role: link.role,
+      ordinal: link.ordinal,
+      contentType: object.content_type,
+      mediaType: OFFER_MEDIA_TYPES[object.content_type].mediaType,
+      url,
+    });
   }
 
   return corsResponse(
@@ -483,14 +744,18 @@ async function assertOwnsOffer(offerId, userId, env) {
 }
 
 function offerObjectKey(userId, offerId, mediaObjectId, contentType) {
-  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' }[contentType];
+  const extension = OFFER_MEDIA_TYPES[contentType]?.extension;
   // Deliberately nested under the existing profile-image account prefix —
   // see the file header comment for why.
   return `profiles/${userId}/offers/${offerId}/${mediaObjectId}.${extension}`;
 }
 
 function isExpectedOfferObjectKey(row, userId, offerId) {
-  return isAllowedContentType(row.content_type) && row.object_key === offerObjectKey(userId, offerId, row.id, row.content_type);
+  return isAllowedOfferContentType(row.content_type) && row.object_key === offerObjectKey(userId, offerId, row.id, row.content_type);
+}
+
+function isAllowedOfferContentType(contentType) {
+  return typeof contentType === 'string' && Object.hasOwn(OFFER_MEDIA_TYPES, contentType);
 }
 
 async function verifySupabaseTokenAndGetUserId(request, env) {
@@ -570,9 +835,9 @@ async function supabaseServiceFetch(env, method, path, body, options = {}) {
   });
 }
 
-async function rejectInvalidUpload(row, userId, env, reason) {
+async function rejectInvalidUpload(row, userId, env, reason, status = 422, code = undefined) {
   await bestEffortDeleteInvalidObjectAndMarkFailed(row, userId, env);
-  throw new WorkerError(reason, 422);
+  throw new WorkerError(reason, status, code);
 }
 
 async function bestEffortDeleteInvalidObjectAndMarkFailed(row, userId, env) {
@@ -684,6 +949,48 @@ function detectImageMimeFromBytes(bytes) {
   return null;
 }
 
+/**
+ * Offer media only: the real container type of an uploaded file from its
+ * leading bytes. Images use the same detector as profile images. Videos are
+ * ISO base-media files whose `ftyp` box names a brand; the major brand is
+ * authoritative, and compatible brands are consulted only when the major
+ * brand is unknown and the file is not a HEIF image. Anything else is null.
+ * This proves the container, not the codec inside it.
+ */
+function detectOfferMediaMimeFromBytes(bytes) {
+  if (!isIsoBaseMedia(bytes)) return detectImageMimeFromBytes(bytes);
+
+  const major = brandAt(bytes, 8);
+  const byMajor = videoMimeForBrand(major);
+  if (byMajor) return byMajor;
+
+  const image = detectImageMimeFromBytes(bytes);
+  if (image) return image;
+
+  const boxSize = ((bytes[0] << 24) >>> 0) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
+  const end = Math.min(bytes.length, boxSize >= 16 ? boxSize : bytes.length);
+  for (let offset = 16; offset + 4 <= end; offset += 4) {
+    const byCompatible = videoMimeForBrand(brandAt(bytes, offset));
+    if (byCompatible) return byCompatible;
+  }
+  return null;
+}
+
+function isIsoBaseMedia(bytes) {
+  return bytes.length >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+}
+
+function brandAt(bytes, offset) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+function videoMimeForBrand(brand) {
+  if (MP4_BRANDS.has(brand)) return 'video/mp4';
+  if (QUICKTIME_BRANDS.has(brand)) return 'video/quicktime';
+  if (THREE_GPP_BRANDS.has(brand)) return 'video/3gpp';
+  return null;
+}
+
 async function readJson(request) {
   try {
     const body = await request.json();
@@ -708,8 +1015,11 @@ function corsResponse(body, status, env, extraHeaders = {}) {
 }
 
 class WorkerError extends Error {
-  constructor(message, status = 400) {
+  // [code] is an optional stable, machine-readable reason the client maps to
+  // a localized message; [message] stays diagnostic English.
+  constructor(message, status = 400, code = undefined) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }

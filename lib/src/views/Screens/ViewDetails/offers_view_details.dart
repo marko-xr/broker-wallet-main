@@ -1,6 +1,8 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/offer_details_load_coordinator.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
@@ -27,9 +29,22 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 class OffersDetailsView extends StatefulWidget {
   final OfferModel offer;
 
+  /// True when [offer]'s core fields came from the authoritative ID loader.
+  /// Private media still resolves independently after the screen is usable.
+  final bool initialOfferIsResolved;
+  final OfferMetadataLoader? loadMetadata;
+  final OfferMediaResolver? resolveMedia;
+
+  /// Media this device already holds for an Offer id, read synchronously.
+  final CachedOfferMediaReader? readCachedMedia;
+
   const OffersDetailsView({
     super.key,
     required this.offer,
+    this.initialOfferIsResolved = false,
+    this.loadMetadata,
+    this.resolveMedia,
+    this.readCachedMedia,
   });
 
   @override
@@ -60,6 +75,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   // Track current offer data (may be updated after edit)
   late OfferModel _currentOffer;
+  late OfferDetailsLoadCoordinator _loadCoordinator;
 
   // Performance optimization: Cache expensive widgets
   Widget? _cachedMediaGallery;
@@ -72,9 +88,53 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     _optimisticFavoritesService =
         Provider.of<OptimisticFavoritesService>(context, listen: false);
     _setupAnimations();
+    _createLoadCoordinator();
     _initializeMediaController();
     _loadFavoriteStatus();
     _setupUploadCompletionListener();
+    unawaited(_loadCoordinator.load());
+  }
+
+  void _createLoadCoordinator() {
+    _loadCoordinator = OfferDetailsLoadCoordinator(
+      initialOffer: _currentOffer,
+      initialMetadataResolved: widget.initialOfferIsResolved,
+      loadMetadata: widget.loadMetadata ?? _offerService.getOfferMetadata,
+      resolveMedia: widget.resolveMedia ?? _offerService.resolveOfferMedia,
+      readCachedMedia: widget.readCachedMedia ?? _offerService.cachedOfferMedia,
+      onChanged: _handleLoadChanged,
+    );
+  }
+
+  void _handleLoadChanged() {
+    if (!mounted) return;
+    setState(() {
+      _currentOffer = _loadCoordinator.offer;
+      // Media can become drawable after this screen was first built — either
+      // from the authoritative resolution or, on a cold cache, as soon as the
+      // first bytes land — so the pager is created on demand.
+      _initializeMediaController();
+      _cachedMediaGallery = null;
+      _cachedMapWidget = null;
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant OffersDetailsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.offer.id != widget.offer.id) {
+      _loadCoordinator.dispose();
+      _currentOffer = widget.offer;
+      _cachedMediaGallery = null;
+      _cachedMapWidget = null;
+      _currentMediaIndex = 0;
+      _mediaPageController?.dispose();
+      _mediaPageController = null;
+      _createLoadCoordinator();
+      _initializeMediaController();
+      _loadFavoriteStatus();
+      unawaited(_loadCoordinator.load());
+    }
   }
 
   void _setupAnimations() {
@@ -119,7 +179,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   void _initializeMediaController() {
-    if (_currentOffer.mediaUrls.isNotEmpty) {
+    if (_mediaPageController != null) return;
+    if (_loadCoordinator.hasRenderableMedia) {
       _mediaPageController = PageController();
     }
   }
@@ -137,29 +198,17 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
             event.collection == 'offers' &&
             event.documentId == _currentOffer.id)
         .listen((event) async {
-      await _refreshOfferData();
+      await _loadCoordinator.reload();
     });
   }
 
-  Future<void> _refreshOfferData() async {
-    if (_currentOffer.id == null) return;
-
-    try {
-      final updatedOffer = await _offerService.getOffer(_currentOffer.id!);
-      if (updatedOffer != null && mounted) {
-        setState(() {
-          _currentOffer = updatedOffer;
-          // Clear cached widgets to force rebuild with new media URLs
-          _cachedMediaGallery = null;
-          _cachedMapWidget = null;
-        });
-      }
-    } catch (e) {
-    }
+  void _retryOfferLoad() {
+    unawaited(_loadCoordinator.retry());
   }
 
   @override
   void dispose() {
+    _loadCoordinator.dispose();
     _uploadCompletionSubscription?.cancel();
     _mainAnimationController.dispose();
     _fabAnimationController.dispose();
@@ -171,6 +220,42 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+
+    if (_loadCoordinator.detailsUnavailable) {
+      final loc = AppLocalizations.of(context);
+      return Scaffold(
+        backgroundColor: colors.surface,
+        appBar: AppBar(backgroundColor: colors.surface),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: colors.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                loc.translate('offerNotFound'),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/home');
+                  }
+                },
+                child: Text(loc.translate('goBack')),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: colors.surface,
@@ -205,9 +290,13 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final texts = Theme.of(context).textTheme;
     final isRent = _currentOffer.offerType == 'rent';
     final isRTL = Directionality.of(context) == ui.TextDirection.rtl;
+    final hasExpandedHeader = _loadCoordinator.hasRenderableMedia ||
+        _loadCoordinator.isLoading ||
+        _loadCoordinator.hasRecoverableFailure ||
+        _loadCoordinator.mediaAccessRevoked;
 
     return SliverAppBar(
-      expandedHeight: _currentOffer.mediaUrls.isNotEmpty ? 280 : 200,
+      expandedHeight: hasExpandedHeader ? 280 : 200,
       floating: false,
       pinned: true,
       stretch: true,
@@ -300,9 +389,109 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: RepaintBoundary(
-          child: _currentOffer.mediaUrls.isNotEmpty
-              ? _buildCachedMediaGallery()
-              : _buildGradientHeader(context, isRent, colors, texts),
+          child: _buildHeaderBackground(context, isRent, colors, texts),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderBackground(
+    BuildContext context,
+    bool isRent,
+    ColorScheme colors,
+    TextTheme texts,
+  ) {
+    // Locally held bytes render here on the very first frame, before any
+    // network call — the gallery is shown as soon as anything is drawable
+    // rather than waiting for a freshly signed URL.
+    if (_loadCoordinator.hasRenderableMedia) {
+      return _buildCachedMediaGallery();
+    }
+    if (_loadCoordinator.isLoading) {
+      return _buildMediaLoadingHeader(context);
+    }
+    // Proven gone for this account: a settled, explained state with no retry,
+    // because retrying cannot change the answer.
+    if (_loadCoordinator.mediaAccessRevoked) {
+      return _buildMediaUnavailableHeader(context);
+    }
+    if (_loadCoordinator.hasRecoverableFailure) {
+      return _buildMediaErrorHeader(context);
+    }
+    return _buildGradientHeader(context, isRent, colors, texts);
+  }
+
+  /// The media area while the Offer's photos are still being resolved.
+  ///
+  /// Identical to what the gallery draws for an image whose bytes have not
+  /// arrived, so the moment the gallery takes over is invisible: the first
+  /// open shows one continuous surface, not a spinner followed by a second,
+  /// different spinner.
+  Widget _buildMediaLoadingHeader(BuildContext context) =>
+      const MediaLoadingPlaceholder();
+
+  /// Media the server says this account no longer has.
+  ///
+  /// Deliberately neutral: no retry, and no provider text. The local copy has
+  /// already been removed by the time this is drawn.
+  Widget _buildMediaUnavailableHeader(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return Container(
+      color: colors.surfaceContainerHighest,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.image_not_supported_outlined,
+              size: 42,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              loc.translate('offerMediaUnavailable'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaErrorHeader(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final messageKey = _loadCoordinator.metadataLoadFailed
+        ? 'errorLoadingData'
+        : 'failedToLoadImage';
+    return Container(
+      color: colors.errorContainer,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.broken_image_outlined,
+              size: 42,
+              color: colors.onErrorContainer,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              loc.translate(messageKey),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onErrorContainer,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: _retryOfferLoad,
+              child: Text(loc.translate('retry')),
+            ),
+          ],
         ),
       ),
     );
@@ -339,7 +528,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   Widget _buildCachedMediaGallery() {
     _cachedMediaGallery ??= OptimizedMediaGalleryWidget(
-      mediaUrls: _currentOffer.mediaUrls,
+      mediaRefs: _loadCoordinator.mediaItems,
+      imagePlaceholder: const MediaLoadingPlaceholder(),
       pageController: _mediaPageController,
       onPageChanged: (index) {
         setState(() {
@@ -349,6 +539,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       showControls: true,
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/building-property.svg',
+      onRetry: _retryOfferLoad,
     );
     return _cachedMediaGallery!;
   }

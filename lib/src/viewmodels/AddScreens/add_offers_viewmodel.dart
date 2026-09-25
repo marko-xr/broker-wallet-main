@@ -13,6 +13,8 @@ import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
+import 'package:broker_wallet/src/services/offer_media_policy.dart';
+import 'package:broker_wallet/src/services/offer_media_selection.dart';
 import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../services/ScreenServices/offer_service.dart';
@@ -164,6 +166,20 @@ class AddOffersViewModel extends ChangeNotifier
   bool get isUploading => _isUploading;
   bool get hasMediaFiles =>
       _selectedFiles.isNotEmpty || _uploadedFileUrls.isNotEmpty;
+
+  /// Everything that would be on the Offer if it were saved now: the media it
+  /// already has (minus anything removed in this session) plus the files just
+  /// picked. This is what the 10-item limit counts, exactly as the Media
+  /// Worker counts it server-side.
+  int get currentMediaCount =>
+      _uploadedFileUrls
+          .where((url) => !_removedMediaUrls.contains(url))
+          .length +
+      _selectedFiles.length;
+
+  /// How many more photos or videos this Offer can still take.
+  int get remainingMediaSlots =>
+      OfferMediaPolicy.remainingSlots(currentMediaCount);
 
   // Remove the old uploadedFileName related code and replace with:
   @Deprecated('Use selectedFiles instead')
@@ -468,25 +484,56 @@ class AddOffersViewModel extends ChangeNotifier
   Future<void> selectMedia(BuildContext context) async {
     // Debug log suppressed: selectMedia called - starting media selection with clean permissions
     try {
+      final loc = AppLocalizations.of(context);
+
+      // The Offer is already full: say so instead of opening a picker whose
+      // every result would be discarded.
+      if (remainingMediaSlots == 0) {
+        _showToast(loc.translate('offerMediaLimitReached'), Colors.red);
+        return;
+      }
+
       // Show comprehensive media selection dialog
-      final selectedFiles =
-          await _cleanMediaService.showMediaSelectionDialog(context);
+      final selectedFiles = await _cleanMediaService.showMediaSelectionDialog(
+        context,
+        maxVideoDuration: OfferMediaPolicy.maxVideoDuration,
+      );
 
       if (selectedFiles != null && selectedFiles.isNotEmpty) {
-        // Debug log suppressed: Adding ${selectedFiles.length} files to selection
+        // Screened before they reach the form, so the limit, the size caps,
+        // the supported formats (read from each file's real bytes) and the
+        // video length are enforced where the user can still react — not
+        // after a long upload.
+        final screened = await screenOfferMediaSelection(
+          candidates: [
+            for (final file in selectedFiles)
+              if (file.path != null) File(file.path!),
+          ],
+          itemsAlreadyOnOffer: currentMediaCount,
+        );
+        final acceptedPaths = screened.accepted.map((f) => f.path).toSet();
+        final admitted = selectedFiles
+            .where((file) =>
+                file.path != null && acceptedPaths.contains(file.path))
+            .toList();
 
-        // Add all selected files
-        _selectedFiles.addAll(selectedFiles);
-
+        _selectedFiles.addAll(admitted);
         notifyListeners();
 
-        // Show success message
         if (context.mounted) {
-          Fluttertoast.showToast(
-            msg: "Added ${selectedFiles.length} file(s) successfully",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-          );
+          for (final rejection in screened.rejections) {
+            _showToast(loc.translate(rejection.messageKey), Colors.red);
+          }
+          if (screened.trimmedByLimit) {
+            _showToast(loc.translate('offerMediaLimitTrimmed'), Colors.red);
+          }
+          if (admitted.isNotEmpty) {
+            Fluttertoast.showToast(
+              msg: "Added ${admitted.length} file(s) successfully",
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+            );
+          }
         }
 
         // Debug log suppressed: Files added successfully, total: ${_selectedFiles.length}
@@ -752,6 +799,18 @@ class AddOffersViewModel extends ChangeNotifier
         if (platformFile.path != null) {
           mediaFilesToUpload.add(File(platformFile.path!));
         }
+      }
+
+      // Re-checked at save time, not only at selection: media may have been
+      // added in another session or on another device since this form opened.
+      // The Media Worker enforces the same limit authoritatively.
+      if (currentMediaCount > OfferMediaPolicy.maxItemsPerOffer) {
+        _error =
+            AppLocalizations.of(context).translate('offerMediaLimitReached');
+        _isLoading = false;
+        notifyListeners();
+        _showToast(_error!, Colors.red);
+        return;
       }
 
       if (isEditMode && _editOfferId != null) {

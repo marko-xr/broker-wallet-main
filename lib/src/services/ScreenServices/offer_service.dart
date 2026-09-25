@@ -8,6 +8,9 @@ import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../fast_media_upload_service.dart';
 import '../map_data_cache_service.dart';
+import '../offer_media_cache_identity.dart';
+import '../offer_media_policy.dart';
+import '../offline_media_service.dart';
 import '../r2_offer_media_upload_service.dart';
 import '../supabase_core_entities_service.dart';
 
@@ -149,24 +152,38 @@ class OfferService {
     }
 
     final failedFileNames = <String>[];
+    final rejections = <OfferMediaRejection>[];
     for (final file in mediaFiles) {
       try {
-        await _offerMediaUpload.uploadOfferMediaFile(
+        final uploaded = await _offerMediaUpload.uploadOfferMediaFile(
           offerId: savedOfferId,
           file: file,
           ordinal: nextOrdinal,
         );
+        // Videos are deliberately not adopted: keeping a second copy of a
+        // file up to 100 MB on the device to save one download is a bad
+        // trade, and the player streams from the signed URL anyway. Images
+        // keep the existing local-first behaviour unchanged.
+        if (uploaded.kind == OfferMediaKind.image) {
+          await _adoptUploadedOfferMedia(uploaded.mediaObjectId, file);
+        }
         nextOrdinal += 1;
       } catch (e) {
+        if (e is OfferMediaRejectedException) rejections.add(e.rejection);
         failedFileNames.add(file.path.split(Platform.pathSeparator).last);
       }
     }
 
     if (failedFileNames.isNotEmpty) {
-      throw StateError(
-        'Offer saved, but ${failedFileNames.length} of ${mediaFiles.length} '
-        'photo(s) failed to upload (${failedFileNames.join(', ')}). '
-        'Edit the offer to retry.',
+      throw OfferMediaPartialUploadException(
+        failedCount: failedFileNames.length,
+        totalCount: mediaFiles.length,
+        // Only when every failure shares one reason can the user be told
+        // precisely why; a mixed batch keeps the general message.
+        rejection: rejections.length == failedFileNames.length &&
+                rejections.toSet().length == 1
+            ? rejections.first
+            : null,
       );
     }
 
@@ -250,5 +267,67 @@ class OfferService {
         .doc(offerId)
         .get();
     return doc.exists ? OfferModel.fromFirestore(doc) : null;
+  }
+
+  /// Reads the authoritative Offer fields without waiting for private-media
+  /// URL signing. Firebase's legacy document already carries its stable media
+  /// URLs, so its existing single read remains unchanged.
+  Future<OfferModel?> getOfferMetadata(String offerId) async {
+    if (SupabaseConfig.useSupabaseAuth) {
+      return _supabase.getOfferMetadata(offerId);
+    }
+    return getOffer(offerId);
+  }
+
+  /// The signed-in account, or null when there is no session.
+  String? get currentOwnerId =>
+      SupabaseConfig.useSupabaseAuth ? _supabase.currentOwnerId : _currentUserId;
+
+  /// What this device already holds for [offerId], with no network at all.
+  ///
+  /// Always empty on the Firebase backend, whose Storage URLs are stable and
+  /// therefore already cache correctly keyed by URL — only private R2 media,
+  /// whose signed URL rotates on every read, needs a durable identity.
+  List<OfferMediaRef> cachedOfferMedia(String offerId) {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    return _supabase.cachedOfferMedia(offerId);
+  }
+
+  /// Resolves only private media for an Offer whose core row has already been
+  /// authorized, without re-reading the Offer row.
+  ///
+  /// Returns null on the Firebase backend, which has no separate media stage:
+  /// its document already carries its media URLs, so the caller must keep what
+  /// metadata gave it rather than treating "no media stage" as "no media".
+  Future<OfferMediaResolution?> resolveOfferMedia({
+    required String offerId,
+    required String ownerId,
+  }) async {
+    if (!SupabaseConfig.useSupabaseAuth) return null;
+    return _supabase.resolveOfferMedia(offerId: offerId, ownerId: ownerId);
+  }
+
+  /// Binds the bytes just uploaded to the media identity the server confirmed
+  /// for them, so viewing the Offer straight after saving paints the same
+  /// picture from disk instead of downloading it back from R2. Best effort — a
+  /// failure only costs one download. Mirrors the profile-image path.
+  Future<void> _adoptUploadedOfferMedia(
+    String mediaObjectId,
+    File file,
+  ) async {
+    try {
+      final cacheKey = offerMediaCacheKey(
+        ownerId: _supabase.currentOwnerId,
+        mediaObjectId: mediaObjectId,
+      );
+      if (cacheKey == null) return;
+      await OfflineMediaService.instance.adoptLocalFileForMediaId(
+        cacheKey,
+        file.path,
+        directoryName: 'offer_media',
+      );
+    } catch (e) {
+      // Best effort.
+    }
   }
 }

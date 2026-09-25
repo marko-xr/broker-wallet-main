@@ -124,7 +124,10 @@ class CleanMediaService {
   // ============================================================================
 
   /// Pick video from camera with permission handling
-  Future<File?> pickVideoFromCamera(BuildContext context) async {
+  Future<File?> pickVideoFromCamera(
+    BuildContext context, {
+    Duration maxDuration = const Duration(minutes: 5),
+  }) async {
     try {
       // Request camera and microphone permissions
       final permissions = await _permissionService
@@ -145,7 +148,7 @@ class CleanMediaService {
       // Pick video from camera
       final XFile? video = await _picker.pickVideo(
         source: ImageSource.camera,
-        maxDuration: const Duration(minutes: 5),
+        maxDuration: maxDuration,
       );
 
       if (video != null) {
@@ -194,6 +197,18 @@ class CleanMediaService {
   // 📄 DOCUMENT AND FILE SELECTION
   // ============================================================================
 
+  /// Describes a picked video without reading it into memory.
+  ///
+  /// A video can be tens or hundreds of megabytes, and nothing consumes a
+  /// video's `bytes` (previews use the file path, the uploader streams from
+  /// disk), so loading it would only risk an out-of-memory crash and a long
+  /// freeze before the upload even starts. Images still carry their bytes.
+  Future<PlatformFile> _videoPlatformFile(File file) async => PlatformFile(
+        name: file.path.split(Platform.pathSeparator).last,
+        path: file.path,
+        size: await file.length(),
+      );
+
   /// Pick documents with permission handling
   Future<List<PlatformFile>?> pickDocuments(BuildContext context) async {
     try {
@@ -233,8 +248,13 @@ class CleanMediaService {
   // ============================================================================
 
   /// Show comprehensive media selection dialog with all options
+  /// [maxVideoDuration] caps camera recording where the platform supports it
+  /// (gallery picks are checked by the caller after selection). Callers that
+  /// do not pass one keep the previous five-minute recording behaviour.
   Future<List<PlatformFile>?> showMediaSelectionDialog(
-      BuildContext context) async {
+    BuildContext context, {
+    Duration maxVideoDuration = const Duration(minutes: 5),
+  }) async {
     final loc = AppLocalizations.of(context);
 
     final String? selectedOption = await showModalBottomSheet<String>(
@@ -364,18 +384,9 @@ class CleanMediaService {
         break;
 
       case 'video_camera':
-        final file = await pickVideoFromCamera(context);
-        if (file != null) {
-          final bytes = await file.readAsBytes();
-          return [
-            PlatformFile(
-              name: file.path.split(Platform.pathSeparator).last,
-              path: file.path,
-              size: bytes.length,
-              bytes: bytes,
-            )
-          ];
-        }
+        final file =
+            await pickVideoFromCamera(context, maxDuration: maxVideoDuration);
+        if (file != null) return [await _videoPlatformFile(file)];
         break;
 
       case 'gallery':
@@ -399,17 +410,7 @@ class CleanMediaService {
 
       case 'video_gallery':
         final file = await pickVideoFromGallery(context);
-        if (file != null) {
-          final bytes = await file.readAsBytes();
-          return [
-            PlatformFile(
-              name: file.path.split(Platform.pathSeparator).last,
-              path: file.path,
-              size: bytes.length,
-              bytes: bytes,
-            )
-          ];
-        }
+        if (file != null) return [await _videoPlatformFile(file)];
         break;
 
       case 'documents':

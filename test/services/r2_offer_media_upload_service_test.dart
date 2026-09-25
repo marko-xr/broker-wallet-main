@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:broker_wallet/src/services/offer_media_policy.dart';
 import 'package:broker_wallet/src/services/r2_offer_media_upload_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -170,7 +171,10 @@ void main() {
         await service.uploadOfferMediaFile(offerId: _offerId, file: file);
         fail('expected an R2UploadException');
       } on R2UploadException catch (e) {
-        expect(e.message, 'Unsupported offer image type.');
+        expect(e, isA<OfferMediaRejectedException>());
+        expect((e as OfferMediaRejectedException).rejection,
+            OfferMediaRejection.unsupportedType);
+        expect(e.message, 'Offer media was refused.');
         expect(e.message, isNot(contains(privatePath)));
         expect(e.message, isNot(contains('0x11')));
       }

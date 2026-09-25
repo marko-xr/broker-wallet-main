@@ -1,9 +1,10 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
@@ -14,13 +15,19 @@ import 'package:fluttertoast/fluttertoast.dart';
 
 /// Full-screen media viewer with swipe navigation, zoom, and controls
 class FullScreenMediaViewer extends StatefulWidget {
+  /// Fully-described media, used instead of [mediaUrls] when given, so
+  /// full-screen viewing reuses the same cache identity — and therefore the
+  /// same already-downloaded bytes — as the inline gallery it opened from.
+  final List<OfferMediaRef>? mediaRefs;
+
   final List<String> mediaUrls;
   final int initialIndex;
   final String? title;
 
   const FullScreenMediaViewer({
     super.key,
-    required this.mediaUrls,
+    this.mediaRefs,
+    this.mediaUrls = const <String>[],
     this.initialIndex = 0,
     this.title,
   });
@@ -51,13 +58,14 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
 
-    _mediaItems = widget.mediaUrls
-        .map((url) => MediaItem(
-              url: url,
-              type: MediaItem.getMediaTypeFromUrl(url),
-              fileName: _extractFileName(url),
-            ))
-        .toList();
+    _mediaItems = widget.mediaRefs?.map(MediaItem.fromOfferMedia).toList() ??
+        widget.mediaUrls
+            .map((url) => MediaItem(
+                  url: url,
+                  type: MediaItem.getMediaTypeFromUrl(url),
+                  fileName: _extractFileName(url),
+                ))
+            .toList();
 
     _setupAnimations();
     _preloadCurrentVideo();
@@ -460,9 +468,30 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     }
   }
 
+  /// Prefers bytes this device already holds, then the shared disk cache
+  /// keyed by the item's stable identity, and only then the network.
+  ///
+  /// This applies to private Offer media only — the items that carry a stable
+  /// [MediaItem.cacheKey]. Everything else, Owner media included, keeps the
+  /// plain `NetworkImage` it has always used: caching it was never needed for
+  /// the Offer loading-delay correction, and changing an unrelated screen's
+  /// image pipeline does not belong in that change.
+  ImageProvider _imageProviderFor(MediaItem mediaItem) {
+    final cacheKey = mediaItem.cacheKey;
+    if (cacheKey == null) return NetworkImage(mediaItem.url);
+
+    final localPath =
+        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
+    if (localPath != null && localPath.isNotEmpty) {
+      final file = File(localPath);
+      if (file.existsSync()) return FileImage(file);
+    }
+    return CachedNetworkImageProvider(mediaItem.url, cacheKey: cacheKey);
+  }
+
   Widget _buildImageViewer(MediaItem mediaItem) {
     return PhotoView(
-      imageProvider: NetworkImage(mediaItem.url),
+      imageProvider: _imageProviderFor(mediaItem),
       initialScale: PhotoViewComputedScale.contained,
       minScale: PhotoViewComputedScale.contained * 0.8,
       maxScale: PhotoViewComputedScale.covered * 3.0,

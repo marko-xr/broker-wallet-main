@@ -4,14 +4,15 @@ import 'dart:io';
 
 import 'package:broker_wallet/src/common/utils/core_entity_error_message.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
+import 'package:broker_wallet/src/services/offer_media_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _enMessage = 'The offer was saved, but one or more photos could not be '
-    'uploaded. Edit the offer to retry.';
+const _enMessage = 'The offer was saved, but one or more photos or videos '
+    'could not be uploaded. Edit the offer to retry.';
 const _arMessage =
-    'تم حفظ العرض، لكن تعذّر رفع صورة واحدة أو أكثر. يمكنك تعديل العرض '
-    'لإعادة المحاولة.';
+    'تم حفظ العرض، لكن تعذّر رفع ملف واحد أو أكثر من الصور أو مقاطع الفيديو. '
+    'يمكنك تعديل العرض لإعادة المحاولة.';
 
 String Function(String) _fakeTranslate(Map<String, String> table) =>
     (key) => table[key] ?? '** $key not found';
@@ -179,6 +180,76 @@ void main() {
       expect(en['offerSavedMediaPartialFailure'], _enMessage);
       expect(ar['offerSavedMediaPartialFailure'], isNotEmpty);
       expect(ar['offerSavedMediaPartialFailure'], isNot(_enMessage));
+    });
+  });
+
+  group('CoreEntityErrorMessage.save — typed partial-upload failures', () {
+    test('a mixed-reason partial failure keeps the general saved message', () {
+      const error = OfferMediaPartialUploadException(
+        failedCount: 2,
+        totalCount: 3,
+      );
+      final translate = _fakeTranslate({
+        'offerSavedMediaPartialFailure': _enMessage,
+      });
+
+      expect(
+        CoreEntityErrorMessage.save(error, 'offer',
+            isUpdate: true, translate: translate),
+        _enMessage,
+      );
+    });
+
+    test('one shared reason adds its own localized sentence', () {
+      const error = OfferMediaPartialUploadException(
+        failedCount: 1,
+        totalCount: 1,
+        rejection: OfferMediaRejection.videoTooLarge,
+      );
+      final translate = _fakeTranslate({
+        'offerSavedMediaPartialFailure': _enMessage,
+        'offerMediaVideoTooLarge': 'Each video must be 100 MB or smaller.',
+      });
+
+      expect(
+        CoreEntityErrorMessage.save(error, 'offer',
+            isUpdate: false, translate: translate),
+        '$_enMessage Each video must be 100 MB or smaller.',
+      );
+    });
+
+    test('Arabic is used when an Arabic translator is supplied', () {
+      const error = OfferMediaPartialUploadException(
+        failedCount: 1,
+        totalCount: 2,
+        rejection: OfferMediaRejection.limitReached,
+      );
+      final translate = _fakeTranslate({
+        'offerSavedMediaPartialFailure': _arMessage,
+        'offerMediaLimitReached':
+            'يمكن للعرض أن يحتوي على 10 صور ومقاطع فيديو كحد أقصى.',
+      });
+
+      final message = CoreEntityErrorMessage.save(error, 'offer',
+          isUpdate: true, translate: translate);
+      expect(message, startsWith(_arMessage));
+      expect(message, contains('10'));
+    });
+
+    test('without a translator it never claims total failure and leaks '
+        'nothing', () {
+      const error = OfferMediaPartialUploadException(
+        failedCount: 1,
+        totalCount: 4,
+        rejection: OfferMediaRejection.interrupted,
+      );
+
+      final message =
+          CoreEntityErrorMessage.save(error, 'offer', isUpdate: true);
+
+      expect(message, isNot(contains('Unable to')));
+      expect(message, contains('was saved'));
+      expect(message, isNot(contains('1')));
     });
   });
 }

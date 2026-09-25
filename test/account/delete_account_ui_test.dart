@@ -16,6 +16,8 @@ import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:broker_wallet/src/services/offline_media_service.dart'
+    show OfferMediaCleanupReport;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -376,6 +378,8 @@ void main() {
       userRepository: _UserRepository(),
       deletedAccountCleaner: DeletedAccountLocalDataCleaner(
         forgetProfileMedia: ({mediaIds}) async {},
+        forgetOfferMedia: ({ownerId}) async =>
+            const OfferMediaCleanupReport.empty(),
       ),
     );
     final gateway = _Gateway();

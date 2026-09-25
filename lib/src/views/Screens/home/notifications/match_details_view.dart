@@ -593,8 +593,12 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
   }
 
   void _viewOfferDetails(BuildContext context) {
-    if (_offer != null) {
-      context.push('/offers-details', extra: _offer);
+    final offerId = widget.offerId.trim();
+    if (_offer != null && offerId.isNotEmpty) {
+      context.push(
+        '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
+        extra: _offer,
+      );
     }
   }
 

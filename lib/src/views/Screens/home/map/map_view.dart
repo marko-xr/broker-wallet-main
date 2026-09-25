@@ -11,7 +11,6 @@ import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
-import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/owner_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/office_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/watchmen_service.dart';
@@ -78,11 +77,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
       switch (locationInfo.type) {
         case LocationFilter.offers:
-          final offer = await OfferService().getOffer(locationInfo.id);
-          if (offer != null && context.mounted) {
-            context.push('/offers-details', extra: offer);
-          } else if (context.mounted) {
-            _showToast('Offer not found', Colors.red);
+          final offerId = locationInfo.id.trim();
+          if (offerId.isNotEmpty && context.mounted) {
+            context.push(
+              '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
+            );
           }
           break;
 

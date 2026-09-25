@@ -14,6 +14,8 @@ import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.da
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:flutter/material.dart';
+import 'package:broker_wallet/src/services/offline_media_service.dart'
+    show OfferMediaCleanupReport;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -159,6 +161,8 @@ class _Harness {
       userRepository: users,
       deletedAccountCleaner: DeletedAccountLocalDataCleaner(
         forgetProfileMedia: ({mediaIds}) async {},
+        forgetOfferMedia: ({ownerId}) async =>
+            const OfferMediaCleanupReport.empty(),
       ),
     );
     feed = NotificationViewModel(repository: notifications);

@@ -29,6 +29,15 @@ class OfferModel {
   final DateTime updatedAt;
   final List<String> mediaUrls;
 
+  /// Stable identity for each entry in [mediaUrls], aligned by index —
+  /// `mediaObjectIds[i]` is the durable `media_objects.id` behind
+  /// `mediaUrls[i]`'s short-lived signed URL. Empty whenever the caller only
+  /// populated URLs (the bulk list fetch, and the legacy Firestore path,
+  /// neither of which carry a stable id today). Never assume the two lists
+  /// are the same length without checking; only a same-index pair is a valid
+  /// (id, url) match.
+  final List<String> mediaObjectIds;
+
   OfferModel({
     this.id,
     required this.userId,
@@ -56,6 +65,7 @@ class OfferModel {
     required this.createdAt,
     required this.updatedAt,
     required this.mediaUrls,
+    this.mediaObjectIds = const <String>[],
   });
 
   // Convert to Firestore document
@@ -162,10 +172,12 @@ class OfferModel {
     String? pickUpAddress,
     String? uploadedFileName,
     String? mediaUrl,
+    bool clearMediaUrl = false,
     PropertyStatus? status,
     DateTime? createdAt,
     DateTime? updatedAt,
     List<String>? mediaUrls,
+    List<String>? mediaObjectIds,
   }) {
     return OfferModel(
       id: id ?? this.id,
@@ -189,11 +201,12 @@ class OfferModel {
       pickUpLongitude: pickUpLongitude ?? this.pickUpLongitude,
       pickUpAddress: pickUpAddress ?? this.pickUpAddress,
       uploadedFileName: uploadedFileName ?? this.uploadedFileName,
-      mediaUrl: mediaUrl ?? this.mediaUrl,
+      mediaUrl: clearMediaUrl ? null : mediaUrl ?? this.mediaUrl,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       mediaUrls: mediaUrls ?? this.mediaUrls,
+      mediaObjectIds: mediaObjectIds ?? this.mediaObjectIds,
     );
   }
 }

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and below (Auto Backup, android:fullBackupContent).
+
+  Only exclusions are listed, so everything else the app stores keeps being
+  backed up exactly as before.
+
+  app_flutter is the directory path_provider returns for
+  getApplicationDocumentsDirectory() on Android, and app_flutter/offer_media
+  holds adopted originals of private Offer photos — the exact image files a
+  user uploaded to their own Offer. Those must not travel to cloud backup or
+  to another device. They are re-downloadable from R2 by an authorized
+  session, so excluding them costs nothing but a fetch.
+
+  Downloaded Offer photos are not listed here because they live in the cache
+  directory, which Auto Backup already excludes.
+-->
+<full-backup-content>
+    <exclude domain="root" path="app_flutter/offer_media" />
+</full-backup-content>

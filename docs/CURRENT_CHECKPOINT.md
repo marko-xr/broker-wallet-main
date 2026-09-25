@@ -3025,11 +3025,1876 @@ retained, cause still not independently proven); no HEIC/HEIF conversion or
 whitelist expansion; no image picker/compression change; no real-device
 upload, Samsung or otherwise; no git add, commit, or push.
 
-NOW — nothing further is pending on this byte-signature correction itself;
-it remains uncommitted, alongside the still-uncommitted localization
-correction above, pending owner review of both.
+NOW — superseded for the display/crash question specifically by the
+correction below; unaffected otherwise.
 
-NEXT — owner decision on HEIC/HEIF (convert to JPEG for guaranteed display,
-or verify decode/display compatibility before deciding), then real-device
-acceptance covering ordinary phone photos in both Create and Edit before any
-claim of production readiness for Offer Media images.
+NEXT — see the correction below's own NOW/NEXT.
+
+---
+
+## OFFER MEDIA — DETAILS CRASH + STALE-MEDIA DISPLAY CORRECTION (uncommitted)
+
+A real-device (Samsung) report, investigated read-only in the prior
+checkpoint, found: the previously-verified ready JPEG never appeared in
+Offer Details; a newly created Offer's image (independently reconciled
+hosted as `ready`, correctly associated, in the production bucket) also
+never appeared; and a Flutter red-screen crash: `type 'Null' is not a
+subtype of type 'OfferModel' in type cast`. This checkpoint corrects both a
+strongly-supported crash defect and a source-proven display defect,
+distinct root causes in two different files.
+
+CRASH DEFECT (source-proven): the `/offers-details` `GoRoute` in
+`lib/app.dart` did `state.extra as OfferModel` — a mandatory, non-nullable
+cast. GoRouter's `extra` is a transient in-memory value that is not restored
+across a killed-process restart or a route rebuilt without it, and this
+route carries no `:id` to fall back on (unlike `/offers-details-by-id/:id`).
+Grepping the full codebase for `as OfferModel` found this to be the *only*
+non-nullable instance tied to `state.extra`; every sibling Add-screen route
+already used the safe `as OfferModel?` form. The exact device stack trace
+was never obtained, so this is reported as strongly supported, not
+absolutely proven.
+
+DISPLAY DEFECT (source-proven, independent of the crash): every normal
+navigation to Offer Details (list, search, map, favorites, match-details —
+seven call sites, all `context.push('/offers-details', extra: offer)`)
+passes an `OfferModel` sourced from the bulk list fetch, which deliberately
+never populates `mediaUrls` (to avoid an unbounded per-offer Worker
+fan-out — a documented, unchanged tradeoff). `OffersDetailsView.initState`
+only ever refreshed that data via `_refreshOfferData()` (which does call the
+correct `OfferService.getOffer(id)`, itself unmodified and already
+production-verified to return real signed media), and that refresh was
+wired *only* to `FastMediaUploadService.onUploadCompleted` — a legacy
+Firebase-only event stream the current Supabase/R2 upload path never
+publishes. Under Supabase mode (the default), the refresh essentially never
+fired on a normal open, so real, `ready`, correctly-associated media stayed
+invisible.
+
+CORRECTION — two files, two independent fixes, no shared logic changed:
+
+- `lib/app.dart`: the `/offers-details` route's inline builder closure was
+  extracted, unchanged in behavior except for the cast, into a new public
+  top-level function `buildOffersDetailsRoute(context, state)` (public
+  specifically so a test can call the real production logic rather than a
+  reimplementation of it). `state.extra as OfferModel` became
+  `state.extra as OfferModel?`; when `null`, it returns a small "Offer not
+  found" fallback `Scaffold` (mirroring the existing equivalent fallback
+  already used by `_OfferDetailsLoader` for the same concept) with a "Go
+  Back" button that calls `context.go('/home')` — a single one-shot absolute
+  navigation to an already-elsewhere-proven-safe destination, not a
+  redirect, so there is no redirect-loop risk. No fake `OfferModel` is ever
+  constructed. No other route, no auth `redirect:` guard, and no other
+  builder changed.
+- `lib/src/views/Screens/ViewDetails/offers_view_details.dart`:
+  `initState()` gained exactly one added line, an unconditional call to the
+  existing `_refreshOfferData()` (itself untouched — already correctly
+  guarded by `if (_currentOffer.id == null) return;` and
+  `if (updatedOffer != null && mounted)` before its `setState`, and already
+  invalidates `_cachedMediaGallery`/`_cachedMapWidget` so the rebuilt screen
+  picks up real media through the unmodified `OptimizedMediaGalleryWidget`,
+  which itself already tolerates a `null` `pageController` by creating its
+  own). The pre-existing Firebase-event listener was deliberately left in
+  place, not removed, since removing it was not necessary or proven safe to
+  do within this scope. No other line in this file changed: layout, theme,
+  EN/AR, RTL, and every other behavior are untouched.
+
+INCIDENTAL FINDING, NOT FIXED, OUT OF SCOPE: while constructing a test
+fixture, `_buildCachedMiniMap` in `offers_view_details.dart` was found to
+call `_currentOffer.pickUpLatitude!`/`pickUpLongitude!` (forced non-null)
+with no presence guard anywhere in that file or its caller — a *separate,
+pre-existing* crash risk for any Offer with no pickup location set,
+unrelated to the two defects this checkpoint addresses. Reported for a
+future, separately-approved checkpoint; not touched here.
+
+TEST EVIDENCE AND ITS LIMITS: new `test/app/offers_details_route_test.dart`,
+2/2 PASS, exercising the *actual* `buildOffersDetailsRoute` function (not a
+reimplementation) through a minimal real `GoRouter`: navigating to
+`/offers-details` with no `extra` no longer throws the null-cast exception
+and shows the safe fallback instead of crashing; tapping "Go Back" reaches
+`/home` with no exception and without looping back to the fallback. **The
+valid-`OfferModel` branch (`OffersDetailsView` itself, and therefore the new
+`_refreshOfferData()` call and every item D–J of the originally-requested
+test plan) could not be exercised in a widget test within this checkpoint's
+two-file approved scope.** Confirmed empirically, not assumed: pumping
+`OffersDetailsView` throws `"You must initialize the supabase instance
+before calling Supabase.instance"` from inside its own `initState` chain
+(`OfferService`/`SupabaseCoreEntitiesService` and, separately,
+`OptimisticFavoritesService`/`FavoriteService` each construct their real
+Supabase-backed dependency internally with no injectable seam), and the
+screen also builds a `GoogleMap` unconditionally, which needs platform-view
+mocking unrelated to this fix. Making that path testable would require
+adding dependency injection to `offer_service.dart` and/or
+`optimistic_favorites_service.dart` — both outside the two approved files —
+so this was reported rather than forced. Static source verification (traced
+by hand, not test-executed) is the basis for confidence in the
+`_refreshOfferData()` call's correctness instead.
+
+Targeted `flutter analyze` on all three changed/added files: no issues.
+`git diff --check`: clean. No existing test file references
+`offers-details`, `OffersDetailsView`, or `buildOffersDetailsRoute`, so none
+was directly affected by this change; the full suite was not rerun.
+
+NOT PERFORMED: no real-device verification of either fix; no installed-build
+provenance established; no Worker, Supabase, or R2 change; no cleanup of the
+seven historical failed `media_objects` rows (still retained); no HEIC/HEIF
+work; no new Offer creation or upload; no git add, commit, or push.
+
+NOW — superseded by the localization addendum immediately below for the
+fallback-string question specifically; unaffected otherwise.
+
+NEXT — see the addendum's own NOW/NEXT.
+
+### ADDENDUM — NULL-EXTRA FALLBACK LOCALIZATION (uncommitted)
+
+A pre-build review found the null-extra fallback added above used two
+hard-coded English strings, `'Offer not found'` and `'Go Back'`, despite
+`AGENTS.md`'s existing-localization rule — and, unlike earlier cases in this
+project, this was not a gap requiring a new key: both `offerNotFound` and
+`goBack` already existed as fully translated EN/AR keys in
+`app_en.arb`/`app_ar.arb`, each already in live use elsewhere (`goBack` in
+`pdf_viewer_screen.dart`; `offerNotFound`, for the identical "an Offer could
+not be resolved" concept, in `match_details_view.dart`). No ARB change was
+needed or made.
+
+CORRECTION: `lib/app.dart`'s `buildOffersDetailsRoute` now reads
+`AppLocalizations.of(context).translate('offerNotFound')` and
+`translate('goBack')` in place of the two literals. No other line changed.
+
+TEST EVIDENCE: `test/app/offers_details_route_test.dart` extended to 3/3
+PASS, now wrapping the test `MaterialApp.router` with the same
+`localizationsDelegates`/`supportedLocales` the real app uses, and asserting
+against the real, decoded ARB text — not the source key names — in both
+locales: with `Locale('en')` the fallback shows "Offer not found"/"Go Back";
+with `Locale('ar')` it shows "العرض غير موجود"/"رجوع" and the English text is
+absent. This proves the strings are genuinely resolved per-locale through
+the real localization pipeline, not merely present as literals. Targeted
+`flutter analyze` on both changed files: no issues. `git diff --check`:
+clean.
+
+NOW — superseded for the reopen-performance question specifically by the
+correction below; unaffected otherwise.
+
+NEXT — see the correction below's own NOW/NEXT.
+
+### ADDENDUM — DEVICE ACCEPTANCE AND REOPEN-PERFORMANCE CORRECTION (uncommitted)
+
+Owner-executed Debug device acceptance (Debug build, matched to the
+already-installed app's Android Debug signing certificate — the restored
+Release keystore's certificate does not match the installed app and was
+correctly not used) confirmed on Samsung: both previously-blocked Offer
+images (the existing ready JPEG and the newly-created Offer's JPEG) now
+display, and remain visible after leaving and reopening. The owner then
+observed a new, distinct issue: every open, and every reopen of the same
+Offer, shows a visible ~1-2 second delay before the image appears.
+
+ROOT CAUSE (source-proven): `_refreshOfferData()` (added by the prior
+checkpoint) calls `OfferService.getOffer(id)` on every `initState`, which
+calls the Worker's `/offer-media` list route
+(`R2OfferMediaUploadService.getOfferMedia`), which mints a **brand-new**
+signed GET URL for the same underlying R2 object on every single call (by
+design — signed URLs must be short-lived). The gallery widget
+(`media_gallery_widget.dart`) renders each image via
+`OfflineMediaService.buildOfflineAwareImage(imageUrl: mediaItem.url, ...)`
+without passing that method's own `cacheKey` parameter, so — as that
+method's own doc comment states — it falls back to `CachedNetworkImage`'s
+default URL-keyed cache. Since the URL string is different on every open
+(same bytes, different signature), every open is a guaranteed cache miss
+and a full re-download, even seconds after the previous identical view.
+
+THE PROVEN, COMPLETE FIX IS OUT OF THIS CHECKPOINT'S APPROVED SCOPE.
+`OfflineMediaService.buildOfflineAwareImage`'s `cacheKey` parameter already
+exists and is already used successfully for exactly this problem by Profile
+Media (keyed on the stable `profile_media_id`), per its own doc comment.
+Wiring the equivalent for Offer Media requires: `media_gallery_widget.dart`
+to pass a stable per-item `cacheKey` (not approved here); and, further back,
+a stable id per media item threaded from `SupabaseCoreEntitiesService`
+(`_fetchOfferMediaDisplayUrls` currently discards `R2OfferMediaItem
+.mediaObjectId` and keeps only `.url`) through `OfferModel.mediaUrls`
+(currently `List<String>`, URLs only) to that widget — touching
+`offer_service.dart`/`supabase_core_entities_service.dart` and possibly
+`offers_model.dart`, none of which are in this checkpoint's approved file
+list. **This is reported, not implemented, per instructions to stop and
+report rather than expand scope.**
+
+INTERIM CORRECTION IMPLEMENTED (within the one approved file only):
+`lib/src/views/Screens/ViewDetails/offers_view_details.dart` gained a
+process-lifetime, in-memory-only cache (`_recentOfferCache`, a
+`static final Map<String, _RecentOfferSnapshot>`) of each Offer's last
+successfully fetched, fully-resolved state, with a 60-second TTL —
+deliberately far shorter than the signed GET's own server-side TTL, so a
+cache hit here can never serve a URL past its real expiry. `initState` now
+checks this cache before deciding whether to call `_refreshOfferData()` at
+all: a hit within the last 60 seconds reuses the exact same previously
+resolved `OfferModel` (same media URL strings), so
+`CachedNetworkImage`'s existing URL-keyed cache correctly hits and no
+network round trip or re-download happens; a miss (first open, or a reopen
+after 60+ seconds) behaves exactly as before. This is a narrower, fully
+in-scope mitigation for the specific "leave and immediately reopen" pattern
+the owner tested — not the general architectural fix above.
+
+Safety preserved: nothing is written to disk or Supabase (process-memory
+only, cleared on app restart); no signed URL is ever reused past its own
+real validity (60s cache vs. minutes-long server TTL); cross-account safety
+needs no extra clearing logic, since a cache entry is only ever looked up
+by the exact Offer id a screen was opened with, and RLS already prevents a
+different account from ever fetching an id that isn't theirs. A media
+change made via Edit's own pop-with-fresh-data path bypasses this cache
+entirely (unaffected); a change made through some other path within the
+same 60-second window as a very recent view could show cached-but-was-
+correct-at-fetch-time data for up to 60 seconds — a bounded, disclosed
+tradeoff, not indefinite staleness.
+
+TEST EVIDENCE AND ITS LIMITS: targeted `flutter analyze` on the changed
+file: no issues. `git diff --check`: clean. **No new automated test was
+added for this specific logic** — `_recentOfferCache`/
+`_applyRecentOfferCacheIfFresh` are private to this file, and the same
+testability blocker already disclosed in the prior checkpoint (pumping
+`OffersDetailsView` requires an initialized `Supabase.instance` and
+`OptimisticFavoritesService`'s real `FavoriteService`, neither injectable
+within this file alone, plus an unconditionally-built `GoogleMap`) applies
+identically here. Verification is by manual code review
+(CODE_PROVEN only) plus the real-device Debug acceptance below
+(functional, not Release-performance, evidence).
+
+DEVICE ACCEPTANCE: a Debug build from this exact source tree (HEAD
+`005b819...` plus all four uncommitted corrections) was built and installed
+as an update on Samsung `R5CY10YYLSM`, pre-verified matching package id,
+matching signing certificate, matching versionCode, and confirmed via
+`firstInstallTime` staying unchanged post-install that existing app data
+was preserved (not a fresh install). Awaiting the owner's timed
+before/after observation of the specific reopen-delay scenario on this
+build; not yet recorded as PASS.
+
+NOW — nothing further pending on this correction itself; it remains
+uncommitted alongside the other three corrections, pending owner device
+observation of the reopen-delay improvement specifically.
+
+NEXT — owner confirmation of perceived (and where possible timed)
+before/after reopen delay for both Offers on the installed Debug build; if
+still too slow after this interim fix, the properly-scoped stable-
+`cacheKey` fix above (three additional files) becomes its own separately
+approved checkpoint. Debug-mode timing does not establish Release-build
+performance.
+
+---
+
+## OFFER DETAILS "OFFER NOT FOUND" ON STARTUP — INVESTIGATION, ROOT CAUSE UNPROVEN, NO FIX APPLIED
+
+A new owner-reported symptom, distinct from the crash the null-extra
+fallback was built for: "normal application startup" sometimes lands
+directly on that same localized "Offer not found" fallback rather than a
+crash. This checkpoint traced the complete startup/navigation path and
+**could not establish a proven root cause** — per this project's own
+protocol, no speculative fix was implemented.
+
+MECHANISMS TRACED AND RULED OUT, EACH WITH SPECIFIC EVIDENCE:
+
+1. **`resolveAuthRedirect` targeting `/offers-details`** — read its full
+   body (`lib/app.dart`). No branch can ever return `/offers-details`; the
+   only redirect targets are `/`, `/welcome`, `/home`, `/sign-in`, and the
+   password-recovery route. `initialLocation` is always `/`. A normal cold
+   start therefore cannot land on `/offers-details` through this function
+   at all.
+2. **Flutter/Android state restoration** — `grep`'d the full `app.dart`:
+   no `restorationScopeId` is set on `MaterialApp.router` or `GoRouter`, so
+   Flutter's own navigator-restoration feature is inactive.
+   `android/app/.../MainActivity.kt` does not override
+   `shouldRestoreAndroidState()` (default `false`), and this project's own
+   prior, already-verified finding (Password checkpoint) established
+   `flutter_deeplinking_enabled` is `false` on Android — platform deep
+   links, and by extension any OS-level "restore this URI" mechanism, are
+   not fed into Flutter navigation here.
+3. **Push/local notification taps** — traced
+   `NotificationService._handleOpenedRemoteMessage` and the local-
+   notification response handler: both only `add()` to
+   `notificationTapStream`. Grepped the entire `lib/` tree for any listener
+   of that stream: **there is none** — tapping a notification (terminated-
+   app launch via `getInitialMessage`, or background-tap via
+   `onMessageOpenedApp`) currently triggers no navigation at all under
+   Supabase mode. This rules notifications out as this defect's cause (and
+   is itself a separate, pre-existing gap — reported, not fixed, out of
+   this checkpoint's scope).
+4. **`refreshListenable`-triggered `redirect()` re-evaluation losing
+   `extra` while already viewing Offer Details** — the most plausible
+   remaining hypothesis (`AuthViewModel`/`PasswordRecoveryViewModel` firing
+   `notifyListeners()`, e.g. on an app-resume session re-check, while the
+   user sits on `/offers-details`) — **tested empirically with real
+   go_router code**, `test/app/redirect_refresh_preserves_extra_test.dart`,
+   using the exact same wiring shape as `_createRouter`
+   (`refreshListenable` + `redirect: (...) => null` for an unaffected
+   route). Result: the route's builder is invoked again (proving the
+   rebuild genuinely happens), but **`state.extra` is preserved correctly
+   across it, both times**. This mechanism is empirically ruled out.
+
+Every call site that pushes `/offers-details` (list, search, map,
+favorites, match-details — seven sites, rechecked) passes a non-null
+`extra` at the call itself. The one existing ID-based route,
+`/offers-details-by-id/:id` via `_OfferDetailsLoader`, is unaffected by any
+of this and remains the safe, already-correct pattern for identity-only
+navigation.
+
+**ROOT CAUSE: UNKNOWN.** No implementation was made. `lib/main.dart`,
+`lib/app.dart`, and `offers_view_details.dart` are unchanged from the
+previous checkpoint (verified: this checkpoint's `git diff` touches no
+production file).
+
+MISSING EVIDENCE NEEDED TO PROCEED: the owner's exact sequence immediately
+before the fallback appeared — specifically whether it followed (a)
+tapping the Samsung launcher icon after a genuine force-stop/kill, (b)
+tapping the app's card in the Android Recents/multitasking switcher after
+the OS silently killed it in the background (Samsung's background-app
+management is known to be aggressive), or (c) some other action. If
+reproducible, the exact minimal capture needed is a narrowly filtered
+`adb logcat` (filtered to this app's own tag/PID only, no broad device log)
+taken at the moment the fallback appears, which would show whether the
+Dart process actually restarted (a fresh `main()` log line) or merely
+resumed.
+
+TEST EVIDENCE: new `test/app/redirect_refresh_preserves_extra_test.dart`,
+1/1 PASS (proves one specific hypothesis safe, not a fix). Existing
+`test/app/offers_details_route_test.dart`, still 3/3 PASS, rerun for
+confidence after the new file was added alongside it. Targeted `flutter
+analyze` on the new test file: no issues. `git diff --check`: clean. No
+production file in the diff.
+
+NOT PERFORMED: no source fix (none proven necessary or safe); no build; no
+install; no device test for this specific symptom; no git add, commit, or
+push.
+
+NOW — this investigation is complete for what source and empirical
+go_router evidence can establish; the actual trigger remains unproven.
+
+NEXT — superseded by the real-device follow-up below.
+
+### ADDENDUM — REAL-DEVICE REPRODUCTION ATTEMPTS + TEMPORARY DIAGNOSTIC BUILD (uncommitted)
+
+Performed three genuine, physical-equivalent reproduction attempts on the
+connected Samsung `R5CY10YYLSM` via `adb` (not source reasoning), each
+verified by device screenshot and a real process-id change:
+
+1. **Force-stop, then launcher-icon tap** (`am force-stop` +
+   `monkey -c android.intent.category.LAUNCHER`): lands correctly on Home.
+   Screenshot evidence captured.
+2. **Background (Home key) + `am kill`** (kills the background process
+   while preserving its Recents task/snapshot — the closest safe adb
+   equivalent to Samsung's own aggressive background memory reclaim), then
+   resuming via tapping the app's card in the Recents/multitasking
+   switcher: a genuinely new process (`pidof` confirmed a different PID)
+   is created, and it **also** lands correctly on Home — not on the
+   "Offer not found" fallback, and not a repeat of the previously-viewed
+   Offer either (a separate, milder UX gap: the user's last-viewed screen
+   is not restored, but nothing incorrect or unsafe is shown).
+3. **Background + `am kill`, then resume via the launcher icon instead of
+   Recents** (task still present): same result — Home, new PID confirmed.
+
+**None of the three reproduced the reported fallback.** This is new
+evidence beyond the prior source-only investigation, and it further rules
+out the most obvious "kill the process while viewing Offer Details" shapes
+of the problem, in addition to the previously-established source and
+automated-test evidence (`resolveAuthRedirect` cannot target
+`/offers-details`; no Flutter/Android restoration is configured; no
+listener consumes `notificationTapStream`; `redirect()` re-evaluation
+empirically preserves `extra`).
+
+**ROOT CAUSE REMAINS UNKNOWN.** Given the owner's explicit request for
+real evidence rather than another inconclusive report, a temporary,
+narrowly-scoped, DEBUG-ONLY diagnostic was added (per this checkpoint's own
+explicit authorization) rather than stopping again with no path forward:
+
+- `lib/main.dart`: one `debugPrint` at the very start of
+  `initializeAppServices()`, gated by `kDebugMode`, logging only a fixed
+  marker and a timestamp — proves whether a fresh Dart isolate/process
+  actually started.
+- `lib/app.dart`: one `debugPrint` at the top of `resolveAuthRedirect`,
+  gated by `kDebugMode`, logging only the route path template, the
+  `AuthStatus` category, and the recovery-active flag — never an id, token,
+  or full query string. This directly answers whether this function is
+  ever invoked with `currentPath == '/offers-details'` at all, and what
+  auth state it saw when it was.
+- `lib/app.dart`: one `debugPrint` at the top of `buildOffersDetailsRoute`,
+  gated by `kDebugMode`, logging only whether `extra` was present and the
+  bare path template — never the Offer's own data.
+
+All three are marked `TEMPORARY DIAGNOSTIC — remove before finalizing this
+checkpoint` in source and must be removed once the real trigger is
+captured.
+
+BUILD: a new Debug APK was built from this exact source tree. Verified
+before requesting installation: certificate `SHA-256:
+6dcf852de490e490e37237e9d7e37885bd8e5bc482a83d3a34b939289ef39f61` and
+package/version (`com.example.broker_wallet`, versionCode 1) both match the
+currently-installed app exactly — an update-compatible build, not
+installed yet.
+
+TEST EVIDENCE: `test/app/` re-run in full after adding the instrumentation,
+4/4 PASS (the diagnostic prints themselves are visible in the test output,
+confirming they fire correctly and add no behavioral change). Targeted
+`flutter analyze` on `lib/main.dart` and `lib/app.dart`: no issues (two
+missing `package:flutter/foundation.dart` imports were the only fix
+needed). `git diff --check`: clean.
+
+NOT PERFORMED: installation (awaiting explicit owner approval, per this
+checkpoint's own instructions); removal of the diagnostic prints (deferred
+until they have actually captured the real trigger); any change to auth,
+recovery, deletion, or Offer media logic; git add, commit, or push.
+
+NOW — a verified, update-compatible diagnostic Debug build is ready but not
+installed.
+
+NEXT — owner approval to install this diagnostic build, then ordinary daily
+use (or a deliberate attempt to reproduce the original sequence the owner
+remembers) until the fallback reappears, at which point `adb logcat`
+filtered to this app's process should be captured immediately — the three
+`[NAV_DIAG]` lines will show whether `main()` actually restarted and
+exactly what `resolveAuthRedirect` saw. Once captured, the diagnostic
+prints are removed as part of implementing the now-evidence-based fix.
+
+### ADDENDUM — INDEPENDENT ROUTE-CONTRACT REVIEW: SCOPE BLOCKER
+
+An independent review at the same branch/HEAD (`feature/offer-private-media`,
+`005b819d33a7c5da6eff709b580cf6171db8cd15`) confirmed a demonstrable defect
+separate from the still-unknown Samsung trigger: `/offers-details` has no
+stable Offer identity and therefore cannot distinguish "the route has no
+required argument" from "an identified Offer does not exist or is
+inaccessible." Its null-`extra` branch currently presents the latter error
+for the former condition. The existing `/offers-details-by-id/:id` route is
+the correct identity-bearing shape, and `SupabaseCoreEntitiesService.getOffer`
+already scopes the read to the canonical authenticated owner id before
+returning data, so no RLS or backend change is needed.
+
+The complete safe correction was **not implemented**, because it requires one
+minimal change in a production file this checkpoint explicitly marked
+read-only: `lib/src/views/Screens/ViewDetails/offers_view_details.dart`.
+`_OfferDetailsLoader` already calls `OfferService.getOffer(id)` before it
+constructs `OffersDetailsView`; the view's current `initState()` then calls
+`_refreshOfferData()`, which invokes the same authoritative read again. Moving
+all seven in-app entry points to the ID route without an "already resolved"
+handoff would therefore introduce/retain an unnecessary duplicate details
+fetch, renew the signed media URL twice, and violate this checkpoint's own
+acceptance requirement. There is no seam in `lib/app.dart` that can suppress
+the second call safely without fabricating an `OfferModel` or duplicating the
+details UI.
+
+MINIMAL ADDITIONAL SCOPE REQUIRED: authorize only a constructor flag (or
+equivalent narrowly-scoped signal) in
+`lib/src/views/Screens/ViewDetails/offers_view_details.dart` allowing the
+ID-loader's already-authoritative result to skip the view's initial refresh.
+Ordinary list/search/map/favorites navigation may still pass its existing
+lightweight model as `extra` alongside the stable ID and perform exactly one
+authoritative refresh; an ID-only restoration/deep link performs exactly one
+loader fetch and passes the result as already resolved. No service,
+repository, Supabase, RLS, media-cache, UI-layout, localization, Android, or
+dependency change is required.
+
+After that approval, the scoped implementation is: make both Offer Details
+routes protected by the existing auth/recovery/deletion authority; convert the
+legacy no-ID route into a compatibility redirect that uses a non-empty ID from
+a valid `OfferModel` or returns to the root bootstrap gate when identity is
+absent; make `/offers-details-by-id/:id` canonical; ignore a mismatched
+`extra` rather than displaying the wrong Offer; update only the seven Offer
+navigation calls to use the encoded stable ID; localize the existing ID
+loader's not-found state with the already-present keys; remove all temporary
+`NAV_DIAG` instrumentation; and add focused route/loader tests including a
+single-fetch assertion.
+
+ORIGINAL RUNTIME TRIGGER: **UNKNOWN** — unchanged. No new device reproduction,
+build, install, Supabase mutation, source implementation, staging, commit, or
+push was performed in this review. Temporary diagnostics remain in place
+because production finalization did not occur.
+
+NOW — request explicit approval for the one-file scope expansion above.
+
+NEXT — after approval, implement and run only the scoped route regression
+tests, directly affected auth/recovery/deletion tests, focused analysis, and
+`git diff --check`; then inspect the complete exact diff before any build or
+installation decision.
+
+### ADDENDUM — ID-BASED OFFER DETAILS ROUTE CONTRACT IMPLEMENTED (uncommitted)
+
+Owner approval was received for the one-file scope expansion identified
+above. The proven route-contract defect is now corrected locally; the exact
+intermittent Samsung event that originally exposed it remains **UNKNOWN**.
+
+ROUTE CONTRACT: `/offers-details-by-id/:id` is now canonical and both Offer
+Details paths are protected by the existing single auth redirect authority.
+The former `/offers-details` path is retained only as a compatibility
+redirect: a valid `OfferModel` is used solely to recover its non-empty ID and
+redirect to the canonical path; missing/wrong/malformed route data returns to
+the root bootstrap gate, where the existing authenticated, signed-out,
+password-recovery, and account-deletion states choose the destination. It no
+longer renders "Offer not found" merely because route identity is absent.
+
+All seven in-app entry points now put the encoded Offer ID in the location:
+`compact_offer_card.dart`, `filtered_tiles.dart`, `offers_list_view.dart`,
+`map_view.dart`, `search_view.dart`, `favorites_card.dart`, and
+`match_details_view.dart`. List/search/favorites/match call sites may still
+carry their existing model as an optional render optimization, but the
+canonical builder accepts it only when its ID exactly equals the path ID and
+never treats it as fully resolved. Missing or mismatched extras use the ID
+loader, so losing transient `extra` no longer loses Offer identity and a wrong
+Offer cannot be displayed. The map no longer performs a details fetch before
+navigating; the canonical loader owns that one fetch.
+
+SINGLE-FETCH CONTRACT: `OfferDetailsLoader` still uses the existing
+`OfferService.getOffer(id)` authorized service path and rejects an empty ID,
+errors/null results, and even a mismatched returned model safely. Its trusted
+result is passed to `OffersDetailsView(initialOfferIsResolved: true)`, which
+skips only the redundant initial refresh. Ordinary list models keep the
+default `false` and still perform the authoritative details/media refresh (or
+reuse the existing fresh 60-second snapshot). Loader-resolved data is placed
+into that same existing 60-second in-memory cache; the TTL, signed-URL policy,
+gallery, later upload-completion refresh listener, and explicit refresh method
+are unchanged. The loader's not-found UI now uses the already-existing EN/AR
+localization keys.
+
+AUTH/SECURITY: no competing guard was added. Unknown bootstrap still returns
+to `/`; signed-out protected navigation still returns to `/welcome`;
+authenticated root still resolves directly to `/home`; password recovery is
+still evaluated first; account-deletion quarantine continues to hold
+`AuthStatus.unknown`. The underlying Supabase read remains owner-scoped and no
+RLS, database, Worker, R2, media-service, or auth implementation changed.
+
+TEMPORARY DIAGNOSTICS: all `[NAV_DIAG]` code and its temporary imports were
+removed from `lib/main.dart` and `lib/app.dart`. `lib/main.dart` therefore has
+no remaining diff from HEAD.
+
+TEST EVIDENCE:
+
+- `flutter test test/app/offers_details_route_test.dart
+  test/app/redirect_refresh_preserves_extra_test.dart`: **14/14 PASS**.
+  Covers missing legacy identity versus confirmed not-found, legacy-ID
+  compatibility without loops, valid loader result and exactly one loader
+  call, empty/malformed ID without a service call, null/inaccessible/error
+  results, mismatched-result refusal, resolved-versus-list initial-refresh
+  decisions, path-ID/extra matching, startup/auth/recovery routing, and all
+  seven call-site source contracts.
+- `flutter test test/auth/navigation_authority_test.dart
+  test/auth/password_recovery_test.dart`: **52/52 PASS**, including the live
+  router no-Welcome-flash and recovery-quarantine contracts. Per scope, no
+  destructive account-deletion test was run.
+- Focused `flutter analyze` on `app.dart`, `main.dart`, Offer Details, and the
+  two app tests: **PASS — no issues**. The broader check including every
+  changed call-site file reported only four pre-existing deprecation infos at
+  untouched lines in Map/Search; no new error or warning was introduced.
+- `git diff --check`: **PASS**; only known CRLF notices.
+
+BUILD: one Debug APK was built successfully from branch
+`feature/offer-private-media`, HEAD
+`005b819d33a7c5da6eff709b580cf6171db8cd15`, plus the preserved uncommitted
+working tree. Verified package `com.example.broker_wallet`, versionCode `1`,
+versionName `1.0.0`; its signing certificate matches the currently installed
+Samsung app and its versionCode is update-compatible. APK SHA-256:
+`12E61D994116349B0186EC29405020409E739B27E130CA75ADEF57758D64BD88`.
+The APK was **not installed**.
+
+STATUS: **LOCAL IMPLEMENTATION PASS / CODE_PROVEN**. This is not
+VERIFIED_REAL_DEVICE. Existing JPEG/media display is preserved by source and
+regression evidence only until the owner completes Samsung acceptance.
+
+NOW — request explicit owner approval to update-install the verified Debug APK
+on Samsung `R5CY10YYLSM` without uninstalling or clearing app data.
+
+NEXT — after installation approval, the owner performs the defined startup,
+Recents, Offer A/B image, reopen, and return-to-Details acceptance sequence;
+record VERIFIED_REAL_DEVICE only after the owner reports the result.
+
+### ADDENDUM — CORRECTED DEBUG APK INSTALLED; DEVICE ACCEPTANCE PENDING
+
+Owner approval was received to update-install the corrected Debug APK on
+Samsung `R5CY10YYLSM`. Pre-install checks passed: the APK hash still matched
+the build recorded above, no approved production source file was newer than
+the APK, package id was `com.example.broker_wallet`, built and installed
+versionCode were both `1`, and the signing certificate matched the installed
+application. Installation used `adb install -r` only — no uninstall, clear,
+downgrade, signing change, or data operation.
+
+Post-install read-back confirmed the device's installed base APK is byte-for-
+byte the verified build (SHA-256
+`12E61D994116349B0186EC29405020409E739B27E130CA75ADEF57758D64BD88`) and its
+signing certificate still matches. `firstInstallTime` remained unchanged while
+`lastUpdateTime` advanced, proving an in-place, data-preserving update rather
+than a fresh installation.
+
+STATUS: **INSTALLED_VERIFIED**. Real-device behavior is deliberately still
+**PENDING** until the owner reports the defined startup, Offer A/B image,
+reopen, background/return, and second force-stop/launch observations.
+
+NOW — owner performs the six manual Samsung acceptance steps supplied in the
+installation handoff.
+
+NEXT — record VERIFIED_REAL_DEVICE only if the owner's actual observations
+confirm every required result; otherwise capture the exact failing step
+without beginning image-cache work.
+
+---
+
+## OFFER MEDIA — STABLE CACHE-IDENTITY CORRECTION (uncommitted)
+
+Corrects the reopen-delay root cause this checkpoint's own prior addendum
+("DEVICE ACCEPTANCE AND REOPEN-PERFORMANCE CORRECTION") proved but explicitly
+left out of scope: every Offer Details open — including after an app
+restart — re-downloaded the same image bytes, because
+`_buildOptimizedImageViewer` never passed `OfflineMediaService
+.buildOfflineAwareImage`'s existing `cacheKey` parameter, so the widget fell
+back to `CachedNetworkImage`'s default URL-keyed cache. The Worker mints a
+brand-new signed GET URL for the same R2 object on every `/offer-media` call
+(by design — signed URLs must stay short-lived), so the URL string never
+repeats and every open was a guaranteed cache miss, independent of the
+existing 60-second `_recentOfferCache` in `offers_view_details.dart`, which
+only ever mitigated a fetch *within* its own 60-second window and cannot
+survive process death.
+
+ROOT CAUSE: PROVEN from source, traced end to end: `OffersDetailsView
+._refreshOfferData()` → `OfferService.getOffer(id)` →
+`SupabaseCoreEntitiesService.getOffer(id)` → `_fetchOfferMediaDisplayUrls(id)`
+→ `R2OfferMediaUploadService.getOfferMedia(offerId)`. The Worker/service layer
+already returns `R2OfferMediaItem.mediaObjectId` — the durable
+`media_objects.id` behind the URL — but `_fetchOfferMediaDisplayUrls` kept
+only `.url`, discarding the one stable identity that could have keyed the
+image cache. This is the exact mechanism, already production-verified for
+profile images (`CurrentUserAvatar` passing `cacheKey: image.mediaId`, keyed
+on `profile_media_id`), that this checkpoint's prior addendum identified as
+the correct, complete fix and explicitly deferred as out of its approved
+scope.
+
+STABLE MEDIA IDENTITY: `mediaObjectId` (`media_objects.id`), already returned
+by the Worker's `/offer-media` route — no new database column, no schema
+change. Offer media upload is append-only today (no client path replaces or
+deletes an existing item), so a `mediaObjectId`'s bytes never change once
+confirmed, matching the same immutability assumption already accepted for
+`profile_media_id` (a replacement there also always mints a new id). This is
+an explicit, disclosed assumption tied to today's upload contract, not a new
+guarantee invented for this fix; if a replace/delete capability for Offer
+media is ever added, cache-identity behavior needs re-review at that point.
+
+CORRECTION — four files, no new dependency, no backend/schema/Worker/RLS
+change, no dependency injection added, no unrelated Offer CRUD touched:
+
+- `lib/src/services/supabase_core_entities_service.dart`:
+  `_fetchOfferMediaDisplayUrls` (private) is replaced by
+  `_fetchOfferMediaDisplayItems`, which returns the full
+  `List<R2OfferMediaItem>` instead of discarding everything but `.url`.
+  `getOffer(id)` now derives both `mediaUrls` and a new, index-aligned
+  `mediaObjectIds` list from the same response and passes both into
+  `OfferModel.copyWith`. The bulk list fetch (`_fetchOffers()`) is untouched
+  and still returns no media at all, per its existing documented tradeoff.
+- `lib/src/data/models/ScreensModel/offers_model.dart`: `OfferModel` gains one
+  new field, `mediaObjectIds` (`List<String>`, defaults to `const <String>[]`),
+  threaded through the constructor and `copyWith`. `mediaUrls`'s type and
+  every other field are unchanged; the legacy Firestore `toFirestore`/
+  `fromFirestore` mapping is untouched and never populates the new field, so
+  the Firebase-backend path (stable, non-rotating Storage URLs) keeps its
+  existing URL-keyed cache behavior exactly as before — no regression, no new
+  capability claimed for it.
+- `lib/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart`:
+  `OptimizedMediaGalleryWidget` gains an optional `mediaIds` parameter
+  (index-aligned with `mediaUrls`); `MediaItem` gains an optional
+  `mediaObjectId`. `_synchronizeMediaItems` pairs the two lists by index only
+  when their lengths match exactly — a length mismatch (or an empty-string id
+  at a given index) is treated as "no id" for that item rather than risking a
+  misaligned pairing that could attribute one item's cached bytes to another.
+  `_buildOptimizedImageViewer` now passes `cacheKey: mediaItem.mediaObjectId`
+  into the existing, unmodified `buildOfflineAwareImage`. This widget is also
+  used by `owners_view_details.dart` (Owner Media, explicitly out of scope)
+  and `video_system_integration.dart`; the new parameter is optional and
+  defaults to `null`, so neither call site's behavior changes.
+- `lib/src/views/Screens/ViewDetails/offers_view_details.dart`: one line —
+  `_buildCachedMediaGallery()` now passes
+  `mediaIds: _currentOffer.mediaObjectIds` into `OptimizedMediaGalleryWidget`.
+  The existing 60-second `_recentOfferCache` is unchanged.
+
+TEMPORARY 60-SECOND CACHE: **RETAINED**, deliberately not removed. It solves a
+different bottleneck than this fix — a very-recent reopen still avoids a
+repeated Offer-metadata read and signed-URL mint through the Worker/Supabase,
+which the cache-key fix does not address. It is a static in-memory field and
+is always cleared on process death, so it alone could never have satisfied
+"no unnecessary re-download after restart" — only the disk-level `cacheKey`
+fix does that. The two are complementary: after this fix, even a genuine
+60-second-cache miss (first open, or any reopen after a restart) still avoids
+re-downloading the image bytes, because `CachedNetworkImage`/
+`flutter_cache_manager`'s on-disk store is looked up by `mediaObjectId`,
+independent of whatever newly-signed URL string comes back that time.
+
+ACCOUNT ISOLATION / AUTHORIZATION: unchanged from, and structurally identical
+to, the already-accepted profile-image model. `mediaObjectId` is a random
+UUID never disclosed to a session that has not already passed the Worker's
+server-side ownership check and Supabase's `owner_id` RLS on `getOffer(id)`;
+there is no path by which an unauthorized session could ever learn or guess
+the id needed to address a cache entry for someone else's Offer media, so a
+persistent disk cache keyed by that id carries no new cross-account exposure.
+As with profile images, ordinary sign-out/account-switch does not proactively
+clear this disk cache (only `DeletedAccountLocalDataCleaner`, on account
+deletion, does) — a pre-existing, already-accepted characteristic of
+`OfflineMediaService`, not something newly introduced here; it is safe for
+the same structural reason (the id is never guessable and never leaked).
+
+SIGNED URL SAFETY: unaffected. The Worker still mints a fresh, short-lived
+signed GET URL on every `/offer-media` call with no change to its TTL or
+signing logic; this fix only changes which cache key the client attaches to
+whatever URL comes back, and never persists or reuses a URL past its own
+validity.
+
+TEST EVIDENCE: new `test/offers/offer_media_cache_identity_test.dart`, 9/9
+PASS — `OfferModel.mediaObjectIds` defaulting/`copyWith` pass-through (3
+tests), and `OptimizedMediaGalleryWidget` cache-key wiring (6 tests): a
+same-index id becomes the rendered `CachedNetworkImage.cacheKey`; a re-signed
+URL for the same id keeps the same key; distinct ids never collide; a
+`mediaIds` length mismatch falls back to no key rather than misaligning an id
+to the wrong URL; an empty-string id at an index is treated as no id; omitting
+`mediaIds` entirely preserves the previous URL-keyed behavior. Regression
+run: `test/app/` (4/4) and `test/services/r2_offer_media_upload_service_test
+.dart` (9/9) still pass alongside the new file — 32/32 combined, 0 failures.
+Targeted `flutter analyze` on all four changed files plus the new test file:
+no issues. `git diff --check`: clean (only the known pre-existing CRLF
+notices on files already carrying prior uncommitted changes; none of the four
+files this correction touches produced a new notice).
+
+NOT PERFORMED: no automated test for `OffersDetailsView` itself (same
+pre-existing testability blocker already disclosed earlier in this
+checkpoint: pumping it needs an initialized `Supabase.instance`, a real
+`OptimisticFavoritesService`/`FavoriteService`, and an unconditionally-built
+`GoogleMap`, none of which are injectable within this correction's four-file
+scope); no real device/emulator verification of actual disk-cache-hit
+behavior (this session had no `adb`/connected-device access — see below); no
+Worker, Supabase, or R2 change; no git add, commit, or push.
+
+BUILD: `flutter build apk --debug` completed successfully (exit code 0,
+~139s) from this exact corrected source tree, producing
+`build/app/outputs/flutter-apk/app-debug.apk`. Only pre-existing Gradle/AGP/
+Kotlin "support will soon be dropped" advisory warnings were emitted — no
+error, and no SDK/dependency change was made or is implied by them, per this
+project's no-upgrade instruction.
+
+APK SIGNATURE / PACKAGE / VERSION: this session has no `adb` and no connected
+device, but package id, version, and signing certificate could still be read
+directly from the built artifact using the local Android SDK's `aapt` and
+`apksigner` (no device needed for this part):
+
+- File SHA-256:
+  `52ced62981ab916029b31959658fe68ce2cfaf30ed96534450b0cc9b7deab44b`
+- Package: `com.example.broker_wallet`; versionCode `1`; versionName `1.0.0`
+  — identical to every value this file has recorded for the currently-
+  installed app in every prior checkpoint.
+- Signing certificate SHA-256:
+  `6dcf852de490e490e37237e9d7e37885bd8e5bc482a83d3a34b939289ef39f61` —
+  byte-for-byte identical to the certificate this file already recorded
+  (ADDENDUM — REAL-DEVICE REPRODUCTION ATTEMPTS; ADDENDUM — CORRECTED DEBUG
+  APK INSTALLED) as matching the installed Samsung app. This is the standard
+  local Debug keystore, so an unchanged keystore on this machine reproduces
+  the same certificate on every debug build.
+
+**What this does and does not prove:** this confirms the built APK's own
+package/version/signature are self-consistent with this file's historical
+record of the installed app's identity. It is **not** a live read-back of the
+device's currently-installed certificate/versionCode/`firstInstallTime` the
+way every prior successful install in this file performed via `adb` —
+without device access, this session cannot confirm nothing has changed on the
+device side since the last recorded install. Treat this as strong supporting
+evidence, not a substitute for the live device-side check every prior
+checkpoint performed before installing.
+
+NOW — the source-side correction (implementation, targeted tests, analyze,
+diff) and the Debug APK build are both complete. Awaiting the owner's
+explicit approval to install.
+
+NEXT — before installing: the owner (or an `adb`-capable environment)
+performs the live device-side provenance read-back (installed package id,
+signing certificate, versionCode, `firstInstallTime`) exactly as in the prior
+successful install addendum, confirming it still matches this build. Only
+after that should the owner perform TEST A–F from the Samsung Acceptance
+section of this checkpoint's original instructions, specifically checking
+whether reopening Offer A/B — including after a full force-stop/relaunch —
+now avoids a visible redownload, and report the result before this correction
+is marked VERIFIED_REAL_DEVICE.
+
+## ADDENDUM — OFFER DETAILS RESPONSIVENESS AND CACHE SAFETY (2026-09-20)
+
+OWNER OBSERVATION AT ENTRY: Offer A and its image, Offer B and its image, and
+Recents had passed on Samsung. A second cold start failed, and the owner also
+reported an intermittent white screen with a loading circle before Offer
+Details. The original Android entry event that selected/restored that route
+was not reproduced and remains UNKNOWN. Nothing in this correction claims a
+new navigation root cause or a return of the old `Offer not found` failure.
+
+ACTUAL FAILURE CLASSIFICATION FROM CURRENT SOURCE: the white full-screen state
+was `_OfferDetailsLoader` in `lib/app.dart`. Its single Future called
+`OfferService.getOffer`, which performed the authoritative Offer-row read and
+then waited for `/offer-media` signed-URL resolution. Consequently, signed-URL
+latency blocked the entire details screen even though metadata was already
+available. Image download/decode occurred after that Future, so it was a
+separate later delay. The first unnecessary blocking operation was the media
+signing request inside the route loader. The reported second-cold-start event
+cannot be classified more narrowly without a successful device reproduction;
+the observable spinner is classified as presentation/request latency, not as
+proven navigation failure.
+
+CORRECTION:
+
+- `OfferService` and `SupabaseCoreEntitiesService` now expose a strict two-stage
+  read: `getOfferMetadata` reads the authorized Offer row, and
+  `resolveOfferMedia` resolves only private media after that row is usable.
+  Both stages reject an account change while their asynchronous request is in
+  flight. Existing non-details callers retain the previous best-effort
+  `getOffer` contract.
+- `OfferDetailsLoader` waits only for authoritative metadata. Its required
+  security boundary now uses a localized, themed loading skeleton instead of
+  an unexplained white spinner. It never fabricates or substitutes an Offer.
+- `OffersDetailsView` renders trusted metadata immediately and resolves media
+  independently. An ID-loader result is not fetched a second time; an Offer
+  passed from a list is authoritatively refreshed before private details are
+  adopted. Media errors are localized and explicitly retryable.
+- `OfferDetailsLoadCoordinator` owns the two-stage state, uses a generation
+  token to reject late results after rapid Offer switches, and rejects all
+  callbacks after disposal. Retry is explicit and bounded; there is no request
+  loop or permanent loading state.
+- The former static 60-second `_recentOfferCache` is REMOVED. It reused signed
+  URL strings, was process-local, did not prevent image-byte misses after
+  process death, and was not an acceptable account/freshness boundary. This
+  supersedes the prior addendum that retained it.
+- Offer media disk identity is now
+  `offer-media:<authenticated-owner-id>:<media_objects.id>`. The stable id and
+  signed URL are still derived atomically from the same Worker response. Both
+  gallery display and prefetch use this same key, so a rotated signed transport
+  URL can reuse valid bytes without becoming canonical identity. A retry
+  replaces the in-memory provider with the fresh signed URL, preventing reuse
+  of a failed/expired transport URL.
+- Missing owner/media identity disables the stable key. A different account
+  necessarily receives a different key; no cached image is requested until an
+  authorized media response supplies its URL and id. An empty media response
+  clears old URLs and ids, and replacement gets a new media-object id under the
+  current append-only upload contract. Ordinary sign-out does not proactively
+  erase the third-party disk cache, but another account cannot address/reuse
+  the old entry through this UI path; physical retention remains governed by
+  the existing cache-manager eviction policy. Any future in-place media-object
+  mutation would require this identity assumption to be re-reviewed.
+
+CHANGED IMPLEMENTATION FILES FOR THIS CORRECTION:
+
+- `lib/app.dart`
+- `lib/src/data/models/ScreensModel/offers_model.dart`
+- `lib/src/services/ScreenServices/offer_service.dart`
+- `lib/src/services/supabase_core_entities_service.dart`
+- `lib/src/views/Screens/ViewDetails/offer_details_load_coordinator.dart` (new)
+- `lib/src/views/Screens/ViewDetails/offers_view_details.dart`
+- `lib/src/views/Screens/ViewDetails/widgets/media_cache_manager.dart`
+- `lib/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart`
+- `test/app/offers_details_route_test.dart`
+- `test/offers/offer_details_load_coordinator_test.dart` (new)
+- `test/offers/offer_media_cache_identity_test.dart`
+
+LOCAL VERIFICATION:
+
+- Targeted combined run: 97/97 PASS. This comprises 45 route, details-loading,
+  cache-identity, and existing R2 media service tests plus 52 auth/navigation/
+  password-recovery tests. Coverage includes startup authority, valid/invalid
+  Offer ids, missing legacy arguments, trusted loader behavior, no redundant
+  metadata fetch, list-model refresh, pending media, success/failure/retry,
+  rapid switching, disposal, account cache-key separation, signed-URL retry,
+  and recovery/session boundaries.
+- Focused `flutter analyze` on 12 changed production/test items: no issues.
+- `git diff --check`: PASS; output contains only the repository's existing
+  LF-to-CRLF working-copy notices.
+- The seven pre-existing generated-plugin drift files were not edited. SHA-256
+  values recorded before and after the build are identical.
+- No runtime timing was measured. Debug functional observations must not be
+  represented as final Release performance measurements.
+
+DEBUG APK: exactly one build was run after the local PASS:
+`build/app/outputs/flutter-apk/app-debug.apk`, SHA-256
+`6d33399d2bcd7a2b86c0804ad6dbece7b4c108cc315ffc88770e33567329568a`.
+Artifact identity is package `com.example.broker_wallet`, versionCode `1`,
+versionName `1.0.0`, signing-certificate SHA-256
+`6dcf852de490e490e37237e9d7e37885bd8e5bc482a83d3a34b939289ef39f61`.
+Privacy-safe inspection of the built `kernel_blob.bin` confirms the canonical
+ID route, split metadata/media symbols, account-scoped media-key prefix, and
+stale-result guard are present; `NAV_DIAG` is absent.
+
+DEVICE / INSTALL STATUS: `adb devices -l` returned an empty device list on
+2026-09-20. Therefore the live installed package, certificate, versionCode,
+and data-preserving update compatibility cannot be re-read now. No install,
+uninstall, clear-data, downgrade, or signing change was performed. Historical
+records match this APK identity, but they are not a substitute for the required
+live pre-install check. DEVICE ACCEPTANCE remains PENDING and READY FOR SAMSUNG
+is NO until device `R5CY10YYLSM` is connected and authorized.
+
+NOW — connect and authorize Samsung `R5CY10YYLSM`; rerun the live package,
+certificate, and version compatibility checks only.
+
+NEXT — if and only if those checks pass, request the owner's explicit approval
+for a data-preserving update-install, then run the single concise device
+acceptance session. Do not mark DEVICE PASS until the owner reports the actual
+results.
+
+## ADDENDUM — OFFER MEDIA: LOCAL-FIRST LOAD, REMOVING THE NETWORK FROM THE FIRST FRAME (uncommitted)
+
+OWNER OBSERVATION AT ENTRY: "the image keeps taking a moment to load every time
+I open the details screen; this is not the expected behaviour." This is
+reported against the tree that already contains the stable-cache-identity
+correction and the two-stage loader recorded in the two addenda above.
+
+WHY THE PREVIOUS CORRECTIONS COULD NOT HAVE FIXED IT. Both prior corrections
+are sound and are retained. Neither could remove the delay the owner sees,
+because the delay is not a byte re-download — it is the wait before any byte
+can be asked for at all. Proven from source, end to end:
+
+- `CachedNetworkImage` requires an `imageUrl` before it will consult its disk
+  cache. A `cacheKey` changes *which* entry it looks up; it does not let it
+  look anything up without a URL.
+- The only source of an Offer media URL is the Worker's `GET /offer-media`
+  (`cloudflare/workers/r2-profile-upload/worker.js`), which mints a fresh
+  `GET_URL_TTL_SECONDS = 900` signed URL per object on every call and answers
+  `Cache-Control: no-store`. That call itself performs a Supabase
+  `/auth/v1/user` token verification, an ownership check and an `offer_media`
+  select before it signs.
+- `OfferDetailsLoadCoordinator.load()` awaited `getOfferMetadata` and only then
+  started media resolution.
+
+So every open — cold, warm, or immediately after the previous one — paid two
+serialised network round trips before the first pixel, no matter how complete
+the disk cache was. That is exactly the symptom reported.
+
+The same defect was already solved for profile images and is production
+verified: `OfflineMediaService.warmMediaIdMapping` /
+`getLocalFilePathForMediaId` let `CurrentUserAvatar` paint `Image.file` on the
+first frame with no URL and no network. Offer media never adopted that half of
+the pattern — it took the cache key and left the durable identity in memory
+only, where a process restart erased it.
+
+ROOT CAUSES, all proven from source:
+
+1. The image could not paint before two serialised network round trips
+   (metadata, then signed-URL minting).
+2. Media resolution was serialised behind the metadata refresh although it
+   needs only the Offer id and the owning account, never the Offer row.
+3. There was no durable client-side index of an Offer's media identity, so a
+   cold open had no cache key to look anything up with.
+4. Nothing ever recorded where an Offer media item's bytes landed, so the
+   synchronous local-file branch of `buildOfflineAwareImage` could never hit
+   for Offer media even when the bytes were present.
+5. Upload side: `uploadOfferMediaFile` returns the confirmed `mediaObjectId`
+   while the exact bytes sit in a local file, and nothing adopted them — a
+   photo was downloaded back immediately after being uploaded.
+6. `FullScreenMediaViewer` built its images with a bare `NetworkImage`, which
+   has no cache of any kind, so every full-screen open re-downloaded an image
+   the gallery behind it had just finished downloading.
+7. The gallery's prefetch used `CachedNetworkImageProvider(maxWidth: 800,
+   maxHeight: 600)`, which stores a second, resized copy under
+   `resized_w800_h600_<key>` and decodes it at a size nothing on screen uses,
+   while the display path reads `<key>`.
+
+CORRECTION.
+
+- NEW `lib/src/services/offer_media_cache_identity.dart`: `offerMediaCacheKey`
+  (moved out of the gallery widget so upload, read and display agree on one
+  key), plus `OfferMediaRef` (durable id + optional signed URL + optional local
+  file), `OfferMediaResolution` and `applyOfferMedia`.
+- `OfflineMediaService`: an account-scoped Offer-media catalogue in the
+  existing, already-initialised `local_media` Hive box under
+  `offerMediaCatalog::<ownerId>::<offerId>`, read synchronously; plus
+  `ensureMediaIdCached` (fetch-or-hit under the stable key, then record the
+  path) and `forgetOfferMedia`. `adoptLocalFileForMediaId` gained a
+  `directoryName` parameter so Offer originals land in `offer_media`, not in
+  `profile_media`.
+- `SupabaseCoreEntitiesService`: `resolveOfferMedia({offerId, ownerId})` is now
+  the primitive and returns an `OfferMediaResolution`; `cachedOfferMedia` reads
+  the catalogue synchronously for the live session; `currentOwnerId` is
+  exposed. `getOffer` composes the primitive through `resolveOfferMediaFor`, so
+  list/Favorites/search/edit callers keep their previous contract exactly.
+- `OfferService`: exposes `cachedOfferMedia` and the new `resolveOfferMedia`,
+  and adopts each uploaded file's bytes under its confirmed media id.
+  `resolveOfferMedia` returns null on the Firebase backend, which has no
+  separate media stage — the caller then keeps what metadata supplied rather
+  than treating "no media stage" as "no media".
+- `OfferDetailsLoadCoordinator`: seeds from locally held media synchronously in
+  its constructor, then runs the metadata refresh and media resolution
+  **concurrently**, merging media into the fresh row. A fresh metadata row
+  never blanks media already on screen. The authoritative row remains the
+  authority on ownership: media started against a stale caller-supplied owner
+  is discarded and re-requested.
+- `OptimizedMediaGalleryWidget` / `FullScreenMediaViewer`: a descriptor API
+  (`mediaRefs`) beside the existing URL-list API, which other call sites keep
+  using unchanged. Full-screen now prefers held bytes, then the shared cache
+  under the stable key, and only then the network. The gallery warms visible
+  and nearby items through `ensureMediaIdCached` instead of the resized
+  URL-keyed prefetch.
+- `DeletedAccountLocalDataCleaner` also forgets the deleted account's Offer
+  media catalogue, cached bytes and adopted originals.
+
+Deliberate: the catalogue records identity only, never bytes. Pulling a whole
+gallery the viewer may never scroll to would spend their data to fill a cache,
+so bytes are fetched for what the gallery actually shows.
+
+RESULTING BEHAVIOUR. First ever view of an Offer's photo is unchanged — the
+bytes genuinely are not on the device. Every subsequent open, including after a
+force-stop, paints from disk on the first frame with no network on the critical
+path, while the authoritative refresh runs behind it.
+
+ACCOUNT ISOLATION: unchanged in kind from the already-accepted profile-image
+model. Every key and every catalogue entry carries the authenticated owner id,
+so a different account necessarily gets a different key and cannot address or
+read back this account's entries. Covered by a test.
+
+SIGNED URL SAFETY: unaffected. The Worker's TTL and signing logic are
+untouched; no signed URL is ever persisted or treated as identity.
+
+IMMUTABILITY ASSUMPTION (unchanged, restated): Offer media upload is
+append-only today, so a `media_objects.id` never changes bytes. If a
+replace-in-place capability is ever added, this identity assumption must be
+re-reviewed.
+
+TESTING SEAMS: `OfflineMediaService.removeCachedBytes` and `.fetchCachedBytes`
+are `@visibleForTesting` overrides. Constructing `DefaultCacheManager` reaches
+path_provider, which does not exist under `flutter test`, and it raises an
+asynchronous platform error no caller can catch. Both shared-cache calls are
+additionally bounded by a 5-second timeout, so a stalled cache can never stall
+an account deletion or leave a warm-up future pending forever.
+
+TEST EVIDENCE (CODE_PROVEN, not VERIFIED_RUNTIME):
+
+- `test/offers/offer_details_load_coordinator_test.dart` rewritten for the new
+  contract: 15/15 PASS, including a test that media resolution starts *before*
+  metadata returns, local-first renderability before any load, an authoritative
+  empty response clearing cached media, a metadata refresh not blanking media
+  on screen, and stale-owner rejection/re-request.
+- NEW `test/offers/offer_media_local_first_test.dart`: 12/12 PASS against a
+  real Hive store — catalogue ordering, cross-account isolation, clearing,
+  per-account forgetting, and gallery rendering that produces a `FileImage` and
+  *no* `CachedNetworkImage` at all when the bytes are held.
+- `test/offers/offer_media_cache_identity_test.dart` (pre-existing): 14/14
+  still PASS, proving the URL-list API and its callers are unchanged.
+- `test/app/` 4/4 and `test/app/offers_details_route_test.dart` route contract:
+  PASS. `test/account/` and `test/services/`: 122 PASS / 1 pre-existing
+  failure.
+- Full suite: 493 PASS / 22 FAIL. All 22 failures are pre-existing and
+  unrelated — see UNRELATED PRE-EXISTING FAILURES below. The same 22 fail
+  without this correction.
+- `flutter analyze lib test`: zero errors, zero warnings.
+- `dart format --output=none --set-exit-if-changed` on the files authored here:
+  clean. No tracked, previously formatted file was reformatted.
+- `git diff --check`: clean apart from the repository's existing LF-to-CRLF
+  working-copy notices.
+- The seven generated plugin-registrant files show no content change
+  (`git diff --numstat` returns nothing for them) and were not edited.
+
+UNRELATED PRE-EXISTING FAILURES (not introduced here, not fixed here):
+
+- 5 failures in `test/account/delete_account_test.dart` and
+  `test/auth/phone_security_hardening_test.dart` read migration files by their
+  old fixed names (`20260911000100_…`, `20260911000200_…`,
+  `20260913000100_…`). Commit `0d7fb17 chore: reconcile Supabase migration
+  timestamps` renamed them to `20260911181050_…`, `20260911181112_…` and
+  `20260913175221_…`. The tests need their paths updated; no production code
+  is involved.
+- 17 failures across `test/favorites/` come from `FakeOfferService extends
+  OfferService`, whose field initializer eagerly constructs
+  `R2OfferMediaUploadService()` and therefore `Supabase.instance`, which those
+  tests never initialise. That field exists identically at `HEAD`.
+
+BACKLOG OBSERVATIONS (reported, deliberately not changed here):
+
+- `lib/src/views/Screens/ViewDetails/widgets/media_cache_manager.dart` keeps an
+  unbounded static `Map<String, ImageProvider> _imageCache` that is never
+  evicted except on explicit `dispose()`.
+- The same file's `getOptimizedImage` still stores a resized duplicate for
+  URL-keyed callers; only the private-media path now avoids it.
+- Files under `lib/src/views/...` are imported through two different path
+  spellings (`src/Views/...` and `src/views/...`). Dart treats those as two
+  libraries, so a type declared in one is not assignable to the same type
+  reached through the other. This bit during this work and is why the gallery's
+  public boundary is typed on the service-layer `OfferMediaRef`. Normalising
+  the spellings is a separate, repo-wide change.
+- `DeletedAccountLocalDataCleaner._step` has no timeout; a collaborator that
+  never completes would stall account deletion. The Offer-media path added here
+  is bounded, but the pre-existing steps are not.
+
+NOT PERFORMED: no Worker, Supabase, R2, RLS, migration or schema change; no
+`git add`, commit or push; no real-device or emulator verification (no `adb`
+device available in this session); no APK build in this session.
+
+NOW — the owner installs the current source on Samsung `R5CY10YYLSM` and, on
+an Offer that already has at least one photo, performs: (A) open Offer Details
+and note the time to first image; (B) go back and reopen the same Offer — the
+photo must appear immediately, with no spinner and no fade-in; (C) force-stop
+the app, relaunch, and open that same Offer — the photo must again appear
+immediately; (D) open the full-screen viewer and confirm it does not
+re-download; (E) add a photo through Edit and immediately view the Offer — the
+new photo must appear without a download; (F) confirm a genuinely new Offer's
+first photo still loads correctly.
+
+NEXT — if and only if B, C and E show an immediate image, this correction is
+marked VERIFIED_REAL_DEVICE and the two stale-migration-path test files are
+fixed as their own small checkpoint. If any of them still shows a delay, report
+which step and whether a spinner or a blank frame appeared, so the remaining
+wait can be attributed to metadata, to media signing, or to decode.
+
+## ADDENDUM — OFFER MEDIA: ONE LOADING SURFACE INSTEAD OF TWO SPINNERS (uncommitted)
+
+OWNER OBSERVATION: after the local-first correction above, reopening and cold
+starting an Offer now show the photo immediately ("it does not load and that is
+good"). The remaining complaint is the *first* open of an Offer whose photo
+this device has never held: it showed two loading circles, and the owner asked
+for one at most, or a better treatment.
+
+CAUSE, proven from source. Loading an Offer photo is one operation to the user
+but two stages underneath, and each drew its own indicator in the same 280px
+header, one after the other:
+
+- `offers_view_details.dart` `_buildMediaLoadingHeader` — a 28px
+  `CircularProgressIndicator` plus a "Loading" caption, while metadata and the
+  signed URL resolved.
+- `media_gallery_widget.dart` `_buildOptimizedImageViewer` — a different, 24px
+  `CircularProgressIndicator` inside the gallery, while the bytes behind that
+  URL downloaded.
+
+They are mutually exclusive at any instant, so this was a *sequence*: spinner
+one, then a swap, then spinner two. Two other candidates were checked and ruled
+out. `OptimizedFavoriteButton` declares `isLoading` but never renders anything
+for it. `_OfferDetailsMetadataLoading` in `lib/app.dart` is not on this path:
+all seven in-app entry points push `/offers-details-by-id/:id` with the Offer
+as `extra`, `buildOfferDetailsByIdRoute` renders `OffersDetailsView` directly
+when the extra matches the path id, and `test/app/
+redirect_refresh_preserves_extra_test.dart` shows a router refresh does not
+drop `extra`.
+
+CORRECTION — one continuous surface, no spinner:
+
+- NEW `lib/src/views/Screens/ViewDetails/widgets/media_loading_placeholder.dart`
+  (`MediaLoadingPlaceholder`): a shimmering media block drawn only from
+  `ColorScheme` tokens — base `surfaceContainerHighest`, highlight blended from
+  `surface` — with a low-emphasis `image_outlined` mark. It carries the
+  localized `loading` label as a `Semantics` live region, so assistive
+  technology still hears a loading state even though nothing spins. It honours
+  `MediaQuery.disableAnimations` by rendering a still surface.
+- The sweep phase comes from one `static Stopwatch` shared by every instance,
+  not from a per-instance `AnimationController`. The header's surface and the
+  gallery's surface are two separate mounts, and the gallery replaces the
+  header at exactly the moment media resolves; a per-instance controller would
+  restart the sweep right at the hand-over this widget exists to hide. The
+  controller now only schedules frames.
+- `OptimizedMediaGalleryWidget` gained an optional `imagePlaceholder`. Offer
+  Details passes `MediaLoadingPlaceholder`, so both stages draw the identical
+  surface and the hand-over is invisible. Callers that pass nothing — Owner
+  media and `video_system_integration.dart` — keep the previous spinner
+  unchanged, which keeps this change inside the authorized screen.
+- `_buildMediaLoadingHeader` is now that same placeholder. The 28px spinner and
+  the visible "Loading" caption in the Offer Details media header are gone.
+  This is a deliberate, owner-requested UI change to that one header, made
+  under the explicit instruction "at least it should be only one, not 2 … and
+  if there is better approach apply it for better UX".
+
+A warm cache never shows the placeholder at all: `buildOfflineAwareImage`
+renders `Image.file` directly from held bytes, with no placeholder stage.
+
+TEST EVIDENCE (CODE_PROVEN, not VERIFIED_RUNTIME):
+
+- NEW `test/offers/offer_media_loading_ui_test.dart`: 5/5 PASS — the
+  placeholder renders no `CircularProgressIndicator`, still exposes a
+  `Loading` semantics label, falls back to a still surface under reduced
+  motion; the gallery renders the caller's surface and no spinner for an image
+  whose bytes have not arrived; and a caller that supplies nothing still gets
+  the previous spinner (no regression for Owner media).
+- `test/offers/` and `test/app/`: 60/60 PASS.
+- Full suite: 498 PASS / 22 FAIL, the same 22 pre-existing unrelated failures
+  recorded in the previous addendum.
+- `flutter analyze lib test`: zero errors, zero warnings. Format clean on every
+  file authored here. `git diff --check` clean apart from the repository's
+  existing LF-to-CRLF notices.
+
+KNOWN LIMITATION: `OffersDetailsView` still cannot be pumped in a widget test
+(it needs an initialised `Supabase.instance`, a real
+`OptimisticFavoritesService`/`FavoriteService`, and an unconditionally built
+`GoogleMap`). The two stages are therefore verified as units; that exactly one
+surface appears across the hand-over is a real-device check.
+
+NOTE ON `MediaLoadingPlaceholder` IN TESTS: it animates forever by design, so
+`pumpAndSettle` will never settle while it is on screen. Use `pump(duration)`.
+
+REMAINING SPINNER, not changed: `_OfferDetailsMetadataLoading` in
+`lib/app.dart` still shows a spinner inside its skeleton's image block. It
+appears only on the ID-only route — a deep link, or any entry that arrives
+without the Offer model — never when opening from a list. Unifying it with
+`MediaLoadingPlaceholder` is a one-line change plus one test update, held back
+because it is off the reported path and the current design is deliberate and
+test-covered.
+
+BRANCH STATE AT THIS POINT: `feature/offer-private-media`, 23 commits ahead of
+`main`, level with `origin/feature/offer-private-media`. No temporary
+diagnostic remains in `lib/` (`TEMPORARY DIAGNOSTIC`, `NAV_DIAG` and
+`BOOT_DIAG` all absent). `lib/main.dart` and the seven generated
+plugin-registrant files appear modified in `git status` but have zero content
+change — the documented `core.autocrlf` artifact — and must be kept out of any
+commit. No `service_role`, `sb_secret`, `OPENAI_API_KEY`, private key or signed
+URL appears anywhere in the diff.
+
+## ADDENDUM — OFFER MEDIA REVIEW AUDIT (docs only; no code changed)
+
+Five review points were raised against the two addenda above. Each was checked
+against code, package sources and measurement. No production or test code was
+changed by this audit. The findings below that are defects are NOT fixed yet.
+
+### 1. Private-media security — partly proven, partly overstated
+
+PROVEN (automated test, `offer_media_local_first_test.dart`): a second account
+cannot *display* the first account's cached Offer photos through this app.
+Every cache key and every catalogue key carries the authenticated owner id
+(`offer-media:<ownerId>:<mediaObjectId>`,
+`offerMediaCatalog::<ownerId>::<offerId>`), so account B computes a different
+key, misses, and must fetch its own copy; the ids are random UUIDs never
+disclosed to a session that has not already passed the Worker's server-side
+ownership check and Supabase RLS.
+
+NOT PROVEN, and the review is right that the owner id in the key does not
+establish it: that no private bytes REMAIN ON THE DEVICE. They do. "Not
+addressable through the UI" and "not present on disk" are different claims and
+the earlier addenda did not separate them clearly enough.
+
+Where the bytes actually live, verified from `flutter_cache_manager` 3.4.2:
+
+- Downloaded photos: `IOFileSystem` uses `getTemporaryDirectory()` — the
+  Android cache directory. Default policy `stalePeriod` 30 days,
+  `maxNrOfCacheObjects` 200. The OS may purge it, and Android Auto Backup
+  excludes it.
+- Adopted upload originals: `getApplicationDocumentsDirectory()/offer_media/`,
+  named `offer-media_<ownerId>_<mediaObjectId><ext>`. Not OS-purgeable.
+- Hive (`local_media`, `url_mapping`) also lives in the documents directory and
+  holds only UUIDs and file paths — no URLs, no tokens.
+
+FINDINGS:
+
+- **S-1 (high) — account deletion leaves orphaned originals.**
+  `DeletedAccountLocalDataCleaner` calls `forgetOfferMedia(ownerId: deletedUid)`
+  and `forgetOfferMedia` derives its work list *only* from catalogue entries.
+  The `offer_media` directory is deleted only on the unscoped
+  (`ownerId == null`) path, which account deletion never takes. Any adopted
+  original whose id is not in a surviving catalogue — a photo uploaded and
+  never viewed, a catalogue write that failed, a photo since removed server
+  side — stays on disk after the account is deleted. The file name already
+  begins with `offer-media_<ownerId>_`, so a prefix scan of that directory
+  would close this precisely and stay account-scoped.
+- **S-2 (medium) — Android Auto Backup.** `android/app/src/main/
+  AndroidManifest.xml` sets no `android:allowBackup`, no `fullBackupContent`
+  and no `dataExtractionRules`, so it defaults to backup-enabled, and
+  `app_flutter/` (adopted originals + the Hive catalogue) is included. Cached
+  downloads are not, being in the cache directory. This is pre-existing and
+  app-wide, but this work is what first put private Offer photos into that
+  directory. Excluding `offer_media` and the Hive boxes, or disabling backup,
+  is a product/security decision.
+- **S-3 (medium) — removal leaves bytes behind.** When an authoritative
+  `/offer-media` response no longer lists an id, the catalogue is replaced and
+  that photo stops being displayable, but its cache entry, its `mediaId::`
+  Hive mapping and its adopted original are never pruned. No client path can
+  remove Offer media today (`OfferService.removeMediaUrls` throws in Supabase
+  mode), so this is latent — it becomes live the moment a delete capability is
+  added.
+- **S-4 (medium) — a revoked grant is indistinguishable from a bad network.**
+  `R2OfferMediaUploadService._ensureSuccess` throws an untyped
+  `R2UploadException` carrying only a message, so 401/403 cannot be told from
+  502/timeout. On any media failure the coordinator keeps the previously
+  rendered items, so a photo whose access was revoked server-side keeps showing
+  from the local copy until a *successful* response says otherwise —
+  indefinitely while offline. A deleted or no-longer-owned Offer is handled
+  correctly and never shows its photo: `getOfferMetadata` returns null,
+  `detailsUnavailable` is set, and Offer Details renders "Offer not found"
+  instead of the media header.
+- **S-5 (accepted, pre-existing) — ordinary sign-out clears nothing.** Only
+  account deletion cleans up. After an account switch the previous account's
+  photos remain on the device, unreachable through the UI but present. This
+  matches the already-accepted profile-image behaviour.
+
+### 2. Change size — measured and attributed
+
+Of the 21 files with real content changes, **10 were already modified in the
+working tree before this work began and were not touched by it**: `lib/app.dart`,
+`offers_model.dart`, `media_cache_manager.dart`, `offers_list_view.dart`,
+`favorites_card.dart`, `map_view.dart`, `match_details_view.dart`,
+`search_view.dart`, `filtered_tiles.dart`, `compact_offer_card.dart`. Their
+diffs contain only the earlier ID-route and cache-key work. `lib/app.dart` was
+checked for every identifier introduced here and contains none.
+
+The remaining 11: four pre-existing files extended (`offer_service.dart`,
+`supabase_core_entities_service.dart`, `offers_view_details.dart`,
+`media_gallery_widget.dart`), three that newly entered the changeset
+(`offline_media_service.dart`, `deleted_account_local_data_cleaner.dart`,
+`full_screen_media_viewer.dart`), three account test files given an injected
+no-op collaborator, and this document.
+
+Of the 9 untracked paths, 4 are new here
+(`offer_media_cache_identity.dart`, `media_loading_placeholder.dart`,
+`offer_media_loading_ui_test.dart`, `offer_media_local_first_test.dart`), 2
+were rewritten (`offer_details_load_coordinator.dart` and its test), 1 received
+a two-line test stub, and 2 are untouched.
+
+SHARED-WIDGET IMPACT, verified: `FullScreenMediaViewer` has exactly one call
+site, inside `media_gallery_widget.dart`. Owner Details reaches it through
+`OptimizedMediaGalleryWidget(mediaUrls: ...)`, so its items carry no cache key,
+`_warmStableIdentity` returns false for them and the previous prefetch path is
+unchanged, and no `imagePlaceholder` is supplied so the previous spinner is
+unchanged. The single behaviour change for Owner media is that full-screen
+images now use `CachedNetworkImageProvider` instead of an uncached
+`NetworkImage`. Owner `mediaUrls` come from Firestore (Firebase Storage
+download URLs, which change when the object is replaced), so this is a
+straightforward win with no staleness path; the cost is disk usage bounded by
+the cache manager's 200-object / 30-day policy. It is independent of the
+loading-delay fix and can be reverted on its own if the owner prefers a
+narrower diff.
+
+### 3. The 22 failing tests — independently proven pre-existing
+
+Method: `git worktree add --detach` at `HEAD` (`005b819`), which contains no
+uncommitted work at all, `flutter pub get`, full `flutter test`. The owner's
+working tree was never touched; the worktree was removed afterwards and
+`git worktree list` shows only the main tree.
+
+- Baseline at `HEAD`: **438 passed, 22 failed**.
+- Working tree with everything applied: **498 passed, 22 failed**.
+- The two failing-test name lists were captured and compared: **byte-identical**.
+  `comm` reports no test failing only in the working tree, and none failing
+  only at baseline.
+
+Same distribution in both: 1 in `delete_account_test.dart`, 4 in
+`phone_security_hardening_test.dart`, 10 in
+`favorites_list_reconciliation_test.dart`, 7 in
+`favorites_viewmodel_initial_load_test.dart`. Causes, unchanged from the
+earlier addendum: five tests read migration files by names that commit
+`0d7fb17` renamed, and seventeen construct `OfferService`, whose field
+initializer eagerly builds `R2OfferMediaUploadService()` and therefore
+`Supabase.instance`, without initialising Supabase. Neither cause is touched by
+this work. They remain out of scope and unfixed.
+
+### 4. "The image appears immediately" — claim corrected
+
+The review is right; the earlier wording was too strong and is withdrawn. A
+passing `FileImage` test proves the widget resolves to local bytes, not that a
+photo paints on the first frame after every restart.
+
+What is actually established: **when an authorized local copy is present, no
+network round trip is on the critical path.** That is the property the work was
+for, and it is what the tests cover.
+
+What is not guaranteed, with the mechanism for each:
+
+- Decode still costs time. `Image.file` is asynchronous and, after a process
+  restart, Flutter's in-memory `ImageCache` is empty, so the file must be read
+  and decoded before anything is painted.
+- **F-5 (low, real gap):** that branch of `buildOfflineAwareImage` passes no
+  `frameBuilder`, so during those decode frames the media area renders *empty*
+  rather than continuing to show the loading surface. A `frameBuilder` holding
+  the placeholder until the first frame would close it.
+- The copy can disappear. Cached downloads live in the OS cache directory under
+  a 30-day / 200-object policy and can be purged by Android under storage
+  pressure. When the mapped file no longer exists, `existsSync()` fails and the
+  code correctly falls back to the network path — correct, but not instant.
+
+### 5. Shimmer clock and reduce motion — measured
+
+Measured with a temporary probe that was run and then deleted; the tree is
+unchanged.
+
+- Reduce motion **does** work as described: with
+  `MediaQueryData(disableAnimations: true)` the gradient branch is absent
+  (`DecoratedBox` count inside the placeholder = 0) and the still branch is
+  present (`ColoredBox` = 1). With animations enabled the gradient is present
+  (= 1).
+- **F-6 (low, real defect):** with animations disabled the controller is still
+  started in `initState`, so `SchedulerBinding.transientCallbackCount` is 1 —
+  the ticker keeps requesting frames for an animation nothing is showing. It
+  should not be started, or should be stopped, when animations are disabled.
+- **F-7 (low, test quality):** the committed reduce-motion test asserts
+  `find.byType(ColoredBox), findsWidgets`, which also matches framework
+  widgets and would pass even if the branch did not work. The probe above is
+  what actually proved it. The test should assert the gradient is absent
+  *inside* the placeholder, as the probe did.
+- Shared `static Stopwatch`: no odd cross-gallery synchronisation in the
+  current app. The only places two instances coexist are the Offer Details
+  header/gallery hand-over, where being in phase is the point, and adjacent
+  `PageView` pages, of which one is visible. It never stops and never
+  overflows (64-bit int). The caveat worth recording is that if this widget is
+  ever reused for a *list* of skeletons, perfectly synchronised sweeps look
+  mechanical and a per-item stagger would be preferable.
+
+### Proposed corrections, not implemented
+
+Ordered by severity: **S-1** prefix-scan `offer_media/` during scoped
+forgetting; **S-4** type the Worker exception with its status code and purge
+the local copy plus catalogue entry on an authoritative 401/403; **S-3** prune
+cache entries, Hive mappings and originals for ids dropped from a catalogue
+replacement; **S-2** decide backup exclusion for `offer_media` and the Hive
+boxes; **F-5** add a `frameBuilder`; **F-6** do not run the ticker under
+reduce motion; **F-7** strengthen the reduce-motion assertion.
+
+NOW — the owner decides which of S-1 to F-7 to authorize, and whether to keep
+or revert the Owner-media full-screen caching change.
+
+NEXT — implement only the approved items as one scoped correction, re-run the
+targeted suites and the HEAD-baseline comparison, then return to the device
+acceptance in the previous addendum.
+
+## ADDENDUM — OFFER PRIVATE MEDIA SECURITY & QUALITY CORRECTION (uncommitted)
+
+One bounded correction covering the seven findings from the preceding audit,
+security first. No Supabase, Worker, R2 or migration change. Nothing staged,
+committed or pushed. Nothing installed.
+
+### S-1 — orphaned originals on account deletion: CORRECTED
+
+`forgetOfferMedia` no longer derives its work only from catalogues. It now also
+sweeps the app-owned `offer_media` directory by file-name ownership prefix
+(`offer-media_<ownerId>_`, the sanitized cache key `adoptLocalFileForMediaId`
+already writes), so originals no catalogue names — an upload adopted before the
+Offer was ever viewed, a failed catalogue write, media dropped by a later
+response — are removed too.
+
+Scoping and safety: an owner id that is missing or sanitizes to nothing
+disables the sweep instead of matching every file; only regular files are
+considered, so a `Link` is never followed and a directory is never deleted;
+only direct children of that one directory are visited; a mapped path outside
+the app-owned directory is left alone, because `adoptLocalFileForMediaId` falls
+back to the picked file when its copy fails.
+
+`forgetOfferMedia` and `forgetOfferMediaItems` now return an
+`OfferMediaCleanupReport`. `DeletedAccountLocalDataCleaner.clear` returns it and
+starts it as *not complete*, so a step that `_step` swallows can never read back
+as a clean success while private originals remain.
+
+### S-4 — authorization vs transport: CORRECTED
+
+`R2OfferMediaHttpException` carries the Worker's status. The Worker's
+`assertOwnsOffer` answers **404** for "no such Offer for this account" and it
+reaches that only after its ownership query succeeded and returned no row — an
+upstream failure answers 502 — so 404 (and 403) is the trustworthy revocation
+signal. 401 is a rejected token, a session problem, and deletes nothing. 5xx,
+timeouts and offline delete nothing.
+
+An expired signed R2 URL cannot be misread as revocation: that 403 is raised by
+R2 while the image itself is fetched, on the cache manager's path, and never on
+this Worker API call. Covered by a test.
+
+On a proven revocation the service removes this device's copy for that account
+and Offer only, and the coordinator clears the items, sets `mediaAccessRevoked`,
+renders a localized unavailable state (EN + AR) and offers no retry. On anything
+transient, whatever is on screen stays and a retry is offered.
+
+OFFLINE POLICY — UNCHANGED, AND NO DECISION IS REQUIRED. The established
+contract is that previously authorized media stays displayable offline; that is
+what `OfflineMediaService` exists for. Offline resolves to `transient`, which
+changes nothing. The app cannot learn about a revocation while fully offline and
+this work does not claim otherwise.
+
+### S-3 — removal cleanup: CORRECTED to the available signal
+
+`reconcileOfferMediaCatalog` replaces the remembered set and removes the bytes,
+identity mapping, adopted original and in-memory copy of every id the new set no
+longer contains. The only removal signal this architecture has is an
+authoritative `/offer-media` response, and that is what drives it. No client
+delete path was added.
+
+REMAINING INTEGRATION DEPENDENCY: removal is noticed the next time the app
+resolves that Offer's media. There is no push signal, so between a server-side
+removal and the next resolution the local copy remains.
+
+### S-2 — Android backup: NARROWLY EXCLUDED
+
+`android:fullBackupContent="@xml/backup_rules"` (API ≤ 30) and
+`android:dataExtractionRules="@xml/data_extraction_rules"` (API 31+, both
+`cloud-backup` and `device-transfer`) now exclude
+`domain="root" path="app_flutter/offer_media"`. Only exclusions are declared, so
+every other backup behaviour is unchanged and backup is not disabled app-wide.
+`app_flutter` is what path_provider returns for
+`getApplicationDocumentsDirectory()` on Android; minSdk is 24, so both files
+apply. Downloaded photos are not listed because they live in the cache
+directory, which Auto Backup already excludes.
+
+VERIFIED ON THE BUILT ARTIFACT, not from source: `flutter build apk --debug`
+succeeded; the merged manifest carries both attributes; `res/xml/backup_rules
+.xml` and `res/xml/data_extraction_rules.xml` are present in the APK; and
+`aapt2 dump xmltree` of the compiled `data_extraction_rules.xml` shows the exact
+exclusion under both sections.
+
+Backups already taken are NOT retroactively deleted; this only stops future
+ones.
+
+### Account isolation
+
+`MediaCacheManager` registers as a forget listener, so removing bytes from disk
+also evicts the retained provider and the decoded image. On the canonical
+account-transition points in `AuthViewModel._handleSessionIdentity` — a null
+identity, and a different uid arriving directly — private Offer providers are
+released, mirroring the existing `FavoriteService.invalidateForAccountChange`
+call. Both display isolation and file-level isolation are tested.
+
+UNCHANGED BY DESIGN: ordinary sign-out still does not delete files. That is the
+established lifecycle, already accepted for profile media; changing it is a
+product decision, not part of this correction.
+
+### F-5, F-6, F-7
+
+F-5: the local-file branch of `buildOfflineAwareImage` now has a `frameBuilder`
+holding the caller's loading surface until the first decoded frame, so the media
+area no longer goes blank while a held file is read and decoded. This does not
+promise first-frame rendering; it only stops the gap being empty.
+
+F-6: the sweep controller is started and stopped from `didChangeDependencies`
+according to `MediaQuery.disableAnimations`, so no frames are requested for an
+animation nobody sees, and a change to the setting is honoured while the widget
+is alive.
+
+F-7: the weak assertion is replaced. Tests now assert the gradient branch is
+absent *inside* the placeholder under reduce motion, that the still surface is
+present, that `transientCallbackCount` is 0, that normal motion still runs the
+sweep, and that switching the setting mid-life takes effect.
+
+### Owner viewer — unrelated change removed
+
+`_imageProviderFor` returns a plain `NetworkImage` when an item has no stable
+cache key, which is every Owner Media and video-integration item, restoring the
+previous behaviour exactly. Private Offer media keeps local bytes → identity-
+keyed cache → network. Both sides are covered by regression tests.
+
+### Files changed
+
+Production: `offer_media_cache_identity.dart`, `r2_offer_media_upload_service
+.dart`, `offline_media_service.dart`, `supabase_core_entities_service.dart`,
+`deleted_account_local_data_cleaner.dart`, `offer_details_load_coordinator
+.dart`, `offers_view_details.dart`, `media_cache_manager.dart`,
+`media_loading_placeholder.dart`, `full_screen_media_viewer.dart`,
+`auth_viewmodel.dart` (three lines), `app_en.arb`, `app_ar.arb`.
+Android: `AndroidManifest.xml`, new `res/xml/backup_rules.xml`, new
+`res/xml/data_extraction_rules.xml`.
+Tests: new `offer_media_security_cleanup_test.dart`, new
+`offer_media_authorization_test.dart`, rewritten `offer_media_loading_ui_test
+.dart`, and the three `test/account/` files updated for the new cleanup
+contract plus three honest-reporting tests.
+
+The seven generated plugin-registrant files were not edited. No signing file was
+read or changed.
+
+### Verification
+
+- Targeted: `test/offers/` + `test/app/` + `test/account/` + `test/services/` —
+  **165 PASS / 1 FAIL**, the failure being the documented stale migration path.
+- `test/auth/` + `test/profile/` were also run because `auth_viewmodel.dart` was
+  touched — **324 PASS / 4 FAIL**, all four the documented stale migration
+  paths. No regression from the account-transition hook.
+- New coverage: 16 cleanup tests (A–F including two accounts, repeat runs and
+  partial failure), 12 authorization tests, 12 presentation/Owner tests.
+- `flutter analyze lib test`: zero errors, zero warnings.
+- `dart format --set-exit-if-changed` on every file in this change set: clean,
+  except `auth_viewmodel.dart`, which CLAUDE.md records as carrying pre-existing
+  deviations and must not be formatted. Formatting `supabase_core_entities
+  _service.dart` and `media_cache_manager.dart` was verified byte-identical
+  apart from line endings.
+- `git diff --check`: clean apart from the repository's existing LF-to-CRLF
+  notices.
+- The full suite was NOT rerun; the previously proven identical 22-test baseline
+  stands (HEAD 438 PASS / 22 FAIL, working tree 498 PASS / 22 FAIL, identical
+  failing names).
+
+### Unresolved security risks
+
+1. Offline revocation is impossible without a signal. Disclosed, not promised.
+2. Ordinary sign-out leaves files on the device; only in-memory state is
+   released. Established lifecycle, owner decision to change.
+3. The Hive catalogue (`local_media`, `url_mapping`) holds UUIDs and file paths
+   — no image bytes — and is still eligible for backup. Excluding those shared
+   boxes would also change profile-media restore behaviour by one avatar
+   re-download, so it was left for an owner decision rather than taken
+   unilaterally.
+4. Backups already taken are not retroactively removed.
+5. A downloaded cache entry whose id no catalogue names is not swept by name;
+   only adopted originals are. Those bytes sit in the OS cache directory, are
+   bounded by the cache manager's 200-object / 30-day policy, and are excluded
+   from backup.
+6. S-3 acts only at the next media resolution; there is no push signal.
+
+### Build
+
+`build/app/outputs/flutter-apk/app-debug.apk`, SHA-256
+`544bd9f2a828009f42fd782cfc5b8603c88bdcd91bcdeabadd005222f9f04deb`, package
+`com.example.broker_wallet`, versionCode `1`, versionName `1.0.0`, minSdk 24,
+signing certificate SHA-256
+`6dcf852de490e490e37237e9d7e37885bd8e5bc482a83d3a34b939289ef39f61` — the same
+certificate this file already records for the installed Samsung app.
+
+NOT INSTALLED. Device acceptance PENDING owner approval. Any account-switch or
+deletion scenario needs an explicitly approved safe test account; the owner's
+own account must never be deleted.
+
+NOW — owner approves the data-preserving update install on Samsung
+`R5CY10YYLSM` after the live package/certificate/version read-back.
+
+NEXT — run the device acceptance: startup and Offer navigation, Offer A and B
+images, first open and immediate reopen, force-stop and restart, the loading
+surface while decoding, and reduce-motion where testable.
+
+---
+
+## OFFER MEDIA — VIDEO UPLOAD AND THE 10-ITEM LIMIT (uncommitted)
+
+OWNER AUTHORIZATION: videos must upload and save; max **10 media per Offer in
+total** (existing images + existing videos + newly selected); max video size
+**100 MB**; max video duration **3 minutes**; automatic compression/transcoding,
+video thumbnails, and resumable/background uploading are **deferred to separate
+checkpoints**. Production deployment is not authorized here. Nothing was
+committed or pushed.
+
+SCOPE NOTE: the owner directed this work to start while the previous
+Startup-Navigation / Offer-image-cache checkpoint was still pending its real
+device acceptance. That checkpoint's uncommitted work is untouched and is still
+pending; this section's changes sit on top of it in the same working tree.
+
+### Proven root cause (read-only phase, no guessing)
+
+A video was refused in three independent places, none of them a defect in the
+existing code — video was simply never part of the Offer media contract:
+
+1. `R2OfferMediaUploadService._resolveContentType` recognized only JPEG/PNG/
+   WebP byte signatures plus `.heic` by extension, so an MP4/MOV threw
+   `Unsupported offer image type` **before any network call**. The Offer itself
+   still saved, which is why the user saw the partial-upload message.
+2. `worker.js` accepted only the four image content types on
+   `/offer-media/authorize`, capped every upload at 10 MiB, hard-coded
+   `media_type: 'image'`, and its `/offer-media/confirm` byte-signature check
+   (`detectImageMimeFromBytes`) would have rejected video bytes anyway.
+3. No limit on the number of Offer media existed anywhere, client or server.
+
+`public.media_objects` already supported `media_type = 'video'`, `duration_ms`
+and `thumbnail_media_id`, so **NO DATABASE MIGRATION WAS REQUIRED** and none was
+written. RLS, grants, the ownership trigger and the account-deletion sweep are
+unchanged.
+
+### The 10-item limit is atomic without a migration
+
+`offer_media` already carries `unique (offer_id, role, ordinal)`. The Worker now
+ignores the client's role/ordinal entirely and, at confirm time, links every
+Offer item as role `gallery` into the first free ordinal slot in `[0, 10)`. Two
+concurrent confirms therefore cannot both take the last slot: the loser gets
+PostgREST 409 (unique violation), tries the next free slot, and when none is
+left the upload is rejected (`offer_media_limit_reached`) and cleaned up by the
+existing `rejectInvalidUpload` path. `on_conflict=offer_id,media_id` with
+`resolution=ignore-duplicates` keeps a retried confirm idempotent without
+masking a slot collision. `/offer-media/authorize` additionally refuses early
+when linked items plus this account's still-pending uploads for that Offer (only
+those younger than the 24-hour abandoned-upload cutoff) already reach 10 — a
+courtesy refusal, not the guarantee.
+
+### Worker changes (`cloudflare/workers/r2-profile-upload/worker.js`)
+
+- `OFFER_MEDIA_TYPES`: the four image types (10 MiB) plus `video/mp4`,
+  `video/quicktime`, `video/3gpp` (100 MB). Profile images keep their own
+  separate `isAllowedContentType` allowlist — image-only, unchanged.
+- `detectOfferMediaMimeFromBytes`: ISO base-media `ftyp` brand detection for
+  video, with HEIF/AVIF image brands explicitly excluded, falling back to the
+  existing image detector. Container only — **the codec inside is not proven**.
+- `media_type` is now recorded correctly (`image`/`video`); size limits, the
+  confirm-time byte check and the object-key extension are all per type.
+- `GET /offer-media` returns `mediaType` and `contentType` per item.
+- `WorkerError` carries an optional stable `code`, returned in the JSON body,
+  which the client maps to a localized message. Free-text provider messages are
+  never shown to users.
+- Object keys stay under `profiles/<uid>/offers/<offerId>/`, so
+  `account_deletion.js` is untouched and still sweeps Offer videos.
+
+### App changes
+
+- NEW `lib/src/services/offer_media_policy.dart`: the shared limits (10 items,
+  10 MB image, 100 MB video, 3 minutes), `VideoSignatureDetector` (the client
+  mirror of the Worker's brand detection), a `check()` that reads only the first
+  64 bytes of a file, and the `OfferMediaRejection` reasons, each bound to one
+  ARB key.
+- NEW `lib/src/services/offer_media_selection.dart`: screens picked files
+  against every rule before they enter the form, including `VideoDurationProbe`
+  (a `video_player` probe; a video the platform player cannot open is refused
+  rather than uploaded blindly).
+- `r2_offer_media_upload_service.dart`: the file is **never read into memory
+  whole**. The PUT body is the file's own lazy read stream with an exact
+  Content-Length, so a 100 MB video costs the same memory as a photo. A watchdog
+  aborts on no progress for 45 s while sending, or 60 s with no response after
+  the last byte — never merely because an upload is large. A typed
+  `OfferMediaRejectedException` replaces the old free-text message.
+- `offer_service.dart`: videos are deliberately **not** adopted into the local
+  originals directory (a second copy of up to 100 MB to save one download is a
+  bad trade); images keep the existing local-first behaviour. Partial failures
+  now throw `OfferMediaPartialUploadException`, carrying counts and, when every
+  failure shared one reason, that reason — never a file name or path.
+- `add_offers_viewmodel.dart`: `currentMediaCount`/`remainingMediaSlots`, a
+  refusal before the picker opens when the Offer is full, screening of every
+  pick, and a re-check at save time.
+- `clean_media_service.dart`: a picked video is no longer `readAsBytes()`-ed
+  into memory (nothing consumed those bytes; it risked an out-of-memory crash
+  and a long freeze before the upload even started). Camera recording accepts a
+  `maxDuration`; the Offer screen passes 3 minutes, other callers keep 5.
+- Display: `OfferMediaRef.isVideo` carries the **server's** media type into
+  `MediaItem` instead of guessing from a signed URL. `getMediaTypeFromUrl` now
+  parses the path only (`mediaExtensionOf`), so a signing query can no longer be
+  mistaken for an extension. The image-cache warm path is unchanged and still
+  skips videos, so a video is never pulled into the image cache.
+- `video_player_resource_manager.dart`: every log that printed a media URL now
+  prints it redacted — a signed GET URL is a short-lived credential.
+- EN/AR: `offerMediaLimitReached`, `offerMediaLimitTrimmed`,
+  `offerMediaUnsupportedType`, `offerMediaImageTooLarge`,
+  `offerMediaVideoTooLarge`, `offerMediaVideoTooLong`,
+  `offerMediaUploadInterrupted`, `offerMediaSomeFilesRejected`; the existing
+  partial-failure string now says "photos or videos".
+
+### Verification — CODE_PROVEN only
+
+- Worker: `npm test` — **71/71 PASS** (55 pre-existing account-deletion/staging
+  tests unchanged, 16 offer-media tests, 13 of them new): video round trip and
+  listing, Samsung `mp42` and iPhone QuickTime, per-kind size limits, refusal of
+  unsupported containers, five byte/type mismatch cases (including HEIC bytes
+  declared as video), server-chosen slots ignoring a client ordinal, the 11th
+  item refused, in-flight uploads counted, an abandoned upload ageing out,
+  **two concurrent confirms for one free slot (one 200, one 409, exactly ten
+  links, the loser marked failed and its object deleted)**, an idempotent retry,
+  and profile `/authorize` still refusing a video.
+- Flutter: `test/offers/ test/services/ test/common/` — **140 PASS, 0 FAIL**,
+  including 16 new upload tests (streamed bytes identical to the file, progress
+  monotonic, a stall aborted) and 10 new selection/display tests.
+- `test/account/ test/app/` — 1 FAIL, the **documented pre-existing** stale
+  migration path `20260913000100_account_deletion_jobs.sql`; unrelated.
+- `flutter analyze lib test`: zero errors, zero warnings (114 pre-existing
+  infos, all `deprecated_member_use` in untouched files).
+- `dart format`: the four new files are formatted; no tracked file was
+  reformatted, per this repository's documented policy.
+
+### NOT VERIFIED / DEFERRED — do not treat as production-ready
+
+- **No real video has been uploaded.** No device, no emulator, no staging or
+  production deployment. The Worker changes are not deployed anywhere yet.
+- The Worker must be deployed to **staging first**; production deployment is a
+  separate, explicitly approved step. Staging and production share one Supabase
+  project, so a staging run writes real rows.
+- **Codec compatibility is not proven**: an HEVC/H.265 video from a Samsung
+  camera may fail to play on older Android devices. The container is verified;
+  the codec is not. This is what the deferred transcoding checkpoint solves.
+- **Backgrounding stops an upload.** Dart's HTTP client is killed when the OS
+  suspends the app; the Offer is still saved and the failed video is reported
+  for retry from Edit. Resumable/background upload is deferred.
+- Deferred by owner decision: compression/transcoding, video thumbnails (a video
+  shows a tile with a play icon), resumable/background uploading, and local
+  caching of video bytes.
+- Backlog observed, not changed: the Add Offer picker still offers a "Documents"
+  option whose PDF/DOC picks cannot be uploaded as Offer media and are refused
+  as an unsupported type.
+
+
+### AMENDMENT — the 3-minute limit is now enforced by the trusted backend
+
+The preflight established that the duration rule existed only in Flutter, which
+is a courtesy check, not a rule: any modified client could have uploaded a
+longer video within the 100 MB cap. The owner asked for production-grade
+behaviour, so `worker.js` now measures it server-side at confirm time.
+
+- `readVideoDurationMs` walks the uploaded object's top-level ISO base-media
+  box headers with small ranged reads until it finds `moov`, then parses
+  `mvhd` (version 0 and version 1) for timescale and duration. It handles the
+  layout phone cameras actually write, with `moov` **after** the media data,
+  and it never downloads the media data: a test asserts the whole measurement
+  of a 40 MB file reads under 4 KB.
+- Over the limit → the upload is refused 422 `video_too_long`, marked `failed`,
+  its R2 object deleted and never attached to the Offer. A file whose duration
+  cannot be read **fails closed** (422, treated as an unsupported file) rather
+  than being accepted on trust.
+- The measured duration is persisted in the existing `media_objects.duration_ms`
+  column. No migration: the column already existed. Images are untouched and
+  never carry a duration.
+- Tolerance: 1 second above three minutes, because an encoder can measure a
+  clip the camera reports as 3:00 a few tens of milliseconds over. Bounded at
+  24 box hops and a 512-byte `moov` window, so a malformed file cannot make the
+  Worker loop or read unbounded data.
+- Client side: `video_too_long` now maps to the existing localized
+  "3 minutes or shorter" message, and 422 was added to the statuses whose
+  stable `code` the client reads.
+
+Verification: Worker `npm test` **78/78 PASS** (7 new duration tests: exactly
+three minutes accepted and recorded, an over-long clip refused and cleaned up,
+the rounding tolerance honoured on both sides, `moov`-last and 64-bit `mvhd`
+parsed, no readable duration failing closed, the read staying under 4 KB on a
+40 MB file, and an image never duration-checked). Flutter targeted suites
+**141 PASS** (one new test: the server's refusal surfacing as the localized
+too-long message). `flutter analyze lib test`: zero errors, zero warnings.
+
+Still deferred and still unclaimed: codec compatibility, resumable uploads,
+background uploads, compression/transcoding and video thumbnails. The signed
+PUT URL's 300-second lifetime versus a 100 MB upload on a slow link remains the
+open question for staging to answer.
+
+NOW — the app's configured Worker URL is the production one, so a device test of
+video needs either this Worker version deployed to `r2-profile-upload-staging`
+with a debug build pointed at it, or an explicitly approved production Worker
+deployment as its own step. Owner decides which.
+
+NEXT — device acceptance for video: record and pick a video, confirm it uploads,
+saves and plays; try an 11th item; try a video over 100 MB and one over 3
+minutes; confirm existing photo upload and display are unchanged; confirm the
+English and Arabic messages.
+
+### STAGING ACCEPTANCE — PHASE 1, ONE REAL VIDEO: PASS (VERIFIED_HOSTED)
+
+Owner deployed the local Worker candidate to the staging Worker
+(`r2-profile-upload-staging`): new version
+`d6e8fdb4-da48-43e4-b4cc-803fe8f204db`, rollback target
+`5934a60d-bf74-42fe-b3ef-c92fac5dfb15`. Production remains untouched.
+
+Executed by the agent from the local terminal, non-interactively. The staging
+gate key and the disposable account's password were captured by the owner with
+masked input into a DPAPI-encrypted file readable only by that Windows account,
+used in memory only, never printed, and the file was deleted at the end of the
+run (deletion verified). No key, token, presigned PUT URL or signed GET URL was
+printed or stored.
+
+**Gate, on the new version:** a request with no key → 403; a request with a
+wrong key → 403. (The wrong-key case had not been exercised before.)
+
+**Test input, verified locally before anything was sent:** a real MP4,
+major brand `isom`, 7,796,364 bytes (7.44 MiB), duration **74.65 s**, with
+`moov` **first** — the complementary layout to the `moov`-last case the unit
+tests cover.
+
+**Result: 14 PASS / 0 FAIL**, each from an actual HTTP status or actual bytes:
+sign-in; the Offer `2af5fa05-…` proven to belong to the disposable account
+(`4b0b5727-…`) by the Worker's own 200/404 ownership answer; authorize
+returning `mediaType: video`; the object key confined to
+`profiles/<account>/offers/<offer>/<id>.mp4`; the signed PUT of the real file
+to private R2 (HTTP 200, 1.6 s); **confirm accepting the video, which means the
+server-side byte-signature and the new server-side duration check both passed
+against a real camera file**; the list returning it as `mediaType=video`,
+`contentType=video/mp4`; exactly one association, and the Offer's item count
+rising 0 → 1 (no duplicate); a fresh signed retrieval URL; and the downloaded
+bytes matching the original in both length and SHA-256
+(`E557F43843D34F62…`).
+
+Because `/offer-media` lists only `status='ready'` rows, the item being listed
+is itself the proof that the media object reached `ready`.
+
+**Test data created and retained** (nothing deleted, cleanup not authorized):
+one `media_objects` row `522a53d1-a946-41db-8e1d-4fd4f78566ba`, one
+`offer_media` association on Offer `2af5fa05-1f61-457f-95ad-54b6e13978a7`, and
+one object in `broker-wallet-media-staging`.
+
+**A defect in the earlier draft acceptance script was found and corrected
+before running** (the script only, not the implementation): in PowerShell 7,
+`Invoke-WebRequest -OutFile` returns nothing without `-PassThru`, so the
+download check compared `$null` to 200 and would have reported a false FAIL on
+a successful download. The runner also now compares the Offer's item count
+before and after, so a duplicate association would be caught rather than
+assumed away.
+
+**NOT YET TESTED ON STAGING** (each needs its own owner approval, and some need
+inputs that do not exist yet): the 10-item limit end to end (fills the Offer);
+the server-side 3-minute refusal (needs a clip longer than three minutes, and
+creates a `failed` row); cross-account denial (needs a second disposable
+account); Profile Media regression through the staging Worker (replaces that
+account's avatar); and the 100 MB upload on a slow link, which is the open
+question about the 300-second signed-PUT lifetime — this run moved 7.44 MiB in
+1.6 s and therefore says nothing about it.
+
+**Flutter real-device acceptance remains NOT VERIFIED**: the app points at the
+production Worker and never sends the staging key, so the device path cannot be
+exercised against staging.
+
+NOW — owner decides which of the remaining staging tests to authorize, and
+whether to approve the production Worker deployment as its own checkpoint.
+
+NEXT — after production deployment, the real-device acceptance on Samsung:
+record and pick a video, confirm upload, save and playback, the 11th item
+refusal, an over-long and an over-size clip, and that photos are unchanged.

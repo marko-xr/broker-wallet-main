@@ -64,8 +64,14 @@ class CompactOfferCard extends StatelessWidget {
           overlayColor: WidgetStateProperty.all<Color>(Colors.transparent),
           onTap: () {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                context.push('/offers-details', extra: offer);
+              final offerId = offer.id?.trim();
+              if (context.mounted &&
+                  offerId != null &&
+                  offerId.isNotEmpty) {
+                context.push(
+                  '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
+                  extra: offer,
+                );
               }
             });
           },

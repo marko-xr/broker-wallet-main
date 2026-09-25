@@ -202,7 +202,13 @@ class SearchView extends StatelessWidget {
         context.push('/requested-details', extra: result.data);
         break;
       case SearchResultType.offer:
-        context.push('/offers-details', extra: result.data);
+        final offerId = result.id.trim();
+        if (offerId.isNotEmpty) {
+          context.push(
+            '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
+            extra: result.data,
+          );
+        }
         break;
       case SearchResultType.owner:
         context.push('/owners-details', extra: result.data);

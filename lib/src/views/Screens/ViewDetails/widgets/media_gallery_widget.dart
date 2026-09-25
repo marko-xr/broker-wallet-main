@@ -1,6 +1,7 @@
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/video_player_resource_manager.dart';
 import 'package:flutter/foundation.dart';
@@ -12,7 +13,14 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'dart:async';
 import 'dart:io';
+
+// The Offer-media cache identity now lives in the service layer so upload,
+// read and display all agree on one key; re-exported here so existing
+// importers of this file are unchanged.
+export 'package:broker_wallet/src/services/offer_media_cache_identity.dart'
+    show OfferMediaRef, offerMediaCacheKey;
 
 // Keep the existing MediaType and MediaItem classes
 enum MediaType { image, video, document, unknown }
@@ -23,15 +31,49 @@ class MediaItem {
   final String? fileName;
   final String? mimeType;
 
+  /// Stable identity behind [url] (e.g. Offer media's `mediaObjectId`).
+  final String? mediaObjectId;
+
+  /// Account-scoped cache key derived from [mediaObjectId]. Null when the
+  /// caller has no safe stable identity, preserving URL-keyed behavior.
+  final String? cacheKey;
+
   MediaItem({
     required this.url,
     required this.type,
     this.fileName,
     this.mimeType,
+    this.mediaObjectId,
+    this.cacheKey,
   });
 
+  /// Describes one piece of private Offer media.
+  ///
+  /// The kind comes from the server's own record of the media object
+  /// ([OfferMediaRef.isVideo]) rather than from the signed URL, which is a
+  /// signing artefact. Only when that is absent — an item held locally before
+  /// any resolution — does it fall back to the path, and an Offer item that
+  /// cannot be classified is an image, which is what the upload contract
+  /// accepted for the whole of this Offer feature's history.
+  factory MediaItem.fromOfferMedia(OfferMediaRef ref) {
+    final url = ref.signedUrl?.trim() ?? '';
+    final local = ref.localFilePath?.trim() ?? '';
+    final typeSource = url.isNotEmpty ? url : local;
+    final detected = ref.isVideo
+        ? MediaType.video
+        : typeSource.isEmpty
+            ? MediaType.image
+            : MediaItem.getMediaTypeFromUrl(typeSource);
+    return MediaItem(
+      url: url,
+      type: detected == MediaType.unknown ? MediaType.image : detected,
+      mediaObjectId: ref.mediaObjectId.isEmpty ? null : ref.mediaObjectId,
+      cacheKey: ref.cacheKey,
+    );
+  }
+
   static MediaType getMediaTypeFromUrl(String url) {
-    final extension = url.split('.').last.toLowerCase().split('?').first;
+    final extension = mediaExtensionOf(url);
 
     // Image formats (including HEIC/HEIF from iOS)
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif']
@@ -56,26 +98,76 @@ class MediaItem {
 
     return MediaType.unknown;
   }
+
+  /// The file extension of [url], read from its path only.
+  ///
+  /// A signed R2 URL carries a long query string, and splitting the whole
+  /// string on '.' can land inside that query rather than on the file's own
+  /// extension. Parsing the path first is what keeps '<id>.mp4?X-Amz-...'
+  /// recognizable as a video.
+  static String mediaExtensionOf(String url) {
+    var path = url.split('#').first.split('?').first;
+    final parsed = Uri.tryParse(path);
+    if (parsed != null && parsed.pathSegments.isNotEmpty) {
+      path = parsed.pathSegments.last;
+    }
+    final name = path.split('/').last;
+    return name.contains('.') ? name.split('.').last.toLowerCase() : '';
+  }
 }
 
 class OptimizedMediaGalleryWidget extends StatefulWidget {
+  /// Fully-described media, used instead of [mediaUrls] when given.
+  ///
+  /// Offer Details passes this because a private-media item can be renderable
+  /// from locally held bytes while its signed URL is still being minted — a
+  /// state a plain URL string cannot represent.
+  ///
+  /// Typed as the service-layer [OfferMediaRef] rather than [MediaItem] on
+  /// purpose: this file is reached through two different import spellings
+  /// (`src/Views/...` and `src/views/...`), which Dart treats as two
+  /// libraries, so a [MediaItem] crossing this boundary would not be the same
+  /// type on both sides.
+  final List<OfferMediaRef>? mediaRefs;
+
+  /// Drawn in place of an image whose bytes have not arrived yet.
+  ///
+  /// Supplied by callers that already showed a loading surface before this
+  /// widget existed, so the hand-over from "resolving" to "downloading" does
+  /// not swap one indicator for a different one. Defaults to this widget's own
+  /// spinner for callers that do not.
+  final Widget? imagePlaceholder;
+
   final List<String> mediaUrls;
+
+  /// Stable identity for each entry in [mediaUrls], aligned by index. Pass
+  /// null (the default) when no stable id is available; a length mismatch
+  /// against [mediaUrls] is treated as "no ids" rather than misaligning any
+  /// entry — see [_synchronizeMediaItems].
+  final List<String>? mediaIds;
+  final String? mediaOwnerId;
   final PageController? pageController;
   final Function(int)? onPageChanged;
   final int? initialIndex;
   final bool showControls;
   final bool autoPlay;
   final String? fallbackSvgPath; // For entities without media
+  final VoidCallback? onRetry;
 
   const OptimizedMediaGalleryWidget({
     super.key,
-    required this.mediaUrls,
+    this.mediaRefs,
+    this.imagePlaceholder,
+    this.mediaUrls = const <String>[],
+    this.mediaIds,
+    this.mediaOwnerId,
     this.pageController,
     this.onPageChanged,
     this.initialIndex,
     this.showControls = true,
     this.autoPlay = false,
     this.fallbackSvgPath,
+    this.onRetry,
   });
 
   @override
@@ -116,7 +208,10 @@ class _OptimizedMediaGalleryWidgetState
       }
     }
 
-    final mediaChanged = !listEquals(oldWidget.mediaUrls, widget.mediaUrls);
+    final mediaChanged = !listEquals(oldWidget.mediaRefs, widget.mediaRefs) ||
+        !listEquals(oldWidget.mediaUrls, widget.mediaUrls) ||
+        !listEquals(oldWidget.mediaIds, widget.mediaIds) ||
+        oldWidget.mediaOwnerId != widget.mediaOwnerId;
     final indexChanged = oldWidget.initialIndex != widget.initialIndex &&
         widget.initialIndex != null;
 
@@ -149,8 +244,16 @@ class _OptimizedMediaGalleryWidgetState
 
     for (int i = startIndex; i < endIndex; i++) {
       final mediaItem = _mediaItems[i];
+      // An item with no URL is one whose bytes are already held locally (or
+      // whose signed URL has not been minted yet). Prefetching it would only
+      // cache a placeholder against its real identity.
+      if (mediaItem.url.isEmpty) continue;
+      if (_warmStableIdentity(mediaItem)) continue;
       if (mediaItem.type == MediaType.image) {
-        _cacheManager.getOptimizedImage(mediaItem.url);
+        _cacheManager.getOptimizedImage(
+          mediaItem.url,
+          cacheKey: mediaItem.cacheKey,
+        );
       } else if (mediaItem.type == MediaType.video) {
         _cacheManager.getOptimizedVideo(mediaItem.url);
       }
@@ -167,23 +270,72 @@ class _OptimizedMediaGalleryWidgetState
 
     for (final index in indices) {
       final mediaItem = _mediaItems[index];
+      if (mediaItem.url.isEmpty) continue;
+      if (_warmStableIdentity(mediaItem)) continue;
       if (mediaItem.type == MediaType.image) {
-        _cacheManager.getOptimizedImage(mediaItem.url);
+        _cacheManager.getOptimizedImage(
+          mediaItem.url,
+          cacheKey: mediaItem.cacheKey,
+        );
       } else if (mediaItem.type == MediaType.video) {
         _cacheManager.getOptimizedVideo(mediaItem.url);
       }
     }
   }
 
-  void _synchronizeMediaItems({bool resetIndex = false}) {
-    final newItems = widget.mediaUrls
-        .map((url) => MediaItem(
-              url: url,
-              type: MediaItem.getMediaTypeFromUrl(url),
-              fileName: _extractFileName(url),
-            ))
-        .toList();
+  /// Pulls a private media item's bytes into the shared cache under its own
+  /// stable identity, and records where they landed so the next open can paint
+  /// them before any signed URL exists.
+  ///
+  /// Returns true when it handled the item, which keeps it away from the
+  /// URL-keyed prefetch: that path stores a second, resized copy under a
+  /// different key and decodes it at a size nothing on screen uses.
+  bool _warmStableIdentity(MediaItem mediaItem) {
+    final cacheKey = mediaItem.cacheKey;
+    if (cacheKey == null) return false;
+    if (mediaItem.type == MediaType.image) {
+      unawaited(OfflineMediaService.instance.ensureMediaIdCached(
+        cacheKey: cacheKey,
+        url: mediaItem.url,
+      ));
+    }
+    return true;
+  }
 
+  void _synchronizeMediaItems({bool resetIndex = false}) {
+    final provided = widget.mediaRefs;
+    if (provided != null) {
+      _adoptMediaItems(
+        [for (final ref in provided) MediaItem.fromOfferMedia(ref)],
+        resetIndex: resetIndex,
+      );
+      return;
+    }
+
+    // A length mismatch means the ids can't be trusted to align by index —
+    // treat it as "no ids" rather than risk pairing an id with the wrong
+    // URL, which would misattribute one item's cached bytes to another.
+    final ids = widget.mediaIds;
+    final hasAlignedIds = ids != null && ids.length == widget.mediaUrls.length;
+
+    final newItems = <MediaItem>[
+      for (var i = 0; i < widget.mediaUrls.length; i++)
+        MediaItem(
+          url: widget.mediaUrls[i],
+          type: MediaItem.getMediaTypeFromUrl(widget.mediaUrls[i]),
+          fileName: _extractFileName(widget.mediaUrls[i]),
+          mediaObjectId: hasAlignedIds && ids[i].isNotEmpty ? ids[i] : null,
+          cacheKey: offerMediaCacheKey(
+            ownerId: widget.mediaOwnerId,
+            mediaObjectId: hasAlignedIds && ids[i].isNotEmpty ? ids[i] : null,
+          ),
+        ),
+    ];
+
+    _adoptMediaItems(newItems, resetIndex: resetIndex);
+  }
+
+  void _adoptMediaItems(List<MediaItem> newItems, {required bool resetIndex}) {
     int nextIndex;
     if (newItems.isEmpty) {
       nextIndex = 0;
@@ -288,7 +440,9 @@ class _OptimizedMediaGalleryWidgetState
             itemCount: _mediaItems.length,
             itemBuilder: (context, index) {
               return RepaintBoundary(
-                key: ValueKey(_mediaItems[index].url),
+                key: ValueKey(
+                  _mediaItems[index].cacheKey ?? _mediaItems[index].url,
+                ),
                 child: _buildMediaItem(_mediaItems[index], context),
               );
             },
@@ -350,41 +504,59 @@ class _OptimizedMediaGalleryWidgetState
       duration: const Duration(milliseconds: 200),
       child: OfflineMediaService.instance.buildOfflineAwareImage(
         imageUrl: mediaItem.url,
+        cacheKey: mediaItem.cacheKey,
         fit: BoxFit.cover,
-        placeholder: Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Theme.of(context).colorScheme.primary,
+        placeholder: widget.imagePlaceholder ??
+            Container(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-        errorWidget: Container(
-          color: Theme.of(context).colorScheme.errorContainer,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.broken_image,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.onErrorContainer,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Image failed to load',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onErrorContainer,
+        errorWidget: Builder(
+          builder: (errorContext) => Container(
+            color: Theme.of(errorContext).colorScheme.errorContainer,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.broken_image,
+                    size: 48,
+                    color: Theme.of(errorContext).colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppLocalizations.of(errorContext)
+                        .translate('failedToLoadImage'),
+                    textAlign: TextAlign.center,
+                    style:
+                        Theme.of(errorContext).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(errorContext)
+                                  .colorScheme
+                                  .onErrorContainer,
+                            ),
+                  ),
+                  if (widget.onRetry != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: widget.onRetry,
+                      child: Text(
+                        AppLocalizations.of(errorContext).translate('retry'),
                       ),
-                ),
-              ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -601,6 +773,7 @@ class _OptimizedMediaGalleryWidgetState
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => FullScreenMediaViewer(
+          mediaRefs: widget.mediaRefs,
           mediaUrls: widget.mediaUrls,
           initialIndex: _currentIndex,
           title: 'Media Gallery',

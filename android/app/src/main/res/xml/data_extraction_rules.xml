@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 (API 31) and above, which uses android:dataExtractionRules
+  instead of android:fullBackupContent.
+
+  Same narrow intent as backup_rules.xml: only exclusions, so every other
+  backup and device-transfer behaviour is unchanged. app_flutter/offer_media
+  holds adopted originals of private Offer photos, which must not leave the
+  device through cloud backup or a device-to-device transfer. They remain
+  re-downloadable from R2 by an authorized session.
+
+  Both sections are listed because they are independent: omitting
+  device-transfer would still let the files move to a new phone.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="app_flutter/offer_media" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="app_flutter/offer_media" />
+    </device-transfer>
+</data-extraction-rules>

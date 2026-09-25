@@ -29,12 +29,12 @@ class VideoPlayerResourceManager {
         _controllerLastUsed[videoUrl] = DateTime.now();
 
         if (controller.value.isInitialized) {
-          developer.log('♻️ Reusing existing controller for: $videoUrl',
+          developer.log('♻️ Reusing existing controller for: ${_redact(videoUrl)}',
               name: _logName);
           return controller;
         } else {
           // Controller exists but not initialized, remove it
-          developer.log('🗑️ Removing uninitialized controller for: $videoUrl',
+          developer.log('🗑️ Removing uninitialized controller for: ${_redact(videoUrl)}',
               name: _logName);
           await _disposeController(videoUrl);
         }
@@ -43,13 +43,13 @@ class VideoPlayerResourceManager {
       // Pre-check video format support and warn about HEVC
       if (!isVideoFormatSupported(videoUrl)) {
         developer.log(
-            '⚠️ Unsupported video format detected: $videoUrl (${getVideoCodecInfo(videoUrl)})',
+            '⚠️ Unsupported video format detected: ${_redact(videoUrl)} (${getVideoCodecInfo(videoUrl)})',
             name: _logName);
       }
 
       if (isLikelyHEVCVideo(videoUrl)) {
         developer.log(
-            '🔍 HEVC video detected: $videoUrl - will attempt playback with fallback options',
+            '🔍 HEVC video detected: ${_redact(videoUrl)} - will attempt playback with fallback options',
             name: _logName);
       }
 
@@ -68,7 +68,7 @@ class VideoPlayerResourceManager {
       for (int attempt = 1; attempt <= 3; attempt++) {
         try {
           developer.log(
-              '🎬 Creating video controller (attempt $attempt) for: $videoUrl',
+              '🎬 Creating video controller (attempt $attempt) for: ${_redact(videoUrl)}',
               name: _logName);
 
           if (videoUrl.startsWith('http')) {
@@ -106,7 +106,7 @@ class VideoPlayerResourceManager {
             _activeControllers[videoUrl] = controller;
             _controllerLastUsed[videoUrl] = DateTime.now();
             developer.log(
-                '✅ Video controller initialized successfully (attempt $attempt) for: $videoUrl (${controller.value.size.width}x${controller.value.size.height})',
+                '✅ Video controller initialized successfully (attempt $attempt) for: ${_redact(videoUrl)} (${controller.value.size.width}x${controller.value.size.height})',
                 name: _logName);
             return controller;
           } else {
@@ -116,7 +116,7 @@ class VideoPlayerResourceManager {
         } catch (e) {
           lastError = e.toString();
           developer.log(
-              '❌ Video initialization attempt $attempt failed: $lastError for: $videoUrl',
+              '❌ Video initialization attempt $attempt failed: $lastError for: ${_redact(videoUrl)}',
               name: _logName);
 
           // Clean up failed controller
@@ -187,9 +187,9 @@ class VideoPlayerResourceManager {
 
     try {
       await controller.pause();
-      developer.log('⏸️ Paused controller for: $videoUrl', name: _logName);
+      developer.log('⏸️ Paused controller for: ${_redact(videoUrl)}', name: _logName);
     } catch (e) {
-      developer.log('⚠️ Failed to pause controller for $videoUrl: $e',
+      developer.log('⚠️ Failed to pause controller for ${_redact(videoUrl)}: $e',
           name: _logName);
     }
   }
@@ -207,7 +207,7 @@ class VideoPlayerResourceManager {
   /// Release a specific controller
   Future<void> releaseController(String videoUrl) async {
     if (_activeControllers.containsKey(videoUrl)) {
-      developer.log('🗑️ Releasing controller for: $videoUrl', name: _logName);
+      developer.log('🗑️ Releasing controller for: ${_redact(videoUrl)}', name: _logName);
       await _disposeController(videoUrl);
     }
   }
@@ -229,11 +229,11 @@ class VideoPlayerResourceManager {
 
       try {
         await controller.pause();
-        developer.log('⏸️ Paused controller during bulk pause: ${entry.key}',
+        developer.log('⏸️ Paused controller during bulk pause: ${_redact(entry.key)}',
             name: _logName);
       } catch (e) {
         developer.log(
-            '⚠️ Failed to pause controller during bulk pause: $e (url: ${entry.key})',
+            '⚠️ Failed to pause controller during bulk pause: $e (url: ${_redact(entry.key)})',
             name: _logName);
       }
     }
@@ -265,7 +265,7 @@ class VideoPlayerResourceManager {
       }
 
       if (oldestKey != null) {
-        developer.log('🗑️ Cleaning up oldest controller: $oldestKey',
+        developer.log('🗑️ Cleaning up oldest controller: ${_redact(oldestKey)}',
             name: _logName);
         await _disposeController(oldestKey);
       } else {
@@ -286,7 +286,7 @@ class VideoPlayerResourceManager {
     if (controller != null) {
       try {
         await controller.dispose();
-        developer.log('✅ Controller disposed for: $videoUrl', name: _logName);
+        developer.log('✅ Controller disposed for: ${_redact(videoUrl)}', name: _logName);
       } catch (e) {
         developer.log('⚠️ Error disposing controller: $e', name: _logName);
       }
@@ -319,13 +319,13 @@ class VideoPlayerResourceManager {
     return {
       'activeControllers': _activeControllers.length,
       'maxConcurrentPlayers': _maxConcurrentPlayers,
-      'controllerUrls': _activeControllers.keys.toList(),
+      'controllerUrls': _activeControllers.keys.map(_redact).toList(),
     };
   }
 
   /// Check if a video format is supported to prevent codec issues
   static bool isVideoFormatSupported(String url) {
-    final extension = url.split('.').last.toLowerCase().split('?').first;
+    final extension = _extensionOf(url);
 
     // Supported formats for most Android devices
     const supportedFormats = [
@@ -363,7 +363,7 @@ class VideoPlayerResourceManager {
 
   /// Get video codec information for debugging
   static String getVideoCodecInfo(String url) {
-    final extension = url.split('.').last.toLowerCase().split('?').first;
+    final extension = _extensionOf(url);
 
     String baseCodec;
     switch (extension) {
@@ -407,4 +407,21 @@ class TimeoutException implements Exception {
 
   @override
   String toString() => 'TimeoutException: $message (${timeout.inSeconds}s)';
+}
+
+/// A media URL with its signature and every other query parameter removed, so
+/// a private signed R2 URL is never written to the log. A signed GET URL is a
+/// short-lived credential: anyone holding it can read that private object.
+String _redact(String url) {
+  final cut = url.indexOf('?');
+  final withoutQuery = cut < 0 ? url : url.substring(0, cut);
+  return cut < 0 ? withoutQuery : '$withoutQuery?<signature-hidden>';
+}
+
+/// The file extension from a URL's path only — a signed URL's long query
+/// string must never be mistaken for it.
+String _extensionOf(String url) {
+  final path = _redact(url).split('#').first;
+  final name = path.split('/').last;
+  return name.contains('.') ? name.split('.').last.toLowerCase() : '';
 }

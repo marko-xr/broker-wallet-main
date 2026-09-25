@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,7 +13,55 @@ import 'package:video_player/video_player.dart';
 class MediaCacheManager {
   static final MediaCacheManager _instance = MediaCacheManager._internal();
   factory MediaCacheManager() => _instance;
-  MediaCacheManager._internal();
+
+  MediaCacheManager._internal() {
+    // Removing bytes from disk is not enough on its own: a retained
+    // ImageProvider, or an image already decoded into Flutter's own cache,
+    // can still put those pixels back on screen. Listening here means every
+    // removal reaches memory as well.
+    // `this`, never `_instance`: reading the lazy static from inside its own
+    // initializer would re-enter it.
+    OfflineMediaService.addCacheKeyForgetListener(forget);
+  }
+
+  /// Drops any in-memory copy held under [cacheKey].
+  ///
+  /// Evicts the decoded image from Flutter's image cache as well as the
+  /// provider held here, so nothing can redisplay bytes that were removed.
+  void forget(String cacheKey) {
+    final provider = _imageCache.remove(cacheKey);
+    if (provider == null) return;
+    unawaited(Future<void>.sync(() => provider.evict()).catchError((_) {}));
+  }
+
+  /// Drops every private Offer entry, for use when the signed-in account
+  /// changes.
+  ///
+  /// Keys are already account-scoped, so a new session could never address
+  /// the previous account's entries; this releases them rather than leaving
+  /// another account's decoded photos resident for the rest of the process.
+  void invalidateOfferMediaForAccountChange() {
+    final keys = _imageCache.keys
+        .where((key) => key.startsWith(offerMediaCacheKeyPrefix))
+        .toList(growable: false);
+    for (final key in keys) {
+      forget(key);
+    }
+  }
+
+  /// Convenience for the single canonical account-transition point.
+  static void invalidateForAccountChange() =>
+      MediaCacheManager().invalidateOfferMediaForAccountChange();
+
+  /// How many private Offer providers are currently retained in memory.
+  ///
+  /// Exposed so removal can be asserted rather than assumed: the whole point
+  /// of the listener above is that deleting bytes from disk also releases
+  /// them here.
+  @visibleForTesting
+  int get debugRetainedOfferMediaCount => _imageCache.keys
+      .where((key) => key.startsWith(offerMediaCacheKeyPrefix))
+      .length;
 
   final Map<String, ImageProvider> _imageCache = {};
   final Map<String, VideoPlayerController> _videoCache = {};
@@ -46,9 +96,10 @@ class MediaCacheManager {
   }
 
   // Preload image with immediate return of cached version
-  ImageProvider getOptimizedImage(String url) {
-    if (_imageCache.containsKey(url)) {
-      return _imageCache[url]!;
+  ImageProvider getOptimizedImage(String url, {String? cacheKey}) {
+    final identity = cacheKey ?? url;
+    if (cacheKey == null && _imageCache.containsKey(identity)) {
+      return _imageCache[identity]!;
     }
 
     // Handle local or non-network URLs via OfflineMediaService
@@ -56,18 +107,22 @@ class MediaCacheManager {
       final provider = _getLocalImageProvider(url) ??
           const AssetImage('assets/icons/placeholder.png');
 
-      _imageCache[url] = provider;
+      _imageCache[identity] = provider;
       return provider;
     }
 
     final imageProvider = CachedNetworkImageProvider(
       url,
-      cacheKey: url,
+      cacheKey: cacheKey,
       maxWidth: 800, // Optimize for performance
       maxHeight: 600,
     );
 
-    _imageCache[url] = imageProvider;
+    // For signed media, replace the in-memory provider with one carrying the
+    // newest transport URL while keeping the same disk-cache identity. This
+    // gives an explicit retry a fresh URL after expiry instead of reusing a
+    // provider that already failed with the old signature.
+    _imageCache[identity] = imageProvider;
 
     // Prefetch in background
     _prefetchImage(imageProvider);

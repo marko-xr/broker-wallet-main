@@ -1,9 +1,13 @@
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/video_player_resource_manager.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -38,6 +42,16 @@ class MediaItem {
   /// caller has no safe stable identity, preserving URL-keyed behavior.
   final String? cacheKey;
 
+  /// Offer media only: this device's copy of the bytes, a video's still
+  /// frame and length, and — for an item still in the upload queue — its
+  /// upload state. Null for every other caller.
+  final String? localFilePath;
+  final String? posterPath;
+  final int? durationMs;
+  final OfferMediaUploadPhase? uploadPhase;
+  final double? uploadProgress;
+  final String? failureMessageKey;
+
   MediaItem({
     required this.url,
     required this.type,
@@ -45,7 +59,16 @@ class MediaItem {
     this.mimeType,
     this.mediaObjectId,
     this.cacheKey,
+    this.localFilePath,
+    this.posterPath,
+    this.durationMs,
+    this.uploadPhase,
+    this.uploadProgress,
+    this.failureMessageKey,
   });
+
+  /// Whether this item is still on its way to the server.
+  bool get isPendingUpload => uploadPhase != null;
 
   /// Describes one piece of private Offer media.
   ///
@@ -69,6 +92,12 @@ class MediaItem {
       type: detected == MediaType.unknown ? MediaType.image : detected,
       mediaObjectId: ref.mediaObjectId.isEmpty ? null : ref.mediaObjectId,
       cacheKey: ref.cacheKey,
+      localFilePath: local.isEmpty ? null : local,
+      posterPath: ref.posterPath,
+      durationMs: ref.durationMs,
+      uploadPhase: ref.uploadPhase,
+      uploadProgress: ref.progress,
+      failureMessageKey: ref.failureMessageKey,
     );
   }
 
@@ -154,6 +183,15 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
   final String? fallbackSvgPath; // For entities without media
   final VoidCallback? onRetry;
 
+  /// Offer media only: Retry and Remove for an item whose upload failed,
+  /// by its `mediaObjectId`.
+  final void Function(String mediaObjectId)? onRetryUpload;
+  final void Function(String mediaObjectId)? onRemoveUpload;
+
+  /// Offer media only: signs the media again and returns the item's new
+  /// link, for a private video whose link has expired. Null when none.
+  final Future<String?> Function(String mediaObjectId)? refreshSignedUrl;
+
   const OptimizedMediaGalleryWidget({
     super.key,
     this.mediaRefs,
@@ -168,6 +206,9 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
     this.autoPlay = false,
     this.fallbackSvgPath,
     this.onRetry,
+    this.onRetryUpload,
+    this.onRemoveUpload,
+    this.refreshSignedUrl,
   });
 
   @override
@@ -220,6 +261,16 @@ class _OptimizedMediaGalleryWidgetState
         _synchronizeMediaItems(resetIndex: indexChanged);
       });
 
+      // An upload's progress changes many times a second; only a change to
+      // what the server holds needs the scroll and prefetch below.
+      if (!indexChanged &&
+          _sameServerMedia(oldWidget.mediaRefs, widget.mediaRefs) &&
+          listEquals(oldWidget.mediaUrls, widget.mediaUrls) &&
+          listEquals(oldWidget.mediaIds, widget.mediaIds) &&
+          oldWidget.mediaOwnerId == widget.mediaOwnerId) {
+        return;
+      }
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (widget.pageController == null &&
             _pageController.hasClients &&
@@ -233,6 +284,18 @@ class _OptimizedMediaGalleryWidgetState
         _prefetchInitialMedia();
       });
     }
+  }
+
+  /// Whether [a] and [b] name the same server-held items with the same links,
+  /// whatever the upload queue's items are doing meanwhile.
+  static bool _sameServerMedia(List<OfferMediaRef>? a, List<OfferMediaRef>? b) {
+    if (a == null || b == null) return a == b;
+    List<String> held(List<OfferMediaRef> refs) => [
+          for (final ref in refs)
+            if (ref.uploadPhase == null)
+              '${ref.mediaObjectId} ${ref.signedUrl}',
+        ];
+    return listEquals(held(a), held(b));
   }
 
   void _prefetchInitialMedia() {
@@ -426,7 +489,8 @@ class _OptimizedMediaGalleryWidgetState
                 if (index < _mediaItems.length) {
                   final currentItem = _mediaItems[index];
                   if (currentItem.type == MediaType.video) {
-                    _videoResourceManager.pauseAllExcept(currentItem.url);
+                    _videoResourceManager.pauseAllExcept(
+                        currentItem.cacheKey ?? currentItem.url);
                   } else {
                     _videoResourceManager.pauseAll();
                   }
@@ -439,11 +503,21 @@ class _OptimizedMediaGalleryWidgetState
             },
             itemCount: _mediaItems.length,
             itemBuilder: (context, index) {
+              final item = _mediaItems[index];
               return RepaintBoundary(
-                key: ValueKey(
-                  _mediaItems[index].cacheKey ?? _mediaItems[index].url,
-                ),
-                child: _buildMediaItem(_mediaItems[index], context),
+                key: ValueKey(item.cacheKey ?? item.url),
+                // Offer media keeps one shape whether or not the item is still
+                // uploading, so a video playing from its local copy keeps
+                // playing when the upload finishes and the item turns ready.
+                child: widget.mediaRefs != null || item.isPendingUpload
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _buildMediaItem(item, context),
+                          if (item.isPendingUpload) _buildUploadStatus(item),
+                        ],
+                      )
+                    : _buildMediaItem(item, context),
               );
             },
           ),
@@ -486,7 +560,71 @@ class _OptimizedMediaGalleryWidgetState
     );
   }
 
+  /// An upload's state over its page (Offer media only), with Retry and
+  /// Remove when it failed.
+  Widget _buildUploadStatus(MediaItem item) {
+    final id = item.mediaObjectId;
+    final retry = widget.onRetryUpload;
+    final remove = widget.onRemoveUpload;
+    return OfferMediaUploadStatus(
+      phase: item.uploadPhase!,
+      progress: item.uploadProgress,
+      failureMessageKey: item.failureMessageKey,
+      onRetry: id == null || retry == null ? null : () => retry(id),
+      onRemove: id == null || remove == null ? null : () => remove(id),
+      // Above the counter, page dots and "View All" drawn along the bottom.
+      bottomInset: 36,
+    );
+  }
+
+  /// Decode width for a full-width header image.
+  int _headerCacheWidth(BuildContext context) =>
+      (MediaQuery.sizeOf(context).width *
+              MediaQuery.devicePixelRatioOf(context))
+          .round();
+
   Widget _buildMediaItem(MediaItem mediaItem, BuildContext context) {
+    // Private Offer media: local bytes first, and a video is never loaded
+    // before the viewer asks to play it.
+    if (widget.mediaRefs != null) {
+      switch (mediaItem.type) {
+        case MediaType.image:
+          final local = mediaItem.localFilePath;
+          if (mediaItem.isPendingUpload &&
+              local != null &&
+              File(local).existsSync()) {
+            return Image.file(
+              File(local),
+              fit: BoxFit.cover,
+              cacheWidth: _headerCacheWidth(context),
+              gaplessPlayback: true,
+            );
+          }
+          return _buildOptimizedImageViewer(
+            mediaItem,
+            context,
+            cacheWidth: _headerCacheWidth(context),
+          );
+        case MediaType.video:
+          final localVideo =
+              mediaItem.isPendingUpload ? mediaItem.localFilePath : null;
+          return OfferVideoTile(
+            key: ValueKey(
+                'offer-video-${mediaItem.mediaObjectId ?? mediaItem.url}'),
+            url: mediaItem.url,
+            localPath: localVideo,
+            mediaObjectId: mediaItem.mediaObjectId,
+            controllerKey: mediaItem.cacheKey,
+            posterPath: mediaItem.posterPath,
+            durationMs: mediaItem.durationMs,
+            playable: !mediaItem.isPendingUpload || localVideo != null,
+            refreshSignedUrl: widget.refreshSignedUrl,
+          );
+        case MediaType.document:
+        case MediaType.unknown:
+          break;
+      }
+    }
     switch (mediaItem.type) {
       case MediaType.image:
         return _buildOptimizedImageViewer(mediaItem, context);
@@ -499,13 +637,18 @@ class _OptimizedMediaGalleryWidgetState
     }
   }
 
-  Widget _buildOptimizedImageViewer(MediaItem mediaItem, BuildContext context) {
+  Widget _buildOptimizedImageViewer(
+    MediaItem mediaItem,
+    BuildContext context, {
+    int? cacheWidth,
+  }) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 200),
       child: OfflineMediaService.instance.buildOfflineAwareImage(
         imageUrl: mediaItem.url,
         cacheKey: mediaItem.cacheKey,
         fit: BoxFit.cover,
+        cacheWidth: cacheWidth,
         placeholder: widget.imagePlaceholder ??
             Container(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -777,6 +920,7 @@ class _OptimizedMediaGalleryWidgetState
           mediaUrls: widget.mediaUrls,
           initialIndex: _currentIndex,
           title: 'Media Gallery',
+          refreshSignedUrl: widget.refreshSignedUrl,
         ),
       ),
     );
@@ -833,7 +977,9 @@ class _OptimizedMediaGalleryWidgetState
     return Positioned(
       left: 16,
       bottom: bottomOffset,
-      child: Container(
+      // Only indicates: never takes a touch meant for the page beneath.
+      child: IgnorePointer(
+          child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: Color.fromARGB((0.6 * 255).round(), 0, 0, 0),
@@ -846,7 +992,7 @@ class _OptimizedMediaGalleryWidgetState
                 fontWeight: FontWeight.w600,
               ),
         ),
-      ),
+      )),
     );
   }
 
@@ -855,7 +1001,10 @@ class _OptimizedMediaGalleryWidgetState
       bottom: 20,
       left: 0,
       right: 0,
-      child: Row(
+      // Only indicates: a portrait video reaches the bottom edge and these
+      // dots lie exactly across its seek bar, so they must let touches through.
+      child: IgnorePointer(
+          child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(
           _mediaItems.length,
@@ -872,7 +1021,7 @@ class _OptimizedMediaGalleryWidgetState
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -965,10 +1114,24 @@ class OptimizedVideoPlayerWidget extends StatefulWidget {
   final String videoUrl; // Changed to URL instead of controller
   final bool autoPlay;
 
+  /// A stable name for the player when [videoUrl] is not one (a private
+  /// video's signed link). Null: the URL names it, as before.
+  final String? controllerKey;
+
+  /// Called instead of showing this widget's own error when the video could
+  /// not be opened, so the caller can recover (e.g. sign a new link).
+  final VoidCallback? onInitializationFailed;
+
+  /// How many times the player may try to open [videoUrl].
+  final int maxAttempts;
+
   const OptimizedVideoPlayerWidget({
     super.key,
     required this.videoUrl,
     this.autoPlay = false,
+    this.controllerKey,
+    this.onInitializationFailed,
+    this.maxAttempts = 3,
   });
 
   @override
@@ -992,8 +1155,21 @@ class _OptimizedVideoPlayerWidgetState
     _initializeVideo();
   }
 
+  /// Gives the controller back to the manager, which owns it: the player
+  /// never disposes a controller itself, and releases one exactly once.
+  void _releaseController() {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) unawaited(_resourceManager.release(controller));
+  }
+
   Future<void> _initializeVideo() async {
     if (!mounted) return;
+
+    // A Retry: let go of the previous player and its controls first.
+    _chewieController?.dispose();
+    _chewieController = null;
+    _releaseController();
 
     setState(() {
       _isLoading = true;
@@ -1004,14 +1180,34 @@ class _OptimizedVideoPlayerWidgetState
     try {
       // Check if video format is supported
       if (!VideoPlayerResourceManager.isVideoFormatSupported(widget.videoUrl)) {
+        final key = widget.controllerKey;
+        if (key != null) {
+          // Refused before any player exists: say so, rather than leaving
+          // the caller a failure with no cause.
+          _resourceManager.noteFailure(key, 'format-refused');
+          OfferMediaDiagnostics.log('player-init-failed', fields: {
+            'stage': 'format-check',
+            'source': widget.videoUrl.startsWith('http') ? 'network' : 'local',
+            'cause': 'format-refused',
+          });
+        }
         throw Exception(
             'Unsupported video format. Codec: ${VideoPlayerResourceManager.getVideoCodecInfo(widget.videoUrl)}');
       }
 
       // Get controller from resource manager
-      final controller = await _resourceManager.getController(widget.videoUrl);
+      final controller = await _resourceManager.getController(
+        widget.videoUrl,
+        key: widget.controllerKey,
+        maxAttempts: widget.maxAttempts,
+      );
 
-      if (!mounted) return;
+      if (!mounted) {
+        // Closed while the player was still starting: this widget holds it
+        // now, so it must give it back rather than leave it held forever.
+        if (controller != null) unawaited(_resourceManager.release(controller));
+        return;
+      }
 
       if (controller != null && controller.value.isInitialized) {
         _controller = controller;
@@ -1031,8 +1227,18 @@ class _OptimizedVideoPlayerWidgetState
         _hasError = true;
         _errorMessage = e.toString();
       });
+      final onFailed = widget.onInitializationFailed;
+      if (onFailed != null) {
+        // A format refusal fails inside initState, while the caller is still
+        // building; the caller rebuilds itself in response, so never then.
+        scheduleMicrotask(() {
+          if (mounted) onFailed();
+        });
+      }
     }
   }
+
+  String get _controllerName => widget.controllerKey ?? widget.videoUrl;
 
   void _createChewieController() {
     if (_controller == null || !mounted) return;
@@ -1102,24 +1308,36 @@ class _OptimizedVideoPlayerWidgetState
 
   @override
   void deactivate() {
+    final name = _controllerName;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _resourceManager.pauseController(widget.videoUrl);
+      _resourceManager.pauseController(name);
     });
     super.deactivate();
   }
 
   @override
   void dispose() {
+    // The controls first (they listen to the controller), then the
+    // controller goes back to the manager, which disposes it only once no
+    // other player shows it.
     _chewieController?.dispose();
-    // Note: Don't dispose _controller here as it's managed by the resource manager
+    _chewieController = null;
+    _releaseController();
+    final name = _controllerName;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _resourceManager.pauseController(widget.videoUrl);
+      // A player still shown elsewhere (Details under full screen) stops too.
+      _resourceManager.pauseController(name);
     });
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // The caller shows its own recovery instead of this widget's error.
+    if (_hasError && widget.onInitializationFailed != null) {
+      return Container(color: Colors.black);
+    }
+
     if (_isLoading) {
       return Container(
         color: Colors.black,
@@ -1193,6 +1411,270 @@ class _OptimizedVideoPlayerWidgetState
             strokeWidth: 2,
             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One private Offer video.
+///
+/// Shows the still frame this device made (or a plain tile with the video's
+/// length) until the viewer taps it, so no video is fetched before it is
+/// wanted. A video still uploading plays from this device's own copy
+/// ([localPath]) and never from the network, where it does not exist yet. A
+/// ready video's player is named by the video's stable cache key rather than
+/// by its signed link, which changes every time it is signed. When the link
+/// fails (it may have expired), the video is signed again once,
+/// automatically; after that the viewer gets a plain message and Retry.
+class OfferVideoTile extends StatefulWidget {
+  const OfferVideoTile({
+    super.key,
+    required this.url,
+    this.localPath,
+    this.mediaObjectId,
+    this.controllerKey,
+    this.posterPath,
+    this.durationMs,
+    this.playable = true,
+    this.refreshSignedUrl,
+    this.fit = BoxFit.cover,
+  });
+
+  final String url;
+
+  /// This device's copy of a video still uploading, played instead of [url].
+  final String? localPath;
+  final String? mediaObjectId;
+  final String? controllerKey;
+  final String? posterPath;
+  final int? durationMs;
+
+  /// False while the video is uploading with no local copy to play.
+  final bool playable;
+  final Future<String?> Function(String mediaObjectId)? refreshSignedUrl;
+  final BoxFit fit;
+
+  @override
+  State<OfferVideoTile> createState() => _OfferVideoTileState();
+}
+
+enum _VideoTilePhase { idle, refreshing, playing, failed }
+
+class _OfferVideoTileState extends State<OfferVideoTile> {
+  late String _url = widget.url;
+
+  /// What the player was opened with: [_url], or the local copy.
+  String _source = '';
+  _VideoTilePhase _state = _VideoTilePhase.idle;
+  bool _refreshedThisAttempt = false;
+
+  bool get _playingLocal => _source.isNotEmpty && _source != _url;
+
+  @override
+  void didUpdateWidget(covariant OfferVideoTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A newer link, from a refresh of the whole Offer, is taken up unless a
+    // video is already playing from the older one.
+    if (widget.url != oldWidget.url && _state != _VideoTilePhase.playing) {
+      _url = widget.url;
+    }
+  }
+
+  String? get _existingLocalCopy {
+    final local = widget.localPath?.trim();
+    if (local == null || local.isEmpty) return null;
+    return File(local).existsSync() ? local : null;
+  }
+
+  void _log(String event, [Map<String, Object?>? fields]) {
+    final id = widget.mediaObjectId;
+    OfferMediaDiagnostics.log(event, id: id, fields: fields);
+  }
+
+  void _play() {
+    if (!widget.playable) return;
+    _refreshedThisAttempt = false;
+    final local = _existingLocalCopy;
+    if (local != null) {
+      _log('play', {'source': 'local'});
+      setState(() {
+        _source = local;
+        _state = _VideoTilePhase.playing;
+      });
+      return;
+    }
+    if (_url.trim().isEmpty) {
+      unawaited(_refresh());
+      return;
+    }
+    _log('play', {'source': 'network'});
+    setState(() {
+      _source = _url;
+      _state = _VideoTilePhase.playing;
+    });
+  }
+
+  void _onPlayerFailed() {
+    if (!mounted) return;
+    final key = widget.controllerKey;
+    _log('play-failed', {
+      'source': _playingLocal ? 'local' : 'network',
+      'cause': key == null
+          ? null
+          : VideoPlayerResourceManager().lastFailureCategory(key),
+      'afterRefresh': _refreshedThisAttempt,
+    });
+    // A local copy that cannot be opened is not helped by a new link.
+    if (_refreshedThisAttempt || _playingLocal) {
+      setState(() => _state = _VideoTilePhase.failed);
+      return;
+    }
+    unawaited(_refresh());
+  }
+
+  Future<void> _refresh() async {
+    _refreshedThisAttempt = true;
+    final id = widget.mediaObjectId;
+    final refresh = widget.refreshSignedUrl;
+    if (id == null || refresh == null) {
+      setState(() => _state = _VideoTilePhase.failed);
+      return;
+    }
+    setState(() => _state = _VideoTilePhase.refreshing);
+    String? fresh;
+    try {
+      fresh = await refresh(id);
+    } catch (_) {
+      fresh = null;
+    }
+    if (!mounted) return;
+    final link = fresh?.trim() ?? '';
+    _log('play-link-refreshed', {'ok': link.isNotEmpty});
+    setState(() {
+      if (link.isEmpty) {
+        _state = _VideoTilePhase.failed;
+      } else {
+        _url = link;
+        _source = link;
+        _state = _VideoTilePhase.playing;
+      }
+    });
+  }
+
+  static String _formatDuration(int milliseconds) {
+    final total = (milliseconds / 1000).round();
+    final minutes = total ~/ 60;
+    final seconds = (total % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_state == _VideoTilePhase.playing) {
+      return OptimizedVideoPlayerWidget(
+        key: ValueKey(_source),
+        videoUrl: _source,
+        autoPlay: true,
+        controllerKey: widget.controllerKey,
+        // One attempt: the recovery for a private link is a new link, which
+        // the tile fetches itself, not the same request again.
+        maxAttempts: 1,
+        onInitializationFailed: _onPlayerFailed,
+      );
+    }
+
+    final loc = AppLocalizations.of(context);
+    final textStyle = Theme.of(context)
+        .textTheme
+        .bodyMedium
+        ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600);
+    final duration = widget.durationMs;
+
+    final Widget centre;
+    switch (_state) {
+      case _VideoTilePhase.refreshing:
+        centre = const SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        );
+      case _VideoTilePhase.failed:
+        centre = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              loc.translate('offerMediaVideoUnavailable'),
+              style: textStyle,
+              textAlign: TextAlign.center,
+            ),
+            TextButton(
+              onPressed: _play,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
+              child: Text(loc.translate('retry')),
+            ),
+          ],
+        );
+      case _VideoTilePhase.idle:
+      case _VideoTilePhase.playing:
+        centre = widget.playable
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 64,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    duration == null
+                        ? loc.translate('offerMediaTapToPlay')
+                        : '${loc.translate('offerMediaTapToPlay')} · '
+                            '${_formatDuration(duration)}',
+                    style: textStyle,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              )
+            : const Icon(Icons.videocam_rounded, color: Colors.white, size: 48);
+    }
+
+    return Semantics(
+      button: widget.playable,
+      label: loc.translate('offerMediaTapToPlay'),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.playable && _state == _VideoTilePhase.idle ? _play : null,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Its own frame, the one kept for its media id, or — for a ready
+            // video this device has none of — one made from the video.
+            OfferVideoPoster(
+              cacheKey: widget.controllerKey,
+              signedUrl: _url,
+              posterPath: widget.posterPath,
+              fit: widget.fit,
+              cacheWidth: (MediaQuery.sizeOf(context).width *
+                      MediaQuery.devicePixelRatioOf(context))
+                  .round(),
+              placeholder: const ColoredBox(color: Colors.black87),
+              loading: const MediaLoadingPlaceholder(),
+            ),
+            ColoredBox(color: Colors.black.withValues(alpha: 0.25)),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: centre,
+              ),
+            ),
+          ],
         ),
       ),
     );

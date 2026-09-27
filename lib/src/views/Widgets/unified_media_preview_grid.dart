@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 enum MediaSourceType { file, url }
@@ -16,6 +20,10 @@ class MediaPreviewItem {
   final int? size;
   final PlatformFile? platformFile; // Only for file type
 
+  /// Set only for Offer media: its stable identity, local bytes and upload
+  /// state. Every other caller leaves it null and renders exactly as before.
+  final OfferMediaRef? offerMedia;
+
   MediaPreviewItem({
     required this.identifier,
     required this.sourceType,
@@ -23,7 +31,23 @@ class MediaPreviewItem {
     this.contentType,
     this.size,
     this.platformFile,
+    this.offerMedia,
   });
+
+  /// One Offer media item — on the server, in the upload queue, or just
+  /// picked — drawn from local bytes or its stable cache identity rather
+  /// than from a signed URL.
+  factory MediaPreviewItem.fromOfferMedia(OfferMediaRef ref) {
+    return MediaPreviewItem(
+      identifier: ref.mediaObjectId,
+      sourceType:
+          ref.hasLocalBytes ? MediaSourceType.file : MediaSourceType.url,
+      displayName: ref.displayName,
+      contentType: ref.isVideo ? 'video/mp4' : 'image/jpeg',
+      size: ref.byteLength,
+      offerMedia: ref,
+    );
+  }
 
   // Create from PlatformFile (Save mode)
   factory MediaPreviewItem.fromFile(PlatformFile file) {
@@ -157,6 +181,13 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
   final int maxDisplayFiles;
   final AppLocalizations localization;
 
+  /// Offer media only: Retry for an item whose upload can be retried.
+  final void Function(int index)? onRetry;
+
+  /// Offer media only: makes the "+N more" tile open the rest, so every item
+  /// can be seen and removed. Without it the tile is inert, as before.
+  final VoidCallback? onShowAll;
+
   const UnifiedMediaPreviewGrid({
     super.key,
     required this.mediaItems,
@@ -165,6 +196,8 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
     this.showAddButton = true,
     this.maxDisplayFiles = 8,
     required this.localization,
+    this.onRetry,
+    this.onShowAll,
   });
 
   /// Helper method to validate if URL is suitable for CachedNetworkImage
@@ -306,7 +339,9 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
           Positioned.fill(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: _buildPreviewContent(item, colors),
+              child: item.offerMedia != null
+                  ? _buildOfferMediaPreview(context, item.offerMedia!, colors)
+                  : _buildPreviewContent(item, colors),
             ),
           ),
           // File info overlay
@@ -335,7 +370,11 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _getTruncatedFileName(item.displayName ?? 'Unknown file'),
+                    _getTruncatedFileName(item.displayName ??
+                        (item.offerMedia != null
+                            ? localization.translate(
+                                item.offerMedia!.isVideo ? 'video' : 'photo')
+                            : 'Unknown file')),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -356,6 +395,20 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
               ),
             ),
           ),
+          // Upload state (Offer media only)
+          if (item.offerMedia?.uploadPhase != null)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: OfferMediaUploadStatus(
+                  phase: item.offerMedia!.uploadPhase!,
+                  progress: item.offerMedia!.progress,
+                  failureMessageKey: item.offerMedia!.failureMessageKey,
+                  onRetry: onRetry == null ? null : () => onRetry!(index),
+                  compact: true,
+                ),
+              ),
+            ),
           // Remove button
           Positioned(
             top: 8,
@@ -473,6 +526,78 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
     }
   }
 
+  /// An Offer media item: its local bytes first (a file just picked, a queued
+  /// copy, or an original already on this device), else its stable cache
+  /// identity, decoded at tile size. A video shows its still frame when this
+  /// device made one.
+  Widget _buildOfferMediaPreview(
+    BuildContext context,
+    OfferMediaRef ref,
+    ColorScheme colors,
+  ) {
+    final cacheWidth = (MediaQuery.sizeOf(context).width /
+            2 *
+            MediaQuery.devicePixelRatioOf(context))
+        .round();
+    final failed = _buildErrorPreview(
+      localization.translate('failedToLoadImage'),
+      colors,
+    );
+
+    if (ref.isVideo) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // Its own frame, the one kept for its media id, or — for a video
+          // already on the Offer — one made from the video.
+          OfferVideoPoster(
+            cacheKey: ref.cacheKey,
+            signedUrl: ref.signedUrl,
+            posterPath: ref.posterPath,
+            cacheWidth: cacheWidth,
+            placeholder: Container(
+              color: Colors.black87,
+              child: Center(
+                child: Icon(
+                  Icons.videocam_rounded,
+                  size: 48,
+                  color: colors.primary,
+                ),
+              ),
+            ),
+          ),
+          const Positioned(
+            bottom: 8,
+            right: 8,
+            child: Icon(
+              Icons.play_circle_fill,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final local = ref.localFilePath;
+    if (local != null && File(local).existsSync()) {
+      return Image.file(
+        File(local),
+        fit: BoxFit.cover,
+        cacheWidth: cacheWidth,
+        errorBuilder: (context, error, stackTrace) => failed,
+      );
+    }
+    return OfflineMediaService.instance.buildOfflineAwareImage(
+      imageUrl: ref.signedUrl ?? '',
+      cacheKey: ref.cacheKey,
+      fit: BoxFit.cover,
+      cacheWidth: cacheWidth,
+      placeholder: Container(color: colors.surfaceContainerHighest),
+      errorWidget: failed,
+    );
+  }
+
   Widget _buildErrorPreview(String message, ColorScheme colors) {
     return Container(
       color: colors.errorContainer,
@@ -501,6 +626,16 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
   }
 
   Widget _buildMoreTile(BuildContext context, ColorScheme colors) {
+    final tile = _buildMoreTileContent(context, colors);
+    final showAll = onShowAll;
+    if (showAll == null) return tile;
+    return Semantics(
+      button: true,
+      child: GestureDetector(onTap: showAll, child: tile),
+    );
+  }
+
+  Widget _buildMoreTileContent(BuildContext context, ColorScheme colors) {
     final remaining = mediaItems.length - maxDisplayFiles;
     return Container(
       decoration: BoxDecoration(

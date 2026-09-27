@@ -28,6 +28,10 @@ SUPABASE_PUBLISHABLE_KEY = "sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz"
 R2_BUCKET_NAME = "broker-wallet-media"
 R2_S3_ENDPOINT = "https://cb2f5eeef339651f8c7d94dd04866726.r2.cloudflarestorage.com"
 ALLOWED_ORIGIN = "*"
+# Offer-media cleanup sweeps (worker.js runOfferMediaSweeps): off | dry_run | on.
+# Ships off. Changing it is an owner-approved step: dry_run first, inspect the
+# logged counts, and only then on.
+OFFER_MEDIA_SWEEP_MODE = "off"
 
 [secrets]
 required = [
@@ -66,6 +70,8 @@ SUPABASE_PUBLISHABLE_KEY = "sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz"
 R2_BUCKET_NAME = "broker-wallet-media-staging"
 R2_S3_ENDPOINT = "https://cb2f5eeef339651f8c7d94dd04866726.r2.cloudflarestorage.com"
 ALLOWED_ORIGIN = "*"
+# Offer-media cleanup sweeps: off | dry_run | on. Ships off (see above).
+OFFER_MEDIA_SWEEP_MODE = "off"
 
 [env.staging.secrets]
 required = [

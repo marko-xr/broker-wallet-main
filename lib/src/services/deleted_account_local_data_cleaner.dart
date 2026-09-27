@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:broker_wallet/src/services/count_cache_service.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
+import 'package:broker_wallet/src/services/offer_media_upload_queue.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport, OfflineMediaService;
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
@@ -16,6 +17,10 @@ typedef ProfileMediaForgetter = Future<void> Function({
 typedef OfferMediaForgetter = Future<OfferMediaCleanupReport> Function({
   String? ownerId,
 });
+
+/// Drops every queued Offer media upload of one account; returns how many
+/// could not be removed completely.
+typedef OfferMediaUploadPurger = Future<int> Function(String ownerId);
 
 /// Removes what this device holds for an account that the server has deleted.
 ///
@@ -31,6 +36,7 @@ typedef OfferMediaForgetter = Future<OfferMediaCleanupReport> Function({
 ///  * that account's own profile avatar cache entries;
 ///  * that account's own Offer-media catalogue, the cached image bytes behind
 ///    it, and its adopted originals — all keyed by that account's id;
+///  * that account's own queued Offer media uploads and their local copies;
 ///  * that account's own Favorites cache box (`cached_favorites_<uid>`, see
 ///    `FavoriteService.boxNameForUid`) — deleted from disk outright rather
 ///    than merely cleared, and safe to do unconditionally because the box
@@ -55,13 +61,17 @@ class DeletedAccountLocalDataCleaner {
   DeletedAccountLocalDataCleaner({
     ProfileMediaForgetter? forgetProfileMedia,
     OfferMediaForgetter? forgetOfferMedia,
+    OfferMediaUploadPurger? purgeOfferMediaUploads,
   })  : _forgetProfileMedia = forgetProfileMedia ??
             OfflineMediaService.instance.forgetProfileMedia,
         _forgetOfferMedia =
-            forgetOfferMedia ?? OfflineMediaService.instance.forgetOfferMedia;
+            forgetOfferMedia ?? OfflineMediaService.instance.forgetOfferMedia,
+        _purgeOfferMediaUploads = purgeOfferMediaUploads ??
+            ((ownerId) => OfferMediaUploadQueue.instance.purgeOwner(ownerId));
 
   final ProfileMediaForgetter _forgetProfileMedia;
   final OfferMediaForgetter _forgetOfferMedia;
+  final OfferMediaUploadPurger _purgeOfferMediaUploads;
 
   static const List<String> _uidKeyedBoxes = [
     'local_profile',
@@ -97,6 +107,11 @@ class DeletedAccountLocalDataCleaner {
     await _step(
       () => Hive.deleteBoxFromDisk(FavoriteService.boxNameForUid(deletedUid)),
     );
+
+    // Queued uploads first, so none keeps sending a deleted account's file.
+    // Their local copies carry the account's file-name prefix, so the sweep
+    // below removes any this step leaves; the report reflects that sweep.
+    await _step(() => _purgeOfferMediaUploads(deletedUid));
 
     // Offer media is catalogued and named per account id, so the deleted
     // account's entries are removable precisely whether or not it was the

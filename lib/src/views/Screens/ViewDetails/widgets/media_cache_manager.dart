@@ -183,12 +183,13 @@ class MediaCacheManager {
 
       // Initialize in background without awaiting
       controller.initialize().catchError((error) {
-        debugPrint('Failed to initialize video controller: $error');
+        debugPrint(
+            'Failed to initialize video controller: ${error.runtimeType}');
       });
 
       return controller;
     } catch (e) {
-      debugPrint('Failed to create video controller: $e');
+      debugPrint('Failed to create video controller: ${e.runtimeType}');
       return null;
     }
   }
@@ -252,7 +253,7 @@ ImageProvider? _getLocalImageProvider(String url) {
       return FileImage(file);
     }
   } catch (e) {
-    debugPrint('Failed to resolve local image for $url: $e');
+    debugPrint('Failed to resolve local image: ${e.runtimeType}');
   }
 
   return null;

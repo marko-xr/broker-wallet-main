@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../../repositories/repository_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -10,18 +12,67 @@ import '../fast_media_upload_service.dart';
 import '../map_data_cache_service.dart';
 import '../offer_media_cache_identity.dart';
 import '../offer_media_policy.dart';
+import '../offer_media_upload_queue.dart';
 import '../offline_media_service.dart';
 import '../r2_offer_media_upload_service.dart';
 import '../supabase_core_entities_service.dart';
 
+/// What saving an Offer did to its media.
+///
+/// The Offer row itself is saved whenever this is returned. New media is
+/// handed to the upload queue — never reported as uploaded here — and each
+/// removal is reported as it actually went.
+class OfferMediaSaveResult {
+  const OfferMediaSaveResult({
+    required this.offerId,
+    required this.queuedCount,
+    this.failedRemovalIds = const <String>[],
+    this.failedToQueueIds = const <String>[],
+  });
+
+  final String offerId;
+
+  /// New items now in the upload queue.
+  final int queuedCount;
+
+  /// Existing items that could not be removed; they are still on the Offer.
+  final List<String> failedRemovalIds;
+
+  /// New items whose file could not be taken into the app's own storage.
+  final List<String> failedToQueueIds;
+
+  bool get isComplete => failedRemovalIds.isEmpty && failedToQueueIds.isEmpty;
+}
+
 class OfferService {
+  OfferService({
+    R2OfferMediaUploadService Function()? offerMediaUpload,
+    OfferMediaUploadQueue Function()? uploadQueue,
+    SupabaseCoreEntitiesService Function()? coreEntities,
+  })  : _offerMediaUploadFactory =
+            offerMediaUpload ?? R2OfferMediaUploadService.new,
+        _uploadQueueFactory =
+            uploadQueue ?? (() => OfferMediaUploadQueue.instance),
+        _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new;
+
   static const String _collectionName = 'users';
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
   final _mapDataCache = MapDataCacheService();
   final FastMediaUploadService _fastUploadService = FastMediaUploadService();
-  SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
-  final R2OfferMediaUploadService _offerMediaUpload =
-      R2OfferMediaUploadService();
+  // Created on first use, then reused: the Offer media form and gallery read
+  // the signed-in account on every rebuild while an upload reports progress.
+  late final SupabaseCoreEntitiesService _supabase = _coreEntitiesFactory();
+
+  final R2OfferMediaUploadService Function() _offerMediaUploadFactory;
+  final OfferMediaUploadQueue Function() _uploadQueueFactory;
+  final SupabaseCoreEntitiesService Function() _coreEntitiesFactory;
+
+  // Created on first use, so constructing this service never reaches
+  // `Supabase.instance`.
+  late final R2OfferMediaUploadService _offerMediaUpload =
+      _offerMediaUploadFactory();
+
+  OfferMediaUploadQueue get _uploadQueue => _uploadQueueFactory();
 
   String? get _currentUserId =>
       RepositoryProvider.instance.authRepository.currentUserId;
@@ -60,17 +111,119 @@ class OfferService {
     return docId;
   }
 
+  /// Saves the Offer row, applies media removals, and hands new media to the
+  /// persistent upload queue (Supabase mode).
+  ///
+  /// Never uploads and never waits for an upload: the queue shows each new
+  /// item's progress and outcome, and an item is not presented as uploaded
+  /// until the server has accepted it. The Offer row is saved first and is
+  /// never rolled back for a media problem. Removals run before new items are
+  /// queued, so the places they free are available to them.
+  ///
+  /// Every new item already carries its `mediaObjectId`, so calling this again
+  /// after a partial failure cannot duplicate anything: a draft that is
+  /// already queued is not queued twice, and a removal is idempotent.
+  Future<OfferMediaSaveResult> saveOfferWithMedia({
+    required OfferModel offer,
+    required String offerId,
+    List<OfferMediaDraft> newMedia = const <OfferMediaDraft>[],
+    List<String> removedMediaIds = const <String>[],
+    List<String> cancelledUploadIds = const <String>[],
+  }) async {
+    if (!SupabaseConfig.useSupabaseAuth) {
+      throw StateError('saveOfferWithMedia is the Supabase media path.');
+    }
+    final ownerId = _supabase.currentOwnerId;
+    if (ownerId == null || ownerId.isEmpty) {
+      throw StateError('A Supabase session is required.');
+    }
+
+    final existing = await _supabase.getOfferMetadata(offerId);
+    if (existing == null) {
+      await _supabase.saveOffer(offer, offerId: offerId);
+    } else {
+      await _supabase.updateOffer(offerId, offer);
+    }
+
+    final queue = _uploadQueue;
+    final failedRemovals = <String>[];
+    for (final mediaObjectId in removedMediaIds) {
+      try {
+        await _offerMediaUpload.removeMedia(
+          offerId: offerId,
+          mediaObjectId: mediaObjectId,
+        );
+      } catch (_) {
+        failedRemovals.add(mediaObjectId);
+        continue;
+      }
+      try {
+        await OfflineMediaService.instance.forgetOfferMediaItems(
+          ownerId: ownerId,
+          mediaObjectIds: [mediaObjectId],
+        );
+      } catch (_) {
+        // Removed on the server; this device's copy goes with the next
+        // reconciliation of the Offer's media.
+      }
+    }
+    if (failedRemovals.length < removedMediaIds.length) {
+      // Places were freed: anything that found the Offer full goes on.
+      await queue.releaseBlocked(ownerId: ownerId, offerId: offerId);
+    }
+
+    for (final mediaObjectId in cancelledUploadIds) {
+      await queue.cancel(mediaObjectId);
+    }
+
+    var queuedCount = 0;
+    var failedToQueue = const <String>[];
+    if (newMedia.isNotEmpty) {
+      try {
+        final result = await queue.enqueue(
+          ownerId: ownerId,
+          offerId: offerId,
+          drafts: newMedia,
+        );
+        queuedCount = result.queued.length;
+        failedToQueue = result.failedIds;
+      } catch (_) {
+        failedToQueue = [for (final draft in newMedia) draft.mediaObjectId];
+      }
+    }
+
+    return OfferMediaSaveResult(
+      offerId: offerId,
+      queuedCount: queuedCount,
+      failedRemovalIds: failedRemovals,
+      failedToQueueIds: failedToQueue,
+    );
+  }
+
+  /// Items of [offerId] still in the upload queue, as the Offer media UI
+  /// draws them (Supabase mode).
+  List<OfferMediaRef> pendingOfferMedia(String offerId) {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    return _uploadQueue.pendingRefsFor(
+      ownerId: _supabase.currentOwnerId,
+      offerId: offerId,
+    );
+  }
+
   Future<String> saveOfferWithMediaFast({
     required OfferModel offer,
     required List<File> mediaFiles,
     String? offerId,
   }) async {
     if (SupabaseConfig.useSupabaseAuth) {
-      return _saveOfferWithMediaSupabase(
-        offer: offer,
-        mediaFiles: mediaFiles,
-        offerId: offerId,
-      );
+      // Supabase mode saves through [saveOfferWithMedia] and its upload queue.
+      // This legacy entry point uploads nothing there.
+      if (mediaFiles.isNotEmpty) {
+        throw StateError('Offer media is saved through saveOfferWithMedia.');
+      }
+      final id = offerId ?? _supabase.generateId();
+      await saveOfferWithMedia(offer: offer, offerId: id);
+      return id;
     }
 
     if (_currentUserId == null) throw Exception('User not authenticated');
@@ -106,88 +259,6 @@ class OfferService {
       collection: 'offers',
       documentId: offerId,
     );
-  }
-
-  /// Saves (creates or updates) the Offer row itself first — exactly the
-  /// same path as [saveOffer]/[updateOffer], so an Offer with no attached
-  /// media always behaves as before — then uploads any attached files
-  /// through the private R2 Worker one at a time.
-  ///
-  /// The Offer row's own success is never rolled back for a media failure:
-  /// losing already-entered Offer data because one photo failed to upload
-  /// would be worse than losing the photo. Instead, any file that fails to
-  /// upload or confirm is collected and surfaced as a thrown exception after
-  /// the Offer itself is safely saved, so the caller's existing error UI
-  /// (`add_offers_viewmodel.dart`'s save handler) shows a clear failure
-  /// rather than a false "saved successfully" for attachments that did not
-  /// actually save. The user can re-open Edit and retry just the media.
-  Future<String> _saveOfferWithMediaSupabase({
-    required OfferModel offer,
-    required List<File> mediaFiles,
-    String? offerId,
-  }) async {
-    final resolvedId = offerId ?? _supabase.generateId();
-    final existing = await _supabase.getOffer(resolvedId);
-
-    final String savedOfferId;
-    if (existing == null) {
-      savedOfferId = await _supabase.saveOffer(offer, offerId: resolvedId);
-    } else {
-      await _supabase.updateOffer(resolvedId, offer);
-      savedOfferId = resolvedId;
-    }
-
-    if (mediaFiles.isEmpty) return savedOfferId;
-
-    // New uploads are appended after whatever this offer already has, so a
-    // second edit session's attachments do not collide on ordinal with the
-    // first's.
-    var nextOrdinal = 0;
-    try {
-      final currentMedia = await _offerMediaUpload.getOfferMedia(savedOfferId);
-      nextOrdinal = currentMedia.length;
-    } catch (_) {
-      // Best-effort only: worst case a collision fails that one file closed
-      // (rejected, not silently dropped) rather than corrupting anything.
-    }
-
-    final failedFileNames = <String>[];
-    final rejections = <OfferMediaRejection>[];
-    for (final file in mediaFiles) {
-      try {
-        final uploaded = await _offerMediaUpload.uploadOfferMediaFile(
-          offerId: savedOfferId,
-          file: file,
-          ordinal: nextOrdinal,
-        );
-        // Videos are deliberately not adopted: keeping a second copy of a
-        // file up to 100 MB on the device to save one download is a bad
-        // trade, and the player streams from the signed URL anyway. Images
-        // keep the existing local-first behaviour unchanged.
-        if (uploaded.kind == OfferMediaKind.image) {
-          await _adoptUploadedOfferMedia(uploaded.mediaObjectId, file);
-        }
-        nextOrdinal += 1;
-      } catch (e) {
-        if (e is OfferMediaRejectedException) rejections.add(e.rejection);
-        failedFileNames.add(file.path.split(Platform.pathSeparator).last);
-      }
-    }
-
-    if (failedFileNames.isNotEmpty) {
-      throw OfferMediaPartialUploadException(
-        failedCount: failedFileNames.length,
-        totalCount: mediaFiles.length,
-        // Only when every failure shares one reason can the user be told
-        // precisely why; a mixed batch keeps the general message.
-        rejection: rejections.length == failedFileNames.length &&
-                rejections.toSet().length == 1
-            ? rejections.first
-            : null,
-      );
-    }
-
-    return savedOfferId;
   }
 
   Future<void> removeMediaUrls(String offerId, List<String> urlsToRemove) async {
@@ -245,6 +316,13 @@ class OfferService {
   Future<void> deleteOffer(String offerId) async {
     if (SupabaseConfig.useSupabaseAuth) {
       await _supabase.deleteOffer(offerId);
+      // Nothing queued for a deleted Offer may upload, and nothing this
+      // device holds for it is shown again. The server removes its stored
+      // media itself once the retention period has passed.
+      final ownerId = _supabase.currentOwnerId;
+      if (ownerId != null && ownerId.isNotEmpty) {
+        unawaited(_forgetDeletedOfferMedia(ownerId, offerId));
+      }
       return;
     }
     if (_currentUserId == null) throw Exception('User not authenticated');
@@ -307,27 +385,40 @@ class OfferService {
     return _supabase.resolveOfferMedia(offerId: offerId, ownerId: ownerId);
   }
 
-  /// Binds the bytes just uploaded to the media identity the server confirmed
-  /// for them, so viewing the Offer straight after saving paints the same
-  /// picture from disk instead of downloading it back from R2. Best effort — a
-  /// failure only costs one download. Mirrors the profile-image path.
-  Future<void> _adoptUploadedOfferMedia(
-    String mediaObjectId,
-    File file,
-  ) async {
+  /// Notifies whenever a queued Offer media item changes (Supabase mode).
+  Listenable get offerMediaUploadChanges => _uploadQueue;
+
+  /// Each queued Offer media item the server has accepted.
+  Stream<OfferMediaUploadCompleted> get offerMediaUploadCompletions =>
+      _uploadQueue.completions;
+
+  /// Loads the persisted upload queue so pending items can be shown.
+  Future<void> loadOfferMediaUploads() async {
+    if (!SupabaseConfig.useSupabaseAuth) return;
     try {
-      final cacheKey = offerMediaCacheKey(
-        ownerId: _supabase.currentOwnerId,
-        mediaObjectId: mediaObjectId,
-      );
-      if (cacheKey == null) return;
-      await OfflineMediaService.instance.adoptLocalFileForMediaId(
-        cacheKey,
-        file.path,
-        directoryName: 'offer_media',
-      );
-    } catch (e) {
-      // Best effort.
+      await _uploadQueue.ensureOpen();
+    } catch (_) {
+      // Without storage there is nothing queued to show.
     }
+  }
+
+  /// The user's Retry for a queued item that failed for a reason that can
+  /// pass.
+  Future<void> retryOfferMediaUpload(String mediaObjectId) =>
+      _uploadQueue.retry(mediaObjectId);
+
+  /// The user's Remove for a queued item: its upload stops and anything the
+  /// server already holds for it is withdrawn.
+  Future<void> cancelOfferMediaUpload(String mediaObjectId) =>
+      _uploadQueue.cancel(mediaObjectId);
+
+  Future<void> _forgetDeletedOfferMedia(String ownerId, String offerId) async {
+    try {
+      await _uploadQueue.forgetOffer(ownerId: ownerId, offerId: offerId);
+    } catch (_) {}
+    try {
+      await OfflineMediaService.instance
+          .forgetOfferMediaForOffer(ownerId: ownerId, offerId: offerId);
+    } catch (_) {}
   }
 }

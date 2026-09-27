@@ -2,6 +2,8 @@
 //   POST /offer-media/authorize
 //   POST /offer-media/confirm
 //   GET  /offer-media
+//   POST /offer-media/remove
+// and for the scheduled Offer-media sweeps (runOfferMediaSweeps).
 //
 // Run with: npm test   (or a bare `node --test` from this directory)
 //
@@ -11,21 +13,37 @@
 // each test, and the R2 binding is a small in-memory fake bucket. Assertions
 // check observable state (row counts, field values, bucket contents), not
 // merely that some helper was invoked.
+//
+// The database function `confirm_offer_media_upload` is emulated below with
+// the same outcomes as its SQL. JavaScript runs each emulated call to
+// completion, which stands in for the real function's lock on the Offer row;
+// the SQL itself is exercised separately against a real database
+// (supabase/validation/offer_media_confirm_validation.sql). These are local
+// tests: they prove the Worker's logic, not hosted behaviour.
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../worker.js';
+import worker, { runOfferMediaSweeps } from '../worker.js';
 
 const SUPABASE_URL = 'https://project.supabase.test';
 const PUBLISHABLE = 'sb_publishable_test';
 const SECRET = 'sb_secret_TEST_SECRET_VALUE';
 const BUCKET = 'broker-wallet-media-staging';
+// The other environment's bucket. Staging and production share one database,
+// so rows from both appear side by side there.
+const OTHER_BUCKET = 'broker-wallet-media';
 const WORKER_ORIGIN = 'https://media-api.test';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
 const OFFER_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+// A second Offer owned by Alice, and Bob's own Offer.
+const OFFER_A2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const OFFER_BOB = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 function base64Url(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -45,14 +63,22 @@ function json(body, status = 200) {
   });
 }
 
-/** Matches simple PostgREST filters: eq.x, is.null and like.x* (with `*` as
- * the wildcard). Enough for these tests. */
+function isoAgo(ms) {
+  return new Date(Date.now() - ms).toISOString();
+}
+
+/** Matches simple PostgREST filters: eq.x, is.null, lt.x and like.x* (with `*`
+ * as the wildcard). Enough for these tests. */
 function matches(rowValue, filter) {
   const dot = filter.indexOf('.');
   const op = filter.slice(0, dot);
   const operand = filter.slice(dot + 1);
   if (op === 'eq') return String(rowValue) === operand;
   if (op === 'is' && operand === 'null') return rowValue === null || rowValue === undefined;
+  if (op === 'lt') {
+    if (rowValue === null || rowValue === undefined) return false;
+    return Date.parse(rowValue) < Date.parse(operand);
+  }
   if (op === 'like') {
     const escaped = operand.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     return new RegExp(`^${escaped.join('.*')}$`).test(String(rowValue ?? ''));
@@ -62,14 +88,40 @@ function matches(rowValue, filter) {
 
 const RESERVED_PARAMS = new Set(['select', 'order', 'limit', 'offset', 'on_conflict']);
 
+/** Top-level filters only; `resource.column` filters apply to embeddings. */
 function filterRows(rows, searchParams) {
   return rows.filter((row) =>
-    [...searchParams.entries()].every(([column, filter]) => RESERVED_PARAMS.has(column) || matches(row[column], filter)),
+    [...searchParams.entries()].every(
+      ([column, filter]) => RESERVED_PARAMS.has(column) || column.includes('.') || matches(row[column], filter),
+    ),
   );
 }
 
+/** Applies `order=<column>.<asc|desc>` and `limit=<n>`. */
+function orderAndLimit(rows, searchParams) {
+  const result = [...rows];
+  const order = searchParams.get('order');
+  if (order) {
+    const [column, direction = 'asc'] = order.split('.');
+    result.sort((a, b) => {
+      const left = a[column];
+      const right = b[column];
+      const compared = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left ?? '').localeCompare(String(right ?? ''));
+      return direction === 'desc' ? -compared : compared;
+    });
+  }
+  const limit = searchParams.get('limit');
+  return limit === null ? result : result.slice(0, Number(limit));
+}
+
+function wantsRepresentation(headers) {
+  return String(headers.Prefer ?? '').includes('return=representation');
+}
+
 /** A minimal in-memory Supabase REST + Auth fake for exactly what the Offer
- * Media routes call. */
+ * Media routes and sweeps call. */
 class FakeSupabase {
   constructor() {
     this.users = new Map([
@@ -77,12 +129,17 @@ class FakeSupabase {
       [BOB, { id: BOB }],
     ]);
     this.validTokens = new Set([token(ALICE), token(BOB)]);
-    this.offers = [{ id: OFFER_A, owner_id: ALICE, deleted_at: null }];
+    this.offers = [
+      { id: OFFER_A, owner_id: ALICE, deleted_at: null },
+      { id: OFFER_A2, owner_id: ALICE, deleted_at: null },
+      { id: OFFER_BOB, owner_id: BOB, deleted_at: null },
+    ];
     this.mediaObjects = [];
     this.offerMedia = [];
     this.deletionJobs = [];
     this.calls = [];
-    this.failOfferMediaInsert = false;
+    this.rpcCalls = [];
+    this.failConfirmRpc = false;
   }
 
   fetch = async (url, init = {}) => {
@@ -101,6 +158,14 @@ class FakeSupabase {
 
     assert.equal(headers.apikey, SECRET, `service-role calls must use the secret key (${parsed.pathname})`);
 
+    if (parsed.pathname === '/rest/v1/rpc/confirm_offer_media_upload') {
+      assert.equal(method, 'POST');
+      const params = JSON.parse(init.body);
+      this.rpcCalls.push(params);
+      if (this.failConfirmRpc) return json({ message: 'simulated database failure' }, 500);
+      return json([this.confirmOfferMediaUpload(params)]);
+    }
+
     if (parsed.pathname === '/rest/v1/account_deletion_jobs') {
       return json(filterRows(this.deletionJobs, parsed.searchParams));
     }
@@ -112,67 +177,126 @@ class FakeSupabase {
     if (parsed.pathname === '/rest/v1/media_objects') {
       if (method === 'POST') {
         const body = JSON.parse(init.body);
-        this.mediaObjects.push({ ...body });
+        // Primary key: a second insert of the same id is refused.
+        if (this.mediaObjects.some((row) => row.id === body.id)) return json({ code: '23505' }, 409);
+        const at = new Date().toISOString();
+        this.mediaObjects.push({ created_at: at, updated_at: at, ...body });
         return json([], 201);
       }
       if (method === 'GET') {
-        return json(filterRows(this.mediaObjects, parsed.searchParams));
+        return json(orderAndLimit(filterRows(this.mediaObjects, parsed.searchParams), parsed.searchParams));
       }
       if (method === 'PATCH') {
         const patch = JSON.parse(init.body);
         const rows = filterRows(this.mediaObjects, parsed.searchParams);
-        for (const row of rows) Object.assign(row, patch);
-        return json(rows.length > 0 ? [] : [], rows.length > 0 ? 200 : 200);
+        for (const row of rows) Object.assign(row, patch, { updated_at: new Date().toISOString() });
+        return json(wantsRepresentation(headers) ? rows.map((row) => ({ ...row })) : [], 200);
       }
       if (method === 'DELETE') {
-        const doomed = new Set(filterRows(this.mediaObjects, parsed.searchParams));
-        this.mediaObjects = this.mediaObjects.filter((row) => !doomed.has(row));
-        return json([], 200);
+        const doomed = filterRows(this.mediaObjects, parsed.searchParams);
+        this.mediaObjects = this.mediaObjects.filter((row) => !doomed.includes(row));
+        // FK: offer_media.media_id references media_objects ON DELETE CASCADE.
+        const gone = new Set(doomed.map((row) => row.id));
+        this.offerMedia = this.offerMedia.filter((link) => !gone.has(link.media_id));
+        return json(wantsRepresentation(headers) ? doomed.map((row) => ({ ...row })) : [], 200);
       }
     }
 
     if (parsed.pathname === '/rest/v1/offer_media') {
       if (method === 'POST') {
-        if (this.failOfferMediaInsert) return json({ message: 'simulated insert failure' }, 500);
+        // Only legacy test fixtures insert links directly now; the Worker
+        // attaches through the database function.
         const body = JSON.parse(init.body);
-        // The real table's constraints: primary key (offer_id, media_id) —
-        // skipped under ignore-duplicates, exactly like ON CONFLICT DO
-        // NOTHING — and unique (offer_id, role, ordinal), which still raises.
-        const ignoreDuplicates = String(headers.Prefer ?? '').includes('resolution=ignore-duplicates');
-        if (this.offerMedia.some((row) => row.offer_id === body.offer_id && row.media_id === body.media_id)) {
-          return ignoreDuplicates ? json([], 201) : json({ code: '23505' }, 409);
-        }
-        if (this.offerMedia.some((row) => row.offer_id === body.offer_id && row.role === body.role && row.ordinal === body.ordinal)) {
-          return json({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409);
-        }
         this.offerMedia.push({ ...body });
         return json([], 201);
       }
       if (method === 'GET') {
-        const rows = filterRows(this.offerMedia, parsed.searchParams).map((row) => ({
-          media_id: row.media_id,
-          role: row.role,
-          ordinal: row.ordinal,
-          media_objects: this.mediaObjects.find((m) => m.id === row.media_id) ?? null,
+        const select = parsed.searchParams.get('select') ?? '';
+        let rows = filterRows(this.offerMedia, parsed.searchParams).map((link) => ({
+          link,
+          media: this.mediaObjects.find((m) => m.id === link.media_id) ?? null,
+          offer: this.offers.find((o) => o.id === link.offer_id) ?? null,
         }));
-        return json(rows);
+        for (const [key, filter] of parsed.searchParams.entries()) {
+          if (!key.includes('.')) continue;
+          const [resource, column] = key.split('.');
+          const pick = resource === 'offers' ? (row) => row.offer : (row) => row.media;
+          rows = rows.filter((row) => pick(row) !== null && matches(pick(row)[column], filter));
+        }
+        if (select.includes('media_objects!inner')) rows = rows.filter((row) => row.media !== null);
+        if (select.includes('offers!inner')) rows = rows.filter((row) => row.offer !== null);
+        const shaped = rows.map(({ link, media, offer }) => ({
+          ...link,
+          media_objects: media ? { ...media } : null,
+          offers: offer ? { ...offer } : null,
+        }));
+        return json(orderAndLimit(shaped, parsed.searchParams));
+      }
+      if (method === 'DELETE') {
+        const doomed = filterRows(this.offerMedia, parsed.searchParams);
+        this.offerMedia = this.offerMedia.filter((link) => !doomed.includes(link));
+        return json([], 200);
       }
     }
 
     throw new Error(`unexpected request ${method} ${parsed.pathname}`);
   };
 
+  /** Mirrors the SQL of `confirm_offer_media_upload`, outcome for outcome. */
+  confirmOfferMediaUpload(p) {
+    const offer = this.offers.find(
+      (o) => o.id === p.p_offer_id && o.owner_id === p.p_user_id && (o.deleted_at === null || o.deleted_at === undefined),
+    );
+    if (!offer) return { outcome: 'offer_not_found', media_ordinal: null };
+
+    const prefix = `profiles/${p.p_user_id}/offers/${p.p_offer_id}/`;
+    const media = this.mediaObjects.find(
+      (m) => m.id === p.p_media_id && m.owner_id === p.p_user_id && m.bucket === p.p_bucket,
+    );
+    if (!media || !String(media.object_key).startsWith(prefix)) {
+      return { outcome: 'media_not_found', media_ordinal: null };
+    }
+
+    const readyFields = {
+      status: 'ready',
+      size_bytes: p.p_observed_size,
+      content_type: p.p_observed_content_type,
+      duration_ms: p.p_duration_ms,
+      updated_at: new Date().toISOString(),
+    };
+    const existing = this.offerMedia.find((l) => l.offer_id === p.p_offer_id && l.media_id === p.p_media_id);
+    if (existing) {
+      if (media.status === 'pending_upload') Object.assign(media, readyFields);
+      return { outcome: 'already_attached', media_ordinal: existing.ordinal };
+    }
+    if (media.status !== 'pending_upload') return { outcome: 'invalid_status', media_ordinal: null };
+
+    const ready = this.offerMedia.filter((l) => {
+      if (l.offer_id !== p.p_offer_id) return false;
+      const m = this.mediaObjects.find((x) => x.id === l.media_id);
+      return m && m.bucket === p.p_bucket && m.status === 'ready';
+    }).length;
+    if (ready >= p.p_max_items) return { outcome: 'limit_reached', media_ordinal: null };
+
+    const gallery = this.offerMedia.filter((l) => l.offer_id === p.p_offer_id && l.role === 'gallery');
+    const ordinal = gallery.length === 0 ? 0 : Math.max(...gallery.map((l) => l.ordinal)) + 1;
+    this.offerMedia.push({ offer_id: p.p_offer_id, media_id: p.p_media_id, role: 'gallery', ordinal });
+    Object.assign(media, readyFields);
+    return { outcome: 'attached', media_ordinal: ordinal };
+  }
+
   callsTo(path, method) {
     return this.calls.filter((call) => call.path === path && (!method || call.method === method));
   }
 }
 
-/** A minimal in-memory R2 bucket fake supporting exactly what
- * handleOfferMediaConfirm needs (head/get by key). */
+/** A minimal in-memory R2 bucket fake supporting what the Offer Media routes
+ * need (head/get by key, delete), with delete failures on demand. */
 class FakeBucket {
   constructor() {
     this.objects = new Map();
     this.reads = [];
+    this.failDeletes = false;
   }
   put(key, bytes, contentType) {
     this.objects.set(key, { bytes, contentType });
@@ -190,6 +314,7 @@ class FakeBucket {
     return { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
   }
   async delete(key) {
+    if (this.failDeletes) throw new Error('simulated R2 failure');
     this.objects.delete(key);
   }
   async list() {
@@ -236,7 +361,8 @@ async function call(ctx, path, options) {
 }
 
 /** Authorizes and "uploads" (seeds the fake bucket directly, exactly like a
- * real client PUT would have left it) one Offer image for [userId]. */
+ * real client PUT would have left it) one Offer image for [userId], the way
+ * an older app build does: without its own media id. */
 async function authorizeAndUpload(ctx, userId, offerId) {
   const auth = await call(ctx, '/offer-media/authorize', {
     method: 'POST',
@@ -312,7 +438,7 @@ test('a repeated confirm after success does not duplicate the association or cha
   assert.equal(first.status, 200);
   assert.equal(first.body.alreadyConfirmed, undefined);
 
-  const afterFirst = ctx.supabase.mediaObjects.find((row) => row.id === mediaObjectId);
+  const afterFirst = { ...ctx.supabase.mediaObjects.find((row) => row.id === mediaObjectId) };
   assert.equal(afterFirst.status, 'ready');
   assert.equal(ctx.supabase.offerMedia.length, 1, 'exactly one association after the first confirm');
 
@@ -323,6 +449,7 @@ test('a repeated confirm after success does not duplicate the association or cha
   });
   assert.equal(second.status, 200);
   assert.equal(second.body.alreadyConfirmed, true);
+  assert.equal(second.body.ordinal, first.body.ordinal);
 
   // Observable state, not call counts: still exactly one association, media
   // object state unchanged by the retry.
@@ -333,34 +460,35 @@ test('a repeated confirm after success does not duplicate the association or cha
 });
 
 // ===========================================================================
-// TEST 3 — association failure leaves nothing orphaned
+// TEST 3 — a failed attach loses nothing and is retryable
 // ===========================================================================
 
-test('a failed offer_media insert leaves no orphaned ready media object', async () => {
+test('a failed attach leaves the upload pending and retryable: nothing ready, nothing linked, nothing lost', async () => {
   const mediaObjectId = await authorizeAndUpload(ctx, ALICE, OFFER_A);
-  ctx.supabase.failOfferMediaInsert = true;
+  const key = `profiles/${ALICE}/offers/${OFFER_A}/${mediaObjectId}.jpg`;
+  ctx.supabase.failConfirmRpc = true;
 
-  const confirm = await call(ctx, '/offer-media/confirm', {
+  const failed = await call(ctx, '/offer-media/confirm', {
     method: 'POST',
     authorization: `Bearer ${token(ALICE)}`,
     body: { offerId: OFFER_A, mediaObjectId },
   });
-  // 422, not 502: the association failure is deliberately funneled through
-  // the same rejectInvalidUpload() path as every other post-upload
-  // validation failure in this file (object missing, size invalid, wrong
-  // signature), so it is reported and cleaned up identically.
-  assert.equal(confirm.status, 422);
-
-  // Fail closed: never 'ready', not left dangling as 'pending_upload' either
-  // — and no association was created.
+  // 502: a transport/database failure, not a verdict on the upload.
+  assert.equal(failed.status, 502);
   const row = ctx.supabase.mediaObjects.find((m) => m.id === mediaObjectId);
-  assert.equal(row.status, 'failed', 'the media row is marked failed, not left ready or pending');
-  assert.equal(ctx.supabase.offerMedia.length, 0, 'no association exists for the failed confirm');
+  assert.equal(row.status, 'pending_upload', 'never ready without its attachment');
+  assert.equal(ctx.supabase.offerMedia.length, 0, 'no association exists');
+  assert.equal(ctx.bucket.objects.has(key), true, 'the uploaded bytes are kept for the retry');
 
-  // The R2 object itself was deleted as part of the same cleanup, so a
-  // retried confirm cannot find a stale object either.
-  const key = ctx.bucket.objects.has(`profiles/${ALICE}/offers/${OFFER_A}/${mediaObjectId}.jpg`);
-  assert.equal(key, false, 'the uploaded R2 object was deleted on failure');
+  ctx.supabase.failConfirmRpc = false;
+  const retried = await call(ctx, '/offer-media/confirm', {
+    method: 'POST',
+    authorization: `Bearer ${token(ALICE)}`,
+    body: { offerId: OFFER_A, mediaObjectId },
+  });
+  assert.equal(retried.status, 200, JSON.stringify(retried.body));
+  assert.equal(row.status, 'ready');
+  assert.equal(ctx.supabase.offerMedia.length, 1);
 });
 
 // ===========================================================================
@@ -418,7 +546,7 @@ function concat(...parts) {
 /** A complete, walkable video file: ftyp, then media data, then `moov` last —
  * the layout a phone camera actually writes. */
 function videoFile(major, compatible, seconds = 30, options = {}) {
-  const brands = [major, '    ', ...compatible].join('');
+  const brands = [major, '\0\0\0\0', ...compatible].join('');
   return concat(
     box('ftyp', Uint8Array.from([...brands].map((c) => c.charCodeAt(0)))),
     box('mdat', new Uint8Array(64)),
@@ -463,6 +591,30 @@ async function confirmedItems(ctx, count) {
   }
 }
 
+/** A ready item attached directly in the database, e.g. by the other
+ * environment's Worker or by another device before this test's requests. */
+function seedReadyMedia(ctx, { ownerId = ALICE, offerId = OFFER_A, bucket = BUCKET, ordinal, contentType = 'image/jpeg' }) {
+  const id = crypto.randomUUID();
+  const extension = { 'image/jpeg': 'jpg', 'image/heic': 'heic', 'video/mp4': 'mp4' }[contentType];
+  const objectKey = `profiles/${ownerId}/offers/${offerId}/${id}.${extension}`;
+  const at = new Date().toISOString();
+  ctx.supabase.mediaObjects.push({
+    id,
+    owner_id: ownerId,
+    bucket,
+    object_key: objectKey,
+    media_type: contentType.startsWith('video/') ? 'video' : 'image',
+    content_type: contentType,
+    size_bytes: 64,
+    status: 'ready',
+    created_at: at,
+    updated_at: at,
+  });
+  ctx.supabase.offerMedia.push({ offer_id: offerId, media_id: id, role: 'gallery', ordinal });
+  if (bucket === BUCKET) ctx.bucket.put(objectKey, JPEG_BYTES, contentType);
+  return { id, objectKey };
+}
+
 test('an MP4 video is authorized as a video, confirmed from its real bytes and listed as a video', async () => {
   const auth = await upload(ctx, 'video/mp4', MP4_BYTES, 60 * 1024 * 1024);
   assert.equal(auth.mediaType, 'video');
@@ -502,8 +654,23 @@ test('size limits are per kind: videos up to 100 MB, images still 10 MB', async 
   assert.equal(bigImage.body.code, 'image_too_large');
 });
 
+test('an upload larger than it declared is refused at confirm by its real size', async () => {
+  const image = await upload(ctx, 'image/jpeg', concat(JPEG_BYTES, new Uint8Array(10 * 1024 * 1024)), 64);
+  const imageResult = await confirm(ctx, ALICE, OFFER_A, image.mediaObjectId);
+  assert.equal(imageResult.status, 422);
+  assert.equal(imageResult.body.code, 'image_too_large');
+  assert.equal(ctx.bucket.objects.has(image.objectKey), false);
+
+  const video = await upload(ctx, 'video/mp4', concat(MP4_BYTES, new Uint8Array(100 * 1024 * 1024)), 64);
+  const videoResult = await confirm(ctx, ALICE, OFFER_A, video.mediaObjectId);
+  assert.equal(videoResult.status, 422);
+  assert.equal(videoResult.body.code, 'video_too_large');
+  assert.equal(ctx.supabase.mediaObjects.find((m) => m.id === video.mediaObjectId).status, 'failed');
+  assert.equal(ctx.supabase.offerMedia.length, 0);
+});
+
 test('unsupported containers are refused before anything is created', async () => {
-  for (const type of ['video/x-matroska', 'video/webm', 'application/pdf', 'video/MP4', 'toString']) {
+  for (const type of ['video/x-matroska', 'video/webm', 'application/pdf', 'video/MP4', 'toString', 'image/heic']) {
     const result = await authorize(ctx, ALICE, OFFER_A, type);
     assert.equal(result.status, 400, type);
     assert.equal(result.body.code, 'unsupported_media_type', type);
@@ -517,12 +684,14 @@ test('bytes that do not match the authorized type are rejected, marked failed an
     ['video/mp4', HEIC_BYTES],
     ['video/quicktime', MP4_BYTES],
     ['image/jpeg', MP4_BYTES],
+    ['image/jpeg', HEIC_BYTES],
     ['video/mp4', new Uint8Array(64)],
   ];
   for (const [type, bytes] of cases) {
     const auth = await upload(ctx, type, bytes);
     const result = await confirm(ctx, ALICE, OFFER_A, auth.mediaObjectId);
     assert.equal(result.status, 422, `${type} with mismatching bytes`);
+    assert.equal(result.body.code, 'media_type_mismatch');
     const row = ctx.supabase.mediaObjects.find((m) => m.id === auth.mediaObjectId);
     assert.equal(row.status, 'failed');
     assert.equal(ctx.bucket.objects.has(auth.objectKey), false);
@@ -530,7 +699,7 @@ test('bytes that do not match the authorized type are rejected, marked failed an
   assert.equal(ctx.supabase.offerMedia.length, 0);
 });
 
-test('the Offer is linked into server-chosen slots; a client ordinal is ignored', async () => {
+test('the Offer is linked at server-chosen positions; a client ordinal is ignored', async () => {
   const first = await upload(ctx, 'image/jpeg', JPEG_BYTES);
   assert.equal((await confirm(ctx, ALICE, OFFER_A, first.mediaObjectId, { ordinal: 7, role: 'cover' })).status, 200);
   const second = await upload(ctx, 'video/mp4', MP4_BYTES);
@@ -540,6 +709,11 @@ test('the Offer is linked into server-chosen slots; a client ordinal is ignored'
     ctx.supabase.offerMedia.map((link) => [link.role, link.ordinal]),
     [['gallery', 0], ['gallery', 1]],
   );
+  // The Worker hands the database function this environment's bucket and
+  // the product limit; nothing from the client.
+  assert.equal(ctx.supabase.rpcCalls[0].p_bucket, BUCKET);
+  assert.equal(ctx.supabase.rpcCalls[0].p_max_items, 10);
+  assert.equal(ctx.supabase.rpcCalls[0].p_user_id, ALICE);
 });
 
 test('an 11th item is refused at authorize once 10 are attached', async () => {
@@ -563,7 +737,7 @@ test('an abandoned pending upload older than the cleanup window stops counting',
   await confirmedItems(ctx, 9);
   const stale = await upload(ctx, 'video/mp4', MP4_BYTES);
   const row = ctx.supabase.mediaObjects.find((m) => m.id === stale.mediaObjectId);
-  row.created_at = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+  row.created_at = isoAgo(25 * HOUR_MS);
 
   const fresh = await authorize(ctx, ALICE, OFFER_A, 'image/jpeg');
   assert.equal(fresh.status, 200, JSON.stringify(fresh.body));
@@ -580,8 +754,8 @@ test('concurrent confirms can never exceed 10: the loser is rejected and cleaned
   const a = await upload(ctx, 'video/mp4', MP4_BYTES);
   const b = await upload(ctx, 'image/jpeg', JPEG_BYTES);
   // A ninth item is attached behind both uploads' backs (e.g. from a second
-  // device), so only one slot is left for two confirms racing for it.
-  ctx.supabase.offerMedia.push({ offer_id: OFFER_A, media_id: 'external', role: 'gallery', ordinal: 8 });
+  // device), so only one place is left for two confirms racing for it.
+  seedReadyMedia(ctx, { ordinal: 8 });
 
   const results = await Promise.all([
     confirm(ctx, ALICE, OFFER_A, a.mediaObjectId),
@@ -601,6 +775,7 @@ test('concurrent confirms can never exceed 10: the loser is rejected and cleaned
 });
 
 test('a retried confirm of an already-linked but not-ready item finishes without a second link', async () => {
+  // A state only an older Worker version could leave behind.
   const auth = await upload(ctx, 'video/mp4', MP4_BYTES);
   ctx.supabase.offerMedia.push({ offer_id: OFFER_A, media_id: auth.mediaObjectId, role: 'gallery', ordinal: 0 });
 
@@ -730,5 +905,554 @@ test('an image is never subjected to a duration check', async () => {
   const auth = await upload(ctx, 'image/jpeg', JPEG_BYTES);
   assert.equal((await confirm(ctx, ALICE, OFFER_A, auth.mediaObjectId)).status, 200);
   const row = ctx.supabase.mediaObjects.find((m) => m.id === auth.mediaObjectId);
-  assert.equal(row.duration_ms, undefined, 'no duration is written for a photo');
+  assert.equal(row.duration_ms ?? null, null, 'no duration is written for a photo');
+});
+
+// ===========================================================================
+// IDEMPOTENT LIFECYCLE — the app's own media id is the identity end to end
+// ===========================================================================
+
+function newId() {
+  return crypto.randomUUID();
+}
+
+async function authorizeId(ctx, {
+  userId = ALICE,
+  offerId = OFFER_A,
+  mediaObjectId,
+  contentType = 'image/jpeg',
+  contentLength = JPEG_BYTES.length,
+} = {}) {
+  return call(ctx, '/offer-media/authorize', {
+    method: 'POST',
+    authorization: `Bearer ${token(userId)}`,
+    body: { offerId, mediaObjectId, contentType, contentLength },
+  });
+}
+
+/** One logical upload under [mediaObjectId]: authorize, then the PUT's bytes. */
+async function uploadWithId(ctx, mediaObjectId, contentType, bytes, { offerId = OFFER_A } = {}) {
+  const auth = await authorizeId(ctx, { offerId, mediaObjectId, contentType, contentLength: bytes.length });
+  assert.equal(auth.status, 200, JSON.stringify(auth.body));
+  if (auth.body.status === 'pending') ctx.bucket.put(auth.body.objectKey, bytes, contentType);
+  return auth.body;
+}
+
+async function remove(ctx, userId, offerId, mediaObjectId) {
+  return call(ctx, '/offer-media/remove', {
+    method: 'POST',
+    authorization: `Bearer ${token(userId)}`,
+    body: { offerId, mediaObjectId },
+  });
+}
+
+async function list(ctx, userId = ALICE, offerId = OFFER_A) {
+  return call(ctx, `/offer-media?offerId=${offerId}`, { authorization: `Bearer ${token(userId)}` });
+}
+
+const rowOf = (id) => ctx.supabase.mediaObjects.find((m) => m.id === id);
+const linksOf = (id) => ctx.supabase.offerMedia.filter((l) => l.media_id === id);
+
+test('image lifecycle: the app\'s id becomes the row, the key and the listed item', async () => {
+  const id = newId();
+  const auth = await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal(auth.status, 'pending');
+  assert.equal(auth.mediaObjectId, id);
+  assert.equal(auth.objectKey, `profiles/${ALICE}/offers/${OFFER_A}/${id}.jpg`);
+  assert.ok(auth.presignedUrl.startsWith('https://r2.test.example.com/'));
+  assert.equal(auth.expiresInSeconds, 300, 'the upload authorization keeps its 300-second lifetime');
+
+  const confirmed = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+  assert.equal(confirmed.body.ordinal, 0);
+  assert.equal(rowOf(id).status, 'ready');
+  assert.equal(ctx.supabase.mediaObjects.length, 1);
+  assert.equal(linksOf(id).length, 1);
+
+  const listed = await list(ctx);
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.expiresInSeconds, 900);
+  assert.deepEqual(
+    listed.body.media.map((m) => [m.mediaObjectId, m.mediaType, m.durationMs]),
+    [[id, 'image', null]],
+  );
+});
+
+test('video lifecycle: the measured duration is recorded and listed', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'video/mp4', videoFile('isom', ['isom'], 30));
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+  const listed = await list(ctx);
+  assert.deepEqual(
+    listed.body.media.map((m) => [m.mediaObjectId, m.mediaType, m.contentType, m.durationMs]),
+    [[id, 'video', 'video/mp4', 30000]],
+  );
+});
+
+test('mixed photos and videos keep the order they were confirmed in', async () => {
+  const ids = [newId(), newId(), newId()];
+  await uploadWithId(ctx, ids[0], 'image/jpeg', JPEG_BYTES);
+  await uploadWithId(ctx, ids[1], 'video/quicktime', MOV_BYTES);
+  await uploadWithId(ctx, ids[2], 'image/jpeg', JPEG_BYTES);
+  for (const id of ids) assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  const listed = await list(ctx);
+  assert.deepEqual(
+    listed.body.media.map((m) => [m.mediaObjectId, m.mediaType, m.ordinal]),
+    [[ids[0], 'image', 0], [ids[1], 'video', 1], [ids[2], 'image', 2]],
+  );
+});
+
+test('retrying authorize with the same id resumes the same row and key, never a second object', async () => {
+  const id = newId();
+  const first = await authorizeId(ctx, { mediaObjectId: id });
+  const second = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.status, 'pending');
+  assert.equal(second.body.objectKey, first.body.objectKey);
+  assert.ok(second.body.presignedUrl, 'a fresh upload URL for the same key');
+  assert.equal(ctx.supabase.mediaObjects.length, 1, 'still exactly one media object');
+});
+
+test('an interrupted upload is resumed under the same id and attached exactly once', async () => {
+  const id = newId();
+  assert.equal((await authorizeId(ctx, { mediaObjectId: id })).status, 200);
+
+  // The PUT never arrived.
+  const early = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(early.status, 409);
+  assert.equal(early.body.code, 'upload_incomplete');
+  assert.equal(rowOf(id).status, 'pending_upload', 'not failed: the same id can still succeed');
+  assert.equal(linksOf(id).length, 0);
+
+  const resumed = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(resumed.status, 200);
+  ctx.bucket.put(resumed.body.objectKey, JPEG_BYTES, 'image/jpeg');
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  const again = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.alreadyConfirmed, true);
+  assert.equal(ctx.supabase.mediaObjects.length, 1);
+  assert.equal(linksOf(id).length, 1);
+});
+
+test('once an item is ready, retrying the whole upload skips the PUT and duplicates nothing', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  const retry = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.status, 'ready');
+  assert.equal(retry.body.presignedUrl, undefined, 'nothing to upload again');
+  assert.equal(ctx.supabase.mediaObjects.length, 1);
+  assert.equal(ctx.supabase.offerMedia.length, 1);
+});
+
+test('an id can never be reused for a different Offer, type or size', async () => {
+  const id = newId();
+  assert.equal((await authorizeId(ctx, { mediaObjectId: id })).status, 200);
+  const before = { ...rowOf(id) };
+
+  for (const changed of [{ offerId: OFFER_A2 }, { contentType: 'image/png' }, { contentLength: JPEG_BYTES.length + 1 }]) {
+    const result = await authorizeId(ctx, { mediaObjectId: id, ...changed });
+    assert.equal(result.status, 409, JSON.stringify(changed));
+    assert.equal(result.body.code, 'idempotency_mismatch');
+  }
+  assert.deepEqual(rowOf(id), before, 'the original row is untouched');
+  assert.equal(ctx.supabase.mediaObjects.length, 1);
+});
+
+test('another account can never take over an id that is already in use', async () => {
+  const id = newId();
+  assert.equal((await authorizeId(ctx, { mediaObjectId: id })).status, 200);
+  const before = { ...rowOf(id) };
+
+  const bob = await authorizeId(ctx, { userId: BOB, offerId: OFFER_BOB, mediaObjectId: id });
+  assert.equal(bob.status, 409);
+  assert.equal(bob.body.code, 'media_id_conflict');
+  assert.equal(bob.body.presignedUrl, undefined);
+  assert.deepEqual(rowOf(id), before);
+  assert.equal(ctx.supabase.mediaObjects.length, 1);
+});
+
+test('a rejected upload is final for its id', async () => {
+  const id = newId();
+  const auth = await uploadWithId(ctx, id, 'image/jpeg', MP4_BYTES);
+  const rejected = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(rejected.status, 422);
+  assert.equal(rowOf(id).status, 'failed');
+  assert.equal(ctx.bucket.objects.has(auth.objectKey), false);
+
+  const reauthorized = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(reauthorized.status, 409);
+  assert.equal(reauthorized.body.code, 'upload_rejected');
+  const reconfirmed = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(reconfirmed.status, 409);
+  assert.equal(reconfirmed.body.code, 'upload_rejected');
+  assert.equal(ctx.supabase.offerMedia.length, 0);
+});
+
+test('malformed ids are refused and ids are canonicalized to lower case', async () => {
+  const bad = await authorizeId(ctx, { mediaObjectId: 'not-a-uuid' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.code, 'invalid_request');
+  assert.equal(ctx.supabase.mediaObjects.length, 0);
+
+  const id = newId();
+  const upper = await authorizeId(ctx, { offerId: OFFER_A.toUpperCase(), mediaObjectId: id.toUpperCase() });
+  assert.equal(upper.status, 200, JSON.stringify(upper.body));
+  assert.equal(upper.body.mediaObjectId, id);
+  assert.equal(upper.body.objectKey, `profiles/${ALICE}/offers/${OFFER_A}/${id}.jpg`);
+  ctx.bucket.put(upper.body.objectKey, JPEG_BYTES, 'image/jpeg');
+  assert.equal((await confirm(ctx, ALICE, OFFER_A.toUpperCase(), id.toUpperCase())).status, 200);
+  assert.equal(rowOf(id).status, 'ready');
+});
+
+test('an account being deleted gets no upload URL, new or resumed', async () => {
+  const id = newId();
+  assert.equal((await authorizeId(ctx, { mediaObjectId: id })).status, 200);
+  ctx.supabase.deletionJobs.push({ user_id: ALICE, bucket: BUCKET, status: 'quarantined' });
+
+  const resumed = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(resumed.status, 409);
+  assert.equal(resumed.body.code, 'deletion_in_progress');
+  assert.equal(rowOf(id).status, 'pending_upload', 'a resumed row is kept, not withdrawn');
+
+  const freshId = newId();
+  const fresh = await authorizeId(ctx, { mediaObjectId: freshId });
+  assert.equal(fresh.status, 409);
+  assert.equal(fresh.body.code, 'deletion_in_progress');
+  assert.equal(rowOf(freshId), undefined, 'a row created by the refused request is withdrawn');
+});
+
+test('HEIC is refused for new Offer uploads, but HEIC stored earlier still lists', async () => {
+  const refused = await authorizeId(ctx, { mediaObjectId: newId(), contentType: 'image/heic' });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.code, 'unsupported_media_type');
+  assert.equal(ctx.supabase.mediaObjects.length, 0);
+
+  const legacy = seedReadyMedia(ctx, { ordinal: 0, contentType: 'image/heic' });
+  const listed = await list(ctx);
+  assert.deepEqual(listed.body.media.map((m) => [m.mediaObjectId, m.contentType]), [[legacy.id, 'image/heic']]);
+});
+
+// ===========================================================================
+// REMOVAL
+// ===========================================================================
+
+test('removing a ready item unlinks it, deletes its bytes, tombstones it and frees its place', async () => {
+  await confirmedItems(ctx, 10);
+  const victim = (await list(ctx)).body.media[3];
+  const key = rowOf(victim.mediaObjectId).object_key;
+
+  const removed = await remove(ctx, ALICE, OFFER_A, victim.mediaObjectId);
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(removed.body.removed, true);
+  assert.equal(removed.body.cleanupPending, undefined);
+  assert.equal(rowOf(victim.mediaObjectId).status, 'deleted');
+  assert.ok(rowOf(victim.mediaObjectId).deleted_at);
+  assert.equal(linksOf(victim.mediaObjectId).length, 0);
+  assert.equal(ctx.bucket.objects.has(key), false);
+  assert.equal((await list(ctx)).body.media.length, 9);
+
+  const eleventh = await authorize(ctx, ALICE, OFFER_A, 'image/jpeg');
+  assert.equal(eleventh.status, 200, 'the removal freed a place');
+
+  const again = await remove(ctx, ALICE, OFFER_A, victim.mediaObjectId);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.alreadyRemoved, true);
+});
+
+test('a removed item\'s id is final', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+  assert.equal((await remove(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  const reauthorized = await authorizeId(ctx, { mediaObjectId: id });
+  assert.equal(reauthorized.status, 410);
+  assert.equal(reauthorized.body.code, 'media_removed');
+  const reconfirmed = await confirm(ctx, ALICE, OFFER_A, id);
+  assert.equal(reconfirmed.status, 410);
+  assert.equal(ctx.supabase.offerMedia.length, 0);
+});
+
+test('cancelling a queued upload withdraws its row and bytes and frees its place', async () => {
+  await confirmedItems(ctx, 9);
+  const id = newId();
+  const auth = await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+
+  const full = await authorizeId(ctx, { mediaObjectId: newId() });
+  assert.equal(full.status, 409, 'the queued upload holds the tenth place');
+  assert.equal(full.body.code, 'offer_media_limit_reached');
+
+  const cancelled = await remove(ctx, ALICE, OFFER_A, id);
+  assert.equal(cancelled.status, 200);
+  assert.equal(rowOf(id), undefined);
+  assert.equal(ctx.bucket.objects.has(auth.objectKey), false);
+
+  assert.equal((await authorizeId(ctx, { mediaObjectId: newId() })).status, 200);
+});
+
+test('removing a failed upload deletes its row', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'image/jpeg', MP4_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 422);
+  assert.equal((await remove(ctx, ALICE, OFFER_A, id)).status, 200);
+  assert.equal(rowOf(id), undefined);
+});
+
+test('removal is scoped to the caller\'s own media on the named Offer', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  const onAlicesOffer = await remove(ctx, BOB, OFFER_A, id);
+  assert.equal(onAlicesOffer.status, 404);
+  assert.equal(onAlicesOffer.body.code, 'offer_not_found');
+
+  // Bob naming Alice's media on his own Offer learns nothing and changes nothing.
+  const onBobsOffer = await remove(ctx, BOB, OFFER_BOB, id);
+  assert.equal(onBobsOffer.status, 200);
+  assert.equal(onBobsOffer.body.alreadyRemoved, true);
+
+  // Alice naming the item under a different one of her Offers is refused.
+  const wrongOffer = await remove(ctx, ALICE, OFFER_A2, id);
+  assert.equal(wrongOffer.status, 409);
+  assert.equal(wrongOffer.body.code, 'media_mismatch');
+
+  assert.equal(rowOf(id).status, 'ready');
+  assert.equal(linksOf(id).length, 1);
+});
+
+test('a removal whose R2 delete fails is reported, hidden at once, and finished by the sweep', async () => {
+  const id = newId();
+  const auth = await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+
+  ctx.bucket.failDeletes = true;
+  const removed = await remove(ctx, ALICE, OFFER_A, id);
+  assert.equal(removed.status, 200);
+  assert.equal(removed.body.cleanupPending, true);
+  assert.equal(rowOf(id).status, 'pending_delete');
+  assert.equal(linksOf(id).length, 0);
+  assert.equal((await list(ctx)).body.media.length, 0, 'no longer listed');
+
+  ctx.bucket.failDeletes = false;
+  ctx.env.OFFER_MEDIA_SWEEP_MODE = 'on';
+  const report = await runOfferMediaSweeps(ctx.env);
+  assert.equal(report.pendingDeletes, 1);
+  assert.equal(rowOf(id).status, 'deleted');
+  assert.equal(ctx.bucket.objects.has(auth.objectKey), false);
+});
+
+test('a new item after a removal goes to the end, never into the gap', async () => {
+  const ids = [newId(), newId(), newId()];
+  for (const id of ids) {
+    await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+    assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+  }
+  assert.equal((await remove(ctx, ALICE, OFFER_A, ids[1])).status, 200);
+
+  const latest = newId();
+  await uploadWithId(ctx, latest, 'video/mp4', MP4_BYTES);
+  const confirmed = await confirm(ctx, ALICE, OFFER_A, latest);
+  assert.equal(confirmed.body.ordinal, 3);
+
+  assert.deepEqual((await list(ctx)).body.media.map((m) => m.mediaObjectId), [ids[0], ids[2], latest]);
+});
+
+test('media in the other environment\'s bucket is neither counted nor listed', async () => {
+  for (let ordinal = 0; ordinal < 9; ordinal += 1) {
+    seedReadyMedia(ctx, { bucket: OTHER_BUCKET, ordinal });
+  }
+  await confirmedItems(ctx, 10);
+
+  const listed = await list(ctx);
+  assert.equal(listed.body.media.length, 10);
+  assert.ok(listed.body.media.every((m) => rowOf(m.mediaObjectId).bucket === BUCKET));
+  assert.deepEqual(listed.body.media.map((m) => m.ordinal), [9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  assert.equal((await authorize(ctx, ALICE, OFFER_A, 'image/jpeg')).status, 409);
+});
+
+test('every route refuses a soft-deleted Offer', async () => {
+  const id = newId();
+  await uploadWithId(ctx, id, 'image/jpeg', JPEG_BYTES);
+  assert.equal((await confirm(ctx, ALICE, OFFER_A, id)).status, 200);
+  ctx.supabase.offers.find((o) => o.id === OFFER_A).deleted_at = new Date().toISOString();
+
+  for (const result of [
+    await authorizeId(ctx, { mediaObjectId: newId() }),
+    await confirm(ctx, ALICE, OFFER_A, id),
+    await list(ctx),
+    await remove(ctx, ALICE, OFFER_A, id),
+  ]) {
+    assert.equal(result.status, 404);
+    assert.equal(result.body.code, 'offer_not_found');
+  }
+  assert.equal(rowOf(id).status, 'ready', 'kept until the retention sweep');
+});
+
+// ===========================================================================
+// SCHEDULED SWEEPS — ship OFF; dry_run only counts; on applies
+// ===========================================================================
+
+/** The scenario every sweep test starts from. */
+function seedSweepScenario(ctx) {
+  const stalePending = { id: newId(), created: isoAgo(25 * HOUR_MS) };
+  const freshPending = { id: newId(), created: isoAgo(HOUR_MS) };
+  const staleProfilePending = { id: newId(), created: isoAgo(25 * HOUR_MS) };
+  const otherBucketPending = { id: newId(), created: isoAgo(25 * HOUR_MS) };
+  const oldFailed = { id: newId(), updated: isoAgo(8 * DAY_MS) };
+  const recentFailed = { id: newId(), updated: isoAgo(DAY_MS) };
+
+  const push = (id, fields) => {
+    ctx.supabase.mediaObjects.push({
+      id,
+      owner_id: ALICE,
+      bucket: BUCKET,
+      object_key: `profiles/${ALICE}/offers/${OFFER_A}/${id}.jpg`,
+      media_type: 'image',
+      content_type: 'image/jpeg',
+      size_bytes: 64,
+      created_at: isoAgo(HOUR_MS),
+      updated_at: isoAgo(HOUR_MS),
+      ...fields,
+    });
+    const row = ctx.supabase.mediaObjects.at(-1);
+    if (row.status === 'pending_upload') ctx.bucket.put(row.object_key, JPEG_BYTES, 'image/jpeg');
+    return row;
+  };
+  push(stalePending.id, { status: 'pending_upload', created_at: stalePending.created });
+  push(freshPending.id, { status: 'pending_upload', created_at: freshPending.created });
+  push(staleProfilePending.id, {
+    status: 'pending_upload',
+    created_at: staleProfilePending.created,
+    object_key: `profiles/${ALICE}/${staleProfilePending.id}.jpg`,
+  });
+  push(otherBucketPending.id, { status: 'pending_upload', created_at: otherBucketPending.created, bucket: OTHER_BUCKET });
+  push(oldFailed.id, { status: 'failed', updated_at: oldFailed.updated });
+  push(recentFailed.id, { status: 'failed', updated_at: recentFailed.updated });
+
+  // Offer A deleted 8 days ago, Offer A2 deleted 6 days ago, each with one
+  // ready item.
+  const oldOfferMedia = seedReadyMedia(ctx, { offerId: OFFER_A, ordinal: 0 });
+  const recentOfferMedia = seedReadyMedia(ctx, { offerId: OFFER_A2, ordinal: 0 });
+  ctx.supabase.offers.find((o) => o.id === OFFER_A).deleted_at = isoAgo(8 * DAY_MS);
+  ctx.supabase.offers.find((o) => o.id === OFFER_A2).deleted_at = isoAgo(6 * DAY_MS);
+
+  return {
+    stalePending,
+    freshPending,
+    staleProfilePending,
+    otherBucketPending,
+    oldFailed,
+    recentFailed,
+    oldOfferMedia,
+    recentOfferMedia,
+  };
+}
+
+function snapshot(ctx) {
+  return JSON.stringify({
+    media: ctx.supabase.mediaObjects,
+    links: ctx.supabase.offerMedia,
+    objects: [...ctx.bucket.objects.keys()].sort(),
+  });
+}
+
+test('sweeps do nothing at all unless explicitly configured', async () => {
+  seedSweepScenario(ctx);
+  const before = snapshot(ctx);
+  for (const mode of [undefined, '', 'OFF', 'yes', 'true', 'off']) {
+    ctx.env.OFFER_MEDIA_SWEEP_MODE = mode;
+    const callsBefore = ctx.supabase.calls.length;
+    const report = await runOfferMediaSweeps(ctx.env);
+    assert.equal(report.mode, 'off', String(mode));
+    assert.equal(ctx.supabase.calls.length, callsBefore, `no database call in mode ${String(mode)}`);
+  }
+  assert.equal(snapshot(ctx), before);
+});
+
+test('dry_run counts what it would do and changes nothing', async () => {
+  seedSweepScenario(ctx);
+  const before = snapshot(ctx);
+  ctx.env.OFFER_MEDIA_SWEEP_MODE = 'dry_run';
+
+  const report = await runOfferMediaSweeps(ctx.env);
+  assert.deepEqual(report, {
+    mode: 'dry_run',
+    abandonedUploads: 1,
+    deletedOfferMedia: 1,
+    pendingDeletes: 0,
+    failedUploads: 1,
+    errors: 0,
+  });
+  assert.equal(snapshot(ctx), before, 'nothing was changed');
+  for (const call of ctx.supabase.calls.filter((c) => c.path.startsWith('/rest/'))) {
+    assert.equal(call.method, 'GET', 'a dry run only reads');
+  }
+});
+
+test('on: only what the lifecycle names is removed, in this bucket, for Offer media', async () => {
+  const s = seedSweepScenario(ctx);
+  ctx.env.OFFER_MEDIA_SWEEP_MODE = 'on';
+
+  const logged = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args) => logged.push(args.join(' '));
+  console.error = (...args) => logged.push(args.join(' '));
+  let report;
+  try {
+    report = await runOfferMediaSweeps(ctx.env);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+
+  assert.deepEqual(report, {
+    mode: 'on',
+    abandonedUploads: 1,
+    deletedOfferMedia: 1,
+    pendingDeletes: 1,
+    failedUploads: 1,
+    errors: 0,
+  });
+
+  // Abandoned for over a day: gone with its bytes.
+  assert.equal(rowOf(s.stalePending.id), undefined);
+  assert.equal(ctx.bucket.objects.has(`profiles/${ALICE}/offers/${OFFER_A}/${s.stalePending.id}.jpg`), false);
+  // Recent, profile-image and other-bucket pending rows: untouched.
+  assert.equal(rowOf(s.freshPending.id).status, 'pending_upload');
+  assert.equal(rowOf(s.staleProfilePending.id).status, 'pending_upload');
+  assert.equal(rowOf(s.otherBucketPending.id).status, 'pending_upload');
+
+  // Media of the Offer deleted 8 days ago: unlinked, bytes gone, tombstoned.
+  assert.equal(rowOf(s.oldOfferMedia.id).status, 'deleted');
+  assert.equal(linksOf(s.oldOfferMedia.id).length, 0);
+  assert.equal(ctx.bucket.objects.has(s.oldOfferMedia.objectKey), false);
+  // The Offer deleted 6 days ago keeps its media for now.
+  assert.equal(rowOf(s.recentOfferMedia.id).status, 'ready');
+  assert.equal(linksOf(s.recentOfferMedia.id).length, 1);
+  assert.equal(ctx.bucket.objects.has(s.recentOfferMedia.objectKey), true);
+
+  // Failed more than 7 days ago: row removed. Recent failure: kept.
+  assert.equal(rowOf(s.oldFailed.id), undefined);
+  assert.equal(rowOf(s.recentFailed.id).status, 'failed');
+
+  // The log carries counts only: no id, key, URL or token.
+  assert.ok(logged.length > 0);
+  for (const line of logged) {
+    assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(line), false, line);
+    assert.equal(line.includes('profiles/'), false, line);
+    assert.equal(line.includes('http'), false, line);
+  }
+
+  // Running again finds nothing new to do.
+  const second = await runOfferMediaSweeps(ctx.env);
+  assert.equal(second.abandonedUploads + second.deletedOfferMedia + second.pendingDeletes + second.failedUploads, 0);
 });

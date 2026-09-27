@@ -14,7 +14,13 @@
 
   Downloaded Offer photos are not listed here because they live in the cache
   directory, which Auto Backup already excludes.
+
+  offer_media_uploads.hive is the Offer media upload queue. Its entries name
+  files inside app_flutter/offer_media, which are not backed up, so a
+  restored queue could only report every item as missing.
 -->
 <full-backup-content>
     <exclude domain="root" path="app_flutter/offer_media" />
+    <exclude domain="root" path="app_flutter/offer_media_uploads.hive" />
+    <exclude domain="root" path="app_flutter/offer_media_uploads.lock" />
 </full-backup-content>

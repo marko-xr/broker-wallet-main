@@ -294,3 +294,81 @@
   and are kept. Never replace it with a wipe of all app storage.
 - Deleting an account is not a subscription cancellation or refund, and the UI
   says so. Any future RevenueCat integration must not infer one from a deletion.
+- Offer media identity is a UUID v4 `mediaObjectId` generated on the device when
+  the file is picked. It is the same id in the upload queue, the Worker,
+  `media_objects`, the R2 object key and the local cache, and every Worker step
+  (authorize, confirm, remove) is idempotent on it. Retrying the same logical
+  media must never create a second object; a Worker that answers with an id of
+  its own is refused rather than followed.
+- Offer media is attached by one service-role-only database function,
+  `confirm_offer_media_upload` (APPROVED by the product owner as Option B): it
+  locks the Offer row, counts only `ready` items in the same bucket (staging
+  and production share one database), appends at max+1 and marks the item
+  ready in one transaction. The Worker remains the authority for ownership,
+  real type, size, duration and the ten-item limit; Flutter checks are only
+  for the user's benefit. Deploy order: migration, then Worker, then the app.
+- Saving an Offer never waits for its media. New items go to a persistent,
+  one-at-a-time upload queue (`offer_media_uploads`) that survives restarts,
+  runs only for the application-authenticated account, and shows each item as
+  queued, uploading, ready, retryable or refused. Nothing is presented as
+  uploaded before the server has accepted it.
+- Signed Offer-media links are transport: held in memory only, dropped a
+  minute before expiry and on any account change, never persisted, never used
+  as a cache key, never logged. A private Offer video loads only when tapped,
+  and an expired link is re-signed once automatically.
+- HEIC/HEIF Offer photos are converted to JPEG on the device with the existing
+  image compression package; no display path depends on platform HEIF
+  decoding, and the Worker no longer accepts new HEIC uploads.
+- Media of a soft-deleted Offer is retained for 7 days, then removed by the
+  Worker's Offer-media sweep. The sweeps ship with `OFFER_MEDIA_SWEEP_MODE =
+  "off"`; enabling `dry_run` or `on` in any environment is a separate owner
+  decision. Transcoding and Cloudflare Stream are out of scope for Offer media
+  until separately approved.
+- Offer media uploads run only while the app is in the foreground. Android 15+
+  gives an app outside a valid process lifecycle no network (device-verified
+  on the Samsung test phone: the app's uid is blocked `APP_BACKGROUND` whenever
+  it is not in front). The queue therefore starts nothing in the background, a
+  transfer cut off by leaving the app returns to waiting without spending an
+  automatic retry, and on the app's return (and at every start or sign-in) any
+  item that failed only for a transient reason is resumed automatically.
+  Background uploads (WorkManager or a foreground service) are not promised
+  and would be a separate, owner-approved checkpoint.
+- An Offer media item waiting for an automatic retry is shown as "retrying",
+  not as a failure asking for Retry; "tap Retry" appears only once automatic
+  retries are exhausted. Upload progress is drawn beside the preview (a strip
+  along the bottom on the large views), never instead of it.
+- A video still uploading plays from the device's own copy. After its upload
+  that copy is retired rather than deleted (it may be playing) and is removed
+  the next time the queue opens; it is never adopted as a cached copy of the
+  server video (local video caching remains deferred).
+- A ready Offer video with no still frame on this device (another device, or
+  after a reinstall) gets one made on demand from the video through its
+  private signed link and kept under its stable, account-scoped media id; the
+  link is never stored or logged. A server-stored poster (a second private R2
+  object via `media_objects.thumbnail_media_id`) is a possible later
+  improvement that needs a Worker deployment and is not approved.
+- Debug diagnostics for media name items only by a masked media id and log
+  fixed categories or error types: never a URL (even redacted), an object key,
+  an account id, a local path or raw provider/player error text.
+- Offer media is picked through its own compact sheet (Camera — Take photo /
+  Record video, Gallery, Documents). Gallery is one native selection of
+  photos and videos together, capped at the places left, through the
+  Android system Photo Picker: it needs no media-library permission, so no
+  app-made explanation dialog and no READ_MEDIA_* request is shown for it. Camera
+  permission is requested once by the system dialog at use. Documents stay
+  unavailable for Offers until a secure Offer-document backend is approved
+  (Task C). Owner, profile and Toolkit pickers keep their existing flows.
+- Video players are owned by holders: a widget that receives a controller from
+  VideoPlayerResourceManager holds it until it calls release; the manager
+  disposes a controller only when no widget holds it (idle players make room,
+  a held one never does) and never hands out a disposed controller. Widgets
+  never dispose controllers themselves.
+- Offer media capture uses the phone's own camera app through `image_picker`
+  (`pickImage` / `pickVideo` with `ImageSource.camera`), offered as two direct
+  actions, Take photo and Record video, because a system capture returns one
+  kind of media. No in-app camera and no other camera package: an in-app
+  camera on flutter.dev's `camera` package was approved and built on
+  2026-09-27, crashed on the Samsung after the permission grant, and the
+  owner withdrew that approval the same day. Camera output is screened by
+  its real size, type and length like any Gallery pick. Owner, profile and
+  Toolkit keep their existing capture flows.

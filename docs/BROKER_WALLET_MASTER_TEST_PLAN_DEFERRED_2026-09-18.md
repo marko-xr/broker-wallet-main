@@ -39,6 +39,7 @@ Every executed test should be recorded as: `Case ID | date | environment/build/c
 | Phone login/sign-up | Phone tabs owner-verified as present/selectable | Supabase-mode phone authentication not implemented; do not call it PASS |
 | Google/Apple / RevenueCat | Planned/deferred in 2026-09-16 master context | Provider setup, entitlements and live behavior not verified |
 | Release policy research | September 16 planning context exists | Console state, live source, stores, legal and billing require fresh verification before release |
+| Offer private media (2026-09-26) | **VERIFIED_REAL_DEVICE, owner, Samsung SM-S928B:** 5 photos + 5 videos uploaded to production and linked `ready` (owner-inspected hosted DB); all five ready videos play from Offer Details over the private signed R2 link; seeking works (Details and full screen); saved-video thumbnails appear after reopening, including after a reinstall. Staging Worker E2E 72/72 `VERIFIED_HOSTED`; confirm RPC applied + validated `VERIFIED_HOSTED`. **2026-09-27, owner, physical Samsung — core implementation accepted:** image and video selection; one combined Gallery selection of several videos and images with no redundant permission popup; photo and video capture through the Samsung camera app (no custom camera screen); save and reopen with media; private playback, seeking and persisted thumbnails; switching between videos with no disposed-controller exception | `MEDIA-12`…`MEDIA-26` below are NOT owner-verified — do not mark them passed |
 
 **Next development decision:** do not extend the Office harness in development mode. On current branch read `AGENTS.md`, `CLAUDE.md` if present, `docs/CURRENT_CHECKPOINT.md` and *current source*; choose the next incomplete product feature from present implementation evidence. One concrete candidate from the older September 14 snapshot is **Owner/Offer private-media integration**, previously excluded from Supabase core CRUD, but it is **not confirmed incomplete on the September 18 live branch**. Source-inspect only the relevant media boundaries first; if the path is already present, move to the next actual unfinished feature. Seek approval for the precise smallest implementation before infrastructure writes or risky changes. A read-only performance audit and publishing gap audit remain separate queued tracks, not automatic blockers.
 
@@ -135,6 +136,27 @@ Each checkbox is **work remaining unless the evidence register above explicitly 
 - [ ] `MEDIA-09` [P0,H] Account deletion sweeps media objects, late signed PUTs and finalizer safely within approved lifecycle.
 - [ ] `MEDIA-10` [P1,D] Cache shows correct user's images after A→B, sign-out, expiry and cold restart; no stale signed URL persistence.
 - [ ] `MEDIA-11` [P0,H] Quotations and other private attachments (if implemented) enforce corresponding ownership and retention.
+
+Offer media — pending device/hosted scenarios (added 2026-09-26; code and unit tests exist for each, none owner-verified on a device; `NOT RUN` unless a dated result is recorded):
+
+- [ ] `MEDIA-12` [P1,D] Leave the app mid-upload (Home) and return: the item waits instead of failing, spends no retry, and finishes after return.
+- [ ] `MEDIA-13` [P1,D] Airplane mode during an upload: "retrying automatically" is shown, then Retry / reconnect completes it with no duplicate row or link.
+- [ ] `MEDIA-14` [P1,D] Kill and restart the app with items pending: they resume at the next start; transient `needsRetry` items are queued again.
+- [ ] `MEDIA-15` [P0,D/H] Successful PUT with an interrupted confirm: the retry only confirms (no second upload), one `media_objects` row, one `offer_media` link.
+- [ ] `MEDIA-16` [P1,D] A ready video replayed after its signed link expired (> 15 min) plays after one automatic re-sign.
+- [ ] `MEDIA-17` [P1,D/H] Remove one item from a saved Offer: it disappears after reopen; the row is tombstoned and the R2 object deleted.
+- [ ] `MEDIA-18` [P0,D] Second account on the same device sees none of the first account's Offer media, queue items or cached frames.
+- [ ] `MEDIA-19` [P1,H/D] Server refusal of a video over 3:01 (staging covered by Worker unit tests only) and over 100 MB; the 11th item refused on a device.
+- [ ] `MEDIA-20` [P2,D] Landscape and long videos: seek, full screen and frames; a second physical device with no local copies shows frames and plays.
+
+Added 2026-09-27, after the owner accepted the core Offer media flow (`NOT RUN`; `MEDIA-24` and `MEDIA-26` have no dedicated automated test):
+
+- [ ] `MEDIA-21` [P1,D] System camera permission: refused once shows the localized message and adds nothing; refused for good offers Open Settings; allowed later, Take photo and Record video work.
+- [ ] `MEDIA-22` [P1,D] Android stops the app while the system camera or the Photo Picker is open (low memory or "Don't keep activities"): the shot or selection is recovered into the form once on return, never twice.
+- [ ] `MEDIA-23` [P2,D] On-device screening: a HEIC photo arrives as JPEG; a video over 100 MB or over 3:00, including a full-length system-camera recording, is refused with its message before any upload.
+- [ ] `MEDIA-24` [P2,D] iOS: combined Gallery selection, system camera photo and video (camera and microphone purpose strings), private playback and seeking.
+- [ ] `MEDIA-25` [P2,H/D] Soft-deleted Offer media retention: owner-approved sweep `dry_run`, inspect the logged counts, then `on`; media older than 7 days is removed and nothing else is.
+- [ ] `MEDIA-26` [P2,D] Known backlog, not the Offer path: the legacy `mediaUrls` full-screen viewer (non-Offer media) disposes its controllers and then pauses them, raising "used after being disposed" in debug builds (since `ddb20a6`); fix in its own checkpoint, then verify.
 
 ### G. Search, Favorites, matching, counts, map and analytics
 
@@ -273,5 +295,7 @@ Each checkbox is **work remaining unless the evidence register above explicitly 
 | Date | Feature/change | Changed paths | Small targeted check actually run | Deferred tests entered here | Owner-approved next implementation |
 |---|---|---|---|---|---|
 | 2026-09-18 | Office direct A/B SELECT | Test-only harness; exact current diff to verify in live repository | Owner terminal: A control signaled; app signed out/in B; `All tests passed!` | Seven other core/child-table SELECT checks, all mutation negatives | Select next actual unfinished product feature from live checkpoint |
+| 2026-09-26 | Offer private media: upload queue lifecycle, playback, seeking, frames | Offer media services, gallery/full screen/grid widgets (see `docs/CURRENT_CHECKPOINT.md`) | Owner Samsung: upload, playback of 5 videos, seeking, frames after reopen — PASS (`VERIFIED_REAL_DEVICE`) | `MEDIA-12`…`MEDIA-20` | Task B: Offer media picker and permission UX |
+| 2026-09-27 | Offer private media accepted: picker sheet, combined Gallery, system camera (custom camera removed), player ownership | Offer media picker/sheet, view model, video player manager and gallery widget (see `docs/CURRENT_CHECKPOINT.md`) | Owner Samsung: selection, combined Gallery, system camera photo/video, no permission popup, save/reopen, playback, seeking, thumbnails, video switching — PASS (`VERIFIED_REAL_DEVICE`); Flutter suite after the camera revert not run by the agent | `MEDIA-21`…`MEDIA-26` | Owner Media (separate checkpoint) |
 
 **Change log:** v1.0 created from project master context dated 2026-09-16, historical September 14 repository inventory, latest owner/agent-reported core-entity/RLS and Office runtime progress through September 18. Historical code inventories are *planning input only*, not a claim that today's active branch contains or implements every feature listed.

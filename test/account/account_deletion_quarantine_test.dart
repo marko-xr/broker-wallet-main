@@ -163,6 +163,7 @@ class _Harness {
         forgetProfileMedia: ({mediaIds}) async {},
         forgetOfferMedia: ({ownerId}) async =>
             const OfferMediaCleanupReport.empty(),
+        purgeOfferMediaUploads: (_) async => 0,
       ),
     );
     feed = NotificationViewModel(repository: notifications);

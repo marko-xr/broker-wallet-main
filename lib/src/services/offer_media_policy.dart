@@ -13,7 +13,14 @@ enum OfferMediaRejection {
   videoTooLarge('offerMediaVideoTooLarge'),
   videoTooLong('offerMediaVideoTooLong'),
   limitReached('offerMediaLimitReached'),
-  interrupted('offerMediaUploadInterrupted');
+  interrupted('offerMediaUploadInterrupted'),
+
+  /// The Media Worker refused this upload for good: its bytes did not match,
+  /// or its id was already used for something else or removed.
+  rejected('offerMediaUploadRejected'),
+
+  /// The queued file is no longer on the device.
+  fileMissing('offerMediaFileMissing');
 
   const OfferMediaRejection(this.messageKey);
 
@@ -21,12 +28,23 @@ enum OfferMediaRejection {
   final String messageKey;
 
   /// Maps the Media Worker's stable `code` field to a rejection.
+  ///
+  /// Only permanent refusals are mapped. A retryable answer such as
+  /// `upload_incomplete` or `deletion_in_progress` deliberately stays
+  /// unmapped, so it reaches the caller as a plain HTTP failure it can retry.
   static OfferMediaRejection? fromWorkerCode(Object? code) => switch (code) {
         'unsupported_media_type' => OfferMediaRejection.unsupportedType,
+        'media_type_mismatch' => OfferMediaRejection.unsupportedType,
         'image_too_large' => OfferMediaRejection.imageTooLarge,
         'video_too_large' => OfferMediaRejection.videoTooLarge,
         'video_too_long' => OfferMediaRejection.videoTooLong,
         'offer_media_limit_reached' => OfferMediaRejection.limitReached,
+        'upload_rejected' => OfferMediaRejection.rejected,
+        'idempotency_mismatch' => OfferMediaRejection.rejected,
+        'media_id_conflict' => OfferMediaRejection.rejected,
+        'media_mismatch' => OfferMediaRejection.rejected,
+        'media_removed' => OfferMediaRejection.rejected,
+        'invalid_state' => OfferMediaRejection.rejected,
         _ => null,
       };
 }
@@ -43,14 +61,21 @@ abstract final class OfferMediaPolicy {
   static const int maxVideoBytes = 100 * 1024 * 1024;
   static const Duration maxVideoDuration = Duration(minutes: 3);
 
+  /// The same one-second allowance the Worker grants, so a clip the camera
+  /// reports as 3:00 is not refused here when the server would accept it.
+  static const Duration maxVideoDurationAccepted =
+      Duration(minutes: 3, seconds: 1);
+
   /// Enough leading bytes for every signature recognized here.
   static const int headerBytes = 64;
 
+  /// What may be uploaded. HEIC/HEIF photos are not on this list: they are
+  /// converted to JPEG on the device first (see `offer_media_selection.dart`),
+  /// so no Offer photo depends on a platform being able to decode HEIF.
   static const Map<String, OfferMediaKind> contentTypes = {
     'image/jpeg': OfferMediaKind.image,
     'image/png': OfferMediaKind.image,
     'image/webp': OfferMediaKind.image,
-    'image/heic': OfferMediaKind.image,
     'video/mp4': OfferMediaKind.video,
     'video/quicktime': OfferMediaKind.video,
     'video/3gpp': OfferMediaKind.video,
@@ -60,19 +85,11 @@ abstract final class OfferMediaPolicy {
       kind == OfferMediaKind.video ? maxVideoBytes : maxImageBytes;
 
   /// The real Content-Type of a file from its leading [header] bytes, or
-  /// null when it is not a supported Offer media container.
-  ///
-  /// HEIC is the one deliberate exception, unchanged from before videos were
-  /// supported: its byte signature is not detected client-side, so a
-  /// `.heic`-named file keeps the extension-trusted classification (the
-  /// Worker still verifies its real bytes on confirm).
-  static String? resolveContentType(String path, List<int> header) {
+  /// null when it is not an uploadable Offer media container.
+  static String? resolveContentType(List<int> header) {
     final image = ImageSignatureDetector.detectMimeType(header);
     if (image != null) return image;
-    final video = VideoSignatureDetector.detectMimeType(header);
-    if (video != null) return video;
-    if (_extension(path) == 'heic') return 'image/heic';
-    return null;
+    return VideoSignatureDetector.detectMimeType(header);
   }
 
   /// Reads only the first [headerBytes] of [file] — never the whole file,
@@ -87,10 +104,9 @@ abstract final class OfferMediaPolicy {
   }
 
   /// Classifies [file] and checks its size, without reading it whole.
-  /// Returns the rejection, or null when the file may be uploaded.
   static Future<OfferMediaCheck> check(File file) async {
     final length = await file.length();
-    final contentType = resolveContentType(file.path, await readHeader(file));
+    final contentType = resolveContentType(await readHeader(file));
     final kind = contentType == null ? null : contentTypes[contentType];
     if (contentType == null || kind == null || length < 1) {
       return const OfferMediaCheck.rejected(
@@ -108,11 +124,6 @@ abstract final class OfferMediaPolicy {
   static int remainingSlots(int itemsAlreadyOnOffer) {
     final remaining = maxItemsPerOffer - itemsAlreadyOnOffer;
     return remaining < 0 ? 0 : remaining;
-  }
-
-  static String _extension(String path) {
-    final name = path.replaceAll('\\', '/').split('/').last;
-    return name.contains('.') ? name.split('.').last.toLowerCase() : '';
   }
 }
 
@@ -133,6 +144,39 @@ class OfferMediaCheck {
   final OfferMediaRejection? rejection;
 
   bool get isAccepted => rejection == null;
+}
+
+/// One file the user picked for an Offer, screened and ready to be saved.
+///
+/// [mediaObjectId] is generated once, on the device, when the file is picked,
+/// and is the item's identity from then on — in the upload queue, the
+/// Worker, `media_objects`, the R2 key and the local cache. It is what makes
+/// retrying the same logical upload safe: however often it is retried, it can
+/// never become a second object.
+class OfferMediaDraft {
+  const OfferMediaDraft({
+    required this.mediaObjectId,
+    required this.path,
+    required this.kind,
+    required this.contentType,
+    required this.byteLength,
+    this.posterPath,
+    this.displayName,
+    this.durationMs,
+  });
+
+  final String mediaObjectId;
+
+  /// The file to upload: the picked file, or its JPEG conversion.
+  final String path;
+  final OfferMediaKind kind;
+  final String contentType;
+  final int byteLength;
+
+  /// A still frame of a video, made on the device for immediate preview.
+  final String? posterPath;
+  final String? displayName;
+  final int? durationMs;
 }
 
 /// Detects a video container from its real leading bytes.
@@ -194,6 +238,38 @@ abstract final class VideoSignatureDetector {
     if (_quickTimeBrands.contains(brand)) return 'video/quicktime';
     if (_threeGppBrands.contains(brand)) return 'video/3gpp';
     return null;
+  }
+}
+
+/// Recognizes a HEIC/HEIF still image, which the app converts to JPEG before
+/// upload rather than relying on platform HEIF decoding for display.
+abstract final class HeifSignatureDetector {
+  static const Set<String> _brands = {
+    'heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1', //
+  };
+
+  /// True for an ISO base-media file whose major or compatible brands name a
+  /// HEIF image, or — only when the bytes are not a recognizable video — a
+  /// file named `.heic`/`.heif`.
+  static bool isHeif(List<int> header, {String? path}) {
+    if (VideoSignatureDetector.detectMimeType(header) != null) return false;
+    if (header.length >= 12 &&
+        header[4] == 0x66 &&
+        header[5] == 0x74 &&
+        header[6] == 0x79 &&
+        header[7] == 0x70) {
+      final boxSize =
+          (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+      final end =
+          boxSize >= 16 && boxSize < header.length ? boxSize : header.length;
+      for (var offset = 8; offset + 4 <= end; offset += 4) {
+        if (offset == 12) continue; // minor_version, not a brand
+        final brand = String.fromCharCodes(header.sublist(offset, offset + 4));
+        if (_brands.contains(brand.toLowerCase())) return true;
+      }
+    }
+    final name = path?.replaceAll('\\', '/').split('/').last.toLowerCase();
+    return name != null && (name.endsWith('.heic') || name.endsWith('.heif'));
   }
 }
 

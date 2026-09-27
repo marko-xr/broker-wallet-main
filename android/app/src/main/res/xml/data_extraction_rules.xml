@@ -11,12 +11,20 @@
 
   Both sections are listed because they are independent: omitting
   device-transfer would still let the files move to a new phone.
+
+  offer_media_uploads.hive is the Offer media upload queue, whose entries
+  name files in app_flutter/offer_media; without those files a restored
+  queue could only report every item as missing.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
+        <exclude domain="root" path="app_flutter/offer_media_uploads.hive" />
+        <exclude domain="root" path="app_flutter/offer_media_uploads.lock" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" path="app_flutter/offer_media" />
+        <exclude domain="root" path="app_flutter/offer_media_uploads.hive" />
+        <exclude domain="root" path="app_flutter/offer_media_uploads.lock" />
     </device-transfer>
 </data-extraction-rules>

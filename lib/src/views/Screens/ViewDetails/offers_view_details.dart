@@ -12,6 +12,8 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
+import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
+    show OfferMediaUploadCompleted;
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +40,9 @@ class OffersDetailsView extends StatefulWidget {
   /// Media this device already holds for an Offer id, read synchronously.
   final CachedOfferMediaReader? readCachedMedia;
 
+  /// This device's queued uploads for an Offer id, read synchronously.
+  final PendingOfferMediaReader? readPendingMedia;
+
   const OffersDetailsView({
     super.key,
     required this.offer,
@@ -45,6 +50,7 @@ class OffersDetailsView extends StatefulWidget {
     this.loadMetadata,
     this.resolveMedia,
     this.readCachedMedia,
+    this.readPendingMedia,
   });
 
   @override
@@ -70,6 +76,11 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   // Upload completion listener
   StreamSubscription<UploadCompletedEvent>? _uploadCompletionSubscription;
 
+  // Offer media upload queue (Supabase): its items' state, and each one the
+  // server has accepted.
+  Listenable? _offerMediaUploads;
+  StreamSubscription<OfferMediaUploadCompleted>? _offerMediaCompletions;
+
   // Favorite state - now managed by OptimisticFavoritesService
   late OptimisticFavoritesService _optimisticFavoritesService;
 
@@ -92,18 +103,56 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     _initializeMediaController();
     _loadFavoriteStatus();
     _setupUploadCompletionListener();
+    _setupOfferMediaUploadListener();
     unawaited(_loadCoordinator.load());
   }
 
-  void _createLoadCoordinator() {
+  /// [resolvedOffer] is an Offer just read authoritatively (after Edit).
+  void _createLoadCoordinator({OfferModel? resolvedOffer}) {
     _loadCoordinator = OfferDetailsLoadCoordinator(
-      initialOffer: _currentOffer,
-      initialMetadataResolved: widget.initialOfferIsResolved,
+      initialOffer: resolvedOffer ?? _currentOffer,
+      initialMetadataResolved:
+          resolvedOffer != null || widget.initialOfferIsResolved,
       loadMetadata: widget.loadMetadata ?? _offerService.getOfferMetadata,
       resolveMedia: widget.resolveMedia ?? _offerService.resolveOfferMedia,
       readCachedMedia: widget.readCachedMedia ?? _offerService.cachedOfferMedia,
+      readPendingMedia:
+          widget.readPendingMedia ?? _offerService.pendingOfferMedia,
       onChanged: _handleLoadChanged,
     );
+  }
+
+  void _setupOfferMediaUploadListener() {
+    try {
+      final uploads = _offerService.offerMediaUploadChanges;
+      uploads.addListener(_handleOfferMediaUploadsChanged);
+      _offerMediaUploads = uploads;
+      _offerMediaCompletions =
+          _offerService.offerMediaUploadCompletions.listen((event) {
+        if (!mounted || event.offerId != _currentOffer.id) return;
+        // The item is on the server now: show it from there.
+        unawaited(_loadCoordinator.load());
+      }, onError: (Object _) {});
+      unawaited(_offerService.loadOfferMediaUploads());
+    } catch (_) {
+      // Without the queue there is nothing pending to show.
+    }
+  }
+
+  void _handleOfferMediaUploadsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _initializeMediaController();
+      _cachedMediaGallery = null;
+    });
+  }
+
+  void _retryOfferMediaUpload(String mediaObjectId) {
+    unawaited(_offerService.retryOfferMediaUpload(mediaObjectId));
+  }
+
+  void _removeOfferMediaUpload(String mediaObjectId) {
+    unawaited(_offerService.cancelOfferMediaUpload(mediaObjectId));
   }
 
   void _handleLoadChanged() {
@@ -210,6 +259,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   void dispose() {
     _loadCoordinator.dispose();
     _uploadCompletionSubscription?.cancel();
+    _offerMediaUploads?.removeListener(_handleOfferMediaUploadsChanged);
+    _offerMediaCompletions?.cancel();
     _mainAnimationController.dispose();
     _fabAnimationController.dispose();
     _mediaPageController?.dispose();
@@ -528,7 +579,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   Widget _buildCachedMediaGallery() {
     _cachedMediaGallery ??= OptimizedMediaGalleryWidget(
-      mediaRefs: _loadCoordinator.mediaItems,
+      mediaRefs: _loadCoordinator.displayItems,
       imagePlaceholder: const MediaLoadingPlaceholder(),
       pageController: _mediaPageController,
       onPageChanged: (index) {
@@ -540,6 +591,10 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/building-property.svg',
       onRetry: _retryOfferLoad,
+      onRetryUpload: _retryOfferMediaUpload,
+      onRemoveUpload: _removeOfferMediaUpload,
+      refreshSignedUrl: (mediaObjectId) =>
+          _loadCoordinator.refreshSignedUrl(mediaObjectId),
     );
     return _cachedMediaGallery!;
   }
@@ -2189,12 +2244,18 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
     // If an updated offer was returned, update our state
     if (updatedOffer != null && updatedOffer is OfferModel) {
+      // Media removed or added in Edit must not linger from the previous
+      // load: the Offer's media is read again from the updated Offer.
+      _loadCoordinator.dispose();
       setState(() {
         _currentOffer = updatedOffer;
+        _createLoadCoordinator(resolvedOffer: updatedOffer);
+        _initializeMediaController();
         // Clear cached widgets to force rebuild with new data
         _cachedMediaGallery = null;
         _cachedMapWidget = null;
       });
+      unawaited(_loadCoordinator.load());
     }
   }
 

@@ -15,6 +15,7 @@ import '../data/models/property_status.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
 import 'offer_media_cache_identity.dart';
+import 'offer_media_url_cache.dart';
 import 'offline_media_service.dart';
 import 'r2_offer_media_upload_service.dart';
 
@@ -316,11 +317,19 @@ class SupabaseCoreEntitiesService {
       final cacheKey = offerMediaCacheKey(ownerId: ownerId, mediaObjectId: id);
       if (cacheKey == null) continue;
       final path = _localPathFor(cacheKey);
-      if (path == null) continue;
+      // A still-valid signed URL from earlier this session also draws at
+      // once (a video, or a photo not on disk yet). Memory only.
+      final cached = OfferMediaUrlCache.instance.get(cacheKey);
+      final poster = _localPathFor(offerMediaPosterKey(cacheKey));
+      if (path == null && cached == null && poster == null) continue;
       refs.add(OfferMediaRef(
         mediaObjectId: id,
         cacheKey: cacheKey,
         localFilePath: path,
+        signedUrl: cached?.url,
+        isVideo: cached?.isVideo ?? (path == null && poster != null),
+        durationMs: cached?.durationMs,
+        posterPath: poster,
       ));
     }
     return refs;
@@ -376,8 +385,23 @@ class SupabaseCoreEntitiesService {
           mediaObjectId: item.mediaObjectId,
           signedUrl: item.url,
           isVideo: item.mediaType == 'video',
+          durationMs: item.durationMs,
         ),
     ];
+    // Transport, held in memory only until shortly before it expires, so a
+    // reopened Offer or a video tapped to play need not wait for a new one.
+    for (var i = 0; i < refs.length; i++) {
+      final cacheKey = refs[i].cacheKey;
+      final expiresAt = mediaItems[i].expiresAt;
+      if (cacheKey == null || expiresAt == null) continue;
+      OfferMediaUrlCache.instance.put(
+        cacheKey,
+        mediaItems[i].url,
+        expiresAt,
+        isVideo: refs[i].isVideo,
+        durationMs: refs[i].durationMs,
+      );
+    }
 
     unawaited(_rememberOfferMediaCatalog(id, sessionOwnerId, refs));
     return OfferMediaResolution(
@@ -445,6 +469,7 @@ class SupabaseCoreEntitiesService {
     required String mediaObjectId,
     String? signedUrl,
     bool isVideo = false,
+    int? durationMs,
   }) {
     final cacheKey = offerMediaCacheKey(
       ownerId: ownerId,
@@ -454,8 +479,12 @@ class SupabaseCoreEntitiesService {
       mediaObjectId: mediaObjectId,
       cacheKey: cacheKey,
       signedUrl: signedUrl,
-      localFilePath: _localPathFor(cacheKey),
+      localFilePath: isVideo ? null : _localPathFor(cacheKey),
       isVideo: isVideo,
+      durationMs: durationMs,
+      posterPath: isVideo && cacheKey != null
+          ? _localPathFor(offerMediaPosterKey(cacheKey))
+          : null,
     );
   }
 

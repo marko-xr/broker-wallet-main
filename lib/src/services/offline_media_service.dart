@@ -230,6 +230,64 @@ class OfflineMediaService {
     }
   }
 
+  /// Adds one item the server just accepted to the end of [offerId]'s
+  /// remembered media, so the next open draws it from disk before any
+  /// network. The next authoritative response replaces the whole list anyway.
+  Future<void> appendToOfferMediaCatalog({
+    required String? ownerId,
+    required String? offerId,
+    required String mediaObjectId,
+  }) async {
+    if (!_isInitialized) {
+      await initialize();
+      if (!_isInitialized) return;
+    }
+    final ids = readOfferMediaCatalog(ownerId: ownerId, offerId: offerId);
+    if (ids.contains(mediaObjectId)) return;
+    await writeOfferMediaCatalog(
+      ownerId: ownerId,
+      offerId: offerId,
+      mediaObjectIds: [...ids, mediaObjectId],
+    );
+  }
+
+  /// Forgets everything this device holds for one deleted Offer of
+  /// [ownerId]: its remembered media list and each item's bytes, mapping,
+  /// adopted original and still frame. Other Offers are untouched.
+  Future<OfferMediaCleanupReport> forgetOfferMediaForOffer({
+    required String? ownerId,
+    required String? offerId,
+  }) async {
+    final owner = ownerId?.trim();
+    final offer = offerId?.trim();
+    if (owner == null || owner.isEmpty || offer == null || offer.isEmpty) {
+      return const OfferMediaCleanupReport.empty();
+    }
+    if (!_isInitialized) await initialize();
+    final ids = readOfferMediaCatalog(ownerId: owner, offerId: offer);
+    final report =
+        await forgetOfferMediaItems(ownerId: owner, mediaObjectIds: ids);
+    if (!_isInitialized) return report;
+    try {
+      await _localMediaBox.delete(_offerMediaCatalogKey(owner, offer));
+      return report.merge(const OfferMediaCleanupReport(
+        catalogueEntriesRemoved: 1,
+        cacheEntriesRemoved: 0,
+        originalsRemoved: 0,
+        failures: 0,
+        sweepCompleted: true,
+      ));
+    } catch (e) {
+      return report.merge(const OfferMediaCleanupReport(
+        catalogueEntriesRemoved: 0,
+        cacheEntriesRemoved: 0,
+        originalsRemoved: 0,
+        failures: 1,
+        sweepCompleted: true,
+      ));
+    }
+  }
+
   /// Replaces the remembered media identity for an Offer and removes what
   /// the new set no longer contains.
   ///
@@ -452,6 +510,30 @@ class OfflineMediaService {
     if (_isInitialized) {
       try {
         await _urlMappingBox.delete(_mediaIdKey(cacheKey));
+      } catch (e) {
+        failures += 1;
+      }
+    }
+
+    // A video's still frame, made on this device, goes with the video.
+    final posterKey = offerMediaPosterKey(cacheKey);
+    final posterPath = getLocalFilePathForMediaId(posterKey);
+    if (posterPath != null &&
+        posterPath.isNotEmpty &&
+        _isInsideOfferMediaDirectory(posterPath)) {
+      try {
+        final poster = File(posterPath);
+        if (await poster.exists()) {
+          await poster.delete();
+          originalsRemoved += 1;
+        }
+      } catch (e) {
+        failures += 1;
+      }
+    }
+    if (posterPath != null && _isInitialized) {
+      try {
+        await _urlMappingBox.delete(_mediaIdKey(posterKey));
       } catch (e) {
         failures += 1;
       }
@@ -967,6 +1049,11 @@ class OfflineMediaService {
   /// re-downloading bytes the device already holds. Omitting it keeps the
   /// previous URL-keyed behavior, which is correct for the stable Firebase
   /// Storage URLs used by property and search imagery.
+  ///
+  /// [cacheWidth] decodes the image at that many physical pixels wide instead
+  /// of its full size — a photo shown in a header or a tile then costs memory
+  /// for what is on screen, not for its original resolution. Omitted, the
+  /// full image is decoded as before.
   Widget buildOfflineAwareImage({
     required String imageUrl,
     String? cacheKey,
@@ -975,6 +1062,7 @@ class OfflineMediaService {
     double? height,
     Widget? placeholder,
     Widget? errorWidget,
+    int? cacheWidth,
   }) {
     // Stable-identity local bytes win over everything: they are already on
     // disk, so they render on the first frame with no network and no
@@ -988,6 +1076,7 @@ class OfflineMediaService {
           fit: fit,
           width: width,
           height: height,
+          cacheWidth: cacheWidth,
           // Keeps the previous frame on screen while a different file decodes
           // — e.g. an optimistic preview handing over to its adopted copy.
           gaplessPlayback: true,
@@ -1019,6 +1108,7 @@ class OfflineMediaService {
           fit: fit,
           width: width,
           height: height,
+          cacheWidth: cacheWidth,
           errorBuilder: (context, error, stackTrace) {
             return errorWidget ?? _buildDefaultErrorWidget();
           },
@@ -1045,6 +1135,7 @@ class OfflineMediaService {
       fit: fit,
       width: width,
       height: height,
+      memCacheWidth: cacheWidth,
       placeholder: (context, url) {
         if (placeholder != null) {
           return placeholder;

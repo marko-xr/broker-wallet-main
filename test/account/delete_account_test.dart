@@ -619,6 +619,7 @@ void main() {
         deletedAccountCleaner: DeletedAccountLocalDataCleaner(
           forgetProfileMedia: media.call,
           forgetOfferMedia: (offerMedia ?? _OfferMediaForgetter()).call,
+          purgeOfferMediaUploads: (_) async => 0,
         ),
       );
       repo.emit(repo.currentUser);
@@ -1016,6 +1017,7 @@ void main() {
       return DeletedAccountLocalDataCleaner(
         forgetProfileMedia: ({mediaIds}) async {},
         forgetOfferMedia: offerMedia.call,
+        purgeOfferMediaUploads: (_) async => 0,
       ).clear(deletedUid: _alice, wasSignedInAccount: true);
     }
 
@@ -1061,6 +1063,30 @@ void main() {
 
       expect(report.isComplete, isFalse);
       expect(report.sweepCompleted, isFalse);
+    });
+
+    test(
+        "the deleted account's queued uploads are purged before its files "
+        'are swept, and a purge failure stops nothing', () async {
+      SharedPreferences.setMockInitialValues({});
+      final order = <String>[];
+      final offerMedia = _OfferMediaForgetter();
+
+      final report = await DeletedAccountLocalDataCleaner(
+        forgetProfileMedia: ({mediaIds}) async {},
+        forgetOfferMedia: ({ownerId}) {
+          order.add('sweep:$ownerId');
+          return offerMedia.call(ownerId: ownerId);
+        },
+        purgeOfferMediaUploads: (ownerId) async {
+          order.add('purge:$ownerId');
+          throw const FileSystemException('queue unavailable');
+        },
+      ).clear(deletedUid: _alice, wasSignedInAccount: true);
+
+      expect(order, ['purge:$_alice', 'sweep:$_alice']);
+      expect(report.isComplete, isTrue,
+          reason: 'the sweep, which removes the queued copies too, completed');
     });
   });
 }

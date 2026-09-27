@@ -75,7 +75,8 @@ Delete Account status:
   VERIFIED_HOSTED.
 - Production Worker `r2-profile-upload`: version
   `f5bdf3eb-400e-488f-930b-d3c5e78a0624` deployed at 100% traffic, with rollback
-  target `491a5e0f-6b51-4ca9-8d33-8164bcfec348`. `media-api.brokerwallet.ae` is
+  target `491a5e0f-6b51-4ca9-8d33-8164bcfec348` (the version Delete Account was
+  accepted on; production now runs the Offer media version below). `media-api.brokerwallet.ae` is
   attached, the `*/5 * * * *` cron is deployed, and `STAGING_TEST_KEY` is not
   bound. No-JWT smoke returns 401 on `/authorize`, `/profile-image-url` and
   `/account/delete` (`session_expired`).
@@ -118,6 +119,27 @@ deletion only when Supabase Auth says the account is gone. The job-table
 migration is applied and hosted-verified, and the production Worker is deployed.
 That lost-response path has not been exercised at runtime (NOT RUN / DEFERRED;
 see `docs/CURRENT_CHECKPOINT.md`).
+
+Offer private media is accepted by the product owner (VERIFIED_REAL_DEVICE,
+Samsung, 2026-09-27): selecting images and videos, one combined Gallery
+selection through the Android Photo Picker with no media-library permission
+prompt, photo and video capture through the phone's own camera app
+(`image_picker`; no in-app camera), saving and reopening Offers with media,
+private playback, seeking, persisted thumbnails, and switching between videos
+without the disposed-controller error. Each item gets a `mediaObjectId` on the
+device, used unchanged by the persistent upload queue, the Worker,
+`media_objects`, the R2 key and the local cache. An Offer saves without waiting
+for its media; files reach the private `broker-wallet-media` bucket through
+short-lived signed URLs, and the service-role-only `confirm_offer_media_upload`
+function attaches them (migration `20260926092220`, APPLIED + VERIFIED_HOSTED).
+Signed links are held in memory only. Limits: 10 items per Offer, images
+10 MiB, videos 100 MiB and 3 minutes, checked on the device and again by the
+Worker. Production Worker `ecaf125d-a0e3-4c26-add6-5f2c684c2516`
+(owner-reported; rollback `bacad8d6-b7e2-434b-88e4-965c91c82874`) runs with the
+Offer-media sweeps `off`. Interruption, account switching, permission refusal,
+process death, iOS and sweep scenarios are NOT RUN (`MEDIA-12`…`MEDIA-26` in
+the deferred master test plan). Private Offer documents (Task C) are deferred;
+Owner media is the next separate checkpoint.
 
 The Realtime `RealtimeSubscribeException` on `public.notifications` observed
 during the first failed recovery test did not reproduce after the quarantine

@@ -12,9 +12,17 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
-import 'package:broker_wallet/src/services/clean_media_service.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
 import 'package:broker_wallet/src/services/offer_media_selection.dart';
+import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
+    show OfferMediaUploadCompleted;
+import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_media_source_sheet.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../services/ScreenServices/offer_service.dart';
@@ -25,8 +33,13 @@ enum PropertyType { residential, commercial, furnished }
 
 class AddOffersViewModel extends ChangeNotifier
     implements LocationCapableViewModel {
-  final OfferService _offerService = OfferService();
-  final CleanMediaService _cleanMediaService = CleanMediaService();
+  final OfferService _offerService;
+
+  /// The Offer's own pickers (system Photo Picker, camera) and attachment
+  /// sheet. Owner and profile media keep their own pickers.
+  final OfferMediaPicker _mediaPicker;
+  final Future<OfferMediaSource?> Function(BuildContext context, int remaining)
+      _chooseMediaSource;
 
   // Edit mode properties
   final AddOffersMode _mode;
@@ -38,8 +51,19 @@ class AddOffersViewModel extends ChangeNotifier
     AddOffersMode mode = AddOffersMode.add,
     String? offerId,
     OfferModel? offerData,
+    OfferService? offerService,
+    bool? usesMediaQueue,
+    OfferMediaPicker? mediaPicker,
+    Future<OfferMediaSource?> Function(BuildContext context, int remaining)?
+        chooseMediaSource,
   })  : _mode = mode,
-        _editOfferId = offerId {
+        _editOfferId = offerId,
+        _offerService = offerService ?? OfferService(),
+        _mediaPicker = mediaPicker ?? OfferMediaPicker(),
+        _chooseMediaSource = chooseMediaSource ??
+            ((context, remaining) =>
+                showOfferMediaSourceSheet(context, remaining: remaining)),
+        _usesMediaQueue = usesMediaQueue ?? SupabaseConfig.useSupabaseAuth {
     if (_mode == AddOffersMode.edit) {
       if (offerData != null) {
         // Use pre-loaded data for instant UI fill
@@ -50,6 +74,222 @@ class AddOffersViewModel extends ChangeNotifier
         _loadOfferForEdit();
       }
     }
+    if (_usesMediaQueue) _startOfferMedia();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offer media (Supabase mode): identity-based, never URL-based.
+  //
+  // The form shows three kinds of item, in this order: media already on the
+  // server, media in the upload queue, and files picked in this session.
+  // Each is addressed by its `mediaObjectId`. Removing a server item or
+  // cancelling a queued one takes effect on Save, where the outcome is
+  // reported as it actually went; a picked file is simply dropped.
+  // ---------------------------------------------------------------------------
+
+  final bool _usesMediaQueue;
+  List<OfferMediaRef> _existingMedia = const <OfferMediaRef>[];
+  bool _existingMediaResolved = false;
+  int _mediaRefreshGeneration = 0;
+  final Set<String> _removedExistingIds = <String>{};
+  final List<OfferMediaDraft> _drafts = <OfferMediaDraft>[];
+  final Set<String> _cancelledUploadIds = <String>{};
+  bool _mediaGridExpanded = false;
+  String? _createdOfferId;
+  StreamSubscription<OfferMediaUploadCompleted>? _uploadCompletions;
+  bool _disposed = false;
+
+  /// The Offer this form's media belongs to, once it has an id.
+  String? get _mediaOfferId => _editOfferId ?? _offerId;
+
+  void _startOfferMedia() {
+    _offerService.offerMediaUploadChanges.addListener(_onUploadsChanged);
+    _uploadCompletions = _offerService.offerMediaUploadCompletions.listen(
+      _onUploadCompleted,
+      onError: (Object _) {},
+    );
+    unawaited(_offerService.loadOfferMediaUploads().then((_) {
+      if (!_disposed) notifyListeners();
+    }));
+    final offerId = _editOfferId;
+    if (isEditMode && offerId != null) {
+      if (_existingMedia.isEmpty) {
+        _existingMedia = _offerService.cachedOfferMedia(offerId);
+      }
+      unawaited(_refreshExistingMedia());
+    }
+    unawaited(_recoverLostSelection());
+  }
+
+  /// Picks Android handed back after it stopped the app while the picker was
+  /// open: screened and added like any other selection, so nothing the user
+  /// chose is silently lost — they appear in the form's grid.
+  Future<void> _recoverLostSelection() async {
+    try {
+      final recovered = await _mediaPicker.recoverLostSelection();
+      if (recovered.isEmpty || _disposed) return;
+      await addPickedOfferMedia(recovered);
+    } catch (_) {
+      // Nothing to recover is the normal case; a failure changes nothing.
+    }
+  }
+
+  void _onUploadsChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  void _onUploadCompleted(OfferMediaUploadCompleted event) {
+    if (_disposed || event.offerId != _mediaOfferId) return;
+    // The item left the queue: show it as the server item it now is — from
+    // the copy this device just adopted — until the refresh confirms it.
+    if (!_existingMedia
+        .any((ref) => ref.mediaObjectId == event.mediaObjectId)) {
+      final cacheKey = offerMediaCacheKey(
+        ownerId: event.ownerId,
+        mediaObjectId: event.mediaObjectId,
+      );
+      final offline = OfflineMediaService.instance;
+      _existingMedia = [
+        ..._existingMedia,
+        OfferMediaRef(
+          mediaObjectId: event.mediaObjectId,
+          cacheKey: cacheKey,
+          localFilePath: event.isVideo || cacheKey == null
+              ? null
+              : offline.getLocalFilePathForMediaId(cacheKey),
+          isVideo: event.isVideo,
+          posterPath: event.isVideo && cacheKey != null
+              ? offline.getLocalFilePathForMediaId(
+                  offerMediaPosterKey(cacheKey),
+                )
+              : null,
+          durationMs: event.durationMs,
+        ),
+      ];
+      notifyListeners();
+    }
+    unawaited(_refreshExistingMedia());
+  }
+
+  /// Replaces the server items with the authoritative list. Only the most
+  /// recent refresh is applied, so an answer that predates an upload never
+  /// hides it.
+  Future<void> _refreshExistingMedia() async {
+    final offerId = _mediaOfferId;
+    final ownerId = _offerService.currentOwnerId;
+    if (offerId == null || ownerId == null || ownerId.isEmpty) return;
+    final generation = ++_mediaRefreshGeneration;
+    try {
+      final resolution = await _offerService.resolveOfferMedia(
+        offerId: offerId,
+        ownerId: ownerId,
+      );
+      if (_disposed ||
+          resolution == null ||
+          generation != _mediaRefreshGeneration) {
+        return;
+      }
+      _existingMedia = resolution.items;
+      _existingMediaResolved = true;
+      notifyListeners();
+    } catch (_) {
+      // Keep what the Offer model and this device already gave the form.
+    }
+  }
+
+  List<OfferMediaRef> get _pendingUploads {
+    final offerId = _mediaOfferId;
+    if (offerId == null) return const <OfferMediaRef>[];
+    return _offerService.pendingOfferMedia(offerId);
+  }
+
+  OfferMediaRef _draftRef(OfferMediaDraft draft) => OfferMediaRef(
+        mediaObjectId: draft.mediaObjectId,
+        cacheKey: null,
+        localFilePath: draft.kind == OfferMediaKind.image ? draft.path : null,
+        isVideo: draft.kind == OfferMediaKind.video,
+        posterPath: draft.posterPath,
+        durationMs: draft.durationMs,
+        displayName: draft.displayName,
+        byteLength: draft.byteLength,
+      );
+
+  /// Offer media as the form shows it (Supabase mode); empty otherwise.
+  List<OfferMediaRef> get offerMediaItems {
+    if (!_usesMediaQueue) return const <OfferMediaRef>[];
+    final shown = <String>{};
+    return [
+      for (final ref in _existingMedia)
+        if (!_removedExistingIds.contains(ref.mediaObjectId) &&
+            shown.add(ref.mediaObjectId))
+          ref,
+      for (final ref in _pendingUploads)
+        if (!_cancelledUploadIds.contains(ref.mediaObjectId) &&
+            shown.add(ref.mediaObjectId))
+          ref,
+      for (final draft in _drafts)
+        if (shown.add(draft.mediaObjectId)) _draftRef(draft),
+    ];
+  }
+
+  /// Whether the Offer media form uses [offerMediaItems].
+  bool get usesOfferMediaItems => _usesMediaQueue;
+
+  /// Whether all items are shown rather than the first few.
+  bool get mediaGridExpanded => _mediaGridExpanded;
+
+  /// How many items the media grid shows: the first three, or all of them
+  /// once "+N more" was tapped.
+  int get mediaDisplayCount {
+    const collapsed = 3;
+    if (!_mediaGridExpanded) return collapsed;
+    final count = offerMediaItems.length;
+    return count > collapsed ? count : collapsed;
+  }
+
+  void showAllMedia() {
+    _mediaGridExpanded = true;
+    notifyListeners();
+  }
+
+  /// Removes the item at [index] of [offerMediaItems]: a picked file at once;
+  /// a server item or a queued upload when the Offer is saved.
+  void removeOfferMediaAt(int index) {
+    final items = offerMediaItems;
+    if (index < 0 || index >= items.length) return;
+    final ref = items[index];
+    final draftIndex =
+        _drafts.indexWhere((draft) => draft.mediaObjectId == ref.mediaObjectId);
+    if (draftIndex >= 0) {
+      _drafts.removeAt(draftIndex);
+    } else if (ref.uploadPhase != null) {
+      _cancelledUploadIds.add(ref.mediaObjectId);
+    } else {
+      _removedExistingIds.add(ref.mediaObjectId);
+    }
+    notifyListeners();
+  }
+
+  /// Retries the queued upload at [index] of [offerMediaItems].
+  void retryOfferMediaAt(int index) {
+    final items = offerMediaItems;
+    if (index < 0 || index >= items.length) return;
+    final ref = items[index];
+    if (ref.uploadPhase != OfferMediaUploadPhase.retryableFailure &&
+        ref.uploadPhase != OfferMediaUploadPhase.retrying) {
+      return;
+    }
+    unawaited(_offerService.retryOfferMediaUpload(ref.mediaObjectId));
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    if (_usesMediaQueue) {
+      _offerService.offerMediaUploadChanges.removeListener(_onUploadsChanged);
+      unawaited(_uploadCompletions?.cancel());
+    }
+    super.dispose();
   }
 
   // Getters for mode
@@ -128,10 +368,46 @@ class AddOffersViewModel extends ChangeNotifier
     _pickUpLongitude = offer.pickUpLongitude;
     _pickUpAddress = offer.pickUpAddress;
 
-    // Media URLs (existing uploaded files)
-    _uploadedFileUrls = List.from(offer.mediaUrls);
+    if (_usesMediaQueue) {
+      // Private media is addressed by its identity; a signed URL is only
+      // how one item is fetched for a few minutes, never what the form edits.
+      if (!_existingMediaResolved) _existingMedia = _initialOfferMedia(offer);
+    } else {
+      // Media URLs (existing uploaded files)
+      _uploadedFileUrls = List.from(offer.mediaUrls);
+    }
 
     notifyListeners();
+  }
+
+  /// The Offer's media as this form first shows it, before the Worker's own
+  /// list arrives: the ids the Offer was read with, drawn from this device's
+  /// copies (or a still-valid signed URL) where it has them.
+  List<OfferMediaRef> _initialOfferMedia(OfferModel offer) {
+    final offerId = offer.id ?? _editOfferId;
+    final held = <String, OfferMediaRef>{
+      if (offerId != null)
+        for (final ref in _offerService.cachedOfferMedia(offerId))
+          ref.mediaObjectId: ref,
+    };
+    final ids = offer.mediaObjectIds;
+    if (ids.isEmpty) return held.values.toList();
+    final ownerId = _offerService.currentOwnerId;
+    final aligned = offer.mediaUrls.length == ids.length;
+    return [
+      for (var i = 0; i < ids.length; i++)
+        held[ids[i]] ??
+            OfferMediaRef(
+              mediaObjectId: ids[i],
+              cacheKey: ownerId == null
+                  ? null
+                  : offerMediaCacheKey(
+                      ownerId: ownerId,
+                      mediaObjectId: ids[i],
+                    ),
+              signedUrl: aligned ? offer.mediaUrls[i] : null,
+            ),
+    ];
   }
 
   // Loading state
@@ -164,18 +440,27 @@ class AddOffersViewModel extends ChangeNotifier
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get uploadedFileUrls => _uploadedFileUrls;
   bool get isUploading => _isUploading;
-  bool get hasMediaFiles =>
-      _selectedFiles.isNotEmpty || _uploadedFileUrls.isNotEmpty;
+  bool get hasMediaFiles => _usesMediaQueue
+      ? offerMediaItems.isNotEmpty
+      : _selectedFiles.isNotEmpty || _uploadedFileUrls.isNotEmpty;
 
   /// Everything that would be on the Offer if it were saved now: the media it
   /// already has (minus anything removed in this session) plus the files just
-  /// picked. This is what the 10-item limit counts, exactly as the Media
+  /// picked — and, with the upload queue, every queued item that has not been
+  /// refused. This is what the 10-item limit counts, exactly as the Media
   /// Worker counts it server-side.
-  int get currentMediaCount =>
-      _uploadedFileUrls
-          .where((url) => !_removedMediaUrls.contains(url))
-          .length +
-      _selectedFiles.length;
+  int get currentMediaCount {
+    if (_usesMediaQueue) {
+      return offerMediaItems
+          .where((ref) =>
+              ref.uploadPhase != OfferMediaUploadPhase.permanentFailure)
+          .length;
+    }
+    return _uploadedFileUrls
+            .where((url) => !_removedMediaUrls.contains(url))
+            .length +
+        _selectedFiles.length;
+  }
 
   /// How many more photos or videos this Offer can still take.
   int get remainingMediaSlots =>
@@ -480,78 +765,175 @@ class AddOffersViewModel extends ChangeNotifier
     }
   }
 
-  // Media selection using clean permission system
+  /// The Offer media "+": the attachment sheet (Camera / Gallery /
+  /// Documents), then the chosen picker, then the same screening as ever.
+  ///
+  /// Gallery is one native selection of photos and videos together, capped
+  /// at the places left; no app-made permission dialog is shown before it
+  /// (see [OfferMediaPicker]). Dismissing the sheet or cancelling a picker
+  /// changes nothing.
   Future<void> selectMedia(BuildContext context) async {
-    // Debug log suppressed: selectMedia called - starting media selection with clean permissions
+    final loc = AppLocalizations.of(context);
+
+    // The Offer is already full: say so instead of opening a picker whose
+    // every result would be discarded.
+    final remaining = remainingMediaSlots;
+    if (remaining == 0) {
+      _showToast(loc.translate('offerMediaLimitReached'), Colors.red);
+      return;
+    }
+
+    final List<File> picked;
     try {
-      final loc = AppLocalizations.of(context);
-
-      // The Offer is already full: say so instead of opening a picker whose
-      // every result would be discarded.
-      if (remainingMediaSlots == 0) {
-        _showToast(loc.translate('offerMediaLimitReached'), Colors.red);
-        return;
+      final source = await _chooseMediaSource(context, remaining);
+      if (source == null || !context.mounted) return;
+      switch (source) {
+        case OfferMediaSource.gallery:
+          picked = await _mediaPicker.pickFromGallery(limit: remaining);
+        case OfferMediaSource.cameraPhoto:
+          final photo = await _mediaPicker.capturePhoto();
+          picked = [if (photo != null) photo];
+        case OfferMediaSource.cameraVideo:
+          final video = await _mediaPicker.recordVideo(
+            maxDuration: OfferMediaPolicy.maxVideoDuration,
+          );
+          picked = [if (video != null) video];
       }
-
-      // Show comprehensive media selection dialog
-      final selectedFiles = await _cleanMediaService.showMediaSelectionDialog(
-        context,
-        maxVideoDuration: OfferMediaPolicy.maxVideoDuration,
-      );
-
-      if (selectedFiles != null && selectedFiles.isNotEmpty) {
-        // Screened before they reach the form, so the limit, the size caps,
-        // the supported formats (read from each file's real bytes) and the
-        // video length are enforced where the user can still react — not
-        // after a long upload.
-        final screened = await screenOfferMediaSelection(
-          candidates: [
-            for (final file in selectedFiles)
-              if (file.path != null) File(file.path!),
-          ],
-          itemsAlreadyOnOffer: currentMediaCount,
-        );
-        final acceptedPaths = screened.accepted.map((f) => f.path).toSet();
-        final admitted = selectedFiles
-            .where((file) =>
-                file.path != null && acceptedPaths.contains(file.path))
-            .toList();
-
-        _selectedFiles.addAll(admitted);
-        notifyListeners();
-
-        if (context.mounted) {
-          for (final rejection in screened.rejections) {
-            _showToast(loc.translate(rejection.messageKey), Colors.red);
-          }
-          if (screened.trimmedByLimit) {
-            _showToast(loc.translate('offerMediaLimitTrimmed'), Colors.red);
-          }
-          if (admitted.isNotEmpty) {
-            Fluttertoast.showToast(
-              msg: "Added ${admitted.length} file(s) successfully",
-              toastLength: Toast.LENGTH_SHORT,
-              gravity: ToastGravity.BOTTOM,
-            );
-          }
-        }
-
-        // Debug log suppressed: Files added successfully, total: ${_selectedFiles.length}
-      } else {
-        // Debug log suppressed: No files were selected
-      }
-    } catch (e) {
-      // Debug log suppressed: Error in selectMedia: $e
-
+    } on OfferMediaPickerException catch (error) {
+      if (context.mounted) _explainCameraRefusal(context, error.failure);
+      return;
+    } catch (_) {
       if (context.mounted) {
-        Fluttertoast.showToast(
-          msg: 'Unable to select media. Please try again.',
-          toastLength: Toast.LENGTH_LONG,
-          gravity: ToastGravity.BOTTOM,
-        );
+        _showToast(loc.translate('offerMediaPickerFailed'), Colors.red);
       }
+      return;
+    }
+    if (picked.isEmpty) return; // Cancelled in the picker.
+
+    final outcome = await addPickedOfferMedia(picked);
+    if (!context.mounted) return;
+    for (final rejection in outcome.rejections) {
+      _showToast(loc.translate(rejection.messageKey), Colors.red);
+    }
+    if (outcome.trimmedByLimit) {
+      _showToast(loc.translate('offerMediaLimitTrimmed'), Colors.red);
+    }
+    if (outcome.duplicates > 0) {
+      _showToast(loc.translate('offerMediaAlreadyAdded'), Colors.orange);
+    }
+    if (outcome.added > 0) {
+      Fluttertoast.showToast(
+        msg: loc
+            .translate('offerMediaAdded')
+            .replaceAll('{count}', '${outcome.added}'),
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
     }
   }
+
+  /// The camera permission was refused: say so in words, and when only the
+  /// system settings can change it, offer to open them.
+  void _explainCameraRefusal(
+    BuildContext context,
+    OfferMediaPickerFailure failure,
+  ) {
+    final loc = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (failure == OfferMediaPickerFailure.cameraPermanentlyDenied &&
+        messenger != null) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(loc.translate('cameraPermissionPermanentlyDenied')),
+        action: SnackBarAction(
+          label: loc.translate('openSettings'),
+          onPressed: () => unawaited(openAppSettings()),
+        ),
+      ));
+      return;
+    }
+    _showToast(loc.translate('cameraPermissionDenied'), Colors.red);
+  }
+
+  /// Adds freshly picked files to the form: files already in it (same name
+  /// and size as an item picked earlier and not yet uploaded) are skipped,
+  /// and the rest are screened against the Offer media rules — the 10-item
+  /// total, the size caps, the real type read from the bytes, the video
+  /// length, HEIC converted to JPEG — before anything enters the form. Each
+  /// accepted file keeps the `mediaObjectId` it was given here for good; the
+  /// upload queue copies it into the app's own storage on Save.
+  @visibleForTesting
+  Future<OfferMediaPickOutcome> addPickedOfferMedia(List<File> picked) async {
+    final seen = <String>{
+      for (final key in [
+        for (final draft in _drafts)
+          _pickKey(draft.displayName, draft.byteLength),
+        if (_usesMediaQueue)
+          for (final ref in _pendingUploads)
+            _pickKey(ref.displayName, ref.byteLength),
+        for (final file in _selectedFiles) _pickKey(file.name, file.size),
+      ])
+        if (key != null) key,
+    };
+    final fresh = <File>[];
+    var duplicates = 0;
+    for (final file in picked) {
+      int? length;
+      try {
+        length = await file.length();
+      } catch (_) {
+        length = null; // Unreadable: screening refuses it.
+      }
+      final key = _pickKey(_fileName(file.path), length);
+      if (key != null && !seen.add(key)) {
+        duplicates += 1;
+        continue;
+      }
+      fresh.add(file);
+    }
+
+    final screened = fresh.isEmpty
+        ? const OfferMediaSelectionResult(
+            accepted: [], rejections: [], trimmedByLimit: false)
+        : await screenOfferMediaSelection(
+            candidates: fresh,
+            itemsAlreadyOnOffer: currentMediaCount,
+          );
+    if (_disposed) {
+      return OfferMediaPickOutcome(
+        added: 0,
+        duplicates: duplicates,
+        rejections: screened.rejections,
+        trimmedByLimit: screened.trimmedByLimit,
+      );
+    }
+    if (_usesMediaQueue) {
+      _drafts.addAll(screened.accepted);
+    } else {
+      // HEIC photos arrive converted, so each accepted file is taken as
+      // screened rather than as picked.
+      _selectedFiles.addAll([
+        for (final draft in screened.accepted)
+          PlatformFile(
+            name: _fileName(draft.path),
+            path: draft.path,
+            size: draft.byteLength,
+          ),
+      ]);
+    }
+    if (screened.accepted.isNotEmpty) notifyListeners();
+    return OfferMediaPickOutcome(
+      added: screened.accepted.length,
+      duplicates: duplicates,
+      rejections: screened.rejections,
+      trimmedByLimit: screened.trimmedByLimit,
+    );
+  }
+
+  static String _fileName(String path) =>
+      path.replaceAll('\\', '/').split('/').last;
+
+  static String? _pickKey(String? name, int? length) =>
+      name == null || name.isEmpty || length == null ? null : '$name|$length';
 
   // Remove a selected file
   void removeFile(int index) {
@@ -573,6 +955,19 @@ class AddOffersViewModel extends ChangeNotifier
 
   // Clear all selected files
   void clearAllFiles() {
+    if (_usesMediaQueue) {
+      // Like removing each item: picked files go now, the rest on Save.
+      for (final ref in offerMediaItems) {
+        if (ref.uploadPhase != null) {
+          _cancelledUploadIds.add(ref.mediaObjectId);
+        } else if (!_drafts.any((d) => d.mediaObjectId == ref.mediaObjectId)) {
+          _removedExistingIds.add(ref.mediaObjectId);
+        }
+      }
+      _drafts.clear();
+      notifyListeners();
+      return;
+    }
     // Track all existing URLs for removal if we're in edit mode
     if (isEditMode) {
       _removedMediaUrls.addAll(_uploadedFileUrls);
@@ -660,10 +1055,16 @@ class AddOffersViewModel extends ChangeNotifier
       pickUpLatitude: _pickUpLatitude,
       pickUpLongitude: _pickUpLongitude,
       pickUpAddress: _pickUpAddress,
-      uploadedFileName: _selectedFiles
-          .map((f) => f.name)
-          .join(', '), // Keep for compatibility
-      mediaUrls: mergedMediaUrls,
+      uploadedFileName: _usesMediaQueue
+          ? _drafts
+              .map((draft) => draft.displayName ?? '')
+              .where((name) => name.isNotEmpty)
+              .join(', ')
+          : _selectedFiles
+              .map((f) => f.name)
+              .join(', '), // Keep for compatibility
+      // Private media is never written through the Offer row.
+      mediaUrls: _usesMediaQueue ? const <String>[] : mergedMediaUrls,
       createdAt: isEditMode && _originalOffer != null
           ? _originalOffer!.createdAt
           : now,
@@ -706,6 +1107,13 @@ class AddOffersViewModel extends ChangeNotifier
 
   @visibleForTesting
   List<String> getRemovedMediaUrlsForTest() => List.from(_removedMediaUrls);
+
+  /// Adds screened picks as [selectMedia] does, without its picker dialog.
+  @visibleForTesting
+  void addOfferMediaDraftsForTest(List<OfferMediaDraft> drafts) {
+    _drafts.addAll(drafts);
+    notifyListeners();
+  }
 
   // Get specific property types based on main property type
   List<String> getSpecificPropertyTypes(PropertyType? type) {
@@ -813,6 +1221,11 @@ class AddOffersViewModel extends ChangeNotifier
         return;
       }
 
+      if (_usesMediaQueue) {
+        await _saveWithUploadQueue(context);
+        return;
+      }
+
       if (isEditMode && _editOfferId != null) {
         // Edit mode - update existing offer with proper media merging
         await _handleEditMode(context, mediaFilesToUpload);
@@ -885,12 +1298,102 @@ class AddOffersViewModel extends ChangeNotifier
     }
   }
 
+  /// Saves the Offer and hands its new media to the upload queue (Supabase).
+  ///
+  /// The Offer is saved without waiting for any upload, and what happened to
+  /// its media is reported as it went: new items are uploading, never
+  /// "uploaded". An item that could not be queued or removed stays in the
+  /// form, which stays open, and Save retries exactly that — every item keeps
+  /// its id, so nothing is ever duplicated.
+  Future<void> _saveWithUploadQueue(BuildContext context) async {
+    final loc = AppLocalizations.of(context);
+    final editOfferId = isEditMode ? _editOfferId : null;
+    final editing = editOfferId != null;
+    final String offerId;
+    if (editOfferId != null) {
+      offerId = editOfferId;
+    } else {
+      // Once created, a retried Save updates the same Offer: no second
+      // quota check and no second count.
+      if (_createdOfferId == null) {
+        final canAdd = await CoreEntityQuotaBridge.canCreate(
+          context: context,
+          section: 'offers',
+        );
+        if (!canAdd) return;
+      }
+      offerId = _offerId ??= _offerService.generateNewOfferId();
+    }
+
+    final drafts = List<OfferMediaDraft>.of(_drafts);
+    final removed = List<String>.of(_removedExistingIds);
+    final cancelled = List<String>.of(_cancelledUploadIds);
+    final result = await _offerService.saveOfferWithMedia(
+      offer: _createOfferModel(),
+      offerId: offerId,
+      newMedia: drafts,
+      removedMediaIds: removed,
+      cancelledUploadIds: cancelled,
+    );
+
+    if (!editing && _createdOfferId == null) {
+      _createdOfferId = offerId;
+      await CoreEntityQuotaBridge.recordCreated(section: 'offers');
+    }
+
+    // What went through leaves the form's own lists (queued items now show
+    // from the queue); what did not stays for the next Save.
+    final notQueued = result.failedToQueueIds.toSet();
+    _drafts.removeWhere((draft) => !notQueued.contains(draft.mediaObjectId));
+    final notRemoved = result.failedRemovalIds.toSet();
+    final removedNow = {
+      for (final id in removed)
+        if (!notRemoved.contains(id)) id,
+    };
+    _existingMedia = [
+      for (final ref in _existingMedia)
+        if (!removedNow.contains(ref.mediaObjectId)) ref,
+    ];
+    _removedExistingIds.removeAll(removedNow);
+    _cancelledUploadIds.removeAll(cancelled);
+
+    if (!context.mounted) return;
+    if (!result.isComplete) {
+      if (notQueued.isNotEmpty) {
+        _showToast(loc.translate('offerMediaPrepareFailed'), Colors.red);
+      }
+      if (notRemoved.isNotEmpty) {
+        _showToast(loc.translate('offerMediaRemoveFailed'), Colors.red);
+      }
+      return;
+    }
+
+    final uploading = result.queuedCount > 0;
+    if (editing) {
+      await _handleSuccessfulEditSave(
+        context,
+        offerId,
+        hasNewMedia: uploading,
+        message: uploading ? loc.translate('offerUpdatedMediaUploading') : null,
+      );
+    } else {
+      _showToast(
+        uploading
+            ? loc.translate('offerSavedMediaUploading')
+            : 'Offer saved successfully!',
+        Colors.green,
+      );
+      context.go('/home');
+    }
+  }
+
   /// Handle successful edit save and navigation
   Future<void> _handleSuccessfulEditSave(
       BuildContext context, String savedOfferId,
-      {required bool hasNewMedia}) async {
+      {required bool hasNewMedia, String? message}) async {
     _showToast(
-        'Offer updated successfully! ${hasNewMedia ? 'Syncing new media...' : ''}',
+        message ??
+            'Offer updated successfully! ${hasNewMedia ? 'Syncing new media...' : ''}',
         Colors.green);
 
     // Fetch the updated offer and return it to the details screen
@@ -998,4 +1501,27 @@ class AddOffersViewModel extends ChangeNotifier
       textColor: Colors.white,
     );
   }
+}
+
+/// What one selection added to the Offer media form.
+@immutable
+class OfferMediaPickOutcome {
+  const OfferMediaPickOutcome({
+    required this.added,
+    required this.duplicates,
+    required this.rejections,
+    required this.trimmedByLimit,
+  });
+
+  /// Files that entered the form.
+  final int added;
+
+  /// Files skipped because the form already had them.
+  final int duplicates;
+
+  /// Distinct reasons files were refused, one message each.
+  final List<OfferMediaRejection> rejections;
+
+  /// Valid files dropped because the Offer reached its 10-item limit.
+  final bool trimmedByLimit;
 }

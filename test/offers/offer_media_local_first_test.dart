@@ -24,6 +24,13 @@ const String _onePixelPngBase64 =
 
 late Directory _tempDir;
 
+/// The provider an [Image] paints from. Offer header images are decoded at
+/// screen width, which wraps the file's provider in a [ResizeImage].
+ImageProvider _paintedFrom(Image image) {
+  final provider = image.image;
+  return provider is ResizeImage ? provider.imageProvider : provider;
+}
+
 /// Files and Hive mappings are prepared in `setUpAll`, never inside a
 /// `testWidgets` body: that body runs in a fake-async zone where real disk and
 /// Hive I/O never settles.
@@ -257,8 +264,10 @@ void main() {
       // all, only a file-backed image.
       expect(find.byType(CachedNetworkImage), findsNothing);
       final image = tester.widget<Image>(find.byType(Image));
-      expect(image.image, isA<FileImage>());
-      expect((image.image as FileImage).file.path, _localOnlyFile.path);
+      expect(_paintedFrom(image), isA<FileImage>());
+      expect((_paintedFrom(image) as FileImage).file.path, _localOnlyFile.path);
+      // Decoded at screen width, not at the photo's full resolution.
+      expect(image.image, isA<ResizeImage>());
     });
 
     testWidgets('prefers held bytes over a freshly signed URL', (tester) async {
@@ -277,7 +286,10 @@ void main() {
       );
 
       expect(find.byType(CachedNetworkImage), findsNothing);
-      expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
+      expect(
+        _paintedFrom(tester.widget<Image>(find.byType(Image))),
+        isA<FileImage>(),
+      );
     });
 
     testWidgets(

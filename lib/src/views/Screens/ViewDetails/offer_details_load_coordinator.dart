@@ -8,6 +8,9 @@ typedef OfferMediaResolver = Future<OfferMediaResolution?> Function({
 });
 typedef CachedOfferMediaReader = List<OfferMediaRef> Function(String offerId);
 
+/// This device's upload-queue items for an Offer, read synchronously.
+typedef PendingOfferMediaReader = List<OfferMediaRef> Function(String offerId);
+
 /// Coordinates the three sources Offer Details draws from, in the order they
 /// can actually produce pixels.
 ///
@@ -35,11 +38,13 @@ class OfferDetailsLoadCoordinator {
     required OfferMediaResolver resolveMedia,
     required void Function() onChanged,
     CachedOfferMediaReader? readCachedMedia,
+    PendingOfferMediaReader? readPendingMedia,
   })  : _offer = initialOffer,
         _metadataResolved = initialMetadataResolved,
         _loadMetadata = loadMetadata,
         _resolveMedia = resolveMedia,
         _readCachedMedia = readCachedMedia,
+        _readPendingMedia = readPendingMedia,
         _onChanged = onChanged {
     _seedFromLocalMedia();
   }
@@ -47,6 +52,7 @@ class OfferDetailsLoadCoordinator {
   final OfferMetadataLoader _loadMetadata;
   final OfferMediaResolver _resolveMedia;
   final CachedOfferMediaReader? _readCachedMedia;
+  final PendingOfferMediaReader? _readPendingMedia;
   void Function()? _onChanged;
 
   OfferModel _offer;
@@ -68,9 +74,37 @@ class OfferDetailsLoadCoordinator {
   /// resolution replaces them wholesale.
   List<OfferMediaRef> get mediaItems => _mediaItems;
 
-  /// Whether anything can be drawn right now — locally held bytes or a live
-  /// signed URL. Drives showing the gallery instead of a loading state.
-  bool get hasRenderableMedia => _mediaItems.any((item) => item.isRenderable);
+  /// What the gallery shows: [mediaItems], then this device's items still
+  /// in the upload queue — each with its upload state, and never twice.
+  /// Nothing queued is shown once access to the Offer is proven gone.
+  List<OfferMediaRef> get displayItems {
+    final pending = _pendingMedia();
+    if (pending.isEmpty || _mediaAccessRevoked) return _mediaItems;
+    final shown = {for (final item in _mediaItems) item.mediaObjectId};
+    return <OfferMediaRef>[
+      ..._mediaItems,
+      for (final item in pending)
+        if (shown.add(item.mediaObjectId)) item,
+    ];
+  }
+
+  List<OfferMediaRef> _pendingMedia() {
+    final reader = _readPendingMedia;
+    final offerId = _offer.id?.trim();
+    if (reader == null || offerId == null || offerId.isEmpty) {
+      return const <OfferMediaRef>[];
+    }
+    try {
+      return reader(offerId);
+    } catch (_) {
+      return const <OfferMediaRef>[];
+    }
+  }
+
+  /// Whether anything can be drawn right now — locally held bytes, a live
+  /// signed URL or a video's still frame. Drives showing the gallery instead
+  /// of a loading state.
+  bool get hasRenderableMedia => displayItems.any((item) => item.isRenderable);
 
   /// Whether the displayed media set came from the server this session.
   bool get mediaIsAuthoritative => _mediaIsAuthoritative;
@@ -283,6 +317,28 @@ class OfferDetailsLoadCoordinator {
       mediaUrl: urls.first,
       mediaObjectIds: [for (final item in _mediaItems) item.mediaObjectId],
     );
+  }
+
+  /// Signs the Offer's media again — for a private video whose link expired
+  /// — and returns [mediaObjectId]'s new link, or null when there is none.
+  ///
+  /// Only a link from a resolution that just succeeded is returned: when the
+  /// refresh itself fails, the link already held is the one that did not
+  /// play, and handing it back would only fail again.
+  Future<String?> refreshSignedUrl(String mediaObjectId) async {
+    await load();
+    if (_mediaLoadFailed ||
+        _metadataLoadFailed ||
+        _mediaAccessRevoked ||
+        !_mediaIsAuthoritative) {
+      return null;
+    }
+    for (final item in _mediaItems) {
+      if (item.mediaObjectId == mediaObjectId && item.hasSignedUrl) {
+        return item.signedUrl;
+      }
+    }
+    return null;
   }
 
   /// Retry is only meaningful for a transport problem.

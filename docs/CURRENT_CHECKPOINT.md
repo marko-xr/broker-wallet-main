@@ -4898,3 +4898,879 @@ whether to approve the production Worker deployment as its own checkpoint.
 NEXT — after production deployment, the real-device acceptance on Samsung:
 record and pick a video, confirm upload, save and playback, the 11th item
 refusal, an over-long and an over-size clip, and that photos are unchanged.
+
+## OFFER MEDIA — PRODUCTION LIFECYCLE, PHASE 2 (implemented locally; uncommitted after the baseline)
+
+OWNER AUTHORIZATION: "APPROVED — PROCEED TO PHASE 2", with: (1) Option B, one
+service-role-only atomic `confirm_offer_media_upload` function — migration,
+reversal notes and validation prepared for independent review, NOT applied;
+(2) the Offer saves without waiting for media, a persistent per-item queue
+uploads visibly, and nothing is shown as uploaded before it is ready;
+(3) Offer-only UI: upload state overlays, Retry, Remove, local video poster,
+tap-to-play, expired-link recovery, all 10 items reachable — no redesign, no
+Owner change; (4) 7-day retention for soft-deleted Offers' media, sweeps
+shipped `off`; (5) HEIC converted to JPEG on the device; (6) one baseline
+commit, no push. No Supabase, Cloudflare or production change was made.
+
+### Baseline commit
+
+`ed78c45` — "feat(offer-media): baseline private offer media, video support
+and details loading", **not pushed**: the earlier Offer-media work of this
+branch (34 tracked + 17 new files). Excluded: `lib/main.dart` and the seven
+generated plugin files (line-ending-only, no content change). Before it, a stale
+0-byte `.git/index.lock` dated 2026-09-19, with no git process running, was
+removed; `git add` had been silently staging nothing. Everything below is on
+top of that commit and uncommitted.
+
+### What the lifecycle is now
+
+- **Identity**: each picked file gets a UUID v4 `mediaObjectId` on the device,
+  once, at selection. It is the same id in the upload queue, the Worker,
+  `media_objects`, the R2 key and the local cache. Every Worker step is
+  idempotent on it, so any retry — after a lost answer, a failure or a restart
+  — resumes the same object and can never create a second one.
+- **Save**: the Offer row is saved first and never rolled back for a media
+  problem; removals run next (each reported as it went); new items are handed
+  to the queue. The form never waits for an upload. An item that could not be
+  queued, or a removal that failed, stays in the open form and Save retries
+  exactly that; a created Offer is never created twice.
+- **Queue** (`OfferMediaUploadQueue`, Hive box `offer_media_uploads`): one
+  upload at a time, oldest first; a durable copy of each file in the
+  backup-excluded `offer_media` directory under the owner's file-name prefix
+  (moved from the picker's temporary copy, copied otherwise); automatic retries
+  at 2 s / 10 s / 30 s / 2 min / 10 min, then Retry; a transfer whose bytes
+  already reached R2 is only confirmed again, never re-sent. States:
+  queued / uploading (with progress) / ready / retryable failure / permanent
+  failure. An 11th item waits (`blocked`) instead of being lost, and goes on
+  when a removal frees a place. Uploads run only for the application-
+  authenticated account (`OfferMediaSession`, fed by `AuthViewModel`): never
+  under password recovery or the deletion quarantine, never another account's
+  task. Account deletion purges that account's tasks before its files are swept.
+- **Confirm (Option B)**: the Worker verifies size, real type and video duration
+  from the bytes in R2, then makes one call to `confirm_offer_media_upload`,
+  which locks the Offer row, counts only `ready` items in the same bucket,
+  appends at max+1 and marks the item ready in one transaction. This
+  **supersedes** the "limit without a migration" mechanism described above
+  (first free slot in `[0, 10)` retried on a unique-violation 409).
+- **Remove**: `/offer-media/remove` — a pending or failed row is deleted; a
+  ready one goes `pending_delete` → unlinked → R2 object deleted → `deleted`
+  tombstone. Idempotent; a failed R2 delete is completed by the sweep.
+- **Sweeps** (`OFFER_MEDIA_SWEEP_MODE` = `off` | `dry_run` | `on`; missing or
+  unknown means `off`; shipped `off` in production and staging vars): abandoned
+  pending uploads over 24 h, media of Offers soft-deleted over 7 days,
+  unfinished `pending_delete`, failed rows over 7 days. Bucket-scoped, limited
+  to `profiles/*/offers/*` keys, 10 per run (dry run lists up to 100).
+- **Display**: Details and full screen show queued items from their local copy
+  with their state; images decode at screen width; a private video shows its
+  still frame (made on the device) and its length and loads nothing until
+  tapped; its player is named by the stable cache key, not the rotating signed
+  link; an expired link is signed again once, automatically, then the viewer
+  gets a localized message and Retry. Signed links are held in memory only
+  (`OfferMediaUrlCache`, dropped 60 s before expiry and on account change) and
+  are never persisted. Full screen never preloads a private video.
+- **HEIC**: converted to JPEG on the device with the existing
+  `flutter_image_compress`; the Worker no longer accepts new HEIC uploads (it
+  still reads older HEIC rows) and validates the real bytes as before.
+
+### Proposed Supabase change — FOR REVIEW, NOT APPLIED
+
+- `supabase/migrations/20260925120000_offer_media_confirm_rpc.sql`:
+  `create or replace function public.confirm_offer_media_upload(...)`,
+  `SECURITY DEFINER`, `search_path = ''`, EXECUTE revoked from public, anon and
+  authenticated, granted to service_role. No table, column, RLS, index or
+  trigger change.
+- `supabase/tests/offer_media_confirm_test.sql`: pgTAP, plan(26).
+- `supabase/validation/offer_media_confirm_validation.sql`: one transaction
+  that installs the exact migration text, asserts behaviour on reserved test
+  ids and ends in `ROLLBACK`; includes a two-session concurrency procedure.
+- **Neither has been executed** (no Docker, `psql` or Postgres on this
+  machine). A static test keeps the migration, the validation script, the pgTAP
+  plan and the Worker's call in agreement; that is not execution.
+- Reversal: drop the function only after every Worker version that calls it
+  has been rolled back; dropping it deletes no data.
+
+### Verification — CODE_PROVEN (local only)
+
+- Worker `npm test`: **103/103 PASS** (55 account-deletion, 38 offer-media,
+  10 staging-gate).
+- Flutter full suite: **693 PASS, 5 FAIL**. All five fail at `HEAD` too: they
+  read migration files renamed by `0d7fb17` ("reconcile Supabase migration
+  timestamps", 2026-09-15) —
+  `test/account/delete_account_test.dart` (1) and
+  `test/auth/phone_security_hardening_test.dart` (4). Unrelated; not changed.
+- 109 new or rewritten Flutter tests: upload queue 29, save orchestration 10,
+  Add/Edit form 15, rendering 11, migration/Worker contract 10, URL cache and
+  session 7, transport +10, video/HEIF +8, selection +8, deletion purge +1.
+- A defect found by those tests and fixed: a video link with no playable
+  extension failed inside the player's `initState`, so the tile's recovery ran
+  during its parent's build (`!_dirty` assertion); the failure callback is now
+  delivered after the build.
+- A regression found and fixed: a failed `Hive.openBox` leaves an unhandled
+  error inside Hive; the queue now opens its box with an explicit path (the
+  same documents directory `Hive.initFlutter()` uses), so a missing directory
+  provider is an ordinary, handled error. That fixed 42 auth/account tests
+  that never initialize Hive. A 43rd, a deletion UI test whose fake-async zone
+  never completes real I/O, now injects the new purge step exactly as it
+  already injected the cleaner's other media steps.
+- `flutter analyze lib test`: 0 errors, 0 warnings; 113 infos, none in a file
+  changed by this checkpoint.
+- `dart format`: the ten new Dart files are formatted. No tracked file was
+  formatted; four tracked files had formatter deviations in lines written here,
+  corrected by hand. Deviations already present at `HEAD` were left as they were.
+- `git diff --check`: clean. Generated plugin files and `lib/main.dart`: no
+  content change (line endings only), not edited.
+- Scope: no Owner file changed. Shared widgets (`media_upload_widget`,
+  `unified_media_preview_grid`, the gallery, full screen, the video resource
+  manager) change only for Offer media or behind defaults that keep the Owner
+  path identical; an Owner-grid test and the existing Owner pipeline tests pass.
+
+### NOT VERIFIED — do not treat as production-ready
+
+- The migration is not applied; the Worker is not deployed anywhere; no device
+  or emulator run of any Phase 2 behaviour.
+- MOV, 3GP and HEVC playback compatibility is not claimed: the container is
+  checked, the codec is not. Requires real-device acceptance.
+- Background execution: the queue persists and resumes on app resume and
+  restart, but does not upload while the OS has the app suspended.
+- The 300-second signed PUT versus a 100 MB upload on a slow link is still
+  unmeasured; a stalled transfer is retried from the queue with the same id.
+- HEIC conversion and video still frames use platform plugins and are not
+  device-verified.
+
+### Deployment order (mandatory)
+
+1. Independent review, then the validation script on hosted Supabase (ends in
+   ROLLBACK), then the owner applies the migration.
+2. Owner deploys the Worker to `r2-profile-upload-staging`; staging acceptance.
+3. Production Worker, as its own approved step.
+4. Only then an app build with the queue. Against the current production
+   Worker the new app refuses to continue an upload whose id the server chose
+   (by design), so every item would wait in Retry. Older app builds keep
+   working against the new Worker: the id is optional there and role/ordinal
+   are ignored.
+
+The Worker must never be deployed before the migration: without the function,
+every Offer media confirm fails with 502 and items stay pending (retryable).
+
+NOW — independent review of the migration and validation SQL; then the owner
+runs `supabase/validation/offer_media_confirm_validation.sql` in the hosted SQL
+Editor and confirms it ends in ROLLBACK with every check passing.
+
+NEXT — owner applies the migration, deploys the Worker to staging, and
+authorizes the staging acceptance (image, video, 11th item, retry/idempotency,
+remove, cross-account denial); then the production Worker; then the Samsung
+device acceptance of the app.
+
+## OFFER MEDIA — STAGING ACCEPTANCE (VERIFIED_HOSTED, 2026-09-26)
+
+**Deployment.** The owner deployed the recorded candidate to the staging
+Worker `r2-profile-upload-staging` with wrangler 4.136.3 (`worker.js` sha256
+`94b3ca4a…`, 109.32 KiB bundle, the same size as the local dry-run). Checked
+first-hand afterwards: version `ab42e479-7ff2-445e-8e7e-08b945c9b4a6`
+(tag `op2-94b3ca4a`) serves 100% of staging; fetch and scheduled handlers;
+bucket `broker-wallet-media-staging`; `OFFER_MEDIA_SWEEP_MODE = "off"`; the four
+expected secret names. Gate: preflight 204, no key 403, wrong key 403.
+Rollback target: `d6e8fdb4-da48-43e4-b4cc-803fe8f204db`. Production was not
+touched (still `bacad8d6-b7e2-434b-88e4-965c91c82874`). Scheduled run on the
+new version, observed with `wrangler tail`: `*/5` at 10:15:26 UTC — Ok, no
+error and no `[offer-media-sweep]` output (the sweep only logs in `dry_run` or
+`on`), so the account-deletion finalizer runs and cleanup stays off.
+
+**End-to-end run `20260926T100726Z`** — the owner ran the prepared runner
+(session scratchpad, `staging_e2e/`) with two new disposable accounts; it
+records statuses, codes and ids only. **69 PASS, 1 FAIL**, against hosted
+Supabase and private staging R2:
+
+- JPEG, PNG and WebP photos and a real 7.44 MiB MP4: authorize → private PUT
+  → confirm → listed with the right type → signed download byte-identical.
+  The video's duration was measured by the Worker (74,651 ms) and stored; a
+  ranged read answers 206 with the right bytes.
+- Retry and idempotency: authorizing one id twice leaves one row; confirm
+  before the bytes arrive answers 409 `upload_incomplete` and leaves the row
+  pending; a repeated confirm returns the same position with one link and one
+  row; an attached id answers `ready`; the id reused for another Offer or
+  another size is refused (409 `idempotency_mismatch`).
+- Refusals: PNG bytes declared as JPEG → 422 `media_type_mismatch`, row
+  failed, id stays refused, never listed; photo over 10 MB, video over 100 MB
+  and a new HEIC upload refused before any row exists.
+- The ten-item limit: nine photos and one video at positions 0–9; the
+  eleventh refused (409 `offer_media_limit_reached`, no row); after one
+  removal the same eleventh id is attached at position 10, never in the gap.
+- Removal: tombstoned `deleted`, unlinked, its R2 bytes gone (404 on the
+  earlier signed link), repeat removal harmless, an unconfirmed upload
+  withdrawn with its row deleted and unattachable afterwards.
+- Cross-account: account B gets 404 listing, authorizing, confirming or
+  removing on A's Offer, 409 `media_id_conflict` reusing A's id, no rows
+  through RLS, and 403 `42501` calling the database function; A's media is
+  untouched.
+- Database, first-hand: `confirm_offer_media_upload` exists and does the
+  attaching (positions, limit, append) through the Worker, and a signed-in
+  client calling it directly is refused 403 `42501`. The owner reports the
+  hosted migration as version `20260926092220`; the repository file still
+  carries `20260925120000` until that version is confirmed first-hand.
+
+The one FAIL was a defect in the runner, not in the Worker: it re-authorized a
+removed PNG id as a JPEG, which the Worker correctly refused as
+`idempotency_mismatch` (409) before reaching the removed-state answer; confirm
+on the same id answered 410 `media_removed`. The runner now removes its own
+PNG and checks both answers.
+
+Not run, by decision: the profile-image mutation and account-deletion
+regressions (their code is unchanged; 55 account-deletion and the profile
+Worker tests pass locally) and a video over 3:01 (covered by Worker unit
+tests only).
+
+Test data created and kept (staging bucket only, disposable accounts): Offers
+`431b1f9d-bb0d-4efb-9182-d882e2511a4d` and `58a5a3b9-90a0-40d9-92b2-693ef6c28ac7`
+(account A), `d3a6ba3e-7b6f-4769-8e6d-209fa97959f7` (account B), and 19 media
+objects listed in the run report. Two earlier attempts stopped at sign-in
+(`invalid_credentials`) and created nothing. No existing row was modified or
+deleted.
+
+**Clean rerun `20260926T101644Z`: 72 PASS, 0 FAIL** with the corrected runner,
+the same candidate and staging version. It adds: a removed id answers 410
+`media_removed` on both authorize and confirm, and 409 `idempotency_mismatch`
+when reused for a different file. Created and kept: Offers
+`d557e504-d87e-4a79-87c8-769460313c73`, `0276037d-997f-4aca-813a-08641ac3487b`
+(account A) and `4a56e6b5-ce2d-4c92-b111-aa2f08da5234` (account B), and 20
+media objects in the staging bucket.
+
+**STAGING ACCEPTANCE: PASS.** Production candidate: the same source
+(`worker.js` `94b3ca4a…`; production bundle byte-identical to the staging
+one), bucket `broker-wallet-media`, `OFFER_MEDIA_SWEEP_MODE = "off"`, rollback
+target `bacad8d6-b7e2-434b-88e4-965c91c82874`.
+
+NOW — the owner deploys this candidate to production (the agent's session
+may not deploy) and keeps the rollback command at hand.
+
+NEXT — verify the live production version and settings, then the Samsung
+device acceptance; Offer media is not complete until it passes.
+
+## OFFER MEDIA — SAMSUNG DEVICE FAILURE, TASK A (2026-09-26)
+
+### Status
+
+| Item | Status |
+| --- | --- |
+| Backend staging E2E (`r2-profile-upload-staging`, `ab42e479…`) | 72/72 PASS — VERIFIED_HOSTED |
+| Supabase `confirm_offer_media_upload` | APPLIED + VERIFIED_HOSTED (owner's rollback validation 33/0; SECURITY DEFINER, owner postgres, empty search_path, anon/authenticated denied, service_role allowed) |
+| Production Worker `r2-profile-upload` | Deployed by the owner: `ecaf125d-a0e3-4c26-add6-5f2c684c2516`, bucket `broker-wallet-media`, `OFFER_MEDIA_SWEEP_MODE=off`, rollback `bacad8d6-b7e2-434b-88e4-965c91c82874` (owner-reported; not re-read by the agent) |
+| Real-device Offer media (Samsung) | FAILED / OPEN |
+| Task A — P0 device failure | ACTIVE: root causes proven, fixes CODE_PROVEN, device acceptance NOT run |
+| Task B — P1 picker/permission UX | QUEUED, separate, not started (see `docs/OFFER_MEDIA_DEVICE_ISSUES.md`) |
+| Task C — private Offer documents | DEFERRED unless separately approved |
+
+Not run and not claimed: the over-3-minute video refusal on staging (Worker unit
+tests only) and the live profile-image / account-deletion regressions.
+
+**Migration tracking reconciled.** Read first-hand (`supabase migration list
+--linked`, read-only; the CLI initialised its temporary login role to connect):
+remote `20260926092220` had no local file and local `20260925120000` no remote
+row. The local file was renamed to
+`supabase/migrations/20260926092220_offer_media_confirm_rpc.sql`, byte-identical
+(sha256 `3aad4199…c6e8e1`), so `db push` can never re-apply it. Nothing was
+applied. Not compared first-hand: the hosted
+`supabase_migrations.schema_migrations.statements` text against this file. The
+rollback-only validation script is left byte-identical to the executed version
+(its stage labels still name the old file name).
+
+### Owner's observation
+
+Five images + five videos on a new Offer: some tiles blurry, some showing an
+upload percentage for minutes, videos very slow, some showing "upload stopped,
+tap Retry", playback showing "this video can't be played right now", some still
+unplayable after ~10 minutes.
+
+### Evidence collected (read-only, before any change)
+
+Device: Samsung SM-S928B, Android 16 (SDK 36), installed Debug build of the
+current working tree (built 14:33:02, no `lib/` file newer). Wi-Fi 5 GHz,
+validated, continuously connected since 09:26 (no network change during the
+test). The phone was locked, so no UI was driven; logcat for the test window
+had already rotated out (buffer starts 14:52:31).
+
+- **Upload queue history** — Hive keeps every state write as an appended
+  frame; the box was copied to the session scratchpad and decoded (ids
+  shortened, no paths or names printed). Offer `…969770`, saved 14:40:25. The
+  five photos and one video completed 14:40:33–14:41:02. The other four
+  videos (4.3–8.3 MiB, 42–56 s, MP4) **failed at the authorize step, before
+  any byte was sent, in about 20 ms each** — at 14:41:05, 14:41:07, 14:41:17 and
+  14:41:47 — each counted as an automatic retry (`interrupted`). A real request
+  needs at least one Worker→Supabase round trip, so these failed on the device.
+- **Completion times** (mtime of each adopted still frame): the four waiting
+  videos completed at 14:48:58, 14:49:02, 14:49:06 and 14:49:09 — **about 4 s
+  each for authorize + PUT + confirm**. Throughput was never the problem.
+- **Android network policy** (`dumpsys netpolicy`): the app's uid is
+  `blocked=APP_BACKGROUND, effective=APP_BACKGROUND` whenever it is not in
+  front. Android 15 behaviour change (official): an app that makes a network
+  request outside a valid process lifecycle receives an `UnknownHostException`
+  or other socket `IOException`.
+- File characteristics: all selected files were within policy (photos
+  80–555 KB after the picker's resize; videos far below 100 MB / 3 min), so no
+  policy refusal was misreported.
+
+### Root causes
+
+1. **CONFIRMED (device + code): the queue kept making network requests while
+   the app was in the background.** Android blocks the app's network there, so
+   every attempt failed instantly and spent one of the five automatic retries
+   (2 s / 10 s / 30 s / 2 min / 10 min); after that an item waited for a manual
+   Retry forever — returning to the app ran only items already due, never a
+   `needsRetry` one. Once Android froze the app, no timer fired at all, so the
+   four videos sat idle from 14:41:47 until the app returned at about 14:48:54.
+   A transfer running when the user left was cut off the same way.
+2. **CONFIRMED (code): the UI presented a pending automatic retry as a
+   failure** — `retryWait` drew "The upload was interrupted. Tap Retry" — and
+   drew authorize and confirm as "Uploading N%" (100 % while the server was
+   still confirming); after a restart a step persisted as in progress showed
+   "Uploading 0%" while nothing ran.
+3. **CONFIRMED (device + code): the "blurry images" were video still frames**
+   made at 480 px wide, JPEG q75 (the device files are 31–43 KB), drawn
+   full-width (~1080 px) in Details and full screen, before and after ready.
+4. **CONFIRMED (code): a video still uploading could not be played** — its
+   local copy was not passed to the tile (`playable: false`).
+5. **CONFIRMED (code): a failed link refresh re-used the link that had just
+   failed.** `refreshSignedUrl` returned the item's old URL when the
+   re-resolution itself failed, so the retry could only fail again and end in
+   "can't be played right now"; each player open also tried the same source
+   three times (30/40/50 s timeouts) before any recovery.
+6. **UNKNOWN: the exact player error for the owner's failed ready-video
+   playback.** The native ExoPlayer error was in the rotated logcat. Codec is
+   not a suspect on this phone (it has a hardware HEVC decoder), and the staging
+   E2E proved signed GET + 206 range reads. The acceptance session captures it.
+
+### Fixes (local, uncommitted)
+
+- `offer_media_upload_queue.dart`: lifecycle-aware. Nothing starts in the
+  background (`hidden`/`paused`/`detached`; `inactive` changes nothing); a
+  transport failure in the background, or within 5 s of returning, returns the
+  item to waiting without spending a retry (the server answering is never
+  treated so); on return and at every start/sign-in, `retryWait` items run at
+  once and `needsRetry` items that failed only on the connection are queued
+  again (refusals, a full Offer and a missing file are not). New phases:
+  `confirming`, `retrying`; an in-progress step nothing is running shows as
+  queued. Pending video refs carry their local copy. A completed video's copy
+  is retired (it may be playing) and swept at the next queue open; the account
+  deletion sweep also removes it by owner prefix.
+- `r2_offer_media_upload_service.dart`: fixed-category `cause` on every failure
+  (dns, reset, timeout, stalled, no-response, `put-http:<status>`,
+  `http:<status>`, bytes sent) — never a URL or provider text.
+- NEW `offer_media_diagnostics.dart`: `[offer-media]` log lines per item (last
+  six characters of the id; sizes, timings, kbps, states, categories); debug
+  and profile builds only.
+- `offer_media_selection.dart`: still frames at 1280 px, q85.
+- `offer_media_upload_status.dart`: honest labels (waiting / uploading N% /
+  finishing / retrying automatically / failed); Retry also on "retrying"
+  (skips the wait). Large views draw a strip along the bottom so the preview
+  and a pending video's play button stay visible; grid tiles keep the overlay.
+- `media_gallery_widget.dart`, `full_screen_media_viewer.dart`: a pending
+  video plays from its local copy (never the network); one widget shape for an
+  item before and after ready, so local playback continues when the upload
+  finishes; private video players open once per source, then the tile signs a
+  new link once; poster decoded at screen width.
+- `video_player_resource_manager.dart`: `maxAttempts`; a private video's last
+  failure kept as a category.
+- `offer_details_load_coordinator.dart`: `refreshSignedUrl` returns a link only
+  from a resolution that just succeeded.
+- `add_offers_viewmodel.dart`: Retry allowed on "retrying" too.
+- EN/AR: `offerMediaFinishing`, `offerMediaRetrying`.
+
+Unchanged: the Worker, the database, R2, signed-URL lifetimes (PUT 300 s, GET
+900 s), transport timeouts, the ten-item / 10 MB / 100 MB / 3 min limits, the
+Owner media path. No multipart: at the measured ~4 s per video there is no
+evidence for it. Signed PUT expiry during a slow 100 MB upload remains
+unmeasured; a refusal would now be logged as `put-http:403` and retried with a
+fresh URL. Existing Offers keep their old 480 px still frames; only new picks
+get the sharper ones.
+
+### Verification — CODE_PROVEN
+
+- Targeted: `flutter test test/offers/ test/services/` — 243 PASS (10 new:
+  background start, cut-off transfer, grace after return, resume after
+  exhausted retries, refused item not resumed, retrying phase, pending video
+  local copy, frozen step shown waiting, local playback in the tile, honest
+  labels; the video lifecycle test now proves retirement and the sweep).
+- Full suite: 703 PASS, 5 FAIL — the same five pre-existing failures (stale
+  migration paths from `0d7fb17`), unrelated.
+- `flutter analyze` on every changed Dart file: no issues.
+
+### Samsung acceptance — NOT RUN
+
+The feature is not complete until this passes on the device.
+
+NOW — install the updated Debug build on the Samsung (data kept) and run one
+session with `adb logcat` capturing `[offer-media]` lines and ExoPlayer errors
+(query strings redacted): a fresh Offer with five compliant photos and five
+compliant videos; save; watch per-item progress; play a pending video; leave
+the app mid-upload and return; reopen Details; confirm all ten reach ready and
+every video plays; interrupt with airplane mode and Retry; kill and restart
+the app with items pending; replay a ready video after 15 minutes (link
+refresh); remove an item; sign in as a second account and confirm it sees
+nothing.
+
+NEXT — on a pass, record VERIFIED_REAL_DEVICE here and ask for commit approval;
+then start Task B as its own checkpoint.
+
+### Update — ready-video playback: root cause CONFIRMED and fixed
+
+Owner's Samsung session 16:37–16:39 (recorded with the app-scoped logcat):
+the ten new items uploaded (hosted database, owner-inspected: all five videos
+`ready`, `video/mp4`, linked once), but every ready video failed to play.
+
+Evidence: each tap logged `play` then `play-failed` **6–24 ms later**, and the
+resource manager's per-attempt `player-init-failed` line never appeared. No
+ExoPlayer instance was created for any tap (no `ExoPlayerImpl: Init` after
+16:39) — the video was refused before a player existed or a byte was
+requested. The same session proves local playback: the selection probe opened
+all five picked files with `VideoPlayerController.file` (Media3 1.9.2; four on
+`c2.qti.avc.decoder`, one on `c2.qti.hevc.decoder`), with no player error.
+
+Root cause: `video_player_resource_manager.dart`, `_extensionOf`, used by
+`isVideoFormatSupported`, which `OptimizedVideoPlayerWidget._initializeVideo`
+calls before `getController`. It read the extension from `_redact(url)`, the
+log-safe form that re-appends `?<signature-hidden>`; a signed R2 link
+`…/<id>.mp4?X-Amz-…` therefore yielded extension `mp4?<signature-hidden>`,
+"unsupported format", thrown in `initState`. A fresh link has the same shape,
+so the one automatic refresh failed identically. Local paths (no query) pass,
+which is why only network playback failed. Introduced by the URL-redaction
+change in baseline `ed78c45` (the previous version stripped the query itself).
+The same defect refused any video URL with a query string, including Firebase
+token URLs used by Owner media.
+
+Fix: `_extensionOf` cuts the query and fragment from the URL itself. The
+format-check refusal and the player's failures now log a stage, error type,
+platform error code and a fixed category (`format-refused`, `http:<status>`,
+`source`, `codec`, `format`, `timeout` …), never the link.
+
+Regression test: `test/services/video_player_resource_manager_test.dart`
+(6 cases; the signed-R2, container and Firebase-token cases FAILED on the
+unfixed code and pass now). Offer/service suites: 249 PASS.
+
+No hosted change is required: the Worker signs a correct path-style URL ending
+in the object's `.mp4` key, and the staging E2E already proved signed GET 200,
+206 ranges, content type and byte identity for the same Worker source.
+
+Remaining: one device reproduction of ready-video network playback on the
+fixed build — no local copy of `…ed0dd9` exists any more (swept at restart as
+designed), so it also covers the "no local bytes" case.
+
+**VERIFIED_REAL_DEVICE (owner, Samsung, 2026-09-26, build installed 17:15):**
+all five ready videos of the new Offer play from Offer Details over the
+network (private signed R2 GET); the owner's logs show real network playback
+and successful ExoPlayer initialization. The signed-URL extension defect is
+closed. The owner then reported two video UX defects (seeking; black poster
+for saved videos) and a diagnostics finding — see the next section.
+
+### Video UX — seeking and posters (2026-09-26, CODE_PROVEN, device check pending)
+
+**Seeking — root cause CONFIRMED.** The owner's test videos are portrait
+(stills 1280×2276, 9:16; a phone recording's normal shape). A portrait video
+fills the height of its page, so Chewie's seek bar sits along the bottom edge,
+where the app draws its own overlays on top of the player:
+- Offer Details header (280 dp): the gallery's page dots are a `Positioned`
+  row 20 dp from the bottom, lying across the seek bar; each dot's decoration
+  is hit-testable, so a tap there never reached the bar.
+- Full screen: the thumbnail strip (≈140 dp, a horizontally scrolling list)
+  covers the bottom of the screen, where a portrait video's seek bar is; its
+  list took the drag. Hidden viewer controls were only faded (`Opacity`), so
+  they kept taking touches while invisible.
+Chewie's own seek bar was not at fault: in the widget tests below, dragging
+it seeks correctly when nothing is drawn over it, including in Arabic (RTL:
+the bar is drawn and read left to right in both languages, consistently).
+
+Fix: `media_gallery_widget.dart` — the page dots and the counter (indicators
+only) are wrapped in `IgnorePointer`, no visual change; "View All" stays
+interactive. `full_screen_media_viewer.dart` — hidden top/bottom controls
+ignore touches; a private video page is laid out between the measured top bar
+and thumbnail strip, so its seek bar and buttons are never underneath them.
+
+**Black posters — root cause CONFIRMED.** A video's still frame was made only
+on the device that picked it (and kept locally under its stable media id); the
+server stores only the video. At 17:19:26 the app was uninstalled and
+reinstalled (package `firstInstallTime` moved from 14:33:27 to 17:19:26 — a
+`flutter install`/IDE run, not `adb install -r`), wiping app data; every file
+under `offer_media` from before 17:19 was gone. After that, every saved video
+had no frame on this device — the same state as a second device.
+
+Fix, client-only, no hosted change: NEW `offer_video_poster_service.dart`
+makes the missing frame on demand from the ready video through its private
+signed link (`video_thumbnail` → Android `MediaMetadataRetriever`, which reads
+only the byte ranges it needs — the index and the first frame — not the whole
+video), one at a time, a video requested twice read once, only for the
+signed-in account's own media; it keeps the frame under
+`offerMediaPosterKey(cacheKey)` (stable, account-scoped id; removed by the
+account-deletion prefix sweep and by catalogue reconciliation), deletes the
+temporary file, never stores or logs the link, and does not retry a failure
+for two minutes. NEW `offer_video_poster.dart` draws the known frame, the kept
+one, or a loading surface (the existing `MediaLoadingPlaceholder`) while one
+is made, then the frame; used by the Details video tile, the full-screen
+thumbnail strip and the Edit-form grid. A durable server-side poster (a
+second private R2 object linked through the existing
+`media_objects.thumbnail_media_id`) would avoid any per-device read but needs
+a Worker change and deployment — not required for the reported defect, not
+done, owner decision if ever wanted.
+
+**Diagnostics finding — fixed.** The resource manager's debug lines printed
+the redacted link, which still spelled out `profiles/<account>/offers/<offer>/`,
+and cache keys, which carry the account id, plus raw player error text. They
+now print only a masked name (`network …ed0dd9`: kind and the last six
+characters of the media id) and fixed categories or error types; the same for
+the three shared debug prints that included a URL or raw error.
+
+Tests: NEW `test/offers/offer_video_playback_test.dart` (4: drag seeks in the
+gallery; portrait tap-seek under the page dots and portrait drag-seek under
+the full-screen strip — both FAILED before the fix; RTL drag) using a fake
+platform player; NEW `test/offers/offer_video_poster_test.dart` (8: made once
+and kept under the account-scoped id, reused after a restart without reading
+the video, one read for two requests, another account's video never read or
+answered, no link no read, failure not retried at once, loading surface then
+frame and reopened frame at once, placeholder). Offer/service suites 261 PASS;
+`flutter analyze lib test`: 0 errors, 0 warnings.
+
+NOW — one focused Samsung check on the existing Offer: seek by tap and drag in
+Details and in full screen; close and reopen; posters of the saved videos.
+
+NEXT — record the result; then Task B (picker and permissions) as its own
+checkpoint.
+
+**VERIFIED_REAL_DEVICE (owner, Samsung SM-S928B, 2026-09-26):**
+- all five existing videos play;
+- video seeking works;
+- saved-video thumbnails appear after reopening;
+- the signed-R2 video playback defect is resolved.
+Interruption and reliability scenarios the owner did not personally verify
+are recorded as pending cases `MEDIA-12`…`MEDIA-20` in
+`docs/BROKER_WALLET_MASTER_TEST_PLAN_DEFERRED_2026-09-18.md`, not as passed.
+
+## OFFER MEDIA — TASK B: PICKER AND PERMISSION UX (2026-09-26, CODE_PROVEN, device acceptance pending)
+
+OWNER AUTHORIZATION: redesign ONLY the Offer media attachment selection UI
+(compact Camera / Gallery / Documents sheet); other screens protected; no
+Owner Media change; no hosted change expected.
+
+### Root causes (source-proven)
+
+1. **One video per visit.** The Offer "+" used the shared
+   `CleanMediaService.showMediaSelectionDialog`: five rows (camera, video
+   camera, gallery, video gallery, documents); "video gallery" called
+   `pickVideo` (single). The installed `image_picker` 1.2.3 already provides
+   `pickMultipleMedia(limit:)` and `pickMultiVideo`.
+2. **Double permission prompt.** Every gallery row first called
+   `CleanPermissionService.requestStoragePermissions`, which shows the
+   app-made dialog `mediaAccessNeeded` ("الحاجة لإذن الوسائط") and then
+   requests `READ_MEDIA_IMAGES`/`READ_MEDIA_VIDEO` — Android's "select photos /
+   allow all / don't allow" screen — although picking needs no library
+   permission at all. `image_picker_android` 0.8.13+19 defaults
+   `useAndroidPhotoPicker = false` (it launched `ACTION_GET_CONTENT`).
+3. **Camera.** An app-made pre-dialog before the system camera prompt, and a
+   microphone request for video (not declared in the manifest, so always
+   refused, with a misleading "recorded without audio" warning — the camera
+   app records sound itself).
+
+### Implementation (Offer only)
+
+- NEW `lib/src/services/offer_media_picker.dart` (`OfferMediaPicker`):
+  Gallery = `pickMultipleMedia(limit: remaining)`, photos and videos in one
+  native selection, images at the existing 1920 px / q85; on Android the
+  system **Photo Picker** is switched on for that call only (the flag is
+  restored, so Owner/profile/Toolkit pickers are unchanged) — no app dialog,
+  no media-library permission request. Camera = `pickImage`/`pickVideo`
+  (3 min cap) through the system camera; `image_picker_android` asks the
+  camera permission itself with the system dialog (required because the app
+  declares CAMERA); `camera_access_denied` is mapped to denied / permanently
+  denied (status read only, no request). `retrieveLostData` recovery.
+- NEW `lib/src/views/Widgets/offer_media_source_sheet.dart`: bottom sheet with
+  drag handle, title, "You can add N more", three tiles — **Camera** (then
+  Photo / Video inside the sheet, with Back), **Gallery**, **Documents** shown
+  as "Not available for offers yet" (disabled; secure Offer documents remain
+  Task C). Theme colours and text styles only (brand primary tint), light
+  and dark, EN/AR, RTL, 48+ dp targets, semantics labels.
+- `add_offers_viewmodel.dart`: `selectMedia` uses the sheet and the picker;
+  NEW `addPickedOfferMedia` skips files already in the form (same name and
+  size as a picked or queued item), then the unchanged
+  `screenOfferMediaSelection` (10-item limit, size caps, real type, duration,
+  HEIC→JPEG, lasting `mediaObjectId`); drafts go to the unchanged upload queue
+  on Save (durable copy there). Cancel changes nothing; camera refusal shows
+  the existing localized message, permanently denied offers Open Settings;
+  lost picks are recovered when the form opens. The hard-coded English
+  "Added N file(s)" toast is replaced by a localized one.
+- EN/AR strings for the sheet, results and picker failure.
+- `ios/Runner/Info.plist`: camera, photo library and microphone purpose
+  strings now describe the real use (profile and Offer photos/videos).
+- Unchanged: `CleanMediaService`, `CleanPermissionService` (Owner, profile,
+  Toolkit, map keep their flows), manifest permissions (READ_MEDIA_*,
+  MANAGE_EXTERNAL_STORAGE and others are used by other features — recorded
+  for the release audit, not removed here), queue, Worker, database.
+
+### Verification — CODE_PROVEN
+
+- NEW `test/offers/offer_media_picker_test.dart`: 21 PASS — one mixed
+  selection with the remaining limit and no permission call; Photo Picker on
+  for that call only; full Offer opens nothing; camera photo and 3-min video
+  with no app permission call; camera denied / permanently denied; lost-data
+  recovery; five videos in one selection; mixed kinds; capacity re-checked
+  whatever the picker returned; duplicate skipped and invalid file refused;
+  distinct lasting ids for the queue; sheet dismiss / picker cancel change
+  nothing; Gallery flow with no dialog and one localized confirmation;
+  camera flows; permanently denied offers Settings; the sheet's three
+  actions, camera sub-choice and Back, Documents disabled (semantics), Arabic
+  RTL order, dark theme and a 320 dp phone with no overflow.
+- Full suite: 742 PASS, 5 FAIL (the same five pre-existing stale migration
+  path failures). `flutter analyze lib test`: 0 errors, 0 warnings.
+- Not device-verified: Photo Picker behaviour on the Samsung, camera prompts,
+  lost-data recovery.
+
+NOW — install the Debug build with `adb install -r` (keeps data) and run the
+Task B acceptance: + once → Gallery → five videos in one selection → five
+previews; mixed photos/videos in one selection; save and reopen; no
+double-permission dialog; Camera photo and video.
+
+NEXT — record the result; then reconcile the final Offer media checkpoint.
+
+### Task B device result and final corrections (2026-09-27)
+
+**VERIFIED_REAL_DEVICE (owner, Samsung):** the combined Gallery picker selects
+five videos and five images in one operation. Kept as is.
+
+**P0 — "A VideoPlayerController was used after being disposed" — root cause
+CONFIRMED.** `VideoPlayerResourceManager` shared controllers by video but did
+not know who used them: to open a video beyond its two-player limit it
+disposed the oldest paused controller, and a newer link of a video disposed
+the older controller — even when a mounted player still showed it. Offer
+Details keeps its paused player mounted under full screen, so playing a third
+video in full screen disposed the controller Details still held; its next
+play/seek raised the error (Flutter's `ChangeNotifier` assertion). Proven
+directly: with the old manager, opening three videos and then playing the
+first threw exactly that error (probe run, 2026-09-27). The device stack
+trace itself was not available to the agent (the debugger console, not
+logcat); the failing operation is identified by reproduction, not by the
+owner's trace.
+
+Fix — `video_player_resource_manager.dart`: each player entry counts its
+holders; `getController` hands out a held controller, `release` gives it back
+(new API); a controller is disposed only when nothing holds it (making room
+takes idle players only, least recently used; at most one idle player is
+kept; an idle player of an outdated link is dropped); a disposed controller
+is removed before disposal and never handed out again; two requests for the
+same video while it starts share one platform player. `media_gallery_widget
+.dart` (`OptimizedVideoPlayerWidget`, the only acquirer): disposes its Chewie
+controls, then releases its controller in `dispose`; releases a controller
+that arrives after the widget was closed; releases before a Retry. Widgets
+never dispose controllers.
+
+**Camera — owner-approved correction.** The Camera → second Photo/Video sheet
+is removed. Tap + → Camera now opens the Offer media camera directly, with its
+own Photo / Video switch. Android's system capture intents return either a
+photo or a video, never "whichever the user picked", so this needs an in-app
+camera: **owner approved adding flutter.dev's official `camera` 0.12.1**
+(adds only `camera`, `camera_android_camerax` 0.7.5, `camera_avfoundation`,
+`camera_platform_interface`, `camera_web`; no existing package changed; no
+SDK change). NEW `lib/src/views/Widgets/offer_media_camera.dart`: back camera,
+Photo / Video switch (locked while recording), shutter, switch camera,
+recording timer with automatic stop at the 3-minute limit, 1080p video at
+4 Mbit/s + 128 kbit/s audio (≈ 93 MB for 3 minutes, under the 100 MB limit),
+photos at 1080p; camera and microphone asked once by the system dialog when
+the camera starts (plugin-requested; no app-made dialog); a refused
+microphone records silently with a note; a refused camera shows a localized
+message with Open Settings and Retry; the camera is released in the
+background and a recording in progress is finished and kept. The result is
+screened and queued exactly like a Gallery pick. The sheet's Camera tile
+closes the sheet and opens this screen; Gallery is unchanged.
+`AndroidManifest.xml`: the CameraX plugin merges CAMERA and RECORD_AUDIO; its
+WRITE_EXTERNAL_STORAGE `maxSdkVersion=28` conflicted with the app's 29, so the
+app's declaration gains `tools:replace="android:maxSdkVersion"` (the app's
+value is kept; nothing else changed). The picker service keeps only Gallery
+and lost-data recovery (its image_picker camera path was removed).
+
+Tests: NEW `test/offers/offer_video_lifecycle_test.dart` (11: held player
+never evicted — the device crash; idle player makes room and a disposed
+controller is never returned; one video shared and disposed after its last
+holder; newer link leaves the shown player; concurrent start opens one
+player; double/unknown release harmless; full screen over Details with three
+videos then back, Details player still usable; repeated switching in Details
+with the live count bounded; full screen opened/closed repeatedly; leaving
+while a player starts releases it; every platform player freed). NEW
+`test/offers/offer_media_camera_test.dart` (8, fake platform camera: opens on
+the back camera with the switch and returns a photo; video start/stop with
+timer and switch locked; automatic stop at the limit; switch lens releases
+the first; refused camera → Settings/Retry; refused microphone → silent
+video; close returns nothing; Arabic/RTL). `offer_media_picker_test.dart`
+updated (Camera opens straight away; closing the camera changes nothing;
+Camera closes the sheet with no second sheet). Full suite: 759 PASS, 5 FAIL
+(the same pre-existing stale migration paths). `flutter analyze lib test`:
+0 errors, 0 warnings. The generated plugin registrants show as modified with
+no content change (line endings); not edited, not for commit.
+
+Test-harness note: `VideoPlayerController.dispose()` completes only when real
+time passes; widget tests that make the manager dispose a player therefore
+interleave a real-time moment between frames.
+
+Device note: the app was not installed on the phone at 20:57 on 2026-09-27
+(`run-as` reported the package unknown); the build was installed fresh, then
+updated with `adb install -r` (first-install time kept). The owner signs in
+again; the Offer's media is on the server.
+
+NOW — Samsung acceptance: open the Offer with five images and five videos,
+play and switch videos repeatedly, open/close full screen, pause, seek,
+reopen — no disposed-controller error; + → Camera opens the camera directly
+with Photo / Video inside it; take a photo and record a video; Gallery still
+selects several items without permission dialogs.
+
+NEXT — record the result; then the final Offer media checkpoint
+reconciliation.
+
+### Source review — recorded-video size and player lifecycle (2026-09-27)
+
+Working model from 2026-09-27: the owner builds, installs, runs and tests the
+app. Agents do not run Flutter build/run/test/analyze, APK, adb or emulator
+operations unless the owner authorizes that single operation. The test and
+analyzer results above are the previous session's reports; not re-run.
+
+Status: SOURCE REVIEWED / PENDING_OWNER_DEVICE_ACCEPTANCE. No behaviour
+changed in this review.
+
+- Recorded-video size — enforced. CameraX's `stopVideoRecording` returns
+  only after the Finalize event, for a manual and an automatic stop alike
+  (both go through `_stopRecording` → `_finish`). The file then takes the
+  Gallery path: `selectMedia` → `addPickedOfferMedia` →
+  `screenOfferMediaSelection` → `OfferMediaPolicy.check`, which reads the
+  file's real length and refuses more than 100 MiB (`offerMediaVideoTooLarge`,
+  English and Arabic), then more than 3:01 (`offerMediaVideoTooLong`). The
+  "≈ 93 MB" above is the encoder's target, not a guarantee; the camera
+  screen's comments now say so (comment-only change).
+- Player lifecycle — no defect found. Held controllers are never evicted or
+  replaced; a disposed entry is removed before disposal and is never returned
+  (including an entry disposed while a request was joining it); concurrent
+  requests share one open; a widget closed mid-open releases what arrives;
+  a newer signed link is a new keyed player and the old one is disposed once
+  idle; Chewie is disposed before the release and never disposes the
+  controller; at most one idle player remains.
+- Backlog only (not the Offer path, pre-existing since `ddb20a6`): the legacy
+  `mediaUrls` full-screen viewer disposes its own controllers in `dispose` and
+  then pauses them in a post-frame callback, which can raise the same
+  "used after being disposed" assertion in debug builds for non-Offer videos.
+
+NOW — owner's Samsung acceptance (unchanged; see NOW above).
+
+NEXT — record the result; then the final Offer media checkpoint
+reconciliation.
+
+### Camera reverted to the system camera (2026-09-27)
+
+**Owner device result (Samsung):** the in-app camera crashed right after the
+permission grant — `PlatformException(IllegalStateException,
+releaseFlutterSurfaceTexture() cannot be called if the flutterSurfaceProducer
+for the camera preview has not yet been initialized.)` from
+`camera_android_camerax` (`PreviewProxyApi.releaseSurfaceProvider`).
+**Owner decision:** no in-app camera, not to be fixed; Broker Wallet uses the
+phone's own camera app, as before. The approval of the `camera` package is
+withdrawn.
+
+Removed: `lib/src/views/Widgets/offer_media_camera.dart`,
+`test/offers/offer_media_camera_test.dart`, the `camera` dependency
+(`pubspec.yaml`) and its five lock entries (`camera`,
+`camera_android_camerax`, `camera_avfoundation`, `camera_platform_interface`,
+`camera_web`; nothing else imported them), and the manifest's
+`xmlns:tools` / `tools:replace` added only for that plugin.
+`pubspec.yaml`, `pubspec.lock` and `AndroidManifest.xml` now equal `HEAD`
+again, so CAMERA (declared by the app for the scanner) and the app's
+storage permissions are unchanged, and the plugin's RECORD_AUDIO is gone
+from the merged manifest.
+
+Restored (the pre-camera code, from the previous session's record):
+`OfferMediaPicker.capturePhoto` = `pickImage(source: ImageSource.camera)`
+at 1920 px / q85, `recordVideo` = `pickVideo(source: ImageSource.camera,
+maxDuration: 3 min)`; `image_picker_android` asks for CAMERA with the system
+dialog (no app-made dialog, no microphone request); `camera_access_denied`
+→ the existing localized toast, or, when refused for good, a snackbar with
+Open Settings (status read only). `selectMedia` → `addPickedOfferMedia` →
+`screenOfferMediaSelection`, the same path as Gallery: real size, type from
+bytes, duration, HEIC→JPEG, 10-item limit, lasting id, upload queue on Save,
+`retrieveLostData` recovery; cancel changes nothing.
+
+Sheet (owner-specified): three sections in one row — **Camera** with two
+small direct actions, **Take photo** and **Record video** (each closes the
+sheet and opens the system camera at once; no second sheet or popup),
+**Gallery** (unchanged combined Photo Picker selection), **Documents**
+(still unavailable for Offers). Theme colours only, EN/AR, RTL, 48 dp
+actions, one shared tile height. Strings: + `offerMediaCameraRecordVideo`;
+`offerMediaCameraTakePhoto` kept; nine strings used only by the custom
+camera or the old Photo/Video sub-step removed.
+
+Tests (source only, NOT run — owner runs them): `offer_media_picker_test.dart`
+— system-camera photo and 3-minute video with no app permission call;
+refused / refused-for-good; photo then video added; leaving the camera
+changes nothing; an invalid camera file refused with its message; refused for
+good shows Open Settings; sheet has Take photo / Record video, each direct,
+with button semantics; Arabic label present in the RTL/dark/320 dp case.
+`dart format --output=none` on the three new/rewritten files: clean. No
+build, test, analyzer, adb or device operation was run.
+
+Status: SOURCE ONLY / PENDING_OWNER_DEVICE_ACCEPTANCE. The video player
+lifecycle fix is still pending the owner's device confirmation (not reported
+in this round). Gallery combined selection remains VERIFIED_REAL_DEVICE and
+its code is unchanged.
+
+NOW — owner: `flutter pub get`, build, install and check + → Take photo,
++ → Record video, refusing the camera once, cancelling, and Gallery.
+
+NEXT — record the result; then the final Offer media checkpoint
+reconciliation.
+
+## OFFER PRIVATE MEDIA — OWNER ACCEPTANCE AND COMMIT CANDIDATE (2026-09-27)
+
+**VERIFIED_REAL_DEVICE (owner, physical Samsung, 2026-09-27).** The owner
+accepted Offer Media's core implementation after manual acceptance of:
+
+- image and video selection;
+- one combined Gallery selection of several videos and images;
+- photo and video capture through the phone's own Samsung camera app
+  (`image_picker`), with no custom CameraX screen;
+- no redundant Gallery permission popup;
+- saving and reopening Offers with media;
+- private video playback, video seeking and persisted video thumbnails;
+- switching between videos with no disposed-controller exception;
+- the Offer media interface in its accepted state.
+
+This closes the "pending" device checks of the Task B, player-lifecycle and
+camera-revert sections above. Nothing else is promoted: `MEDIA-12`…`MEDIA-26`
+in the deferred master test plan stay NOT RUN.
+
+| Item | Status |
+| --- | --- |
+| Offer media core (Tasks A and B) | ACCEPTED — VERIFIED_REAL_DEVICE (the items above) |
+| Supabase `confirm_offer_media_upload` | APPLIED + VERIFIED_HOSTED. Repository file `supabase/migrations/20260926092220_offer_media_confirm_rpc.sql` carries the hosted version; sha256 `3aad4199…c6e8e1`, unchanged since the tracking reconciliation |
+| Production Worker `r2-profile-upload` | `ecaf125d-a0e3-4c26-add6-5f2c684c2516` (owner-reported), `OFFER_MEDIA_SWEEP_MODE=off`, rollback `bacad8d6-b7e2-434b-88e4-965c91c82874`. Working-tree `worker.js` sha256 = `94b3ca4a…`, the recorded deployed source |
+| Staging Worker `r2-profile-upload-staging` | `ab42e479-…`, 72/72 PASS (VERIFIED_HOSTED); its test Offers and 20 staging objects are retained |
+| Flutter tests | Not run by the agent after the camera revert. The last full-suite report (759 PASS / 5 FAIL) predates the revert and included the since-removed camera tests |
+| Task C — private Offer documents | DEFERRED |
+| Owner Media | Next independent checkpoint; not started |
+
+**Known failing tests (not fixed here; never report them as passing).** Five
+tests read migration files by the names `0d7fb17` changed:
+`test/account/delete_account_test.dart` (1: `20260913000100_…`, now
+`20260913175221_…`) and `test/auth/phone_security_hardening_test.dart`
+(4: `20260911000100_…` and `20260911000200_…`, now `20260911181050_…` and
+`20260911181112_…`). Checked on 2026-09-27: the old paths are still in both
+files.
+
+**Backlog, outside the accepted Offer path.** The legacy `mediaUrls`
+full-screen viewer (non-Offer media) disposes its own controllers and then
+pauses them a frame later, which can raise "used after being disposed" in
+debug builds (since `ddb20a6`; `MEDIA-26`). The Offer-media sweeps stay `off`
+until an owner-approved dry run (`MEDIA-25`). iOS has not been exercised
+(`MEDIA-24`).
+
+**Commit candidate: prepared, NOT staged.** 38 modified and 24 new files, all
+Offer private media: implementation, the migration and its SQL checks,
+Flutter and Worker tests, and docs. Excluded: `lib/main.dart` and the seven
+generated plugin registrant files (line endings only, no content change).
+`pubspec.yaml`, `pubspec.lock` and `AndroidManifest.xml` equal `HEAD` again
+(the `camera` package was removed), so they are not part of it.
+
+NOW — owner: approve or amend the proposed file list and commit message.
+Optionally run `flutter test` first: the test sources changed by the camera
+revert have not been executed.
+
+NEXT — stage exactly those files by path, review `git diff --cached`, commit
+without pushing; then select Owner Media as the next checkpoint.

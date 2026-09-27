@@ -17,6 +17,7 @@ import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/offer_media_session.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -1563,6 +1564,13 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   @override
   void notifyListeners() {
     if (_disposed) return;
+    // Every auth-state snapshot passes through here in one piece. Offer media
+    // uploads may run only for an application-authenticated account: never a
+    // recovery session, never one held in the deletion quarantine.
+    OfferMediaSession.onAuthState(
+      uid: _currentUser?.uid,
+      active: isAuthenticated && !_passwordRecoveryActive,
+    );
     super.notifyListeners();
   }
 

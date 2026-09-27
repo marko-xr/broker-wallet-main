@@ -380,6 +380,7 @@ void main() {
         forgetProfileMedia: ({mediaIds}) async {},
         forgetOfferMedia: ({ownerId}) async =>
             const OfferMediaCleanupReport.empty(),
+        purgeOfferMediaUploads: (_) async => 0,
       ),
     );
     final gateway = _Gateway();

@@ -85,15 +85,15 @@
             <key>FirebaseAppDelegateProxyEnabled</key>
     <false/>
 
-    <!-- Additional permissions for camera/photo access (for profile pictures) -->
+    <!-- Camera and photo library: profile pictures and Offer photos/videos -->
     <key>NSCameraUsageDescription</key>
-    <string>This app needs access to camera to take profile pictures.</string>
+    <string>Broker Wallet uses the camera to take photos and videos for your profile and your offers.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs access to photo library to select profile pictures.</string>
+    <string>Broker Wallet lets you choose photos and videos from your library for your profile and your offers.</string>
     
     <!-- Microphone access (if you plan to add voice features) -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs access to microphone for voice notes.</string>
+    <string>Broker Wallet uses the microphone to record sound with the videos you take.</string>
     
     <!-- Contacts access (if you plan to add contact features) -->
     <key>NSContactsUsageDescription</key>

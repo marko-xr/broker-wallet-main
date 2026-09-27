@@ -81,12 +81,48 @@ String? offerMediaCacheKey({
   return '$offerMediaCacheKeyPrefix$owner:$media';
 }
 
+/// The key under which a video's still frame, made on this device, is kept.
+///
+/// Derived from the item's own cache key, so it carries the same account
+/// scope and its adopted file shares the same ownership prefix — the account
+/// sweep removes it with everything else.
+String offerMediaPosterKey(String cacheKey) => '$cacheKey:poster';
+
+/// The states the Offer media UI distinguishes for an item that is not yet
+/// (or not successfully) on the server.
+enum OfferMediaUploadPhase {
+  /// Saved on the device and waiting for its turn — including while the app
+  /// is in the background, where Android allows it no network.
+  queued,
+
+  /// Being authorized or sent right now (with progress while sending).
+  uploading,
+
+  /// Every byte was sent; the server is verifying and attaching it.
+  confirming,
+
+  /// Accepted and attached by the server.
+  ready,
+
+  /// A failure that can pass, retried automatically; Retry skips the wait.
+  retrying,
+
+  /// Failed for a reason that can pass; waiting for the user's Retry.
+  retryableFailure,
+
+  /// Refused for good; only Remove helps.
+  permanentFailure,
+}
+
 /// One displayable piece of Offer media, in the order the Worker returned it.
 ///
 /// [mediaObjectId] is always present and durable. [signedUrl] is present only
 /// after a successful `/offer-media` resolution and expires. [localFilePath]
 /// is present when this device already holds the bytes, in which case the
 /// image can be painted on the first frame with no network at all.
+///
+/// An item still in the upload queue carries an [uploadPhase]; items the
+/// server already holds carry none.
 class OfferMediaRef {
   const OfferMediaRef({
     required this.mediaObjectId,
@@ -94,6 +130,13 @@ class OfferMediaRef {
     this.signedUrl,
     this.localFilePath,
     this.isVideo = false,
+    this.posterPath,
+    this.durationMs,
+    this.uploadPhase,
+    this.progress,
+    this.failureMessageKey,
+    this.displayName,
+    this.byteLength,
   });
 
   final String mediaObjectId;
@@ -109,13 +152,37 @@ class OfferMediaRef {
   /// path and query are signing details rather than a description of content.
   final bool isVideo;
 
+  /// A still frame of a video, when this device made one.
+  final String? posterPath;
+
+  /// A video's duration as the server measured it.
+  final int? durationMs;
+
+  /// Set only for an item still in the upload queue.
+  final OfferMediaUploadPhase? uploadPhase;
+
+  /// Fraction of the bytes sent, while [uploadPhase] is uploading.
+  final double? progress;
+
+  /// The ARB key explaining a failed upload.
+  final String? failureMessageKey;
+
+  final String? displayName;
+  final int? byteLength;
+
   bool get hasLocalBytes =>
       localFilePath != null && localFilePath!.trim().isNotEmpty;
 
   bool get hasSignedUrl => signedUrl != null && signedUrl!.trim().isNotEmpty;
 
+  bool get hasPoster => posterPath != null && posterPath!.trim().isNotEmpty;
+
   /// Whether this item can put pixels on screen right now.
-  bool get isRenderable => hasLocalBytes || hasSignedUrl;
+  bool get isRenderable => hasLocalBytes || hasSignedUrl || hasPoster;
+
+  /// Whether this item is still in the upload queue rather than on the server.
+  bool get isPendingUpload =>
+      uploadPhase != null && uploadPhase != OfferMediaUploadPhase.ready;
 
   OfferMediaRef copyWith({String? signedUrl, String? localFilePath}) =>
       OfferMediaRef(
@@ -124,6 +191,13 @@ class OfferMediaRef {
         signedUrl: signedUrl ?? this.signedUrl,
         localFilePath: localFilePath ?? this.localFilePath,
         isVideo: isVideo,
+        posterPath: posterPath,
+        durationMs: durationMs,
+        uploadPhase: uploadPhase,
+        progress: progress,
+        failureMessageKey: failureMessageKey,
+        displayName: displayName,
+        byteLength: byteLength,
       );
 
   @override
@@ -133,11 +207,30 @@ class OfferMediaRef {
       other.cacheKey == cacheKey &&
       other.signedUrl == signedUrl &&
       other.localFilePath == localFilePath &&
-      other.isVideo == isVideo;
+      other.isVideo == isVideo &&
+      other.posterPath == posterPath &&
+      other.durationMs == durationMs &&
+      other.uploadPhase == uploadPhase &&
+      other.progress == progress &&
+      other.failureMessageKey == failureMessageKey &&
+      other.displayName == displayName &&
+      other.byteLength == byteLength;
 
   @override
-  int get hashCode =>
-      Object.hash(mediaObjectId, cacheKey, signedUrl, localFilePath, isVideo);
+  int get hashCode => Object.hash(
+        mediaObjectId,
+        cacheKey,
+        signedUrl,
+        localFilePath,
+        isVideo,
+        posterPath,
+        durationMs,
+        uploadPhase,
+        progress,
+        failureMessageKey,
+        displayName,
+        byteLength,
+      );
 }
 
 /// The result of one authoritative `/offer-media` resolution.

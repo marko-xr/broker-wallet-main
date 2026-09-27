@@ -4,6 +4,8 @@ import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_galler
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
+import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -24,12 +26,17 @@ class FullScreenMediaViewer extends StatefulWidget {
   final int initialIndex;
   final String? title;
 
+  /// Offer media only: signs the media again and returns an item's new link,
+  /// for a private video whose link has expired.
+  final Future<String?> Function(String mediaObjectId)? refreshSignedUrl;
+
   const FullScreenMediaViewer({
     super.key,
     this.mediaRefs,
     this.mediaUrls = const <String>[],
     this.initialIndex = 0,
     this.title,
+    this.refreshSignedUrl,
   });
 
   @override
@@ -51,6 +58,21 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
   // Video controllers cache
   final Map<String, VideoPlayerController> _videoControllers = {};
   final Map<String, ChewieController> _chewieControllers = {};
+
+  /// The viewer's own bars, measured so a private video is laid out between
+  /// them: its player's seek bar and buttons are then never underneath the
+  /// thumbnail strip, which would take every touch aimed at them.
+  final GlobalKey _topControlsKey = GlobalKey();
+  final GlobalKey _bottomControlsKey = GlobalKey();
+  EdgeInsets _videoInsets = EdgeInsets.zero;
+
+  void _measureControls() {
+    if (!mounted) return;
+    final top = _topControlsKey.currentContext?.size?.height ?? 0;
+    final bottom = _bottomControlsKey.currentContext?.size?.height ?? 0;
+    final insets = EdgeInsets.only(top: top, bottom: bottom);
+    if (insets != _videoInsets) setState(() => _videoInsets = insets);
+  }
 
   @override
   void initState() {
@@ -88,7 +110,11 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     _controlsAnimationController.forward();
   }
 
+  /// Private Offer videos load only when the viewer taps to play them.
+  bool get _isPrivateMedia => widget.mediaRefs != null;
+
   void _preloadCurrentVideo() {
+    if (_isPrivateMedia) return;
     if (_currentIndex < _mediaItems.length) {
       final currentItem = _mediaItems[_currentIndex];
       if (currentItem.type == MediaType.video) {
@@ -173,7 +199,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
         await controller.pause();
       } catch (e) {
         // Silently handle pause issues to avoid interrupting UX
-        debugPrint('Failed to pause video ${entry.key}: $e');
+        debugPrint('Failed to pause video: ${e.runtimeType}');
       }
     }
   }
@@ -204,6 +230,11 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+
+      if (_isPrivateMedia) {
+        // Each private video's player pauses itself when its page goes.
+        return;
+      }
 
       if (currentItem != null && currentItem.type == MediaType.video) {
         _pauseAllVideos(exceptUrl: currentItem.url);
@@ -244,6 +275,11 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
 
   @override
   Widget build(BuildContext context) {
+    if (_isPrivateMedia) {
+      // Only changes anything when the bars' size did (first layout,
+      // rotation, text size).
+      SchedulerBinding.instance.addPostFrameCallback((_) => _measureControls());
+    }
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
@@ -260,7 +296,8 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
               },
             ),
 
-            // Top controls
+            // Top controls. Hidden controls are faded out, not removed, so
+            // they must also stop taking touches meant for the page beneath.
             AnimatedBuilder(
               animation: _controlsAnimation,
               builder: (context, child) {
@@ -268,11 +305,17 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: Transform.translate(
-                    offset: Offset(0, -60 * (1 - _controlsAnimation.value)),
-                    child: Opacity(
-                      opacity: _controlsAnimation.value,
-                      child: _buildTopControls(),
+                  child: IgnorePointer(
+                    ignoring: !_showControls,
+                    child: Transform.translate(
+                      offset: Offset(0, -60 * (1 - _controlsAnimation.value)),
+                      child: Opacity(
+                        opacity: _controlsAnimation.value,
+                        child: KeyedSubtree(
+                          key: _topControlsKey,
+                          child: _buildTopControls(),
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -287,11 +330,17 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
                   bottom: 0,
                   left: 0,
                   right: 0,
-                  child: Transform.translate(
-                    offset: Offset(0, 80 * (1 - _controlsAnimation.value)),
-                    child: Opacity(
-                      opacity: _controlsAnimation.value,
-                      child: _buildBottomControls(),
+                  child: IgnorePointer(
+                    ignoring: !_showControls,
+                    child: Transform.translate(
+                      offset: Offset(0, 80 * (1 - _controlsAnimation.value)),
+                      child: Opacity(
+                        opacity: _controlsAnimation.value,
+                        child: KeyedSubtree(
+                          key: _bottomControlsKey,
+                          child: _buildBottomControls(),
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -456,6 +505,30 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
   }
 
   Widget _buildMediaViewer(MediaItem mediaItem) {
+    if (_isPrivateMedia && mediaItem.isPendingUpload) {
+      // A snapshot of the queue, so its state and never a stale percentage:
+      // an item is not shown as uploaded before the server has accepted it.
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildPrivateMediaViewer(mediaItem),
+          IgnorePointer(
+            child: OfferMediaUploadStatus(
+              phase: mediaItem.uploadPhase!,
+              failureMessageKey: mediaItem.failureMessageKey,
+            ),
+          ),
+        ],
+      );
+    }
+    if (_isPrivateMedia) {
+      // The same shape as above, so a video playing from its local copy is
+      // not restarted when its item turns ready.
+      return Stack(
+        fit: StackFit.expand,
+        children: [_buildPrivateMediaViewer(mediaItem)],
+      );
+    }
     switch (mediaItem.type) {
       case MediaType.image:
         return _buildImageViewer(mediaItem);
@@ -468,6 +541,34 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     }
   }
 
+  Widget _buildPrivateMediaViewer(MediaItem mediaItem) {
+    switch (mediaItem.type) {
+      case MediaType.video:
+        final localVideo =
+            mediaItem.isPendingUpload ? mediaItem.localFilePath : null;
+        return Padding(
+          padding: _videoInsets,
+          child: OfferVideoTile(
+            key: ValueKey('offer-video-full-'
+                '${mediaItem.mediaObjectId ?? mediaItem.url}'),
+            url: mediaItem.url,
+            localPath: localVideo,
+            mediaObjectId: mediaItem.mediaObjectId,
+            controllerKey: mediaItem.cacheKey,
+            posterPath: mediaItem.posterPath,
+            durationMs: mediaItem.durationMs,
+            playable: !mediaItem.isPendingUpload || localVideo != null,
+            refreshSignedUrl: widget.refreshSignedUrl,
+            fit: BoxFit.contain,
+          ),
+        );
+      case MediaType.image:
+      case MediaType.document:
+      case MediaType.unknown:
+        return _buildImageViewer(mediaItem);
+    }
+  }
+
   /// Prefers bytes this device already holds, then the shared disk cache
   /// keyed by the item's stable identity, and only then the network.
   ///
@@ -477,6 +578,13 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
   /// the Offer loading-delay correction, and changing an unrelated screen's
   /// image pipeline does not belong in that change.
   ImageProvider _imageProviderFor(MediaItem mediaItem) {
+    // An Offer item still uploading is drawn from its queued copy.
+    final pendingPath = mediaItem.localFilePath;
+    if (mediaItem.isPendingUpload && pendingPath != null) {
+      final file = File(pendingPath);
+      if (file.existsSync()) return FileImage(file);
+    }
+
     final cacheKey = mediaItem.cacheKey;
     if (cacheKey == null) return NetworkImage(mediaItem.url);
 
@@ -735,6 +843,55 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
   }
 
   Widget _buildThumbnail(MediaItem mediaItem) {
+    if (_isPrivateMedia) {
+      final poster = mediaItem.posterPath;
+      if (mediaItem.type == MediaType.image) {
+        return Image(
+          image: ResizeImage(_imageProviderFor(mediaItem), width: 120),
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Container(
+            color: Colors.grey[800],
+            child: const Icon(
+              Icons.broken_image,
+              color: Colors.white54,
+              size: 24,
+            ),
+          ),
+        );
+      }
+      if (mediaItem.type == MediaType.video) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // Its own frame, the one kept for its media id, or one made
+            // from the video when this device has none.
+            OfferVideoPoster(
+              cacheKey: mediaItem.cacheKey,
+              signedUrl: mediaItem.url,
+              posterPath: poster,
+              cacheWidth: 120,
+              placeholder: ColoredBox(
+                color: Colors.grey[800]!,
+                child: const Icon(
+                  Icons.videocam,
+                  color: Colors.white54,
+                  size: 24,
+                ),
+              ),
+            ),
+            const Positioned(
+              bottom: 4,
+              right: 4,
+              child: Icon(
+                Icons.play_circle_filled,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ],
+        );
+      }
+    }
     switch (mediaItem.type) {
       case MediaType.image:
         return Image.network(

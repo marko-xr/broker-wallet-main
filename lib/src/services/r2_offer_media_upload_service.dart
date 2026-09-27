@@ -5,8 +5,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
+import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
 
 /// One piece of confirmed, displayable Offer media: a short-lived signed
@@ -19,6 +21,8 @@ class R2OfferMediaItem {
     required this.ordinal,
     required this.url,
     this.mediaType,
+    this.durationMs,
+    this.expiresAt,
   });
 
   final String mediaObjectId;
@@ -29,6 +33,12 @@ class R2OfferMediaItem {
   /// 'image' or 'video' as recorded server-side, or null from a Worker that
   /// predates video support (every item it lists is an image).
   final String? mediaType;
+
+  /// A video's duration as the Worker measured it.
+  final int? durationMs;
+
+  /// When [url] stops working. Transport only: kept in memory, never stored.
+  final DateTime? expiresAt;
 }
 
 /// The result of successfully uploading and confirming one Offer media file.
@@ -42,13 +52,91 @@ class R2OfferMediaUploadResult {
   final OfferMediaKind kind;
 }
 
+/// What `/offer-media/authorize` answered for one logical upload.
+class OfferMediaAuthorization {
+  const OfferMediaAuthorization.pending({
+    required this.mediaObjectId,
+    required String this.presignedUrl,
+  }) : isAlreadyReady = false;
+
+  const OfferMediaAuthorization.ready({required this.mediaObjectId})
+      : presignedUrl = null,
+        isAlreadyReady = true;
+
+  final String mediaObjectId;
+
+  /// The short-lived signed PUT for the bytes. Transport only: never stored.
+  final String? presignedUrl;
+
+  /// The item was already attached, e.g. an earlier attempt succeeded but its
+  /// response was lost. There is nothing to upload again.
+  final bool isAlreadyReady;
+}
+
+/// What `/offer-media/confirm` answered.
+class OfferMediaConfirmation {
+  const OfferMediaConfirmation({this.ordinal, this.alreadyConfirmed = false});
+
+  /// The item's position on the Offer, as the server chose it.
+  final int? ordinal;
+  final bool alreadyConfirmed;
+}
+
+/// What `/offer-media/remove` answered.
+class OfferMediaRemoval {
+  const OfferMediaRemoval({
+    this.alreadyRemoved = false,
+    this.cleanupPending = false,
+  });
+
+  final bool alreadyRemoved;
+
+  /// Removed from the Offer, but deleting its bytes did not finish yet; the
+  /// server's scheduled cleanup completes it.
+  final bool cleanupPending;
+}
+
+/// The Media Worker operations one logical Offer upload consists of.
+///
+/// Every call is idempotent on the app-generated [mediaObjectId], which is
+/// what lets the upload queue retry any step, after any failure or a restart,
+/// without ever creating a second object.
+abstract interface class OfferMediaTransport {
+  Future<OfferMediaAuthorization> authorizeUpload({
+    required String offerId,
+    required String mediaObjectId,
+    required String contentType,
+    required int contentLength,
+    String? originalFileName,
+  });
+
+  Future<void> uploadBytes({
+    required String presignedUrl,
+    required File file,
+    required String contentType,
+    required int length,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+    Future<void>? cancel,
+  });
+
+  Future<OfferMediaConfirmation> confirmUpload({
+    required String offerId,
+    required String mediaObjectId,
+  });
+
+  Future<OfferMediaRemoval> removeMedia({
+    required String offerId,
+    required String mediaObjectId,
+  });
+}
+
 /// Client boundary for the Offer-media routes on the same production Worker
 /// that already serves profile images (see `R2ProfileUploadService`). The
 /// bucket stays private throughout: every read is a fresh, short-lived
 /// signed URL from the Worker, never a permanently public R2 URL, and
 /// nothing here ever persists a signed URL as the canonical media identity —
 /// only `mediaObjectId` (a `media_objects.id`) is durable.
-class R2OfferMediaUploadService {
+class R2OfferMediaUploadService implements OfferMediaTransport {
   R2OfferMediaUploadService({
     http.Client? httpClient,
     SupabaseClient? supabaseClient,
@@ -65,6 +153,9 @@ class R2OfferMediaUploadService {
 
   static const Duration _metadataRequestTimeout = Duration(seconds: 15);
 
+  /// The Worker's signed-URL lifetime when a response does not state it.
+  static const Duration _defaultReadUrlLifetime = Duration(seconds: 900);
+
   /// An upload is abandoned only when it stops making progress for this
   /// long, never merely for being large: a 100 MB video on a slow link can
   /// legitimately take many minutes.
@@ -74,61 +165,79 @@ class R2OfferMediaUploadService {
   /// Time allowed for R2 to answer once every byte has been sent.
   static const Duration _uploadResponseTimeout = Duration(seconds: 60);
 
-  /// Authorize an upload for [file] against [offerId] using the current
-  /// authenticated Supabase user, upload it directly to private R2, then
-  /// confirm it and attach it to the offer with [role]/[ordinal]. Ownership
-  /// of the offer is verified server-side by the Worker on both the
-  /// authorize and confirm calls — this method never sends anything the
-  /// server treats as a trusted owner id.
+  /// Worker statuses whose stable `code` may name a user-actionable refusal.
+  static const Set<int> _refusalStatuses = {400, 409, 410, 422};
+
+  /// Uploads one file end to end: authorize, stream the bytes to private R2,
+  /// confirm. [mediaObjectId] is this item's identity; when omitted, a new one
+  /// is generated. Retrying with the same id resumes the same logical upload
+  /// and never creates a second object. Ownership of [offerId] is verified
+  /// server-side on every call — nothing here is a trusted owner id.
   ///
-  /// The file is never read into memory whole: its type comes from its first
-  /// bytes and its body is streamed from disk to R2 with an exact
-  /// Content-Length, so a 100 MB video costs the same memory as a photo.
-  /// [onProgress] reports bytes handed to the network so far.
+  /// The persistent upload queue drives these steps itself; this is the
+  /// one-shot form of the same sequence.
   Future<R2OfferMediaUploadResult> uploadOfferMediaFile({
     required String offerId,
     required File file,
-    String role = 'gallery',
-    int ordinal = 0,
+    String? mediaObjectId,
     void Function(int sentBytes, int totalBytes)? onProgress,
   }) async {
     final check = await OfferMediaPolicy.check(file);
     if (!check.isAccepted) {
       throw OfferMediaRejectedException(check.rejection!);
     }
-    final contentType = check.contentType!;
-    final length = check.length!;
+    final id = mediaObjectId ?? const Uuid().v4();
 
-    final auth = _currentAuth();
-    final authPayload =
-        await _post('/offer-media/authorize', auth.accessToken, {
-      'offerId': offerId,
-      'contentType': contentType,
-      'contentLength': length,
-      'originalFileName': _fileName(file.path),
-    });
-    final presignedUrl = _requiredString(authPayload, 'presignedUrl');
-    final mediaObjectId = _requiredString(authPayload, 'mediaObjectId');
-
-    await _streamToPresignedUrl(
-      presignedUrl: presignedUrl,
-      file: file,
-      contentType: contentType,
-      length: length,
-      onProgress: onProgress,
+    final authorization = await authorizeUpload(
+      offerId: offerId,
+      mediaObjectId: id,
+      contentType: check.contentType!,
+      contentLength: check.length!,
+      originalFileName: _fileName(file.path),
     );
+    if (!authorization.isAlreadyReady) {
+      await uploadBytes(
+        presignedUrl: authorization.presignedUrl!,
+        file: file,
+        contentType: check.contentType!,
+        length: check.length!,
+        onProgress: onProgress,
+      );
+      await confirmUpload(offerId: offerId, mediaObjectId: id);
+    }
+    return R2OfferMediaUploadResult(mediaObjectId: id, kind: check.kind!);
+  }
 
-    final confirmAuth = _currentAuth();
-    await _post('/offer-media/confirm', confirmAuth.accessToken, {
+  @override
+  Future<OfferMediaAuthorization> authorizeUpload({
+    required String offerId,
+    required String mediaObjectId,
+    required String contentType,
+    required int contentLength,
+    String? originalFileName,
+  }) async {
+    final auth = _currentAuth();
+    final payload = await _post('/offer-media/authorize', auth.accessToken, {
       'offerId': offerId,
       'mediaObjectId': mediaObjectId,
-      'role': role,
-      'ordinal': ordinal,
+      'contentType': contentType,
+      'contentLength': contentLength,
+      if (originalFileName != null) 'originalFileName': originalFileName,
     });
-
-    return R2OfferMediaUploadResult(
+    final returnedId = _requiredString(payload, 'mediaObjectId');
+    if (returnedId.toLowerCase() != mediaObjectId.toLowerCase()) {
+      // A Worker that predates app-generated ids answered with an id of its
+      // own. Continuing would change this item's identity mid-upload, so the
+      // step fails instead and is retried once the Worker is current.
+      throw const R2UploadException(
+          'The offer media service does not support resumable uploads yet.');
+    }
+    if (payload['status'] == 'ready') {
+      return OfferMediaAuthorization.ready(mediaObjectId: mediaObjectId);
+    }
+    return OfferMediaAuthorization.pending(
       mediaObjectId: mediaObjectId,
-      kind: check.kind!,
+      presignedUrl: _requiredString(payload, 'presignedUrl'),
     );
   }
 
@@ -137,18 +246,29 @@ class R2OfferMediaUploadService {
   /// A watchdog aborts the request when no byte has moved for
   /// [uploadStallTimeout] (a dead network, or the OS suspending the app), or
   /// when R2 has not answered [_uploadResponseTimeout] after the last byte —
-  /// never merely because a large video takes a long time.
-  Future<void> _streamToPresignedUrl({
+  /// never merely because a large video takes a long time. Completing
+  /// [cancel] aborts it at once.
+  @override
+  Future<void> uploadBytes({
     required String presignedUrl,
     required File file,
     required String contentType,
     required int length,
     void Function(int sentBytes, int totalBytes)? onProgress,
+    Future<void>? cancel,
   }) async {
     final abort = Completer<void>();
     var sent = 0;
     var lastProgress = DateTime.now();
     DateTime? bodyDoneAt;
+    String? abortReason;
+
+    cancel?.then((_) {
+      if (!abort.isCompleted) {
+        abortReason = 'cancelled';
+        abort.complete();
+      }
+    });
 
     final body = file.openRead().transform(
           StreamTransformer<List<int>, List<int>>.fromHandlers(
@@ -179,40 +299,108 @@ class R2OfferMediaUploadService {
       final stalled = done == null
           ? now.difference(lastProgress) > uploadStallTimeout
           : now.difference(done) > _uploadResponseTimeout;
-      if (stalled) abort.complete();
+      if (stalled) {
+        abortReason = done == null ? 'stalled' : 'no-response';
+        abort.complete();
+      }
     });
 
     try {
       final response = await _http.send(request);
       await response.stream.drain<void>().timeout(_uploadResponseTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw const R2UploadException('Offer media upload was rejected.');
+        // R2's answer (an expired or refused signature is 403). The next
+        // attempt authorizes again and gets a fresh signed URL.
+        throw R2UploadException('Offer media upload was rejected.',
+            cause: 'put-http:${response.statusCode}');
       }
     } on R2UploadException {
       rethrow;
-    } catch (_) {
+    } catch (error) {
       // An abort, a dropped connection or a timeout. Nothing was confirmed,
-      // so the Worker's abandoned-upload cleanup removes any partial object.
-      throw const OfferMediaRejectedException(OfferMediaRejection.interrupted);
+      // so the same id is simply uploaded again.
+      final category = error is http.ClientException
+          ? _clientCause(error)
+          : OfferMediaDiagnostics.categorize(error);
+      throw OfferMediaRejectedException(
+        OfferMediaRejection.interrupted,
+        cause: '${abortReason ?? category} sent=$sent/$length',
+      );
     } finally {
       watchdog.cancel();
     }
+  }
+
+  /// A loggable category for a failed request; the exception's message may
+  /// name the host or carry the request URL, so it is only pattern-matched.
+  static String _clientCause(http.ClientException error) {
+    final message = error.message.toLowerCase();
+    if (message.contains('failed host lookup')) return 'dns';
+    if (message.contains('connection reset')) return 'reset';
+    if (message.contains('connection refused')) return 'refused';
+    if (message.contains('network is unreachable')) return 'unreachable';
+    if (message.contains('connection closed')) return 'closed';
+    if (message.contains('timed out')) return 'timeout';
+    if (message.contains('abort')) return 'aborted';
+    if (message.contains('handshake') || message.contains('certificate')) {
+      return 'tls';
+    }
+    return 'client';
+  }
+
+  @override
+  Future<OfferMediaConfirmation> confirmUpload({
+    required String offerId,
+    required String mediaObjectId,
+  }) async {
+    final auth = _currentAuth();
+    final payload = await _post('/offer-media/confirm', auth.accessToken, {
+      'offerId': offerId,
+      'mediaObjectId': mediaObjectId,
+    });
+    return OfferMediaConfirmation(
+      ordinal: _optionalInt(payload, 'ordinal'),
+      alreadyConfirmed: payload['alreadyConfirmed'] == true,
+    );
+  }
+
+  @override
+  Future<OfferMediaRemoval> removeMedia({
+    required String offerId,
+    required String mediaObjectId,
+  }) async {
+    final auth = _currentAuth();
+    final payload = await _post('/offer-media/remove', auth.accessToken, {
+      'offerId': offerId,
+      'mediaObjectId': mediaObjectId,
+    });
+    return OfferMediaRemoval(
+      alreadyRemoved: payload['alreadyRemoved'] == true,
+      cleanupPending: payload['cleanupPending'] == true,
+    );
   }
 
   /// The offer's confirmed media, each with a fresh short-lived signed read
   /// URL. Ownership of [offerId] is verified server-side by the Worker.
   Future<List<R2OfferMediaItem>> getOfferMedia(String offerId) async {
     final auth = _currentAuth();
+    final requestedAt = DateTime.now();
     final response = await _request(() => _http.get(
           _endpoint('/offer-media')
               .replace(queryParameters: {'offerId': offerId}),
           headers: {'Authorization': 'Bearer ${auth.accessToken}'},
         ).timeout(_metadataRequestTimeout));
-    _ensureSuccess(response, '/offer-media');
+    _ensureSuccess(response);
 
     final payload = _decodeObject(response.body);
     final rawMedia = payload['media'];
     if (rawMedia is! List) return const [];
+    final lifetimeSeconds = _optionalInt(payload, 'expiresInSeconds');
+    // Measured from when the request was sent, so the estimate can only err
+    // on the early side.
+    final expiresAt = requestedAt.add(lifetimeSeconds == null
+        ? _defaultReadUrlLifetime
+        : Duration(seconds: lifetimeSeconds));
 
     final items = <R2OfferMediaItem>[];
     for (final entry in rawMedia) {
@@ -226,6 +414,8 @@ class R2OfferMediaUploadService {
         ordinal: _optionalInt(entry, 'ordinal') ?? 0,
         url: url,
         mediaType: _optionalString(entry, 'mediaType'),
+        durationMs: _optionalInt(entry, 'durationMs'),
+        expiresAt: expiresAt,
       ));
     }
     return items;
@@ -257,21 +447,29 @@ class R2OfferMediaUploadService {
           body: jsonEncode(body),
         )
         .timeout(_metadataRequestTimeout));
-    final rejection = _rejectionFrom(response);
-    if (rejection != null) throw OfferMediaRejectedException(rejection);
-    _ensureSuccess(response, path);
-    return _decodeObject(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return _decodeObject(response.body);
+    }
+    final code = _workerCode(response);
+    final rejection = _refusalStatuses.contains(response.statusCode)
+        ? OfferMediaRejection.fromWorkerCode(code)
+        : null;
+    if (rejection != null) {
+      throw OfferMediaRejectedException(
+        rejection,
+        cause: 'http:${response.statusCode}',
+      );
+    }
+    throw R2OfferMediaHttpException(response.statusCode, code: code);
   }
 
-  /// A refusal the user can act on, from the Worker's stable `code` field.
-  /// Only known codes are read; the Worker's free-text message never is.
-  OfferMediaRejection? _rejectionFrom(http.Response response) {
-    const actionable = {400, 409, 422};
-    if (!actionable.contains(response.statusCode)) return null;
+  /// The Worker's stable `code` field. Its free-text message is never read.
+  String? _workerCode(http.Response response) {
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
-        return OfferMediaRejection.fromWorkerCode(decoded['code']);
+        final code = decoded['code'];
+        return code is String && code.isNotEmpty ? code : null;
       }
     } catch (_) {}
     return null;
@@ -282,17 +480,23 @@ class R2OfferMediaUploadService {
     try {
       return await request();
     } on TimeoutException {
-      throw const R2UploadException('The offer media request timed out.');
-    } on http.ClientException {
-      throw const R2UploadException('Could not reach the offer media service.');
-    } catch (_) {
-      throw const R2UploadException('Could not reach the offer media service.');
+      throw const R2UploadException('The offer media request timed out.',
+          cause: 'timeout');
+    } on http.ClientException catch (error) {
+      throw R2UploadException('Could not reach the offer media service.',
+          cause: _clientCause(error));
+    } catch (error) {
+      throw R2UploadException('Could not reach the offer media service.',
+          cause: OfferMediaDiagnostics.categorize(error));
     }
   }
 
-  void _ensureSuccess(http.Response response, String path) {
+  void _ensureSuccess(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw R2OfferMediaHttpException(response.statusCode);
+      throw R2OfferMediaHttpException(
+        response.statusCode,
+        code: _workerCode(response),
+      );
     }
   }
 
@@ -315,7 +519,6 @@ class R2OfferMediaUploadService {
     final normalized = path.replaceAll('\\', '/');
     return normalized.contains('/') ? normalized.split('/').last : normalized;
   }
-
 }
 
 class _CurrentAuth {
@@ -349,15 +552,20 @@ class R2WorkerNotConfiguredException implements Exception {
 }
 
 class R2UploadException implements Exception {
-  const R2UploadException(this.message);
+  const R2UploadException(this.message, {this.cause});
 
   final String message;
+
+  /// A fixed, loggable category for what went wrong (see
+  /// `OfferMediaDiagnostics.categorize`), never provider text or a URL.
+  final String? cause;
 
   @override
   String toString() => 'R2UploadException: $message';
 }
 
-/// A non-success answer from the media Worker, carrying its status code.
+/// A non-success answer from the media Worker, carrying its status code and
+/// its stable `code`, when it sent one.
 ///
 /// The status is what lets the caller tell an authoritative "this account has
 /// no such Offer" from a session problem or an upstream failure — a
@@ -365,12 +573,14 @@ class R2UploadException implements Exception {
 /// It extends [R2UploadException] so every existing handler still catches it.
 ///
 /// The Worker's own message is deliberately dropped: it is provider text and
-/// can name internal detail. Only the status is carried.
+/// can name internal detail. Only the status and the stable code are carried.
 class R2OfferMediaHttpException extends R2UploadException {
-  R2OfferMediaHttpException(this.statusCode)
-      : super('Offer media service request failed ($statusCode).');
+  R2OfferMediaHttpException(this.statusCode, {this.code})
+      : super('Offer media service request failed ($statusCode).',
+            cause: 'http:$statusCode');
 
   final int statusCode;
+  final String? code;
 
   /// The Worker reached this only after its ownership query succeeded and
   /// returned no row (an upstream failure answers 502), so it is trustworthy.
@@ -383,7 +593,7 @@ class R2OfferMediaHttpException extends R2UploadException {
 /// local pre-check or from the Media Worker. Carries only the reason, never a
 /// file path, byte content or provider text.
 class OfferMediaRejectedException extends R2UploadException {
-  const OfferMediaRejectedException(this.rejection)
+  const OfferMediaRejectedException(this.rejection, {super.cause})
       : super('Offer media was refused.');
 
   final OfferMediaRejection rejection;

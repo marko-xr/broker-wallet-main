@@ -1,63 +1,191 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:video_player/video_player.dart';
 import 'dart:developer' as developer;
 
-/// Manages video player controllers to prevent memory exhaustion
-/// Limits concurrent video players and provides resource pooling
+import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
+
+/// One platform player the manager holds, and who is using it.
+class _PlayerEntry {
+  _PlayerEntry(this.name, this.source, this.controller);
+
+  /// The stable name of the video (a private video's cache key, or its URL).
+  final String name;
+
+  /// What the player was opened with: a URL or a local path.
+  final String source;
+  final VideoPlayerController controller;
+
+  /// Widgets currently showing this player. It is never disposed while any
+  /// holds it.
+  int holders = 0;
+  DateTime lastUsed = DateTime.now();
+}
+
+/// Shares video players between the widgets that show them and limits how
+/// many exist at once.
+///
+/// **Ownership.** A widget that receives a controller from [getController]
+/// holds it until it calls [release] with that controller — normally in its
+/// own `dispose`. The manager disposes a controller only when no widget holds
+/// it: a held controller is never evicted to make room for another video and
+/// never replaced by a newer link of the same video. Disposing a controller
+/// that a mounted player still used is what raised "A VideoPlayerController
+/// was used after being disposed" on the test phone (2026-09-27): full screen
+/// played a third video, and the manager disposed the paused player still
+/// shown by Offer Details underneath.
+///
+/// Released players stay briefly as idle players (at most [_maxIdlePlayers])
+/// so reopening the same video is instant; opening another video disposes
+/// idle players first once [_maxConcurrentPlayers] exist. A disposed
+/// controller is removed at once and never handed out again.
 class VideoPlayerResourceManager {
   static const String _logName = 'VideoPlayerManager';
   static const int _maxConcurrentPlayers = 2; // Limit to 2 concurrent players
-  static const Duration _controllerTimeout =
-      Duration(seconds: 30); // Increased timeout for better reliability
+  static const int _maxIdlePlayers = 1;
 
   static final VideoPlayerResourceManager _instance =
       VideoPlayerResourceManager._internal();
   factory VideoPlayerResourceManager() => _instance;
   VideoPlayerResourceManager._internal();
 
-  final Map<String, VideoPlayerController> _activeControllers = {};
-  final Map<String, DateTime> _controllerLastUsed = {};
-  final List<String> _initializationQueue = [];
-  bool _isCleanupRunning = false;
+  final List<_PlayerEntry> _entries = [];
 
-  /// Get or create a video controller with resource management and HEVC fallback
-  Future<VideoPlayerController?> getController(String videoUrl) async {
-    try {
-      // Check if we already have this controller
-      if (_activeControllers.containsKey(videoUrl)) {
-        final controller = _activeControllers[videoUrl]!;
-        _controllerLastUsed[videoUrl] = DateTime.now();
+  /// Players being opened, by name and source: a second request for the same
+  /// one joins the first instead of opening another platform player.
+  final Map<String, Future<_PlayerEntry?>> _opening = {};
 
-        if (controller.value.isInitialized) {
-          developer.log('♻️ Reusing existing controller for: ${_redact(videoUrl)}',
-              name: _logName);
-          return controller;
-        } else {
-          // Controller exists but not initialized, remove it
-          developer.log('🗑️ Removing uninitialized controller for: ${_redact(videoUrl)}',
-              name: _logName);
-          await _disposeController(videoUrl);
-        }
+  /// Why the last attempt for each keyed (private) video failed, as a fixed
+  /// category — the raw error can contain the signed URL.
+  final Map<String, String> _lastFailureCategories = {};
+
+  /// The category of the last failure to open the video named [key].
+  String? lastFailureCategory(String key) => _lastFailureCategories[key];
+
+  /// Records why the video named [key] could not be opened before a player
+  /// was even created (e.g. its format was refused).
+  void noteFailure(String key, String category) =>
+      _lastFailureCategories[key] = category;
+
+  /// Players that exist now, held or idle.
+  @visibleForTesting
+  int get livePlayerCount => _entries.length;
+
+  /// How many widgets hold [controller]; 0 when it is idle or gone.
+  @visibleForTesting
+  int holdersOf(VideoPlayerController controller) =>
+      _entryFor(controller)?.holders ?? 0;
+
+  _PlayerEntry? _entryFor(VideoPlayerController controller) {
+    for (final entry in _entries) {
+      if (identical(entry.controller, controller)) return entry;
+    }
+    return null;
+  }
+
+  /// A player for [videoUrl], held by the caller until it calls [release].
+  ///
+  /// [key] names the video when [videoUrl] is not a stable name for it — a
+  /// private video's signed URL changes every time it is signed. The same
+  /// video under the same source is shared; under a newer source it gets a
+  /// new player, and the old one is disposed once nothing holds it.
+  /// [maxAttempts] bounds how often the same source is tried.
+  Future<VideoPlayerController?> getController(
+    String videoUrl, {
+    String? key,
+    int maxAttempts = 3,
+  }) async {
+    final name = key ?? videoUrl;
+    if (key != null) _lastFailureCategories.remove(key);
+
+    for (final entry in _entries) {
+      if (entry.name == name &&
+          entry.source == videoUrl &&
+          entry.controller.value.isInitialized) {
+        entry.holders += 1;
+        entry.lastUsed = DateTime.now();
+        developer.log('♻️ Sharing player for: ${_describe(videoUrl)}',
+            name: _logName);
+        return entry.controller;
       }
+    }
 
+    final slot = '$name|$videoUrl';
+    final opening =
+        _opening[slot] ??= _openOnce(slot, videoUrl, name, key, maxAttempts);
+    final entry = await opening;
+    if (entry == null || !_entries.contains(entry)) return null;
+    entry.holders += 1;
+    entry.lastUsed = DateTime.now();
+    return entry.controller;
+  }
+
+  Future<_PlayerEntry?> _openOnce(
+    String slot,
+    String videoUrl,
+    String name,
+    String? key,
+    int maxAttempts,
+  ) async {
+    try {
+      return await _open(videoUrl, name, key, maxAttempts);
+    } finally {
+      _opening.remove(slot);
+    }
+  }
+
+  /// Gives back a controller from [getController]. When no widget holds it
+  /// any more it is paused and becomes idle; idle players beyond
+  /// [_maxIdlePlayers] are disposed, least recently used first. Releasing a
+  /// controller the manager no longer holds does nothing.
+  Future<void> release(VideoPlayerController controller) async {
+    final entry = _entryFor(controller);
+    if (entry == null) return;
+    if (entry.holders > 0) entry.holders -= 1;
+    entry.lastUsed = DateTime.now();
+    if (entry.holders > 0) return;
+    await _pause(entry);
+    await _disposeIdle(keep: _maxIdlePlayers);
+  }
+
+  Future<_PlayerEntry?> _open(
+    String videoUrl,
+    String name,
+    String? key,
+    int maxAttempts,
+  ) async {
+    // An idle player of an older link of this video will not be used again.
+    for (final stale in _entries
+        .where((entry) =>
+            entry.name == name &&
+            entry.source != videoUrl &&
+            entry.holders == 0)
+        .toList()) {
+      await _dispose(stale);
+    }
+
+    try {
       // Pre-check video format support and warn about HEVC
       if (!isVideoFormatSupported(videoUrl)) {
         developer.log(
-            '⚠️ Unsupported video format detected: ${_redact(videoUrl)} (${getVideoCodecInfo(videoUrl)})',
+            '⚠️ Unsupported video format detected: ${_describe(videoUrl)} (${getVideoCodecInfo(videoUrl)})',
             name: _logName);
       }
 
       if (isLikelyHEVCVideo(videoUrl)) {
         developer.log(
-            '🔍 HEVC video detected: ${_redact(videoUrl)} - will attempt playback with fallback options',
+            '🔍 HEVC video detected: ${_describe(videoUrl)} - will attempt playback with fallback options',
             name: _logName);
       }
 
-      // Check if we're at the limit of concurrent players
-      if (_activeControllers.length >= _maxConcurrentPlayers) {
-        developer.log('⚠️ Max concurrent players reached, cleaning up oldest',
-            name: _logName);
-        await _cleanupOldestController();
+      // Make room from idle players, least recently used first. A held
+      // player is never taken: past the limit, a held one simply stays.
+      while (_entries.length >= _maxConcurrentPlayers) {
+        final idle = _entries.where((entry) => entry.holders == 0).toList()
+          ..sort((a, b) => a.lastUsed.compareTo(b.lastUsed));
+        if (idle.isEmpty) break;
+        await _dispose(idle.first);
       }
 
       // Attempt controller creation with retry logic and HEVC handling
@@ -65,10 +193,11 @@ class VideoPlayerResourceManager {
       String? lastError;
       bool isHEVCError = false;
 
-      for (int attempt = 1; attempt <= 3; attempt++) {
+      final attempts = maxAttempts < 1 ? 1 : maxAttempts;
+      for (int attempt = 1; attempt <= attempts; attempt++) {
         try {
           developer.log(
-              '🎬 Creating video controller (attempt $attempt) for: ${_redact(videoUrl)}',
+              '🎬 Creating video controller (attempt $attempt) for: ${_describe(videoUrl)}',
               name: _logName);
 
           if (videoUrl.startsWith('http')) {
@@ -103,12 +232,12 @@ class VideoPlayerResourceManager {
 
           if (controller.value.isInitialized &&
               controller.value.duration > Duration.zero) {
-            _activeControllers[videoUrl] = controller;
-            _controllerLastUsed[videoUrl] = DateTime.now();
+            final entry = _PlayerEntry(name, videoUrl, controller);
+            _entries.add(entry);
             developer.log(
-                '✅ Video controller initialized successfully (attempt $attempt) for: ${_redact(videoUrl)} (${controller.value.size.width}x${controller.value.size.height})',
+                '✅ Video controller initialized successfully (attempt $attempt) for: ${_describe(videoUrl)} (${controller.value.size.width}x${controller.value.size.height})',
                 name: _logName);
-            return controller;
+            return entry;
           } else {
             throw Exception(
                 'Controller initialized but has invalid video data');
@@ -116,16 +245,34 @@ class VideoPlayerResourceManager {
         } catch (e) {
           lastError = e.toString();
           developer.log(
-              '❌ Video initialization attempt $attempt failed: $lastError for: ${_redact(videoUrl)}',
+              '❌ Video initialization attempt $attempt failed (${OfferMediaDiagnostics.playerErrorCategory(lastError)}) for: ${_describe(videoUrl)}',
               name: _logName);
+          if (key != null) {
+            // The player's own report, reduced to fixed categories: its raw
+            // text can contain the signed link.
+            final described = controller?.value.errorDescription;
+            final category =
+                OfferMediaDiagnostics.playerErrorCategory(lastError);
+            _lastFailureCategories[key] = category;
+            OfferMediaDiagnostics.log('player-init-failed', fields: {
+              'source': videoUrl.startsWith('http') ? 'network' : 'local',
+              'attempt': attempt,
+              'error': e.runtimeType,
+              'code': e is PlatformException ? e.code : null,
+              'cause': category,
+              'described': described == null
+                  ? null
+                  : OfferMediaDiagnostics.playerErrorCategory(described),
+            });
+          }
 
-          // Clean up failed controller
+          // Clean up failed controller: it never reached any widget.
           if (controller != null) {
             try {
               await controller.dispose();
             } catch (disposeError) {
               developer.log(
-                  '❌ Error disposing failed controller: $disposeError',
+                  '❌ Error disposing failed controller: ${disposeError.runtimeType}',
                   name: _logName);
             }
             controller = null;
@@ -146,7 +293,7 @@ class VideoPlayerResourceManager {
                 '⚠️ HEVC codec not supported on this device. Video cannot be played natively.',
                 name: _logName);
             break;
-          } else {
+          } else if (attempt < attempts) {
             // For other errors, wait progressively longer before retry
             await Future.delayed(Duration(milliseconds: 500 * attempt));
           }
@@ -161,165 +308,106 @@ class VideoPlayerResourceManager {
       }
 
       developer.log(
-          '❌ Failed to create video controller after 3 attempts. Last error: $lastError',
+          '❌ Failed to create video controller after $attempts attempt(s). Last error: ${OfferMediaDiagnostics.playerErrorCategory(lastError ?? '')}',
           name: _logName);
       return null;
     } catch (e) {
-      developer.log('❌ Error creating video controller: $e', name: _logName);
+      developer.log('❌ Error creating video controller: ${e.runtimeType}',
+          name: _logName);
       return null;
     }
   }
 
-  /// Pause a specific controller if it's currently playing
-  Future<void> pauseController(String videoUrl) async {
-    final controller = _activeControllers[videoUrl];
-    if (controller == null) {
-      return;
+  /// Pause every player of the video named [name] that is playing.
+  Future<void> pauseController(String name) async {
+    for (final entry
+        in _entries.where((entry) => entry.name == name).toList()) {
+      await _pause(entry);
     }
+  }
 
-    if (!controller.value.isInitialized) {
-      return;
+  /// Pause all players except those of the video named [activeName].
+  Future<void> pauseAllExcept(String? activeName) async {
+    for (final entry in _entries.toList()) {
+      if (activeName != null && entry.name == activeName) continue;
+      await _pause(entry);
     }
+  }
 
-    if (!controller.value.isPlaying) {
-      return;
-    }
+  /// Pause all players.
+  Future<void> pauseAll() => pauseAllExcept(null);
 
+  Future<void> _pause(_PlayerEntry entry) async {
+    // Only players still held by the manager are ever touched: a disposed
+    // one has been removed from [_entries] before it was disposed.
+    if (!_entries.contains(entry)) return;
+    final controller = entry.controller;
+    if (!controller.value.isInitialized || !controller.value.isPlaying) return;
     try {
       await controller.pause();
-      developer.log('⏸️ Paused controller for: ${_redact(videoUrl)}', name: _logName);
+      developer.log('⏸️ Paused player for: ${_describe(entry.name)}',
+          name: _logName);
     } catch (e) {
-      developer.log('⚠️ Failed to pause controller for ${_redact(videoUrl)}: $e',
+      developer.log(
+          '⚠️ Failed to pause player for ${_describe(entry.name)}: ${e.runtimeType}',
           name: _logName);
     }
   }
 
-  /// Pause all controllers except the provided URL (if any)
-  Future<void> pauseAllExcept(String? activeVideoUrl) async {
-    await _pauseControllers(exceptUrl: activeVideoUrl);
-  }
-
-  /// Pause all controllers
-  Future<void> pauseAll() async {
-    await _pauseControllers();
-  }
-
-  /// Release a specific controller
-  Future<void> releaseController(String videoUrl) async {
-    if (_activeControllers.containsKey(videoUrl)) {
-      developer.log('🗑️ Releasing controller for: ${_redact(videoUrl)}', name: _logName);
-      await _disposeController(videoUrl);
+  /// Disposes the idle players of the video named [name]. Held players are
+  /// left to their holders.
+  Future<void> releaseController(String name) async {
+    for (final entry in _entries
+        .where((entry) => entry.name == name && entry.holders == 0)
+        .toList()) {
+      await _dispose(entry);
     }
   }
 
-  Future<void> _pauseControllers({String? exceptUrl}) async {
-    for (final entry in _activeControllers.entries) {
-      if (exceptUrl != null && entry.key == exceptUrl) {
-        continue;
-      }
-
-      final controller = entry.value;
-      if (!controller.value.isInitialized) {
-        continue;
-      }
-
-      if (!controller.value.isPlaying) {
-        continue;
-      }
-
-      try {
-        await controller.pause();
-        developer.log('⏸️ Paused controller during bulk pause: ${_redact(entry.key)}',
-            name: _logName);
-      } catch (e) {
-        developer.log(
-            '⚠️ Failed to pause controller during bulk pause: $e (url: ${_redact(entry.key)})',
-            name: _logName);
-      }
+  /// Disposes idle players, least recently used first, until at most [keep]
+  /// idle players remain. Held players are never disposed.
+  Future<void> _disposeIdle({required int keep}) async {
+    final idle = _entries.where((entry) => entry.holders == 0).toList()
+      ..sort((a, b) => a.lastUsed.compareTo(b.lastUsed));
+    var excess = idle.length - keep;
+    for (final entry in idle) {
+      if (excess <= 0) break;
+      await _dispose(entry);
+      excess -= 1;
     }
   }
 
-  /// Clean up old controllers to free memory
-  Future<void> _cleanupOldestController() async {
-    if (_isCleanupRunning || _activeControllers.isEmpty) return;
-
-    _isCleanupRunning = true;
-
+  /// Removes [entry] first, so it can never be handed out again, then
+  /// disposes its controller.
+  Future<void> _dispose(_PlayerEntry entry) async {
+    if (!_entries.remove(entry)) return;
     try {
-      // Find the oldest used controller that's not currently playing
-      String? oldestKey;
-      DateTime? oldestTime;
-
-      for (final entry in _controllerLastUsed.entries) {
-        final controller = _activeControllers[entry.key];
-
-        // Skip controllers that are currently playing to avoid interruption
-        if (controller != null && controller.value.isPlaying) {
-          continue;
-        }
-
-        if (oldestTime == null || entry.value.isBefore(oldestTime)) {
-          oldestTime = entry.value;
-          oldestKey = entry.key;
-        }
-      }
-
-      if (oldestKey != null) {
-        developer.log('🗑️ Cleaning up oldest controller: ${_redact(oldestKey)}',
-            name: _logName);
-        await _disposeController(oldestKey);
-      } else {
-        // If all controllers are playing, wait a bit longer
-        developer.log('⏳ All controllers are active, delaying cleanup',
-            name: _logName);
-      }
-    } finally {
-      _isCleanupRunning = false;
+      await entry.controller.dispose();
+      developer.log('✅ Player disposed for: ${_describe(entry.name)}',
+          name: _logName);
+    } catch (e) {
+      developer.log('⚠️ Error disposing player: ${e.runtimeType}',
+          name: _logName);
     }
   }
 
-  /// Dispose a specific controller
-  Future<void> _disposeController(String videoUrl) async {
-    final controller = _activeControllers.remove(videoUrl);
-    _controllerLastUsed.remove(videoUrl);
-
-    if (controller != null) {
-      try {
-        await controller.dispose();
-        developer.log('✅ Controller disposed for: ${_redact(videoUrl)}', name: _logName);
-      } catch (e) {
-        developer.log('⚠️ Error disposing controller: $e', name: _logName);
-      }
-    }
-  }
-
-  /// Clean up all controllers (call when app is disposing)
+  /// Disposes every player (app shutdown, tests). Widgets must not hold any
+  /// by then.
   Future<void> disposeAll() async {
     developer.log('🗑️ Disposing all video controllers', name: _logName);
-
-    final controllers =
-        List<VideoPlayerController>.from(_activeControllers.values);
-    _activeControllers.clear();
-    _controllerLastUsed.clear();
-
-    for (final controller in controllers) {
-      try {
-        await controller.dispose();
-      } catch (e) {
-        developer.log('⚠️ Error disposing controller during cleanup: $e',
-            name: _logName);
-      }
+    for (final entry in _entries.toList()) {
+      await _dispose(entry);
     }
-
     developer.log('✅ All video controllers disposed', name: _logName);
   }
 
   /// Get current resource usage stats
   Map<String, dynamic> getResourceStats() {
     return {
-      'activeControllers': _activeControllers.length,
+      'activeControllers': _entries.length,
+      'heldControllers': _entries.where((entry) => entry.holders > 0).length,
       'maxConcurrentPlayers': _maxConcurrentPlayers,
-      'controllerUrls': _activeControllers.keys.map(_redact).toList(),
+      'controllerUrls': [for (final entry in _entries) _describe(entry.name)],
     };
   }
 
@@ -343,8 +431,9 @@ class VideoPlayerResourceManager {
 
   /// Check if video likely uses HEVC codec which can cause MediaCodec issues
   static bool isLikelyHEVCVideo(String url) {
-    // HEVC videos often have these characteristics in their path/name
-    final lowerUrl = url.toLowerCase();
+    // HEVC videos often have these characteristics in their path/name. Only
+    // the path is read: a signed URL's query is a credential, not a name.
+    final lowerUrl = _redact(url).toLowerCase();
     return lowerUrl.contains('hevc') ||
         lowerUrl.contains('h265') ||
         lowerUrl.contains('x265') ||
@@ -418,10 +507,37 @@ String _redact(String url) {
   return cut < 0 ? withoutQuery : '$withoutQuery?<signature-hidden>';
 }
 
+/// How a video source is named in the log: its kind and the last six
+/// characters of its name — for Offer media, the end of the stable media id.
+///
+/// Never the URL, its query, the object key, a local path or the account id:
+/// a redacted signed link still spelled out `profiles/<account>/offers/<offer>`
+/// and a cache key carries the account id.
+String _describe(String source) {
+  final kind = source.startsWith('http')
+      ? 'network'
+      : source.startsWith('offer-media:')
+          ? 'media'
+          : 'file';
+  var name = source.split('#').first.split('?').first;
+  name = name.split(RegExp(r'[/\\:]')).last;
+  final dot = name.lastIndexOf('.');
+  if (dot > 0) name = name.substring(0, dot);
+  name = name.replaceAll(RegExp(r'_(pending|pending_poster|poster)$'), '');
+  final tail = name.length > 6 ? name.substring(name.length - 6) : name;
+  return '$kind …$tail';
+}
+
 /// The file extension from a URL's path only — a signed URL's long query
 /// string must never be mistaken for it.
+///
+/// Cuts the query and fragment from the URL itself. It must not reuse
+/// [_redact]: that re-appends a `?<signature-hidden>` marker for the log, and
+/// reading the extension from it turned every signed `….mp4?…` link into
+/// `mp4?<signature-hidden>` — refused as an unsupported format before any
+/// player was created (Samsung, 2026-09-26).
 String _extensionOf(String url) {
-  final path = _redact(url).split('#').first;
+  final path = url.split('#').first.split('?').first;
   final name = path.split('/').last;
   return name.contains('.') ? name.split('.').last.toLowerCase() : '';
 }

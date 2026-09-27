@@ -211,12 +211,20 @@ class AddOffersView extends StatelessWidget {
                             onClearAll: vm.clearAllFiles,
                             isUploading: vm.isUploading,
                             localization: localization,
-                            maxDisplayFiles: 3, // Standardized to 3 items max
+                            // Standardized to 3 items max; "+N more" opens
+                            // the rest, so every item stays reachable.
+                            maxDisplayFiles: vm.mediaDisplayCount,
                             showUploadButton:
                                 false, // Disable upload button - we save immediately
                             showImagePreview:
                                 false, // Standardized to match owners
                             hintText: localization.translate('uploadMediaHint'),
+                            offerMedia: vm.usesOfferMediaItems
+                                ? vm.offerMediaItems
+                                : null,
+                            onRemoveOfferMedia: vm.removeOfferMediaAt,
+                            onRetryOfferMedia: vm.retryOfferMediaAt,
+                            onShowAllMedia: vm.showAllMedia,
                           ),
                         ],
                       ),

@@ -4,9 +4,21 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/Views/Widgets/unified_media_preview_grid.dart';
 
 class MediaUploadWidget extends StatelessWidget {
+  /// Offer media only: every item — on the server, in the upload queue, or
+  /// just picked — in display order, used instead of [selectedFiles] and
+  /// [existingFileUrls]. Typed on the service-layer [OfferMediaRef] because
+  /// this file reaches the grid through a differently spelled import path.
+  final List<OfferMediaRef>? offerMedia;
+  final void Function(int index)? onRemoveOfferMedia;
+  final void Function(int index)? onRetryOfferMedia;
+
+  /// Offer media only: see [UnifiedMediaPreviewGrid.onShowAll].
+  final VoidCallback? onShowAllMedia;
+
   final List<PlatformFile> selectedFiles;
   final List<String> existingFileUrls; // Add this for existing uploaded files
   final VoidCallback onSelectMedia;
@@ -42,6 +54,10 @@ class MediaUploadWidget extends StatelessWidget {
     this.allowedExtensions,
     this.showImagePreview =
         false, // Default to false for backward compatibility
+    this.offerMedia,
+    this.onRemoveOfferMedia,
+    this.onRetryOfferMedia,
+    this.onShowAllMedia,
   });
 
   @override
@@ -51,12 +67,15 @@ class MediaUploadWidget extends StatelessWidget {
         hintText ?? localization.translate('uploadMediaHint');
 
     // Convert files to unified media items
-    final mediaItems = <MediaPreviewItem>[
-      // Existing URLs first
-      ...existingFileUrls.map((url) => MediaPreviewItem.fromUrl(url)),
-      // Selected files second
-      ...selectedFiles.map((file) => MediaPreviewItem.fromFile(file)),
-    ];
+    final offerItems = offerMedia;
+    final mediaItems = offerItems != null
+        ? offerItems.map(MediaPreviewItem.fromOfferMedia).toList()
+        : <MediaPreviewItem>[
+            // Existing URLs first
+            ...existingFileUrls.map((url) => MediaPreviewItem.fromUrl(url)),
+            // Selected files second
+            ...selectedFiles.map((file) => MediaPreviewItem.fromFile(file)),
+          ];
 
     final hasAnyFiles = mediaItems.isNotEmpty;
 
@@ -64,7 +83,13 @@ class MediaUploadWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Main Upload Container
-        _buildUploadContainer(context, colors, effectiveHintText, hasAnyFiles),
+        _buildUploadContainer(
+          context,
+          colors,
+          effectiveHintText,
+          hasAnyFiles,
+          mediaItems.length,
+        ),
 
         // Unified Media Preview Grid
         if (hasAnyFiles) ...[
@@ -72,6 +97,10 @@ class MediaUploadWidget extends StatelessWidget {
           UnifiedMediaPreviewGrid(
             mediaItems: mediaItems,
             onRemove: (index) {
+              if (offerItems != null) {
+                onRemoveOfferMedia?.call(index);
+                return;
+              }
               // Determine if this is an existing file or selected file
               if (index < existingFileUrls.length) {
                 // Remove existing file
@@ -86,6 +115,8 @@ class MediaUploadWidget extends StatelessWidget {
             showAddButton: !isUploading,
             maxDisplayFiles: maxDisplayFiles,
             localization: localization,
+            onRetry: offerItems != null ? onRetryOfferMedia : null,
+            onShowAll: offerItems != null ? onShowAllMedia : null,
           ),
         ],
 
@@ -105,7 +136,7 @@ class MediaUploadWidget extends StatelessWidget {
   }
 
   Widget _buildUploadContainer(BuildContext context, ColorScheme colors,
-      String hintText, bool hasFiles) {
+      String hintText, bool hasFiles, int fileCount) {
     return GestureDetector(
       onTap: isUploading ? null : onSelectMedia,
       child: Container(
@@ -132,7 +163,7 @@ class MediaUploadWidget extends StatelessWidget {
                     ? hintText
                     : showImagePreview && maxDisplayFiles == 1
                         ? 'Logo selected: '
-                        : '${selectedFiles.length + existingFileUrls.length} file(s) selected',
+                        : '$fileCount file(s) selected',
                 style: AppTextStyles.hintText.copyWith(
                   color: hasFiles ? colors.onSurface : null,
                 ),

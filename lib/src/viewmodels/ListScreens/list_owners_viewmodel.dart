@@ -2,54 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
 import '../../services/ScreenServices/owner_service.dart';
+import 'entity_list_state.dart';
 
-class OwnersListViewModel extends ChangeNotifier {
-  final OwnerService _ownerService = OwnerService();
+class OwnersListViewModel extends ChangeNotifier
+    with EntityListState<OwnerModel> {
+  final OwnerService _ownerService;
 
   // Loading state
-  bool _isLoading = true;
-  bool get isLoading => _isLoading;
+  bool get isLoading => isInitialLoading;
 
   // Error state
   String? _error;
   String? get error => _error;
 
   // Owners list
-  List<OwnerModel> _owners = [];
-  List<OwnerModel> get owners => _owners;
+  List<OwnerModel> get owners => entities;
 
-  // Stream subscription
-  Stream<List<OwnerModel>>? _ownersStream;
-  Stream<List<OwnerModel>>? get ownersStream => _ownersStream;
-
-  OwnersListViewModel() {
-    _initializeStream();
+  OwnersListViewModel({OwnerService? ownerService})
+      : _ownerService = ownerService ?? OwnerService() {
+    // Subscribed once: the source re-reads after every mutation by itself.
+    listenToEntities(_ownerService.getUserOwners());
   }
 
-  void _initializeStream() {
-    _ownersStream = _ownerService.getUserOwners();
-  }
+  @override
+  String? entityIdOf(OwnerModel item) => item.id;
 
-  // Refresh owners
-  Future<void> refreshOwners() async {
-    // The stream will automatically update when data changes
-    _initializeStream();
-    notifyListeners();
-  }
+  @override
+  String get debugListName => 'owners';
 
   // Delete an owner
   Future<void> deleteOwner(String ownerId, BuildContext context) async {
-    try {
-      await _ownerService.deleteOwner(ownerId);
-
-      if (context.mounted) {
-        _showToast('Owner deleted successfully', Colors.green);
-        refreshOwners(); // Refresh the list after deletion
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast('Unable to delete the owner. Please try again.', Colors.red);
-      }
+    final outcome =
+        await deleteEntity(ownerId, () => _ownerService.deleteOwner(ownerId));
+    if (!context.mounted) return;
+    if (outcome == EntityDeleteOutcome.deleted) {
+      _showToast('Owner deleted successfully', Colors.green);
+    } else if (outcome == EntityDeleteOutcome.failed) {
+      _showToast('Unable to delete the owner. Please try again.', Colors.red);
     }
   }
 

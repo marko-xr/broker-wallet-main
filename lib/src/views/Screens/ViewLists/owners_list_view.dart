@@ -5,6 +5,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/entity_delete_progress.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,7 +14,11 @@ import '../../../data/models/ScreensModel/owners_model.dart';
 import '../../../viewmodels/ListScreens/list_owners_viewmodel.dart';
 
 class OwnersListView extends StatefulWidget {
-  const OwnersListView({super.key});
+  const OwnersListView({super.key, this.createViewModel});
+
+  /// Test seam; production always creates [OwnersListViewModel] itself.
+  @visibleForTesting
+  final OwnersListViewModel Function()? createViewModel;
 
   @override
   State<OwnersListView> createState() => _OwnersListViewState();
@@ -27,7 +32,7 @@ class _OwnersListViewState extends State<OwnersListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => OwnersListViewModel(),
+      create: (_) => widget.createViewModel?.call() ?? OwnersListViewModel(),
       child: Consumer<OwnersListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -52,30 +57,32 @@ class _OwnersListViewState extends State<OwnersListView> {
             ),
 
             // Content
-            body: StreamBuilder<List<OwnerModel>>(
-              stream: vm.ownersStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildShimmerLoading();
-                }
-
-                if (snapshot.hasError) {
-                  return _buildErrorWidget(
-                      vm, colors, texts, loc, snapshot.error.toString());
-                }
-
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return _buildEmptyWidget(colors, texts, loc);
-                }
-
-                return _buildOwnersListWithDateSeparators(
-                    snapshot.data!, vm, loc, colors, texts);
-              },
-            ),
+            body: _buildBody(vm, loc, colors, texts),
           );
         },
       ),
     );
+  }
+
+  // The placeholder shows only until the first list arrives, and the empty
+  // state only for a list that is genuinely empty: a refresh or a delete
+  // never takes the current list off the screen.
+  Widget _buildBody(OwnersListViewModel vm, AppLocalizations loc,
+      ColorScheme colors, TextTheme texts) {
+    if (vm.isInitialLoading) {
+      return _buildShimmerLoading();
+    }
+
+    if (vm.hasLoadError) {
+      return _buildErrorWidget(vm, colors, texts, loc, vm.loadError.toString());
+    }
+
+    final owners = vm.owners;
+    if (owners.isEmpty) {
+      return _buildEmptyWidget(colors, texts, loc);
+    }
+
+    return _buildOwnersListWithDateSeparators(owners, vm, loc, colors, texts);
   }
 
   Widget _buildShimmerLoading() {
@@ -245,19 +252,22 @@ class _OwnersListViewState extends State<OwnersListView> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 16),
-                    child: _EnhancedOwnerTile(
-                      key: ValueKey('owner_${owner.id ?? ownerIndex}'),
-                      owner: owner,
-                      onDelete: () =>
-                          _showDeleteConfirmation(owner, vm, loc, colors),
-                      onEdit: () {
-                        // Navigate to edit if needed
-                      },
-                      onCall: () => _makePhoneCall(owner.phoneNumber),
-                      onWhatsApp: () =>
-                          _openWhatsApp(owner.phoneNumber, owner.name),
-                      loc: loc,
-                      index: ownerIndex,
+                    child: EntityDeleteProgress(
+                      deleting: vm.isDeleting(owner.id),
+                      child: _EnhancedOwnerTile(
+                        key: ValueKey('owner_${owner.id ?? ownerIndex}'),
+                        owner: owner,
+                        onDelete: () =>
+                            _showDeleteConfirmation(owner, vm, loc, colors),
+                        onEdit: () {
+                          // Navigate to edit if needed
+                        },
+                        onCall: () => _makePhoneCall(owner.phoneNumber),
+                        onWhatsApp: () =>
+                            _openWhatsApp(owner.phoneNumber, owner.name),
+                        loc: loc,
+                        index: ownerIndex,
+                      ),
                     ),
                   ),
                 );
@@ -1146,10 +1156,12 @@ class _ShimmerContainerState extends State<_ShimmerContainer>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
+              // Tinted with onSurface: the page itself is `surface`, so a
+              // surface-coloured shimmer would not be visible on it.
               colors: [
-                colors.surface.withValues(alpha: 0.4),
-                colors.surface.withValues(alpha: 0.8),
-                colors.surface.withValues(alpha: 0.4),
+                colors.onSurface.withValues(alpha: 0.06),
+                colors.onSurface.withValues(alpha: 0.12),
+                colors.onSurface.withValues(alpha: 0.06),
               ],
               stops: const [0.0, 0.5, 1.0],
               begin: Alignment(-1.0 + _animation.value, 0.0),

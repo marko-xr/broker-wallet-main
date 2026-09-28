@@ -2,55 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../../data/models/ScreensModel/offices_model.dart';
 import '../../services/ScreenServices/office_service.dart';
+import 'entity_list_state.dart';
 
-class OfficesListViewModel extends ChangeNotifier {
-  final OfficeService _officeService = OfficeService();
+class OfficesListViewModel extends ChangeNotifier
+    with EntityListState<OfficeModel> {
+  final OfficeService _officeService;
 
   // Loading state
-  bool _isLoading = true;
-  bool get isLoading => _isLoading;
+  bool get isLoading => isInitialLoading;
 
   // Error state
   String? _error;
   String? get error => _error;
 
   // Offices list
-  List<OfficeModel> _offices = [];
-  List<OfficeModel> get offices => _offices;
+  List<OfficeModel> get offices => entities;
 
-  // Stream subscription
-  Stream<List<OfficeModel>>? _officesStream;
-  Stream<List<OfficeModel>>? get officesStream => _officesStream;
-
-  OfficesListViewModel() {
-    _initializeStream();
+  OfficesListViewModel({OfficeService? officeService})
+      : _officeService = officeService ?? OfficeService() {
+    // Subscribed once: the source re-reads after every mutation by itself.
+    listenToEntities(_officeService.getUserOffices());
   }
 
-  void _initializeStream() {
-    _officesStream = _officeService.getUserOffices();
-  }
+  @override
+  String? entityIdOf(OfficeModel item) => item.id;
 
-  // Refresh offices
-  Future<void> refreshOffices() async {
-    // The stream will automatically update when data changes
-    _initializeStream();
-    notifyListeners();
-  }
+  @override
+  String get debugListName => 'offices';
 
   // Delete an office
   Future<void> deleteOffice(String officeId, BuildContext context) async {
-    try {
-      await _officeService.deleteOffice(officeId);
-
-      if (context.mounted) {
-        _showToast('Office deleted successfully', Colors.green);
-        refreshOffices(); // Refresh the list after deletion
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast(
-            'Unable to delete the office. Please try again.', Colors.red);
-      }
+    final outcome = await deleteEntity(
+        officeId, () => _officeService.deleteOffice(officeId));
+    if (!context.mounted) return;
+    if (outcome == EntityDeleteOutcome.deleted) {
+      _showToast('Office deleted successfully', Colors.green);
+    } else if (outcome == EntityDeleteOutcome.failed) {
+      _showToast('Unable to delete the office. Please try again.', Colors.red);
     }
   }
 

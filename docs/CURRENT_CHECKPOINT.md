@@ -6133,3 +6133,116 @@ decides whether to push it.
 NEXT — after 2026-09-29 15:01:20 UTC, run `-Mode F1Verify` with the same two
 accounts and record the result here; then the Owner media Samsung acceptance
 (`MEDIA-29`…`MEDIA-32`, `MEDIA-34`).
+
+## UI PERFORMANCE — HOME TAB, ENTITY LISTS, DELETE FLASH (2026-09-28, VERIFIED_REAL_DEVICE)
+
+Branch `perf/navigation-list-transitions`, created from `8e43c6f` with the
+working tree kept. Separate from, and not touching, the
+pending Owner media checkpoints (F1 phase 2, `MEDIA-29`…`MEDIA-34`): no
+Worker, Supabase, R2, media, RevenueCat or Delete Account change.
+
+### Root causes
+
+1. **Home tab slow to appear.** `MainScaffold._onItemTapped` set the shell's
+   fade to 0, switched branch, then `await`ed `HomeViewModel.refreshCounts()`
+   — seven Supabase count queries — before starting the fade-in. Home stayed
+   invisible for the whole round trip. Only the bottom-bar Home tap had the
+   `await`; system Back to Home and returning from a pushed screen (Home
+   stays mounted under it) have no blocking work.
+2. **The six list screens appear late.** Each visit builds a fresh view
+   model whose body shows its shimmer until Supabase returns the first list.
+   The shimmer was `surface` at 40–80 % alpha drawn on a `surface` page, so it
+   was invisible: the page stayed blank until the data arrived, whether the
+   list was empty or not.
+3. **White flash after a delete (all six).** After a successful delete the
+   view model called `refreshX()`, which *re-created* the stream. The
+   `StreamBuilder` resubscribed, reported `ConnectionState.waiting` and the
+   view drew that invisible shimmer in place of the list until a fresh read
+   returned. The delete had already triggered a re-read of the old stream
+   (`CoreEntityMutationNotifier`), which the re-creation cancelled. Offers
+   and Requests did the same after a status change.
+4. **Found with it.** `_refreshedStream` ended on its first failed re-read,
+   which the per-delete re-creation used to mask. Requests swallowed load
+   errors (`handleError`), so a failed first load showed "no requests".
+
+### Changes
+
+- `lib/src/viewmodels/ListScreens/entity_list_state.dart` (new): shared list
+  lifecycle — one subscription, last list kept, loading only before the first
+  list, item-level delete with restore on failure and a double-submit guard.
+- The six `list_*_viewmodel.dart`: use it; optional service parameter; no
+  stream re-creation after delete or status change; toasts unchanged.
+- The six `*_list_view.dart`: body drawn from that state instead of a
+  `StreamBuilder`; each tile wrapped in the new
+  `lib/src/views/Widgets/entity_delete_progress.dart`; shimmer tinted with
+  `onSurface` so it is visible. `OwnersListView` gained a test-only
+  `createViewModel` seam.
+- `lib/src/views/Screens/home/quotation/list_quotation_view.dart`: same
+  invisible shimmer on first load (Issue 4, same root cause); tint fixed only.
+- `lib/src/common/routes/app_routes.dart`: the Home tab fades in at once;
+  the count refresh runs without being awaited.
+- `lib/src/services/supabase_core_entities_service.dart`: a failed re-read
+  is delivered as an error event and the stream keeps listening.
+- Debug builds log `[EntityList] <list>: first list after N ms`, delete
+  timings, and `[Home] counts refreshed after N ms` (fixed categories only).
+
+### Regression coverage
+
+`test/lists/entity_list_state_test.dart`,
+`test/lists/entity_list_view_models_test.dart` (all six view models),
+`test/lists/core_entity_refresh_stream_test.dart`,
+`test/lists/owners_list_view_test.dart`.
+
+| Item | Status |
+| --- | --- |
+| Root causes 1–4 | CODE_PROVEN + VERIFIED_REAL_DEVICE |
+| Targeted tests | 43/43 PASS (owner-run) |
+| Flutter analyzer | ACCEPTED (owner-run) |
+| Samsung acceptance | PASS (owner-verified) |
+| Git | one focused local commit authorized on `perf/navigation-list-transitions`; no push, deploy or merge |
+
+### Update — owner test run and refresh-stream correction (2026-09-28)
+
+Owner-reported: `flutter test test/lists` 40 passed, 1 failed
+(`core_entity_refresh_stream_test.dart`, "a failed re-read is reported and
+the next mutation reads again": 5 s `TimeoutException`, then the 30 s test
+timeout). Targeted analyzer: 0 errors, 0 warnings, 1 INFO — deprecated
+`onPopInvoked` in `MainScaffold` (`app_routes.dart`), present in `8e43c6f`
+and outside this change; left as is.
+
+Root cause, in production code: the `async*` `_refreshedStream` subscribed to
+`CoreEntityMutationNotifier` only when it reached `await for`, a microtask
+after the first list had been delivered, so a mutation during the first read
+or in that window was dropped (the test's notify, made from the delivery
+microtask, hit it: the 5 s timeout). An `async*` body waiting in `await for`
+also cannot be cancelled until the next mutation arrives, so the teardown
+`cancel()` never completed (the 30 s timeout) — and in the app every closed
+list screen stayed subscribed and made one more Supabase read on the next
+mutation. `_refreshedStream` is now a `StreamController`: it subscribes to
+mutations before the first read, runs reads one at a time (mutations during
+a read cause one more), keeps the error semantics above, and stops listening
+immediately on cancel. Same queries, same RLS path. Two tests added (a
+mutation during the first read; cancel stops at once); the failing test's
+assertions are unchanged. Status: CODE_PROVEN, NOT RUN.
+
+### Final owner verification and commit approval (2026-09-28)
+
+Owner-reported final verification after the refresh-stream correction:
+
+- 43/43 targeted Flutter regression tests: PASS.
+- Flutter analyzer: accepted. The pre-existing deprecated `onPopInvoked`
+  INFO remains outside this checkpoint.
+- Samsung physical-device acceptance: PASS.
+- Home navigation and the Requests, Offers, Owners, Offices, Brokers and
+  Watchmen list screens behave smoothly.
+- The full-list white flash during deletion is resolved on the device.
+
+This is VERIFIED_REAL_DEVICE. The owner authorized one focused local commit
+with message `perf: improve navigation and entity list transitions`. No push,
+deployment or merge is authorized by this checkpoint.
+
+NOW — the owner reviews the completed local performance commit on
+`perf/navigation-list-transitions`.
+
+NEXT — if satisfied, the owner safely pushes that branch; then return to F1
+phase 2 and the separate Owner media Samsung acceptance.

@@ -3,21 +3,21 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../data/models/property_status.dart';
 import '../../services/ScreenServices/offer_service.dart';
+import 'entity_list_state.dart';
 
-class OffersListViewModel extends ChangeNotifier {
-  final OfferService _offerService = OfferService();
+class OffersListViewModel extends ChangeNotifier
+    with EntityListState<OfferModel> {
+  final OfferService _offerService;
 
   // Loading state
-  bool _isLoading = true;
-  bool get isLoading => _isLoading;
+  bool get isLoading => isInitialLoading;
 
   // Error state
   String? _error;
   String? get error => _error;
 
   // Offers list
-  List<OfferModel> _offers = [];
-  List<OfferModel> get offers => _offers;
+  List<OfferModel> get offers => entities;
 
   // Filter state for offer type
   String? _selectedFilter; // null = all, 'rent' = rent only, 'sell' = sell only
@@ -28,13 +28,9 @@ class OffersListViewModel extends ChangeNotifier {
       false; // false = show active only, true = show inactive only
   bool get showInactiveOnly => _showInactiveOnly;
 
-  // Stream subscription
-  Stream<List<OfferModel>>? _offersStream;
-  Stream<List<OfferModel>>? get offersStream => _offersStream;
-
   // Filtered offers based on selected filters
   List<OfferModel> get filteredOffers {
-    var filteredList = _offers;
+    var filteredList = offers;
 
     // First filter by status (active/inactive)
     if (_showInactiveOnly) {
@@ -55,39 +51,27 @@ class OffersListViewModel extends ChangeNotifier {
     return filteredList;
   }
 
-  // Setter for offers (used by the view to update the list)
-  set offers(List<OfferModel> newOffers) {
-    _offers = newOffers;
+  OffersListViewModel({OfferService? offerService})
+      : _offerService = offerService ?? OfferService() {
+    // Subscribed once: the source re-reads after every mutation by itself.
+    listenToEntities(_offerService.getUserOffers());
   }
 
-  OffersListViewModel() {
-    _initializeStream();
-  }
+  @override
+  String? entityIdOf(OfferModel item) => item.id;
 
-  void _initializeStream() {
-    _offersStream = _offerService.getUserOffers();
-  }
-
-  // Refresh offers
-  Future<void> refreshOffers() async {
-    // The stream will automatically update when data changes
-    _initializeStream();
-    notifyListeners();
-  }
+  @override
+  String get debugListName => 'offers';
 
   // Delete an offer
   Future<void> deleteOffer(String offerId, BuildContext context) async {
-    try {
-      await _offerService.deleteOffer(offerId);
-
-      if (context.mounted) {
-        _showToast('Offer deleted successfully', Colors.green);
-        await refreshOffers();
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast('Unable to delete the offer. Please try again.', Colors.red);
-      }
+    final outcome =
+        await deleteEntity(offerId, () => _offerService.deleteOffer(offerId));
+    if (!context.mounted) return;
+    if (outcome == EntityDeleteOutcome.deleted) {
+      _showToast('Offer deleted successfully', Colors.green);
+    } else if (outcome == EntityDeleteOutcome.failed) {
+      _showToast('Unable to delete the offer. Please try again.', Colors.red);
     }
   }
 
@@ -131,10 +115,10 @@ class OffersListViewModel extends ChangeNotifier {
       String offerId, PropertyStatus newStatus) async {
     try {
       // Find the offer to update
-      final offerIndex = _offers.indexWhere((o) => o.id == offerId);
+      final offerIndex = offers.indexWhere((o) => o.id == offerId);
       if (offerIndex == -1) return;
 
-      final offer = _offers[offerIndex];
+      final offer = offers[offerIndex];
       final updatedOffer = offer.copyWith(
         status: newStatus,
         updatedAt: DateTime.now(),
@@ -143,9 +127,10 @@ class OffersListViewModel extends ChangeNotifier {
       // Update in Firestore
       await _offerService.updateOffer(offerId, updatedOffer);
 
+      // The list re-reads by itself after the update; it stays on screen
+      // meanwhile.
       _showToast(
           'Offer status updated to ${newStatus.displayName}', Colors.green);
-      await refreshOffers();
     } catch (e) {
       _showToast('Unable to update the offer. Please try again.', Colors.red);
     }

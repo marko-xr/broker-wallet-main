@@ -1238,10 +1238,12 @@ class _ShimmerContainerState extends State<_ShimmerContainer>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
+              // Tinted with onSurface: the page itself is `surface`, so a
+              // surface-coloured shimmer would not be visible on it.
               colors: [
-                colors.surface.withValues(alpha: 0.4),
-                colors.surface.withValues(alpha: 0.8),
-                colors.surface.withValues(alpha: 0.4),
+                colors.onSurface.withValues(alpha: 0.06),
+                colors.onSurface.withValues(alpha: 0.12),
+                colors.onSurface.withValues(alpha: 0.06),
               ],
               stops: const [0.0, 0.5, 1.0],
               begin: Alignment(-1.0 + _animation.value, 0.0),

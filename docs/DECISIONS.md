@@ -424,3 +424,17 @@
   never credentials, account ids, object keys or URLs — and its reports stay
   local (gitignored). F1 needs abandoned uploads older than 24 h, so it runs
   in two phases a day apart (`-Mode Full` seeds, `-Mode F1Verify` checks).
+- The six entity list screens (Requests, Offers, Owners, Offices, Brokers,
+  Watchmen) share one list lifecycle, `EntityListState` (perf checkpoint,
+  2026-09-28): the view model subscribes to its service stream once for the
+  screen's lifetime and keeps the last list it received. The loading
+  placeholder shows only before the first list, the empty state only for a
+  list that is genuinely empty, and a refresh, a failed refresh or a delete
+  never takes the list off the screen. A delete marks only its own item
+  (dimmed, not interactive, progress indicator), removes it once the server
+  accepts, restores it on failure, and a second delete of the same item runs
+  nothing. A list is never refreshed by re-creating its stream: Supabase
+  re-reads on `CoreEntityMutationNotifier` and Firestore snapshots update by
+  themselves. Lists are deliberately not cached across visits: a retained
+  list would be account-scoped data that sign-out and Delete Account's cache
+  inventory would have to clear, which is a separate owner decision.

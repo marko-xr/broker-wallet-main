@@ -3,17 +3,18 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
+import 'entity_list_state.dart';
 
-class RequestedListViewModel extends ChangeNotifier {
-  final RequestService _requestService = RequestService();
+class RequestedListViewModel extends ChangeNotifier
+    with EntityListState<RequestModel> {
+  final RequestService _requestService;
 
-  // Error state (used by UI when the StreamBuilder has an error)
-  String? _error;
-  String? get error => _error;
+  // Error state (shown when the first load fails)
+  String? get error =>
+      hasLoadError ? 'Unable to load requests. Please try again.' : null;
 
   // Requests list
-  List<RequestModel> _requests = [];
-  List<RequestModel> get requests => _requests;
+  List<RequestModel> get requests => entities;
 
   // Filter state for request type
   String? _selectedFilter; // null = all, 'rent' = rent only, 'sell' = sell only
@@ -24,13 +25,9 @@ class RequestedListViewModel extends ChangeNotifier {
       false; // false = show active only, true = show inactive only
   bool get showInactiveOnly => _showInactiveOnly;
 
-  // Stream of user requests
-  late Stream<List<RequestModel>> _requestsStream;
-  Stream<List<RequestModel>> get requestsStream => _requestsStream;
-
   // Filtered requests based on selected filters
   List<RequestModel> get filteredRequests {
-    var filteredList = _requests;
+    var filteredList = requests;
 
     // First filter by status (active/inactive)
     if (_showInactiveOnly) {
@@ -51,40 +48,26 @@ class RequestedListViewModel extends ChangeNotifier {
     return filteredList;
   }
 
-  // Setter for requests (used by the view to update the list)
-  set requests(List<RequestModel> newRequests) {
-    _requests = newRequests;
+  RequestedListViewModel({RequestService? requestService})
+      : _requestService = requestService ?? RequestService() {
+    // Subscribed once: the source re-reads after every mutation by itself.
+    listenToEntities(_requestService.getUserRequests());
   }
 
-  RequestedListViewModel() {
-    _initializeStream();
-  }
+  @override
+  String? entityIdOf(RequestModel item) => item.id;
 
-  void _initializeStream() {
-    _requestsStream = _requestService.getUserRequests().handleError((e) {
-      _error = 'Unable to load requests. Please try again.';
-      notifyListeners();
-    });
-  }
-
-  Future<void> refreshRequests() async {
-    // Recreate the stream to trigger listeners if needed.
-    _initializeStream();
-    notifyListeners();
-  }
+  @override
+  String get debugListName => 'requests';
 
   Future<void> deleteRequest(String requestId, BuildContext context) async {
-    try {
-      await _requestService.deleteRequest(requestId);
-      if (context.mounted) {
-        _showToast('Request deleted successfully', Colors.green);
-        await refreshRequests();
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast(
-            'Unable to delete the request. Please try again.', Colors.red);
-      }
+    final outcome = await deleteEntity(
+        requestId, () => _requestService.deleteRequest(requestId));
+    if (!context.mounted) return;
+    if (outcome == EntityDeleteOutcome.deleted) {
+      _showToast('Request deleted successfully', Colors.green);
+    } else if (outcome == EntityDeleteOutcome.failed) {
+      _showToast('Unable to delete the request. Please try again.', Colors.red);
     }
   }
 
@@ -117,10 +100,10 @@ class RequestedListViewModel extends ChangeNotifier {
       String requestId, PropertyStatus newStatus) async {
     try {
       // Find the request to update
-      final requestIndex = _requests.indexWhere((r) => r.id == requestId);
+      final requestIndex = requests.indexWhere((r) => r.id == requestId);
       if (requestIndex == -1) return;
 
-      final request = _requests[requestIndex];
+      final request = requests[requestIndex];
       final updatedRequest = request.copyWith(
         status: newStatus,
         updatedAt: DateTime.now(),
@@ -129,9 +112,10 @@ class RequestedListViewModel extends ChangeNotifier {
       // Update in Firestore
       await _requestService.updateRequest(requestId, updatedRequest);
 
+      // The list re-reads by itself after the update; it stays on screen
+      // meanwhile.
       _showToast(
           'Request status updated to ${newStatus.displayName}', Colors.green);
-      await refreshRequests();
     } catch (e) {
       _showToast('Unable to update the request. Please try again.', Colors.red);
     }

@@ -2,55 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../../data/models/ScreensModel/watchmen_model.dart';
 import '../../services/ScreenServices/watchmen_service.dart';
+import 'entity_list_state.dart';
 
-class WatchmenListViewModel extends ChangeNotifier {
-  final WatchmenService _watchmenService = WatchmenService();
+class WatchmenListViewModel extends ChangeNotifier
+    with EntityListState<WatchmenModel> {
+  final WatchmenService _watchmenService;
 
   // Loading state
-  bool _isLoading = true;
-  bool get isLoading => _isLoading;
+  bool get isLoading => isInitialLoading;
 
   // Error state
   String? _error;
   String? get error => _error;
 
   // Watchmen list
-  List<WatchmenModel> _watchmen = [];
-  List<WatchmenModel> get watchmen => _watchmen;
+  List<WatchmenModel> get watchmen => entities;
 
-  // Stream subscription
-  Stream<List<WatchmenModel>>? _watchmenStream;
-  Stream<List<WatchmenModel>>? get watchmenStream => _watchmenStream;
-
-  WatchmenListViewModel() {
-    _initializeStream();
+  WatchmenListViewModel({WatchmenService? watchmenService})
+      : _watchmenService = watchmenService ?? WatchmenService() {
+    // Subscribed once: the source re-reads after every mutation by itself.
+    listenToEntities(_watchmenService.getUserWatchmen());
   }
 
-  void _initializeStream() {
-    _watchmenStream = _watchmenService.getUserWatchmen();
-  }
+  @override
+  String? entityIdOf(WatchmenModel item) => item.id;
 
-  // Refresh watchmen
-  Future<void> refreshWatchmen() async {
-    // The stream will automatically update when data changes
-    _initializeStream();
-    notifyListeners();
-  }
+  @override
+  String get debugListName => 'watchmen';
 
   // Delete a watchmen
   Future<void> deleteWatchmen(String watchmenId, BuildContext context) async {
-    try {
-      await _watchmenService.deleteWatchmen(watchmenId);
-
-      if (context.mounted) {
-        _showToast('Watchmen deleted successfully', Colors.green);
-        await refreshWatchmen();
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast(
-            'Unable to delete the watchman. Please try again.', Colors.red);
-      }
+    final outcome = await deleteEntity(
+        watchmenId, () => _watchmenService.deleteWatchmen(watchmenId));
+    if (!context.mounted) return;
+    if (outcome == EntityDeleteOutcome.deleted) {
+      _showToast('Watchmen deleted successfully', Colors.green);
+    } else if (outcome == EntityDeleteOutcome.failed) {
+      _showToast(
+          'Unable to delete the watchman. Please try again.', Colors.red);
     }
   }
 

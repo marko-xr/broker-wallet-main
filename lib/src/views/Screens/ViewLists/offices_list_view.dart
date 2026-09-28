@@ -5,6 +5,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/entity_delete_progress.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -53,30 +54,32 @@ class _OfficesListViewState extends State<OfficesListView> {
             ),
 
             // Content
-            body: StreamBuilder<List<OfficeModel>>(
-              stream: vm.officesStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildShimmerLoading();
-                }
-
-                if (snapshot.hasError) {
-                  return _buildErrorWidget(
-                      vm, colors, texts, loc, snapshot.error.toString());
-                }
-
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return _buildEmptyWidget(colors, texts, loc);
-                }
-
-                return _buildOfficesListWithDateSeparators(
-                    snapshot.data!, vm, loc, colors, texts);
-              },
-            ),
+            body: _buildBody(vm, loc, colors, texts),
           );
         },
       ),
     );
+  }
+
+  // The placeholder shows only until the first list arrives, and the empty
+  // state only for a list that is genuinely empty: a refresh or a delete
+  // never takes the current list off the screen.
+  Widget _buildBody(OfficesListViewModel vm, AppLocalizations loc,
+      ColorScheme colors, TextTheme texts) {
+    if (vm.isInitialLoading) {
+      return _buildShimmerLoading();
+    }
+
+    if (vm.hasLoadError) {
+      return _buildErrorWidget(vm, colors, texts, loc, vm.loadError.toString());
+    }
+
+    final offices = vm.offices;
+    if (offices.isEmpty) {
+      return _buildEmptyWidget(colors, texts, loc);
+    }
+
+    return _buildOfficesListWithDateSeparators(offices, vm, loc, colors, texts);
   }
 
   Widget _buildShimmerLoading() {
@@ -246,19 +249,22 @@ class _OfficesListViewState extends State<OfficesListView> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 16),
-                    child: _EnhancedOfficeTile(
-                      key: ValueKey('office_${office.id ?? officeIndex}'),
-                      office: office,
-                      onDelete: () =>
-                          _showDeleteConfirmation(office, vm, loc, colors),
-                      onEdit: () {
-                        // Navigate to edit if needed
-                      },
-                      onCall: () => _makePhoneCall(office.phoneNumber),
-                      onWhatsApp: () =>
-                          _openWhatsApp(office.phoneNumber, office.managerName),
-                      loc: loc,
-                      index: officeIndex,
+                    child: EntityDeleteProgress(
+                      deleting: vm.isDeleting(office.id),
+                      child: _EnhancedOfficeTile(
+                        key: ValueKey('office_${office.id ?? officeIndex}'),
+                        office: office,
+                        onDelete: () =>
+                            _showDeleteConfirmation(office, vm, loc, colors),
+                        onEdit: () {
+                          // Navigate to edit if needed
+                        },
+                        onCall: () => _makePhoneCall(office.phoneNumber),
+                        onWhatsApp: () => _openWhatsApp(
+                            office.phoneNumber, office.managerName),
+                        loc: loc,
+                        index: officeIndex,
+                      ),
                     ),
                   ),
                 );
@@ -1147,10 +1153,12 @@ class _ShimmerContainerState extends State<_ShimmerContainer>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
+              // Tinted with onSurface: the page itself is `surface`, so a
+              // surface-coloured shimmer would not be visible on it.
               colors: [
-                colors.surface.withValues(alpha: 0.4),
-                colors.surface.withValues(alpha: 0.8),
-                colors.surface.withValues(alpha: 0.4),
+                colors.onSurface.withValues(alpha: 0.06),
+                colors.onSurface.withValues(alpha: 0.12),
+                colors.onSurface.withValues(alpha: 0.06),
               ],
               stops: const [0.0, 0.5, 1.0],
               begin: Alignment(-1.0 + _animation.value, 0.0),

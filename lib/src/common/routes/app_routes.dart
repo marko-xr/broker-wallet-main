@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -75,12 +78,29 @@ class _MainScaffoldState extends State<MainScaffold>
       initialLocation: index == widget.navigationShell.currentIndex,
     );
 
+    // Home fades in at once with the counts it already holds; the refresh
+    // updates them in place. Awaiting it here kept the whole tab at opacity 0
+    // for the length of the network round trip.
     if (index == 0) {
-      await Provider.of<HomeViewModel>(context, listen: false).refreshCounts();
+      _refreshHomeCounts();
     }
 
     // Complete the animation
     _tabTransitionController.forward();
+  }
+
+  void _refreshHomeCounts() {
+    final stopwatch = kDebugMode ? (Stopwatch()..start()) : null;
+    final refresh =
+        Provider.of<HomeViewModel>(context, listen: false).refreshCounts();
+    if (stopwatch == null) {
+      unawaited(refresh);
+      return;
+    }
+    unawaited(refresh.whenComplete(() {
+      debugPrint('[Home] counts refreshed after '
+          '${stopwatch.elapsedMilliseconds} ms (tab already visible)');
+    }));
   }
 
   void _showActionBottomSheet() {

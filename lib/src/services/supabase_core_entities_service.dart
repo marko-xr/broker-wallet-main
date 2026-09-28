@@ -95,11 +95,67 @@ class SupabaseCoreEntitiesService {
         .toList(growable: false);
   }
 
-  Stream<List<T>> _refreshedStream<T>(Future<List<T>> Function() fetch) async* {
-    yield await fetch();
-    await for (final _ in CoreEntityMutationNotifier.changes) {
-      yield await fetch();
+  /// The rows now, then again after every core-entity mutation in this
+  /// process.
+  ///
+  /// Mutations are listened to before the first read starts, so one that
+  /// lands while a read is in flight, or just after a list was delivered, is
+  /// never missed. Reads run one at a time; mutations during a read cause one
+  /// more read after it. A failed re-read is delivered as an error event and
+  /// the stream keeps listening, so one transient failure does not end a
+  /// screen's live updates. A failed first read has nothing to fall back to
+  /// and ends the stream as before. Cancelling stops listening at once; a
+  /// read still in flight is discarded. (An `async*` generator could do
+  /// neither: it subscribed only after the first list was delivered, and a
+  /// cancel could not stop it while it awaited the next mutation.)
+  Stream<List<T>> _refreshedStream<T>(Future<List<T>> Function() fetch) {
+    late final StreamController<List<T>> controller;
+    StreamSubscription<void>? mutations;
+    var reading = false;
+    var readAgain = false;
+    var delivered = false;
+
+    Future<void>? stopListening() {
+      final subscription = mutations;
+      mutations = null;
+      return subscription?.cancel();
     }
+
+    Future<void> read() async {
+      if (reading) {
+        readAgain = true;
+        return;
+      }
+      reading = true;
+      do {
+        readAgain = false;
+        try {
+          final rows = await fetch();
+          if (!controller.hasListener) return;
+          delivered = true;
+          controller.add(rows);
+        } catch (error, stackTrace) {
+          if (!controller.hasListener) return;
+          controller.addError(error, stackTrace);
+          if (!delivered) {
+            unawaited(stopListening());
+            unawaited(controller.close());
+            return;
+          }
+        }
+      } while (readAgain);
+      reading = false;
+    }
+
+    controller = StreamController<List<T>>(
+      onListen: () {
+        mutations =
+            CoreEntityMutationNotifier.changes.listen((_) => unawaited(read()));
+        unawaited(read());
+      },
+      onCancel: stopListening,
+    );
+    return controller.stream;
   }
 
   // -------------------------------------------------------------------------

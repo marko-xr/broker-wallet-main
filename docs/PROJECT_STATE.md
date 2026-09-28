@@ -165,3 +165,12 @@ The Realtime `RealtimeSubscribeException` on `public.notifications` observed
 during the first failed recovery test did not reproduce after the quarantine
 fix, in recovery, after a normal login, or in Notifications. It is recorded as
 exposed by the incorrect recovery-to-Home path, not as a backend schema defect.
+
+A UI performance checkpoint is VERIFIED_REAL_DEVICE (2026-09-28, branch
+`perf/navigation-list-transitions`): the Home tab no longer waits for its
+count refresh before fading in, and the six entity lists share one list
+lifecycle (`EntityListState`) so a delete, a status change or a refresh no
+longer blanks the screen, with a visible loading placeholder and item-level
+delete progress. Owner-run verification: 43/43 targeted regression tests
+PASS, Flutter analyzer accepted, and Samsung physical-device acceptance PASS.
+No push, deployment or merge occurred; see `docs/CURRENT_CHECKPOINT.md`.

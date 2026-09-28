@@ -22,11 +22,22 @@ import { stagingRequestAllowed } from './staging_gate.js';
  *   POST /offer-media/confirm
  *   GET  /offer-media
  *   POST /offer-media/remove
+ *   POST /owner-media/authorize
+ *   POST /owner-media/confirm
+ *   GET  /owner-media
+ *   POST /owner-media/remove
  *   POST /account/delete   (see account_deletion.js)
  *
  * Scheduled:
  *   account deletion finalizer (see account_deletion.js)
  *   offer-media cleanup sweeps (runOfferMediaSweeps; OFF unless configured)
+ *   owner-media cleanup sweeps (runOwnerMediaSweeps; OFF unless configured)
+ *
+ * Owner media (the Owner records' private photos and videos) is the same
+ * lifecycle as Offer media, run for a different parent record: the same types,
+ * limits, idempotency, removal and sweeps, with its own table (`owners`), link
+ * table (`owner_media`), key segment (`profiles/<uid>/owners/<ownerRecordId>/`)
+ * and confirm function (`confirm_owner_media_upload`). See MEDIA_PARENTS.
  *
  * Offer media identity: the app generates each item's `mediaObjectId` once,
  * on the device, and it stays the item's identity everywhere — the
@@ -94,6 +105,62 @@ const OFFER_MEDIA_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // Every sweep is confined to Offer media keys; profile images are never
 // touched by it.
 const OFFER_MEDIA_KEY_PATTERN = 'profiles/*/offers/*';
+// Owner decision (2026-09-28): Owner media follows the Offer media rules —
+// the same types and size limits (OFFER_MEDIA_TYPES), three minutes per video,
+// at most 10 items per Owner record, and 7 days' retention for the media of a
+// soft-deleted Owner. The limit is enforced atomically at confirm time by
+// `confirm_owner_media_upload`, exactly as for Offers.
+const MAX_MEDIA_PER_OWNER = 10;
+const OWNER_MEDIA_CONFIRM_RPC = '/rest/v1/rpc/confirm_owner_media_upload';
+const OWNER_MEDIA_KEY_PATTERN = 'profiles/*/owners/*';
+
+/**
+ * The records private media can belong to. Everything that differs between an
+ * Offer's media and an Owner's is here; the lifecycle itself — types, sizes,
+ * duration, idempotent authorize/confirm/remove and the sweeps — is shared.
+ *
+ * Each parent keeps its own route prefix, its own confirm function and its own
+ * key segment, so neither can attach, list or remove the other's media: every
+ * check below compares a row's object key with the parent's own key.
+ */
+const MEDIA_PARENTS = Object.freeze({
+  offer: Object.freeze({
+    title: 'Offer',
+    noun: 'offer',
+    idField: 'offerId',
+    table: 'offers',
+    linkTable: 'offer_media',
+    linkColumn: 'offer_id',
+    keySegment: 'offers',
+    keyPattern: OFFER_MEDIA_KEY_PATTERN,
+    confirmRpc: OFFER_MEDIA_CONFIRM_RPC,
+    rpcParentParam: 'p_offer_id',
+    maxItems: MAX_MEDIA_PER_OFFER,
+    notFoundCode: 'offer_not_found',
+    limitCode: 'offer_media_limit_reached',
+    sweepModeVar: 'OFFER_MEDIA_SWEEP_MODE',
+    sweepLogTag: 'offer-media-sweep',
+    deletedParentReportKey: 'deletedOfferMedia',
+  }),
+  owner: Object.freeze({
+    title: 'Owner',
+    noun: 'owner',
+    idField: 'ownerRecordId',
+    table: 'owners',
+    linkTable: 'owner_media',
+    linkColumn: 'owner_record_id',
+    keySegment: 'owners',
+    keyPattern: OWNER_MEDIA_KEY_PATTERN,
+    confirmRpc: OWNER_MEDIA_CONFIRM_RPC,
+    rpcParentParam: 'p_owner_record_id',
+    maxItems: MAX_MEDIA_PER_OWNER,
+    notFoundCode: 'owner_not_found',
+    limitCode: 'owner_media_limit_reached',
+    sweepModeVar: 'OWNER_MEDIA_SWEEP_MODE',
+    sweepLogTag: 'owner-media-sweep',
+    deletedParentReportKey: 'deletedOwnerMedia',
+  }),
+});
 // ISO base-media `ftyp` brands, matched case-sensitively as written in the
 // file. HEIF image brands are handled by detectImageMimeFromBytes.
 const MP4_BRANDS = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP', 'dash', 'mmp4', 'MSNV', 'f4v ']);
@@ -129,10 +196,14 @@ export default {
       if (request.method === 'POST' && path === '/authorize') return await handleAuthorize(request, env);
       if (request.method === 'POST' && path === '/confirm') return await handleConfirm(request, env);
       if (request.method === 'GET' && path === '/profile-image-url') return await handleProfileImageUrl(request, env);
-      if (request.method === 'POST' && path === '/offer-media/authorize') return await handleOfferMediaAuthorize(request, env);
-      if (request.method === 'POST' && path === '/offer-media/confirm') return await handleOfferMediaConfirm(request, env);
-      if (request.method === 'GET' && path === '/offer-media') return await handleOfferMediaList(request, env);
-      if (request.method === 'POST' && path === '/offer-media/remove') return await handleOfferMediaRemove(request, env);
+      if (request.method === 'POST' && path === '/offer-media/authorize') return await handleMediaAuthorize(request, env, MEDIA_PARENTS.offer);
+      if (request.method === 'POST' && path === '/offer-media/confirm') return await handleMediaConfirm(request, env, MEDIA_PARENTS.offer);
+      if (request.method === 'GET' && path === '/offer-media') return await handleMediaList(request, env, MEDIA_PARENTS.offer);
+      if (request.method === 'POST' && path === '/offer-media/remove') return await handleMediaRemove(request, env, MEDIA_PARENTS.offer);
+      if (request.method === 'POST' && path === '/owner-media/authorize') return await handleMediaAuthorize(request, env, MEDIA_PARENTS.owner);
+      if (request.method === 'POST' && path === '/owner-media/confirm') return await handleMediaConfirm(request, env, MEDIA_PARENTS.owner);
+      if (request.method === 'GET' && path === '/owner-media') return await handleMediaList(request, env, MEDIA_PARENTS.owner);
+      if (request.method === 'POST' && path === '/owner-media/remove') return await handleMediaRemove(request, env, MEDIA_PARENTS.owner);
       return corsResponse({ error: 'Not found' }, 404, env);
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
@@ -150,16 +221,18 @@ export default {
   // no client identity; see runDeletionFinalizer.
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(runDeletionFinalizer(env));
-    // Independent of the finalizer and never rejects. Does nothing unless
-    // OFFER_MEDIA_SWEEP_MODE is explicitly configured.
+    // Independent of the finalizer and never reject. Each does nothing unless
+    // its own OFFER_MEDIA_SWEEP_MODE / OWNER_MEDIA_SWEEP_MODE is explicitly
+    // configured.
     ctx.waitUntil(runOfferMediaSweeps(env));
+    ctx.waitUntil(runOwnerMediaSweeps(env));
   },
 };
 
 async function handleAuthorize(request, env) {
   requireConfiguredBucket(env);
   const userId = await verifySupabaseTokenAndGetUserId(request, env);
-  await bestEffortCleanupAbandonedPending(userId, env);
+  await bestEffortCleanupAbandonedPending(userId, env, profileCleanupScope(userId));
 
   const body = await readJson(request);
   const { userId: bodyUserId, contentType, contentLength, originalFileName } = body;
@@ -336,12 +409,16 @@ async function handleProfileImageUrl(request, env) {
   );
 }
 
-async function handleOfferMediaAuthorize(request, env) {
+/**
+ * Starts (or resumes) one upload of [parent] media: `POST /offer-media/authorize`
+ * with `offerId`, or `POST /owner-media/authorize` with `ownerRecordId`.
+ */
+async function handleMediaAuthorize(request, env, parent) {
   requireConfiguredBucket(env);
   const userId = await verifySupabaseTokenAndGetUserId(request, env);
 
   const body = await readJson(request);
-  const offerId = requireUuid(body.offerId, 'offerId');
+  const parentId = requireUuid(body[parent.idField], parent.idField);
   // The app sends the id it generated for this item, which makes authorize
   // idempotent: a retry of the same logical upload resumes the same row and
   // R2 key instead of creating a second object. Older builds send none and
@@ -360,28 +437,30 @@ async function handleOfferMediaAuthorize(request, env) {
     );
   }
 
-  await assertOwnsOffer(offerId, userId, env);
-  await bestEffortCleanupAbandonedPending(userId, env);
+  await assertOwnsParent(parent, parentId, userId, env);
+  await bestEffortCleanupAbandonedPending(userId, env, parentCleanupScope(parent, userId, parentId));
 
   const mediaObjectId = requestedId ?? crypto.randomUUID();
   const upload = {
+    parent,
     userId,
-    offerId,
+    parentId,
     mediaObjectId,
     contentType,
     contentLength,
     offerType,
-    objectKey: offerObjectKey(userId, offerId, mediaObjectId, contentType),
+    objectKey: parentObjectKey(parent, userId, parentId, mediaObjectId, contentType),
   };
 
   if (requestedId) {
     const existing = await findMediaById(requestedId, env);
-    if (existing) return resumeOfferMediaUpload(existing, upload, env);
+    if (existing) return resumeMediaUpload(existing, upload, env);
   }
 
-  // Early, friendly refusal so a full Offer never transfers a 100 MB upload
-  // for nothing. Not the guarantee: that is the database function at confirm.
-  await assertOfferMediaCapacity(offerId, userId, env, mediaObjectId);
+  // Early, friendly refusal so a full Offer or Owner never transfers a 100 MB
+  // upload for nothing. Not the guarantee: that is the database function at
+  // confirm.
+  await assertParentMediaCapacity(parent, parentId, userId, env, mediaObjectId);
 
   const insertRes = await supabaseServiceFetch(env, 'POST', '/rest/v1/media_objects', {
     id: mediaObjectId,
@@ -398,23 +477,24 @@ async function handleOfferMediaAuthorize(request, env) {
     if (requestedId && insertRes.status === 409) {
       // A concurrent request for the same id created the row first.
       const raced = await findMediaById(requestedId, env);
-      if (raced) return resumeOfferMediaUpload(raced, upload, env);
+      if (raced) return resumeMediaUpload(raced, upload, env);
     }
     throw new WorkerError('Failed to create pending media metadata', 502);
   }
-  return signOfferMediaUpload(upload, env, { createdNow: true });
+  return signMediaUpload(upload, env, { createdNow: true });
 }
 
 /**
  * Answers an authorize for an id that already has a `media_objects` row.
  *
- * The id stays bound to the account, Offer, key and type it was first
- * authorized for; anything else is refused without touching the row. A
- * pending row is re-signed for the same key (a partial earlier upload is
- * simply overwritten), a ready one needs no upload at all, and a rejected or
- * removed one is final for this id.
+ * The id stays bound to the account, parent record (Offer or Owner), key and
+ * type it was first authorized for; anything else is refused without touching
+ * the row — an id first used for an Offer can never be resumed as an Owner's,
+ * because the object key names the parent. A pending row is re-signed for the
+ * same key (a partial earlier upload is simply overwritten), a ready one needs
+ * no upload at all, and a rejected or removed one is final for this id.
  */
-async function resumeOfferMediaUpload(row, upload, env) {
+async function resumeMediaUpload(row, upload, env) {
   if (row.owner_id !== upload.userId) {
     // Another account's row: refused, and nothing about it is revealed.
     throw new WorkerError('Media id is not available', 409, 'media_id_conflict');
@@ -431,10 +511,10 @@ async function resumeOfferMediaUpload(row, upload, env) {
       if (Number(row.size_bytes) !== upload.contentLength) {
         throw new WorkerError('Media id was used for a different upload', 409, 'idempotency_mismatch');
       }
-      return signOfferMediaUpload(upload, env, { createdNow: false });
+      return signMediaUpload(upload, env, { createdNow: false });
     case 'ready':
-      if (!(await findOfferMediaLink(upload.offerId, row.id, env))) {
-        throw new WorkerError('Media is not attached to this offer', 409, 'invalid_state');
+      if (!(await findParentMediaLink(upload.parent, upload.parentId, row.id, env))) {
+        throw new WorkerError(`Media is not attached to this ${upload.parent.noun}`, 409, 'invalid_state');
       }
       return corsResponse(
         {
@@ -458,7 +538,7 @@ async function resumeOfferMediaUpload(row, upload, env) {
 }
 
 /** Issues the signed PUT for [upload], subject to the account-deletion quarantine. */
-async function signOfferMediaUpload(upload, env, { createdNow }) {
+async function signMediaUpload(upload, env, { createdNow }) {
   try {
     const quarantineCheckedAt = Date.now();
     await assertUploadsAllowed(upload.userId, env);
@@ -499,28 +579,36 @@ async function signOfferMediaUpload(upload, env, { createdNow }) {
   }
 }
 
-async function handleOfferMediaConfirm(request, env) {
+/**
+ * Verifies an uploaded file and attaches it to its parent record:
+ * `POST /offer-media/confirm` or `POST /owner-media/confirm`.
+ */
+async function handleMediaConfirm(request, env, parent) {
   requireConfiguredBucket(env);
   const userId = await verifySupabaseTokenAndGetUserId(request, env);
   const body = await readJson(request);
-  const offerId = requireUuid(body.offerId, 'offerId');
+  const parentId = requireUuid(body[parent.idField], parent.idField);
   const mediaObjectId = requireUuid(body.mediaObjectId, 'mediaObjectId');
   // A client's role/ordinal are neither trusted nor needed: the database
   // function chooses the position. Older builds still send them; ignored.
 
-  await assertOwnsOffer(offerId, userId, env);
+  await assertOwnsParent(parent, parentId, userId, env);
 
   const row = await findOwnedMedia(mediaObjectId, userId, env);
   if (!row) throw new WorkerError('Media object not found or not owned by user', 404, 'media_not_found');
-  if (row.bucket !== env.R2_BUCKET_NAME || !isExpectedOfferObjectKey(row, userId, offerId)) {
-    throw new WorkerError('Media object is not in the configured offer-media location', 409, 'media_mismatch');
+  if (row.bucket !== env.R2_BUCKET_NAME || !isExpectedParentObjectKey(parent, row, userId, parentId)) {
+    throw new WorkerError(`Media object is not in the configured ${parent.noun}-media location`, 409, 'media_mismatch');
   }
   if (row.status === 'ready') {
     // Ready is only ever set together with the attachment, in one database
     // transaction, so a retry after a lost response finds the work done.
-    const link = await findOfferMediaLink(offerId, mediaObjectId, env);
-    if (!link) throw new WorkerError('Media is not attached to this offer', 409, 'invalid_state');
-    return corsResponse({ offerId, mediaObjectId, ordinal: link.ordinal, alreadyConfirmed: true }, 200, env);
+    const link = await findParentMediaLink(parent, parentId, mediaObjectId, env);
+    if (!link) throw new WorkerError(`Media is not attached to this ${parent.noun}`, 409, 'invalid_state');
+    return corsResponse(
+      { [parent.idField]: parentId, mediaObjectId, ordinal: link.ordinal, alreadyConfirmed: true },
+      200,
+      env,
+    );
   }
   if (row.status === 'failed') {
     throw new WorkerError('This upload was rejected', 409, 'upload_rejected');
@@ -598,10 +686,11 @@ async function handleOfferMediaConfirm(request, env) {
     }
   }
 
-  const attach = await attachOfferMedia(
+  const attach = await attachParentMedia(
+    parent,
     {
       userId,
-      offerId,
+      parentId,
       mediaObjectId,
       size: r2Object.size,
       contentType: observedContentType || detectedContentType,
@@ -612,36 +701,38 @@ async function handleOfferMediaConfirm(request, env) {
   switch (attach.outcome) {
     case 'attached':
     case 'already_attached':
-      return corsResponse({ offerId, mediaObjectId, ordinal: attach.ordinal }, 200, env);
+      return corsResponse({ [parent.idField]: parentId, mediaObjectId, ordinal: attach.ordinal }, 200, env);
     case 'limit_reached':
-      return rejectInvalidUpload(row, userId, env, 'Offer media limit reached', 409, 'offer_media_limit_reached');
-    case 'offer_not_found':
-      throw new WorkerError('Offer not found or not owned by user', 404, 'offer_not_found');
+      return rejectInvalidUpload(row, userId, env, `${parent.title} media limit reached`, 409, parent.limitCode);
+    case parent.notFoundCode:
+      throw new WorkerError(`${parent.title} not found or not owned by user`, 404, parent.notFoundCode);
     default:
       throw new WorkerError('Media could not be attached', 409, 'invalid_state');
   }
 }
 
 /**
- * Attaches a validated upload to its Offer and marks it ready: one call to the
- * service-role-only database function `confirm_offer_media_upload`, which does
- * both in a single transaction under a lock on the Offer row. It also enforces
- * MAX_MEDIA_PER_OFFER (counting ready media in this bucket) and assigns the
- * next position, so there is no "attached but not ready" state and no
- * count-then-insert race. Idempotent: an attached item reports
- * `already_attached`.
+ * Attaches a validated upload to its parent record and marks it ready: one
+ * call to the parent's service-role-only database function
+ * (`confirm_offer_media_upload` / `confirm_owner_media_upload`), which does
+ * both in a single transaction under a lock on the parent row. It also
+ * enforces the parent's item limit (counting ready media in this bucket) and
+ * assigns the next position, so there is no "attached but not ready" state and
+ * no count-then-insert race. Idempotent: an attached item reports
+ * `already_attached`. The parent-not-found outcome is `offer_not_found` /
+ * `owner_not_found`.
  */
-async function attachOfferMedia({ userId, offerId, mediaObjectId, size, contentType, durationMs }, env) {
+async function attachParentMedia(parent, { userId, parentId, mediaObjectId, size, contentType, durationMs }, env) {
   const res = await supabaseServiceFetch(
     env,
     'POST',
-    OFFER_MEDIA_CONFIRM_RPC,
+    parent.confirmRpc,
     {
       p_user_id: userId,
-      p_offer_id: offerId,
+      [parent.rpcParentParam]: parentId,
       p_media_id: mediaObjectId,
       p_bucket: env.R2_BUCKET_NAME,
-      p_max_items: MAX_MEDIA_PER_OFFER,
+      p_max_items: parent.maxItems,
       p_observed_size: size,
       p_observed_content_type: contentType,
       p_duration_ms: durationMs,
@@ -651,7 +742,7 @@ async function attachOfferMedia({ userId, offerId, mediaObjectId, size, contentT
   if (!res.ok) {
     // Nothing is marked failed: the row stays pending and a retried confirm
     // repeats this same idempotent step.
-    throw new WorkerError('Failed to attach offer media', 502);
+    throw new WorkerError(`Failed to attach ${parent.noun} media`, 502);
   }
   const rows = await res.json();
   const result = Array.isArray(rows) ? rows[0] : rows;
@@ -752,34 +843,34 @@ function readUint32(bytes, offset) {
 }
 
 /**
- * Refuses an authorize when the Offer already holds, or is currently
- * receiving, MAX_MEDIA_PER_OFFER items: its ready media in this bucket plus
- * this account's still-pending uploads for it (other than [excludeMediaId],
- * the item being authorized) that are younger than the abandoned-upload
- * cutoff, so an interrupted upload stops counting once it is old enough to be
- * cleaned up rather than blocking the Offer forever.
+ * Refuses an authorize when the parent record (Offer or Owner) already holds,
+ * or is currently receiving, its item limit: its ready media in this bucket
+ * plus this account's still-pending uploads for it (other than
+ * [excludeMediaId], the item being authorized) that are younger than the
+ * abandoned-upload cutoff, so an interrupted upload stops counting once it is
+ * old enough to be cleaned up rather than blocking the record forever.
  *
  * Only this bucket's media is counted, which keeps environments apart where
  * they share one database: staging test media never fills a production Offer.
  */
-async function assertOfferMediaCapacity(offerId, userId, env, excludeMediaId) {
+async function assertParentMediaCapacity(parent, parentId, userId, env, excludeMediaId) {
   const linksRes = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&select=media_id,media_objects(bucket,status)`,
+    `/rest/v1/${parent.linkTable}?${parent.linkColumn}=eq.${encodeURIComponent(parentId)}&select=media_id,media_objects(bucket,status)`,
   );
-  if (!linksRes.ok) throw new WorkerError('Failed to read offer media', 502);
+  if (!linksRes.ok) throw new WorkerError(`Failed to read ${parent.noun} media`, 502);
   const ready = ((await linksRes.json()) ?? []).filter(
     (link) => link.media_objects?.bucket === env.R2_BUCKET_NAME && link.media_objects?.status === 'ready',
   ).length;
 
-  const prefix = `profiles/${userId}/offers/${offerId}/`;
+  const prefix = parentKeyPrefix(parent, userId, parentId);
   const pendingRes = await supabaseServiceFetch(
     env,
     'GET',
     `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload&object_key=like.${encodeURIComponent(prefix)}*&select=id,created_at`,
   );
-  if (!pendingRes.ok) throw new WorkerError('Failed to read pending offer media', 502);
+  if (!pendingRes.ok) throw new WorkerError(`Failed to read pending ${parent.noun} media`, 502);
   const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
   const inFlight = ((await pendingRes.json()) ?? []).filter((pending) => {
     if (pending.id === excludeMediaId) return false;
@@ -787,31 +878,35 @@ async function assertOfferMediaCapacity(offerId, userId, env, excludeMediaId) {
     return Number.isNaN(createdAt) || createdAt > cutoff;
   }).length;
 
-  if (ready + inFlight >= MAX_MEDIA_PER_OFFER) {
-    throw new WorkerError('Offer media limit reached', 409, 'offer_media_limit_reached');
+  if (ready + inFlight >= parent.maxItems) {
+    throw new WorkerError(`${parent.title} media limit reached`, 409, parent.limitCode);
   }
 }
 
-async function handleOfferMediaList(request, env) {
+/**
+ * The parent record's ready media, each with a fresh short-lived signed GET:
+ * `GET /offer-media?offerId=` or `GET /owner-media?ownerRecordId=`.
+ */
+async function handleMediaList(request, env, parent) {
   requireConfiguredBucket(env);
   const userId = await verifySupabaseTokenAndGetUserId(request, env);
-  const offerId = requireUuid(new URL(request.url).searchParams.get('offerId'), 'offerId');
+  const parentId = requireUuid(new URL(request.url).searchParams.get(parent.idField), parent.idField);
 
-  await assertOwnsOffer(offerId, userId, env);
+  await assertOwnsParent(parent, parentId, userId, env);
 
   const linksRes = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&select=media_id,role,ordinal,media_objects(id,bucket,object_key,status,content_type,duration_ms)&order=ordinal.asc`,
+    `/rest/v1/${parent.linkTable}?${parent.linkColumn}=eq.${encodeURIComponent(parentId)}&select=media_id,role,ordinal,media_objects(id,bucket,object_key,status,content_type,duration_ms)&order=ordinal.asc`,
   );
-  if (!linksRes.ok) throw new WorkerError('Failed to read offer media', 502);
+  if (!linksRes.ok) throw new WorkerError(`Failed to read ${parent.noun} media`, 502);
   const links = (await linksRes.json()) ?? [];
 
   const media = [];
   for (const link of links) {
     const object = link.media_objects;
     if (!object || object.status !== 'ready') continue;
-    if (object.bucket !== env.R2_BUCKET_NAME || !isExpectedOfferObjectKey(object, userId, offerId)) continue;
+    if (object.bucket !== env.R2_BUCKET_NAME || !isExpectedParentObjectKey(parent, object, userId, parentId)) continue;
     const url = await createPresignedR2Url({
       env,
       method: 'GET',
@@ -830,7 +925,7 @@ async function handleOfferMediaList(request, env) {
   }
 
   return corsResponse(
-    { offerId, media, expiresInSeconds: GET_URL_TTL_SECONDS },
+    { [parent.idField]: parentId, media, expiresInSeconds: GET_URL_TTL_SECONDS },
     200,
     env,
     { 'Cache-Control': 'no-store' },
@@ -838,7 +933,8 @@ async function handleOfferMediaList(request, env) {
 }
 
 /**
- * Removes one media item from an Offer the caller owns. Idempotent.
+ * Removes one media item from a parent record (Offer or Owner) the caller
+ * owns: `POST /offer-media/remove` or `POST /owner-media/remove`. Idempotent.
  *
  * - Never attached (`pending_upload` or `failed`): the row and any bytes that
  *   arrived are withdrawn. This is also how the app cancels a queued upload
@@ -849,15 +945,18 @@ async function handleOfferMediaList(request, env) {
  *   finished by the scheduled sweep, and the response says so.
  * - Already removed, or no such media for this account: success, and nothing
  *   is revealed about media the caller does not own.
+ * - Media of the same account under a different parent (another Offer, or an
+ *   Offer's media sent to the Owner route): refused as `media_mismatch`.
  */
-async function handleOfferMediaRemove(request, env) {
+async function handleMediaRemove(request, env, parent) {
   requireConfiguredBucket(env);
   const userId = await verifySupabaseTokenAndGetUserId(request, env);
   const body = await readJson(request);
-  const offerId = requireUuid(body.offerId, 'offerId');
+  const parentId = requireUuid(body[parent.idField], parent.idField);
   const mediaObjectId = requireUuid(body.mediaObjectId, 'mediaObjectId');
 
-  await assertOwnsOffer(offerId, userId, env);
+  await assertOwnsParent(parent, parentId, userId, env);
+  const ids = { [parent.idField]: parentId, mediaObjectId };
 
   // Every write below is guarded by the status it expects, so a concurrent
   // confirm can never be undone; if the row changed underneath, it is read
@@ -865,32 +964,31 @@ async function handleOfferMediaRemove(request, env) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const row = await findOwnedMedia(mediaObjectId, userId, env);
     if (!row || row.status === 'deleted') {
-      return removalResponse(env, { offerId, mediaObjectId, alreadyRemoved: true });
+      return removalResponse(env, { ...ids, alreadyRemoved: true });
     }
-    if (row.bucket !== env.R2_BUCKET_NAME || !isExpectedOfferObjectKey(row, userId, offerId)) {
-      throw new WorkerError('Media object does not belong to this offer', 409, 'media_mismatch');
+    if (row.bucket !== env.R2_BUCKET_NAME || !isExpectedParentObjectKey(parent, row, userId, parentId)) {
+      throw new WorkerError(`Media object does not belong to this ${parent.noun}`, 409, 'media_mismatch');
     }
     if (row.status === 'pending_upload' || row.status === 'failed') {
       // Row first: once it is gone no confirm can attach it, so deleting the
       // bytes afterwards can never leave a ready item without its object.
       if (await deleteMediaRowIfStatus(row.id, row.status, env)) {
         const objectDeleted = await bestEffortDeleteObject(row.object_key, env);
-        return removalResponse(env, { offerId, mediaObjectId, ...(objectDeleted ? {} : { cleanupPending: true }) });
+        return removalResponse(env, { ...ids, ...(objectDeleted ? {} : { cleanupPending: true }) });
       }
       continue;
     }
     if (row.status === 'ready') {
       if (await markMediaPendingDelete(row.id, 'ready', env)) {
-        return removalResponse(env, { offerId, mediaObjectId, ...(await completeMediaRemoval(row, env)) });
+        return removalResponse(env, { ...ids, ...(await completeMediaRemoval(parent, row, env)) });
       }
       continue;
     }
     if (row.status === 'pending_delete') {
       return removalResponse(env, {
-        offerId,
-        mediaObjectId,
+        ...ids,
         alreadyRemoved: true,
-        ...(await completeMediaRemoval(row, env)),
+        ...(await completeMediaRemoval(parent, row, env)),
       });
     }
     throw new WorkerError(`Unexpected media status: ${row.status}`, 409, 'invalid_state');
@@ -904,15 +1002,16 @@ function removalResponse(env, body) {
 
 /**
  * Finishes removing a media object already marked `pending_delete`: unlinks
- * it, deletes its R2 object and tombstones the row as `deleted`. Each step is
- * idempotent; one that does not complete leaves the row in `pending_delete` —
- * neither listed nor counted — for the sweep to finish.
+ * it from [parent]'s link table, deletes its R2 object and tombstones the row
+ * as `deleted`. Each step is idempotent; one that does not complete leaves the
+ * row in `pending_delete` — neither listed nor counted — for the sweep to
+ * finish.
  */
-async function completeMediaRemoval(row, env) {
+async function completeMediaRemoval(parent, row, env) {
   const unlinked = await supabaseServiceFetch(
     env,
     'DELETE',
-    `/rest/v1/offer_media?media_id=eq.${encodeURIComponent(row.id)}`,
+    `/rest/v1/${parent.linkTable}?media_id=eq.${encodeURIComponent(row.id)}`,
   );
   if (!unlinked.ok) return { cleanupPending: true };
   if (!(await bestEffortDeleteObject(row.object_key, env))) return { cleanupPending: true };
@@ -925,28 +1024,41 @@ async function completeMediaRemoval(row, env) {
   return tombstoned.ok ? {} : { cleanupPending: true };
 }
 
-async function assertOwnsOffer(offerId, userId, env) {
-  const offerRes = await supabaseServiceFetch(
+/**
+ * Refuses unless [userId] owns the live (not soft-deleted) [parent] record
+ * [parentId]. The 404 is only ever answered after the ownership query itself
+ * succeeded, so the app may treat it as authoritative.
+ */
+async function assertOwnsParent(parent, parentId, userId, env) {
+  const parentRes = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/offers?id=eq.${encodeURIComponent(offerId)}&owner_id=eq.${encodeURIComponent(userId)}&deleted_at=is.null&select=id`,
+    `/rest/v1/${parent.table}?id=eq.${encodeURIComponent(parentId)}&owner_id=eq.${encodeURIComponent(userId)}&deleted_at=is.null&select=id`,
   );
-  if (!offerRes.ok) throw new WorkerError('Failed to verify offer ownership', 502);
-  const rows = await offerRes.json();
+  if (!parentRes.ok) throw new WorkerError(`Failed to verify ${parent.noun} ownership`, 502);
+  const rows = await parentRes.json();
   if (!Array.isArray(rows) || rows.length === 0) {
-    throw new WorkerError('Offer not found or not owned by user', 404, 'offer_not_found');
+    throw new WorkerError(`${parent.title} not found or not owned by user`, 404, parent.notFoundCode);
   }
 }
 
-function offerObjectKey(userId, offerId, mediaObjectId, contentType) {
+/** The account's key prefix for one parent record's media. */
+function parentKeyPrefix(parent, userId, parentId) {
+  return `profiles/${userId}/${parent.keySegment}/${parentId}/`;
+}
+
+function parentObjectKey(parent, userId, parentId, mediaObjectId, contentType) {
   const extension = OFFER_MEDIA_TYPES[contentType]?.extension;
   // Deliberately nested under the existing profile-image account prefix —
   // see the file header comment for why.
-  return `profiles/${userId}/offers/${offerId}/${mediaObjectId}.${extension}`;
+  return `${parentKeyPrefix(parent, userId, parentId)}${mediaObjectId}.${extension}`;
 }
 
-function isExpectedOfferObjectKey(row, userId, offerId) {
-  return isAllowedOfferContentType(row.content_type) && row.object_key === offerObjectKey(userId, offerId, row.id, row.content_type);
+function isExpectedParentObjectKey(parent, row, userId, parentId) {
+  return (
+    isAllowedOfferContentType(row.content_type) &&
+    row.object_key === parentObjectKey(parent, userId, parentId, row.id, row.content_type)
+  );
 }
 
 function isAllowedOfferContentType(contentType) {
@@ -988,13 +1100,13 @@ async function findOwnedMedia(mediaObjectId, userId, env) {
   return (await res.json())?.[0] ?? null;
 }
 
-async function findOfferMediaLink(offerId, mediaObjectId, env) {
+async function findParentMediaLink(parent, parentId, mediaObjectId, env) {
   const res = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/offer_media?offer_id=eq.${encodeURIComponent(offerId)}&media_id=eq.${encodeURIComponent(mediaObjectId)}&select=media_id,ordinal`,
+    `/rest/v1/${parent.linkTable}?${parent.linkColumn}=eq.${encodeURIComponent(parentId)}&media_id=eq.${encodeURIComponent(mediaObjectId)}&select=media_id,ordinal`,
   );
-  if (!res.ok) throw new WorkerError('Failed to read offer media', 502);
+  if (!res.ok) throw new WorkerError(`Failed to read ${parent.noun} media`, 502);
   return (await res.json())?.[0] ?? null;
 }
 
@@ -1168,16 +1280,30 @@ async function bestEffortDeleteMediaById(mediaObjectId, userId, env) {
   }
 }
 
-async function bestEffortCleanupAbandonedPending(userId, env) {
+/**
+ * Withdraws abandoned uploads — `pending_upload` for longer than
+ * PENDING_CLEANUP_AGE_MS — of ONE media entity, the one [scope] names: the
+ * caller's profile image (profileCleanupScope), or one Offer's or one Owner's
+ * media (parentCleanupScope). At most 10 per call, only the caller's rows,
+ * only in this bucket. Best effort: never throws.
+ *
+ * Never account-wide: an authorize for one entity must not withdraw an upload
+ * the app may still be retrying for another — a different Offer or Owner, or
+ * the profile image — however old it is. The key filter is part of the query,
+ * so another entity's older rows cannot fill the batch, and every row is
+ * checked against the entity's exact key again before anything is deleted.
+ */
+async function bestEffortCleanupAbandonedPending(userId, env, scope) {
   try {
     const response = await supabaseServiceFetch(
       env,
       'GET',
-      `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload&select=id,object_key,created_at&limit=10&order=created_at.asc`,
+      `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload${scope.keyFilter}&select=id,object_key,content_type,created_at&limit=10&order=created_at.asc`,
     );
     if (!response.ok) return;
     const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
     for (const row of (await response.json()) ?? []) {
+      if (!scope.includes(row)) continue;
       const createdAt = Date.parse(row.created_at);
       if (!Number.isNaN(createdAt) && createdAt <= cutoff) {
         try { await env.MEDIA_BUCKET.delete(row.object_key); } catch (_) { /* metadata cleanup still applies */ }
@@ -1191,6 +1317,29 @@ async function bestEffortCleanupAbandonedPending(userId, env) {
   } catch (error) {
     console.error('[r2-profile-upload] abandoned pending cleanup failed', error);
   }
+}
+
+/**
+ * The caller's profile image: keys directly under the account prefix,
+ * `profiles/<uid>/<mediaId>.<ext>` — never the Offer and Owner media nested
+ * below it (`profiles/<uid>/<segment>/<id>/...`).
+ */
+function profileCleanupScope(userId) {
+  const accountPrefix = `profiles/${userId}/`;
+  return {
+    keyFilter:
+      `&object_key=like.${encodeURIComponent(accountPrefix)}*` +
+      `&object_key=not.like.${encodeURIComponent(`${accountPrefix}*/*`)}`,
+    includes: (row) => isExpectedObjectKey(row, userId),
+  };
+}
+
+/** One Offer's or one Owner's media: keys under that record's own prefix. */
+function parentCleanupScope(parent, userId, parentId) {
+  return {
+    keyFilter: `&object_key=like.${encodeURIComponent(parentKeyPrefix(parent, userId, parentId))}*`,
+    includes: (row) => isExpectedParentObjectKey(parent, row, userId, parentId),
+  };
 }
 
 /**
@@ -1212,27 +1361,51 @@ async function bestEffortCleanupAbandonedPending(userId, env) {
  *   failedUploads      failed older than 7 days: the row (its bytes were
  *                      deleted at rejection; deleted again, idempotently)
  */
-export async function runOfferMediaSweeps(env, { now = () => Date.now() } = {}) {
-  const mode = OFFER_MEDIA_SWEEP_MODES.has(env?.OFFER_MEDIA_SWEEP_MODE) ? env.OFFER_MEDIA_SWEEP_MODE : 'off';
-  const report = { mode, abandonedUploads: 0, deletedOfferMedia: 0, pendingDeletes: 0, failedUploads: 0, errors: 0 };
+export function runOfferMediaSweeps(env, options = {}) {
+  return runMediaSweeps(MEDIA_PARENTS.offer, env, options);
+}
+
+/**
+ * Scheduled cleanup of Owner media: the same four sweeps as
+ * [runOfferMediaSweeps], confined to Owner media keys (`profiles/*\/owners/*`)
+ * and to the `owner_media` / `owners` tables, with its own switch,
+ * OWNER_MEDIA_SWEEP_MODE (missing or unknown is `off`). Its report names the
+ * soft-deleted-parent sweep `deletedOwnerMedia`.
+ */
+export function runOwnerMediaSweeps(env, options = {}) {
+  return runMediaSweeps(MEDIA_PARENTS.owner, env, options);
+}
+
+async function runMediaSweeps(parent, env, { now = () => Date.now() } = {}) {
+  const configured = env?.[parent.sweepModeVar];
+  const mode = OFFER_MEDIA_SWEEP_MODES.has(configured) ? configured : 'off';
+  const report = {
+    mode,
+    abandonedUploads: 0,
+    [parent.deletedParentReportKey]: 0,
+    pendingDeletes: 0,
+    failedUploads: 0,
+    errors: 0,
+  };
   if (mode === 'off') return report;
   if (!env.R2_BUCKET_NAME || !env.MEDIA_BUCKET || !env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
-    console.error('[offer-media-sweep] missing configuration');
+    console.error(`[${parent.sweepLogTag}] missing configuration`);
     report.errors += 1;
     return report;
   }
 
   const context = {
+    parent,
     env,
     at: now(),
     apply: mode === 'on',
     limit: mode === 'on' ? OFFER_MEDIA_SWEEP_BATCH : OFFER_MEDIA_SWEEP_DRY_RUN_LIMIT,
   };
   const sweeps = [
-    ['abandonedUploads', sweepAbandonedOfferUploads],
-    ['deletedOfferMedia', sweepDeletedOfferMedia],
+    ['abandonedUploads', sweepAbandonedUploads],
+    [parent.deletedParentReportKey, sweepDeletedParentMedia],
     ['pendingDeletes', sweepPendingDeletes],
-    ['failedUploads', sweepFailedOfferUploads],
+    ['failedUploads', sweepFailedUploads],
   ];
   for (const [name, sweep] of sweeps) {
     try {
@@ -1244,19 +1417,19 @@ export async function runOfferMediaSweeps(env, { now = () => Date.now() } = {}) 
     }
   }
   console.log(
-    `[offer-media-sweep] mode=${mode} abandonedUploads=${report.abandonedUploads} ` +
-      `deletedOfferMedia=${report.deletedOfferMedia} pendingDeletes=${report.pendingDeletes} ` +
+    `[${parent.sweepLogTag}] mode=${mode} abandonedUploads=${report.abandonedUploads} ` +
+      `${parent.deletedParentReportKey}=${report[parent.deletedParentReportKey]} pendingDeletes=${report.pendingDeletes} ` +
       `failedUploads=${report.failedUploads} errors=${report.errors}`,
   );
   return report;
 }
 
-async function sweepAbandonedOfferUploads({ env, at, apply, limit }) {
+async function sweepAbandonedUploads({ parent, env, at, apply, limit }) {
   const cutoff = new Date(at - PENDING_CLEANUP_AGE_MS).toISOString();
   const rows = await selectRows(
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
-      `&created_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(OFFER_MEDIA_KEY_PATTERN)}` +
+      `&created_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
       `&select=id,object_key&order=created_at.asc&limit=${limit}`,
   );
   if (!apply) return { count: rows.length, errors: 0 };
@@ -1276,12 +1449,17 @@ async function sweepAbandonedOfferUploads({ env, at, apply, limit }) {
   return { count, errors };
 }
 
-async function sweepDeletedOfferMedia({ env, at, apply, limit }) {
+/**
+ * Ready media of a parent record (Offer or Owner) soft-deleted more than the
+ * retention period ago: marked `pending_delete`. Owner decision: the same 7
+ * days for both.
+ */
+async function sweepDeletedParentMedia({ parent, env, at, apply, limit }) {
   const cutoff = new Date(at - OFFER_MEDIA_RETENTION_MS).toISOString();
   const rows = await selectRows(
     env,
-    `/rest/v1/offer_media?select=media_id,offers!inner(deleted_at),media_objects!inner(id,bucket,status)` +
-      `&offers.deleted_at=lt.${encodeURIComponent(cutoff)}` +
+    `/rest/v1/${parent.linkTable}?select=media_id,${parent.table}!inner(deleted_at),media_objects!inner(id,bucket,status)` +
+      `&${parent.table}.deleted_at=lt.${encodeURIComponent(cutoff)}` +
       `&media_objects.bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&media_objects.status=eq.ready` +
       `&limit=${limit}`,
   );
@@ -1300,11 +1478,11 @@ async function sweepDeletedOfferMedia({ env, at, apply, limit }) {
   return { count, errors };
 }
 
-async function sweepPendingDeletes({ env, apply, limit }) {
+async function sweepPendingDeletes({ parent, env, apply, limit }) {
   const rows = await selectRows(
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_delete` +
-      `&object_key=like.${encodeURIComponent(OFFER_MEDIA_KEY_PATTERN)}` +
+      `&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
       `&select=id,object_key&order=updated_at.asc&limit=${limit}`,
   );
   if (!apply) return { count: rows.length, errors: 0 };
@@ -1312,7 +1490,7 @@ async function sweepPendingDeletes({ env, apply, limit }) {
   let errors = 0;
   for (const row of rows) {
     try {
-      const result = await completeMediaRemoval(row, env);
+      const result = await completeMediaRemoval(parent, row, env);
       if (result.cleanupPending) errors += 1;
       else count += 1;
     } catch (_) {
@@ -1322,12 +1500,12 @@ async function sweepPendingDeletes({ env, apply, limit }) {
   return { count, errors };
 }
 
-async function sweepFailedOfferUploads({ env, at, apply, limit }) {
+async function sweepFailedUploads({ parent, env, at, apply, limit }) {
   const cutoff = new Date(at - OFFER_MEDIA_RETENTION_MS).toISOString();
   const rows = await selectRows(
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.failed` +
-      `&updated_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(OFFER_MEDIA_KEY_PATTERN)}` +
+      `&updated_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
       `&select=id,object_key&order=updated_at.asc&limit=${limit}`,
   );
   if (!apply) return { count: rows.length, errors: 0 };

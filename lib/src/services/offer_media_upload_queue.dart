@@ -6,6 +6,7 @@ import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:broker_wallet/src/services/media_parent.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
@@ -42,7 +43,7 @@ enum OfferMediaTaskState {
   cancelling,
 }
 
-/// One Offer media item on its way to the server.
+/// One Offer (or Owner) media item on its way to the server.
 ///
 /// [mediaObjectId] is the item's identity everywhere — this task, the
 /// Worker, `media_objects`, the R2 key and the local cache — and every server
@@ -60,6 +61,7 @@ class OfferMediaUploadTask {
     required this.byteLength,
     required this.localPath,
     required this.createdAt,
+    this.parent = MediaParent.offer,
     this.posterPath,
     this.displayName,
     this.durationMs,
@@ -73,8 +75,16 @@ class OfferMediaUploadTask {
   });
 
   final String mediaObjectId;
+
+  /// The account the item belongs to (not an Owner record: see [offerId]).
   final String ownerId;
+
+  /// The parent record's id: the Offer's, or for [MediaParent.owner] the
+  /// Owner record's.
   final String offerId;
+
+  /// Which records' routes this item is uploaded through.
+  final MediaParent parent;
   final OfferMediaKind kind;
   final String contentType;
   final int byteLength;
@@ -166,10 +176,9 @@ class OfferMediaUploadTask {
           ? progress
           : null,
       failureMessageKey: failed
-          ? (state == OfferMediaTaskState.blocked
-                  ? OfferMediaRejection.limitReached
-                  : failure ?? OfferMediaRejection.interrupted)
-              .messageKey
+          ? parent.messageKeyFor(state == OfferMediaTaskState.blocked
+              ? OfferMediaRejection.limitReached
+              : failure ?? OfferMediaRejection.interrupted)
           : null,
       displayName: displayName,
       byteLength: byteLength,
@@ -196,6 +205,7 @@ class OfferMediaUploadTask {
         byteLength: byteLength,
         localPath: localPath,
         createdAt: createdAt,
+        parent: parent,
         posterPath: posterPath,
         displayName: displayName,
         durationMs: durationMs,
@@ -210,11 +220,15 @@ class OfferMediaUploadTask {
       );
 
   /// What is persisted: ids, a local path and state. Never a URL or token.
+  ///
+  /// An Offer item is stored exactly as before Owner media existed; only an
+  /// Owner item carries `parent`, and a task without it is an Offer's.
   Map<String, Object?> toMap() => {
         'v': 1,
         'id': mediaObjectId,
         'owner': ownerId,
         'offer': offerId,
+        if (parent != MediaParent.offer) 'parent': parent.name,
         'kind': kind.name,
         'contentType': contentType,
         'byteLength': byteLength,
@@ -261,7 +275,11 @@ class OfferMediaUploadTask {
     final localPath = text('localPath');
     final state = byName(OfferMediaTaskState.values, text('state'));
     final createdAt = integer('createdAt');
+    final parentName = text('parent');
+    final parent =
+        parentName == null ? MediaParent.offer : MediaParent.byName(parentName);
     if (raw['v'] != 1 ||
+        parent == null ||
         id == null ||
         owner == null ||
         offer == null ||
@@ -283,6 +301,7 @@ class OfferMediaUploadTask {
       byteLength: byteLength,
       localPath: localPath,
       createdAt: DateTime.fromMicrosecondsSinceEpoch(createdAt),
+      parent: parent,
       posterPath: text('posterPath'),
       displayName: text('displayName'),
       durationMs: integer('durationMs'),
@@ -304,13 +323,17 @@ class OfferMediaUploadCompleted {
     required this.ownerId,
     required this.offerId,
     required this.mediaObjectId,
+    this.parent = MediaParent.offer,
     this.isVideo = false,
     this.durationMs,
   });
 
   final String ownerId;
+
+  /// The parent record's id (see [OfferMediaUploadTask.offerId]).
   final String offerId;
   final String mediaObjectId;
+  final MediaParent parent;
   final bool isVideo;
   final int? durationMs;
 }
@@ -352,9 +375,17 @@ class OfferMediaEnqueueResult {
 /// off by leaving the app goes back to waiting without spending one of its
 /// automatic retries, and everything resumes when the app returns. Nothing
 /// here promises an upload while the app is suspended.
+///
+/// The same queue carries Owner media ([MediaParent.owner]): each task names
+/// its parent, is uploaded through that parent's Worker routes ([transport]
+/// for Offers, [ownerTransport] for Owners) and is shown only on its own
+/// record. One queue — one box, one directory, one retired-copy sweep, one
+/// account purge — so neither kind's housekeeping can remove the other's
+/// files.
 class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
   OfferMediaUploadQueue({
     OfferMediaTransport Function()? transport,
+    OfferMediaTransport Function()? ownerTransport,
     String? Function()? currentUserId,
     Future<Box<dynamic>> Function()? openBox,
     Future<Directory> Function()? documentsDirectory,
@@ -364,6 +395,8 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     List<Duration>? backoff,
     bool observeLifecycle = true,
   })  : _transportFactory = transport ?? R2OfferMediaUploadService.new,
+        _ownerTransportFactory = ownerTransport ??
+            (() => R2OfferMediaUploadService(parent: MediaParent.owner)),
         _currentUserId = currentUserId ?? _supabaseUserId,
         _openBoxOverride = openBox,
         // The same directory OfflineMediaService adopts originals into and
@@ -397,6 +430,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
   static final RegExp _unsafeFileSegment = RegExp(r'[^A-Za-z0-9_-]');
 
   final OfferMediaTransport Function() _transportFactory;
+  final OfferMediaTransport Function() _ownerTransportFactory;
   final String? Function() _currentUserId;
   final Future<Box<dynamic>> Function()? _openBoxOverride;
   final Future<Directory> Function() _documentsDirectory;
@@ -410,6 +444,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
   final StreamController<OfferMediaUploadCompleted> _completions =
       StreamController<OfferMediaUploadCompleted>.broadcast();
   OfferMediaTransport? _transport;
+  OfferMediaTransport? _ownerTransport;
   Box<dynamic>? _box;
   Future<void>? _opening;
   String? _activeOwner;
@@ -441,8 +476,11 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
   OfflineMediaService get _offlineMedia =>
       _offlineMediaOverride ?? OfflineMediaService.instance;
 
-  OfferMediaTransport get _transportInstance =>
-      _transport ??= _transportFactory();
+  /// The Worker routes of [parent]'s records, created on first use.
+  OfferMediaTransport _transportFor(MediaParent parent) => switch (parent) {
+        MediaParent.offer => _transport ??= _transportFactory(),
+        MediaParent.owner => _ownerTransport ??= _ownerTransportFactory(),
+      };
 
   /// Emits each item the server has accepted.
   Stream<OfferMediaUploadCompleted> get completions => _completions.stream;
@@ -504,15 +542,18 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     if (!_disposed) notifyListeners();
   }
 
-  /// Visible tasks of [ownerId] for [offerId], oldest first. Synchronous.
+  /// Visible tasks of [ownerId] for the [parent] record [offerId], oldest
+  /// first. Synchronous.
   List<OfferMediaUploadTask> tasksFor({
     required String? ownerId,
     required String? offerId,
+    MediaParent parent = MediaParent.offer,
   }) {
     if (ownerId == null || offerId == null) return const [];
     final tasks = _tasks.values
         .where((task) =>
             task.ownerId == ownerId &&
+            task.parent == parent &&
             task.offerId == offerId &&
             task.state != OfferMediaTaskState.cancelling)
         .toList()
@@ -520,13 +561,15 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     return tasks;
   }
 
-  /// [tasksFor], as the refs the Offer media UI draws.
+  /// [tasksFor], as the refs the media UI draws.
   List<OfferMediaRef> pendingRefsFor({
     required String? ownerId,
     required String? offerId,
+    MediaParent parent = MediaParent.offer,
   }) =>
       [
-        for (final task in tasksFor(ownerId: ownerId, offerId: offerId))
+        for (final task
+            in tasksFor(ownerId: ownerId, offerId: offerId, parent: parent))
           task.toRef(running: task.mediaObjectId == _runningId),
       ];
 
@@ -586,13 +629,15 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Takes [drafts] on for [offerId]: copies each file into app-owned storage
-  /// and persists a task, then starts uploading. Idempotent per
-  /// `mediaObjectId`: a draft already queued is not queued again.
+  /// Takes [drafts] on for the [parent] record [offerId]: copies each file
+  /// into app-owned storage and persists a task, then starts uploading.
+  /// Idempotent per `mediaObjectId`: a draft already queued is not queued
+  /// again.
   Future<OfferMediaEnqueueResult> enqueue({
     required String ownerId,
     required String offerId,
     required List<OfferMediaDraft> drafts,
+    MediaParent parent = MediaParent.offer,
   }) async {
     await ensureOpen();
     // A file named by more than one draft (the same file picked twice) is
@@ -647,6 +692,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
           posterPath: posterPath,
           displayName: draft.displayName,
           durationMs: draft.durationMs,
+          parent: parent,
           // Strictly increasing, so a batch keeps the order it was picked in.
           createdAt: _now().add(Duration(microseconds: _sequence++)),
         );
@@ -702,15 +748,17 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_drain());
   }
 
-  /// A place on [offerId] was freed: items that found the Offer full try
-  /// again, in the order they were picked.
+  /// A place on the [parent] record [offerId] was freed: items that found it
+  /// full try again, in the order they were picked.
   Future<void> releaseBlocked({
     required String ownerId,
     required String offerId,
+    MediaParent parent = MediaParent.offer,
   }) async {
     final waiting = _tasks.values
         .where((task) =>
             task.ownerId == ownerId &&
+            task.parent == parent &&
             task.offerId == offerId &&
             task.state == OfferMediaTaskState.blocked)
         .toList();
@@ -729,6 +777,20 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> forgetOffer({
     required String ownerId,
     required String offerId,
+  }) =>
+      forgetRecord(
+        ownerId: ownerId,
+        recordId: offerId,
+        parent: MediaParent.offer,
+      );
+
+  /// The [parent] record [recordId] was deleted: its tasks and their files
+  /// go, with no server call. Whatever the server held is removed by its own
+  /// cleanup.
+  Future<void> forgetRecord({
+    required String ownerId,
+    required String recordId,
+    required MediaParent parent,
   }) async {
     try {
       await ensureOpen();
@@ -736,7 +798,10 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final doomed = _tasks.values
-        .where((task) => task.ownerId == ownerId && task.offerId == offerId)
+        .where((task) =>
+            task.ownerId == ownerId &&
+            task.parent == parent &&
+            task.offerId == recordId)
         .toList();
     for (final task in doomed) {
       _cancelInFlightFor(task.mediaObjectId);
@@ -909,7 +974,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (!_mayCall(owner)) return false;
 
-    final transport = _transportInstance;
+    final transport = _transportFor(task.parent);
     var stage = _Stage.authorize;
     final total = Stopwatch()..start();
     final step = Stopwatch()..start();
@@ -1153,7 +1218,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (!_mayCall(owner)) return false;
     try {
-      await _transportInstance.removeMedia(
+      await _transportFor(task.parent).removeMedia(
         offerId: task.offerId,
         mediaObjectId: task.mediaObjectId,
       );
@@ -1163,7 +1228,11 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
         mediaObjectIds: [task.mediaObjectId],
       );
       await _drop(task);
-      await releaseBlocked(ownerId: owner, offerId: task.offerId);
+      await releaseBlocked(
+        ownerId: owner,
+        offerId: task.offerId,
+        parent: task.parent,
+      );
     } on R2OfferMediaHttpException catch (error) {
       if (error.statusCode == 404 && _currentUserId() == owner) {
         await _drop(task); // The Offer is gone; the server cleans up its own.
@@ -1218,6 +1287,8 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
             directoryName: OfflineMediaService.offerMediaDirectoryName,
           );
         }
+        // The catalogue is keyed by the parent record's id — an Offer's or
+        // an Owner record's; both are UUIDs, so they never share an entry.
         await _offlineMedia.appendToOfferMediaCatalog(
           ownerId: owner,
           offerId: task.offerId,
@@ -1234,6 +1305,7 @@ class OfferMediaUploadQueue extends ChangeNotifier with WidgetsBindingObserver {
         ownerId: owner,
         offerId: task.offerId,
         mediaObjectId: id,
+        parent: task.parent,
         isVideo: task.kind == OfferMediaKind.video,
         durationMs: task.durationMs,
       ));

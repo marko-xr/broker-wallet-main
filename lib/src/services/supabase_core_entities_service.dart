@@ -14,6 +14,7 @@ import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
+import 'media_parent.dart';
 import 'offer_media_cache_identity.dart';
 import 'offer_media_url_cache.dart';
 import 'offline_media_service.dart';
@@ -28,11 +29,22 @@ class SupabaseCoreEntitiesService {
   SupabaseCoreEntitiesService({
     SupabaseClient? client,
     R2OfferMediaUploadService? offerMedia,
+    R2OfferMediaUploadService? ownerMedia,
   })  : _client = client ?? Supabase.instance.client,
-        _offerMedia = offerMedia ?? R2OfferMediaUploadService();
+        _offerMedia = offerMedia ?? R2OfferMediaUploadService(),
+        _ownerMediaOverride = ownerMedia;
 
   final SupabaseClient _client;
   final R2OfferMediaUploadService _offerMedia;
+  final R2OfferMediaUploadService? _ownerMediaOverride;
+
+  /// The Owner-media routes of the same Worker, created on first use and
+  /// bound to this service's client.
+  late final R2OfferMediaUploadService _ownerMedia = _ownerMediaOverride ??
+      R2OfferMediaUploadService(
+        supabaseClient: _client,
+        parent: MediaParent.owner,
+      );
   static const Uuid _uuid = Uuid();
 
   String generateId() => _uuid.v4();
@@ -302,14 +314,25 @@ class SupabaseCoreEntitiesService {
   /// disk, the file holding them — which is what lets the image paint before
   /// any signed URL exists. Entries whose bytes are not held locally are
   /// dropped, so this never promises content it cannot draw.
-  List<OfferMediaRef> cachedOfferMedia(String offerId) {
+  List<OfferMediaRef> cachedOfferMedia(String offerId) =>
+      _cachedRecordMedia(offerId);
+
+  /// What this device already holds for the Owner record [ownerRecordId],
+  /// with no network at all; see [cachedOfferMedia].
+  List<OfferMediaRef> cachedOwnerMedia(String ownerRecordId) =>
+      _cachedRecordMedia(ownerRecordId);
+
+  /// [cachedOfferMedia] for any record: the device's media catalogue is keyed
+  /// by the account and the record's id (Offer and Owner ids are UUIDs, so
+  /// they never share an entry).
+  List<OfferMediaRef> _cachedRecordMedia(String recordId) {
     final ownerId = currentOwnerId;
     if (ownerId == null || ownerId.isEmpty) return const <OfferMediaRef>[];
 
     final offline = OfflineMediaService.instance;
     final ids = offline.readOfferMediaCatalog(
       ownerId: ownerId,
-      offerId: offerId,
+      offerId: recordId,
     );
 
     final refs = <OfferMediaRef>[];
@@ -352,19 +375,47 @@ class SupabaseCoreEntitiesService {
   Future<OfferMediaResolution> resolveOfferMedia({
     required String offerId,
     required String ownerId,
+  }) =>
+      _resolveRecordMedia(
+        media: _offerMedia,
+        recordId: offerId,
+        ownerId: ownerId,
+        recordName: 'Offer',
+      );
+
+  /// Resolves the current confirmed private media of the Owner record
+  /// [ownerRecordId], exactly as [resolveOfferMedia] does for an Offer —
+  /// through the Worker's Owner routes, which verify ownership of the Owner
+  /// record server-side. The resolution's `offerId` is the Owner record's id.
+  Future<OfferMediaResolution> resolveOwnerMedia({
+    required String ownerRecordId,
+    required String ownerId,
+  }) =>
+      _resolveRecordMedia(
+        media: _ownerMedia,
+        recordId: ownerRecordId,
+        ownerId: ownerId,
+        recordName: 'Owner',
+      );
+
+  Future<OfferMediaResolution> _resolveRecordMedia({
+    required R2OfferMediaUploadService media,
+    required String recordId,
+    required String ownerId,
+    required String recordName,
   }) async {
-    final id = offerId.trim();
+    final id = recordId.trim();
     if (id.isEmpty) {
-      throw StateError('Offer identity is required.');
+      throw StateError('$recordName identity is required.');
     }
     final sessionOwnerId = _requireUserId();
     if (ownerId.isEmpty || ownerId != sessionOwnerId) {
-      throw StateError('The current session does not own this Offer.');
+      throw StateError('The current session does not own this $recordName.');
     }
 
     final List<R2OfferMediaItem> mediaItems;
     try {
-      mediaItems = await _offerMedia.getOfferMedia(id);
+      mediaItems = await media.getOfferMedia(id);
     } on R2OfferMediaHttpException catch (error) {
       throw await _classifyMediaFailure(error, id, sessionOwnerId);
     } catch (_) {

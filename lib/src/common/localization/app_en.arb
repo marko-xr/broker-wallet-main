@@ -1878,6 +1878,13 @@
   "offerUpdatedMediaUploading": "Offer updated. New photos and videos are uploading.",
   "offerMediaRemoveFailed": "The offer was saved, but some photos or videos could not be removed. Tap Save to try again.",
   "offerMediaPrepareFailed": "The offer was saved, but some photos or videos could not be prepared for upload. Tap Save to try again, or remove them.",
+  "ownerMediaLimitReached": "An owner can hold up to 10 photos and videos in total.",
+  "ownerMediaLimitTrimmed": "Only the first files were added: an owner can hold up to 10 photos and videos in total.",
+  "ownerMediaSourceDocumentsUnavailable": "Not available for owners yet",
+  "ownerSavedMediaUploading": "Owner saved. Photos and videos are uploading.",
+  "ownerUpdatedMediaUploading": "Owner updated. New photos and videos are uploading.",
+  "ownerMediaRemoveFailed": "The owner was saved, but some photos or videos could not be removed. Tap Save to try again.",
+  "ownerMediaPrepareFailed": "The owner was saved, but some photos or videos could not be prepared for upload. Tap Save to try again, or remove them.",
 
   "propertyOwner": "Property Owner",
   "propertyOwnerCaps": "PROPERTY OWNER",

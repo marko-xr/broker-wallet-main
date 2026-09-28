@@ -29,6 +29,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'firebase_options.dart';
+import 'package:broker_wallet/src/services/media_pick_recovery.dart';
 import 'src/services/offline_image_service.dart';
 import 'src/services/offline_media_service.dart';
 import 'src/services/supabase_bootstrap_service.dart';
@@ -82,6 +83,11 @@ Future<void> initializeAppServices() async {
 
   await Hive.initFlutter();
   await SharedPreferences.getInstance();
+
+  // Android may hand back an Offer/Owner photo or video picked just before it
+  // stopped the app. Routed now, before any picker can open, to the form it
+  // was picked on and to no other (non-blocking; Android only).
+  MediaPickRecovery.reconcileAtStartup();
 
   // Initialize Supabase using production defaults, with optional --dart-define
   // overrides for staging/testing. Firebase remains active for unmigrated

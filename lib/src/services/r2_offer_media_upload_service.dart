@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
+import 'package:broker_wallet/src/services/media_parent.dart';
 import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
 
@@ -96,7 +97,9 @@ class OfferMediaRemoval {
   final bool cleanupPending;
 }
 
-/// The Media Worker operations one logical Offer upload consists of.
+/// The Media Worker operations one logical Offer (or Owner) upload consists
+/// of. `offerId` names the parent record: the Offer's id, or — for a transport
+/// of [MediaParent.owner] — the Owner record's id.
 ///
 /// Every call is idempotent on the app-generated [mediaObjectId], which is
 /// what lets the upload queue retry any step, after any failure or a restart,
@@ -136,12 +139,21 @@ abstract interface class OfferMediaTransport {
 /// signed URL from the Worker, never a permanently public R2 URL, and
 /// nothing here ever persists a signed URL as the canonical media identity —
 /// only `mediaObjectId` (a `media_objects.id`) is durable.
+///
+/// One instance serves one [MediaParent]: Offer media (the default) through
+/// `/offer-media…` with `offerId`, or Owner media through `/owner-media…`
+/// with `ownerRecordId`. The methods keep their `offerId` parameter name for
+/// the parent record's id either way.
 class R2OfferMediaUploadService implements OfferMediaTransport {
   R2OfferMediaUploadService({
     http.Client? httpClient,
     SupabaseClient? supabaseClient,
+    this.parent = MediaParent.offer,
   })  : _http = httpClient ?? http.Client(),
         _supabase = supabaseClient ?? Supabase.instance.client;
+
+  /// Which records' media this instance reaches.
+  final MediaParent parent;
 
   static const int maxImageBytes = OfferMediaPolicy.maxImageBytes;
   static const int maxVideoBytes = OfferMediaPolicy.maxVideoBytes;
@@ -217,8 +229,9 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     String? originalFileName,
   }) async {
     final auth = _currentAuth();
-    final payload = await _post('/offer-media/authorize', auth.accessToken, {
-      'offerId': offerId,
+    final payload =
+        await _post('${parent.routePrefix}/authorize', auth.accessToken, {
+      parent.idField: offerId,
       'mediaObjectId': mediaObjectId,
       'contentType': contentType,
       'contentLength': contentLength,
@@ -354,8 +367,9 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     required String mediaObjectId,
   }) async {
     final auth = _currentAuth();
-    final payload = await _post('/offer-media/confirm', auth.accessToken, {
-      'offerId': offerId,
+    final payload =
+        await _post('${parent.routePrefix}/confirm', auth.accessToken, {
+      parent.idField: offerId,
       'mediaObjectId': mediaObjectId,
     });
     return OfferMediaConfirmation(
@@ -370,8 +384,9 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     required String mediaObjectId,
   }) async {
     final auth = _currentAuth();
-    final payload = await _post('/offer-media/remove', auth.accessToken, {
-      'offerId': offerId,
+    final payload =
+        await _post('${parent.routePrefix}/remove', auth.accessToken, {
+      parent.idField: offerId,
       'mediaObjectId': mediaObjectId,
     });
     return OfferMediaRemoval(
@@ -380,14 +395,15 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     );
   }
 
-  /// The offer's confirmed media, each with a fresh short-lived signed read
-  /// URL. Ownership of [offerId] is verified server-side by the Worker.
+  /// The record's confirmed media — the Offer's, or with [MediaParent.owner]
+  /// the Owner record's — each with a fresh short-lived signed read URL.
+  /// Ownership of [offerId] is verified server-side by the Worker.
   Future<List<R2OfferMediaItem>> getOfferMedia(String offerId) async {
     final auth = _currentAuth();
     final requestedAt = DateTime.now();
     final response = await _request(() => _http.get(
-          _endpoint('/offer-media')
-              .replace(queryParameters: {'offerId': offerId}),
+          _endpoint(parent.routePrefix)
+              .replace(queryParameters: {parent.idField: offerId}),
           headers: {'Authorization': 'Bearer ${auth.accessToken}'},
         ).timeout(_metadataRequestTimeout));
     _ensureSuccess(response);

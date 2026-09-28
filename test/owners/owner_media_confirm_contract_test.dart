@@ -1,29 +1,33 @@
 import 'dart:io';
 
+import 'package:broker_wallet/src/services/media_parent.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Static checks that keep the proposed `confirm_offer_media_upload`
-/// migration, its rollback-only validation script, its pgTAP suite and the
-/// Media Worker that calls it in agreement.
+/// Static checks that keep the `confirm_owner_media_upload` migration, its
+/// rollback-only validation script, its pgTAP suite, the Media Worker's Owner
+/// routes and the app's Owner media rules in agreement.
 ///
-/// These read files; they do not execute SQL. The migration's behaviour is
-/// proven only by running `supabase/tests/offer_media_confirm_test.sql`
-/// (pgTAP) or `supabase/validation/offer_media_confirm_validation.sql`
-/// against a database — neither of which these tests do.
+/// These read files; they do not execute SQL or the Worker. The migration's
+/// behaviour is proven only by running
+/// `supabase/tests/owner_media_confirm_test.sql` (pgTAP) or
+/// `supabase/validation/owner_media_confirm_validation.sql` against a
+/// database; the Worker's by its own `npm test` suite
+/// (`test/owner_media.test.mjs`).
 
 const _migration =
+    'supabase/migrations/20260928131828_owner_media_confirm_rpc.sql';
+const _offerMigration =
     'supabase/migrations/20260926092220_offer_media_confirm_rpc.sql';
-const _pgTap = 'supabase/tests/offer_media_confirm_test.sql';
-const _validation = 'supabase/validation/offer_media_confirm_validation.sql';
+const _pgTap = 'supabase/tests/owner_media_confirm_test.sql';
+const _validation = 'supabase/validation/owner_media_confirm_validation.sql';
 const _worker = 'cloudflare/workers/r2-profile-upload/worker.js';
 const _wrangler = 'cloudflare/workers/r2-profile-upload/wrangler.toml';
 
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
-/// SQL without `--` comments, lower-cased: assertions about statements, not
-/// prose. (None of these files has `--` inside a string literal.)
+/// SQL without `--` comments, lower-cased.
 String _statements(String path) => _read(path)
     .split('\n')
     .map((line) {
@@ -33,31 +37,17 @@ String _statements(String path) => _read(path)
     .join('\n')
     .toLowerCase();
 
-/// The `create or replace function ... $function$;` block, verbatim.
-String _functionBlock(String sql) {
-  final start = sql.indexOf('create or replace function public.'
-      'confirm_offer_media_upload(');
+String _functionBlock(String sql, String name) {
+  final start = sql.indexOf('create or replace function public.$name(');
   final end = sql.indexOf(r'$function$;', start);
   expect(start, greaterThanOrEqualTo(0));
   expect(end, greaterThan(start));
   return sql.substring(start, end + r'$function$;'.length);
 }
 
-/// The Offer entry of the Worker's `MEDIA_PARENTS` table, verbatim. Since
-/// Owner media joined, the Worker's media routes take their table, confirm
-/// function, parameter name and limit from this entry.
-String _offerParent(String worker) {
-  final start = worker.indexOf('  offer: Object.freeze({');
-  final end = worker.indexOf('}),', start);
-  expect(start, greaterThanOrEqualTo(0));
-  expect(end, greaterThan(start));
-  return worker.substring(start, end);
-}
-
-List<String> _migrationParameters() {
-  final sql = _statements(_migration);
-  final start = sql
-      .indexOf('create or replace function public.confirm_offer_media_upload(');
+List<String> _parameters(String path, String name) {
+  final sql = _statements(path);
+  final start = sql.indexOf('create or replace function public.$name(');
   final open = sql.indexOf('(', start);
   final close = sql.indexOf(')', open);
   return [
@@ -66,8 +56,17 @@ List<String> _migrationParameters() {
   ];
 }
 
+/// The Owner entry of the Worker's `MEDIA_PARENTS` table, verbatim.
+String _ownerParent(String worker) {
+  final start = worker.indexOf('  owner: Object.freeze({');
+  final end = worker.indexOf('}),', start);
+  expect(start, greaterThanOrEqualTo(0));
+  expect(end, greaterThan(start));
+  return worker.substring(start, end);
+}
+
 void main() {
-  group('the proposed migration', () {
+  group('the Owner migration', () {
     test(
         'is SECURITY DEFINER with an empty search_path and runs for '
         'service_role only', () {
@@ -78,7 +77,7 @@ void main() {
         expect(
           sql,
           matches(RegExp(
-              r'revoke all on function public\.confirm_offer_media_upload\([^;]*\) from '
+              r'revoke all on function public\.confirm_owner_media_upload\([^;]*\) from '
               '$role;')),
           reason: 'EXECUTE revoked from $role',
         );
@@ -86,7 +85,7 @@ void main() {
       expect(
         sql,
         matches(RegExp(
-            r'grant execute on function public\.confirm_offer_media_upload\([^;]*\) to service_role;')),
+            r'grant execute on function public\.confirm_owner_media_upload\([^;]*\) to service_role;')),
       );
       expect(
         sql,
@@ -115,14 +114,24 @@ void main() {
       }
     });
 
+    test('takes exactly the Offer function\'s parameters, for an Owner', () {
+      final offer = _parameters(_offerMigration, 'confirm_offer_media_upload');
+      final owner = _parameters(_migration, 'confirm_owner_media_upload');
+      expect(owner, [
+        for (final name in offer)
+          name == 'p_offer_id' ? 'p_owner_record_id' : name,
+      ]);
+    });
+
     test(
-        'locks the Offer row before deciding the limit and the position, '
-        'and counts only ready media in the same bucket', () {
+        'locks the Owner row before deciding the limit and the position, '
+        'counts only ready media in the same bucket, and accepts only '
+        'media under the Owner\'s own key', () {
       final sql = _statements(_migration);
-      final lock = sql.indexOf('from public.offers as o');
+      final lock = sql.indexOf('from public.owners as ow');
       final forUpdate = sql.indexOf('for update', lock);
       final count = sql.indexOf('count(*)');
-      final position = sql.indexOf('max(om.ordinal)');
+      final position = sql.indexOf('max(owm.ordinal)');
       expect(lock, greaterThan(0));
       expect(forUpdate, greaterThan(lock));
       expect(count, greaterThan(forUpdate));
@@ -131,55 +140,75 @@ void main() {
       final countQuery = sql.substring(count, sql.indexOf(';', count));
       expect(countQuery, contains('mo.bucket = p_bucket'));
       expect(countQuery, contains("mo.status = 'ready'"));
+      expect(sql, contains("'/owners/' || p_owner_record_id::text || '/'"));
+      expect(sql, isNot(contains('/offers/')),
+          reason: 'an Offer key is never accepted for an Owner');
     });
 
     test('an attached item is never attached twice', () {
       final sql = _statements(_migration);
-      final existing = sql.indexOf('from public.offer_media as om\n'
-          '  where om.offer_id = p_offer_id\n'
-          '    and om.media_id = p_media_id');
-      final insert = sql.indexOf('insert into public.offer_media');
+      final existing = sql.indexOf('from public.owner_media as owm\n'
+          '  where owm.owner_record_id = p_owner_record_id\n'
+          '    and owm.media_id = p_media_id');
+      final insert = sql.indexOf('insert into public.owner_media');
       expect(existing, greaterThan(0));
-      expect(insert, greaterThan(existing),
-          reason: 'the existing link is looked for before inserting');
+      expect(insert, greaterThan(existing));
       expect(sql, contains("'already_attached'"));
+    });
+
+    test('the size ceiling is the Offer video limit (owner decision)', () {
+      expect(_statements(_migration),
+          contains('p_observed_size > ${OfferMediaPolicy.maxVideoBytes}'));
     });
   });
 
-  group('the Media Worker and the function agree', () {
+  group('the Media Worker and the Owner function agree', () {
     test('the Worker sends exactly the function\'s parameters', () {
       final worker = _read(_worker);
       expect(
         worker,
-        contains(
-            "const OFFER_MEDIA_CONFIRM_RPC = '/rest/v1/rpc/confirm_offer_media_upload';"),
+        contains("const OWNER_MEDIA_CONFIRM_RPC = "
+            "'/rest/v1/rpc/confirm_owner_media_upload';"),
       );
-      final offer = _offerParent(worker);
-      expect(offer, contains('confirmRpc: OFFER_MEDIA_CONFIRM_RPC,'));
+      final owner = _ownerParent(worker);
+      expect(owner, contains('confirmRpc: OWNER_MEDIA_CONFIRM_RPC,'));
+      expect(owner, contains("table: 'owners',"));
+      expect(owner, contains("linkTable: 'owner_media',"));
+      expect(owner, contains("linkColumn: 'owner_record_id',"));
+      expect(owner, contains("keySegment: 'owners',"));
+      expect(owner, contains("idField: '${MediaParent.owner.idField}',"));
+
       final call = worker.indexOf('parent.confirmRpc,\n');
-      expect(call, greaterThanOrEqualTo(0));
       final body = worker.substring(call, worker.indexOf('}', call));
       final sent = <String>{
         ...RegExp(r'(p_[a-z_]+):').allMatches(body).map((m) => m.group(1)!),
-        // The parent's own id parameter, named by its MEDIA_PARENTS entry.
         if (body.contains('[parent.rpcParentParam]:'))
-          RegExp(r"rpcParentParam: '(p_[a-z_]+)'")
-              .firstMatch(offer)!
-              .group(1)!,
+          RegExp(r"rpcParentParam: '(p_[a-z_]+)'").firstMatch(owner)!.group(1)!,
       };
-
-      expect(sent, _migrationParameters().toSet());
+      expect(
+          sent, _parameters(_migration, 'confirm_owner_media_upload').toSet());
     });
 
-    test('the limit the Worker passes is the app\'s limit', () {
+    test('the limit the Worker passes is the app\'s Owner limit', () {
       final worker = _read(_worker);
-      expect(worker, contains('p_max_items: parent.maxItems,'));
-      expect(_offerParent(worker), contains('maxItems: MAX_MEDIA_PER_OFFER,'));
+      expect(_ownerParent(worker), contains('maxItems: MAX_MEDIA_PER_OWNER,'));
       expect(
-        worker,
-        contains('const MAX_MEDIA_PER_OFFER = '
-            '${OfferMediaPolicy.maxItemsPerOffer};'),
-      );
+          worker,
+          contains(
+              'const MAX_MEDIA_PER_OWNER = ${MediaParent.owner.maxItems};'));
+    });
+
+    test('the app routes Owner media to the Owner routes', () {
+      expect(MediaParent.owner.routePrefix, '/owner-media');
+      final worker = _read(_worker);
+      for (final route in [
+        "path === '/owner-media/authorize'",
+        "path === '/owner-media/confirm'",
+        "path === '/owner-media'",
+        "path === '/owner-media/remove'",
+      ]) {
+        expect(worker, contains(route));
+      }
     });
 
     test('every outcome the function can return is handled', () {
@@ -191,28 +220,21 @@ void main() {
         'attached',
         'already_attached',
         'limit_reached',
-        'offer_not_found',
+        'owner_not_found',
         'media_not_found',
         'invalid_status',
       });
 
       final worker = _read(_worker);
-      final switchStart = worker.indexOf('switch (attach.outcome) {');
-      final switchBody =
-          worker.substring(switchStart, worker.indexOf('\n  }\n', switchStart));
-      for (final handled in [
-        'attached',
-        'already_attached',
-        'limit_reached',
-      ]) {
-        expect(switchBody, contains("case '$handled':"));
-      }
-      // offer_not_found: the parent's own not-found outcome.
-      expect(switchBody, contains('case parent.notFoundCode:'));
-      expect(_offerParent(worker), contains("notFoundCode: 'offer_not_found',"));
-      // media_not_found and invalid_status: refused, nothing attached.
-      expect(switchBody, contains('default:'));
-      expect(switchBody, contains("'invalid_state'"));
+      expect(
+          _ownerParent(worker), contains("notFoundCode: 'owner_not_found',"));
+      expect(_ownerParent(worker),
+          contains("limitCode: 'owner_media_limit_reached',"));
+      expect(
+        OfferMediaRejection.fromWorkerCode('owner_media_limit_reached'),
+        OfferMediaRejection.limitReached,
+        reason: 'the app shows the Worker\'s Owner limit refusal as the limit',
+      );
     });
   });
 
@@ -222,7 +244,8 @@ void main() {
         'rolls everything back', () {
       final migration = _read(_migration);
       final validation = _read(_validation);
-      expect(validation, contains(_functionBlock(migration)));
+      expect(validation,
+          contains(_functionBlock(migration, 'confirm_owner_media_upload')));
 
       final statements = _statements(_validation);
       expect(statements,
@@ -248,20 +271,18 @@ void main() {
       expect(sql.trimRight(), endsWith('rollback;'));
     });
 
-    test('Offer media cleanup ships switched off in every environment', () {
+    test('Owner media cleanup ships switched off in every environment', () {
       final toml = _read(_wrangler);
       final production = toml.substring(toml.indexOf('[vars]'),
           toml.indexOf('[', toml.indexOf('[vars]') + 1));
       final staging = toml.substring(toml.indexOf('[env.staging.vars]'));
       for (final section in [production, staging]) {
-        expect(section, contains('OFFER_MEDIA_SWEEP_MODE = "off"'));
+        expect(section, contains('OWNER_MEDIA_SWEEP_MODE = "off"'));
       }
       final worker = _read(_worker);
-      expect(_offerParent(worker),
-          contains("sweepModeVar: 'OFFER_MEDIA_SWEEP_MODE',"));
-      expect(worker,
-          contains("OFFER_MEDIA_SWEEP_MODES.has(configured) ? configured : 'off'"),
-          reason: 'a missing or unknown mode means off');
+      expect(_ownerParent(worker),
+          contains("sweepModeVar: 'OWNER_MEDIA_SWEEP_MODE',"));
+      expect(worker, contains('ctx.waitUntil(runOwnerMediaSweeps(env));'));
     });
   });
 }

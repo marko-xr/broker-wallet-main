@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
+import 'package:broker_wallet/src/services/media_parent.dart';
+import 'package:broker_wallet/src/services/media_pick_recovery.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
@@ -19,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 // ignore: depend_on_referenced_packages
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Task B — the Offer media attachment sheet and its pickers: one native
 /// Gallery selection of photos and videos together, capped at the places
@@ -27,6 +30,8 @@ import 'package:image_picker_platform_interface/image_picker_platform_interface.
 /// screened exactly as before. Local widget/unit tests only.
 
 const _owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const _offerRecord = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const _ownerRecord = 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0';
 const _permissionsChannel = 'flutter.baseflow.com/permissions/methods';
 
 List<int> _isoHeader(String major, [List<String> compatible = const []]) {
@@ -141,7 +146,8 @@ AddOffersViewModel _vm({
     AddOffersViewModel(
       offerService: service ?? _FakeOfferService(),
       usesMediaQueue: true,
-      mediaPicker: OfferMediaPicker(isAndroid: true),
+      mediaPicker:
+          OfferMediaPicker(isAndroid: true, recovery: MediaPickRecovery()),
       chooseMediaSource: sheet ? null : (context, remaining) async => source,
     );
 
@@ -210,6 +216,7 @@ void main() {
   setUp(() {
     picker = _FakePicker();
     ImagePickerPlatform.instance = picker;
+    SharedPreferences.setMockInitialValues({});
     permissionCalls.clear();
     toasts.clear();
     VideoDurationProbe.read = (_) async => const Duration(seconds: 42);
@@ -233,7 +240,8 @@ void main() {
         XFile(_file('b.mp4', _mp4).path),
       ];
 
-      final files = await OfferMediaPicker().pickFromGallery(limit: 7);
+      final files =
+          await OfferMediaPicker().pickFromGallery(limit: 7, origin: null);
 
       expect(files, hasLength(2));
       expect(picker.mediaRequests, hasLength(1));
@@ -249,7 +257,7 @@ void main() {
       final android = _FakeAndroidPicker();
       ImagePickerPlatform.instance = android;
 
-      await OfferMediaPicker().pickFromGallery(limit: 5);
+      await OfferMediaPicker().pickFromGallery(limit: 5, origin: null);
 
       expect(android.photoPickerDuringSelection, isTrue);
       expect(android.useAndroidPhotoPicker, isFalse,
@@ -257,7 +265,8 @@ void main() {
     });
 
     test('a full Offer opens no picker', () async {
-      expect(await OfferMediaPicker().pickFromGallery(limit: 0), isEmpty);
+      expect(await OfferMediaPicker().pickFromGallery(limit: 0, origin: null),
+          isEmpty);
       expect(picker.mediaRequests, isEmpty);
     });
 
@@ -266,11 +275,13 @@ void main() {
       picker.camera = XFile(_file('shot.jpg', _jpeg).path);
       final media = OfferMediaPicker();
 
-      expect(await media.capturePhoto(), isNotNull);
+      expect(await media.capturePhoto(origin: null), isNotNull);
       expect(picker.imageRequests, [ImageSource.camera]);
 
       picker.camera = XFile(_file('clip.mp4', _mp4).path);
-      expect(await media.recordVideo(maxDuration: const Duration(minutes: 3)),
+      expect(
+          await media.recordVideo(
+              maxDuration: const Duration(minutes: 3), origin: null),
           isNotNull);
       expect(picker.videoRequests, [const Duration(minutes: 3)]);
       expect(permissionCalls, isEmpty,
@@ -284,28 +295,45 @@ void main() {
 
       await expectLater(
         OfferMediaPicker(cameraPermanentlyDenied: () async => false)
-            .capturePhoto(),
+            .capturePhoto(origin: null),
         throwsA(isA<OfferMediaPickerException>().having(
             (e) => e.failure, 'failure', OfferMediaPickerFailure.cameraDenied)),
       );
       await expectLater(
         OfferMediaPicker(cameraPermanentlyDenied: () async => true)
-            .recordVideo(maxDuration: const Duration(minutes: 3)),
+            .recordVideo(maxDuration: const Duration(minutes: 3), origin: null),
         throwsA(isA<OfferMediaPickerException>().having((e) => e.failure,
             'failure', OfferMediaPickerFailure.cameraPermanentlyDenied)),
       );
     });
 
-    test('media Android handed back after stopping the app is recovered',
-        () async {
+    test(
+        'media Android handed back after stopping the app is recovered for '
+        'the form it was picked on, on Android only', () async {
+      final origin = MediaPickOrigin.of(
+        accountId: _owner,
+        parent: MediaParent.offer,
+        recordId: _offerRecord,
+        formSessionId: 'form',
+      )!;
+      // The previous run opened the picker for [origin], then Android
+      // stopped the app.
+      SharedPreferences.setMockInitialValues({
+        MediaPickRecovery.pendingOriginKey: jsonEncode(origin.toJson()),
+      });
       picker.lost = LostDataResponse(
         files: [XFile(_file('lost.mp4', _mp4).path)],
       );
+      final recovery = MediaPickRecovery();
 
-      expect(await OfferMediaPicker(isAndroid: true).recoverLostSelection(),
-          hasLength(1));
-      expect(await OfferMediaPicker(isAndroid: false).recoverLostSelection(),
+      expect(
+          await OfferMediaPicker(isAndroid: false, recovery: recovery)
+              .recoverLostSelection(origin: origin),
           isEmpty);
+      expect(
+          await OfferMediaPicker(isAndroid: true, recovery: recovery)
+              .recoverLostSelection(origin: origin),
+          hasLength(1));
     });
   });
 
@@ -388,6 +416,37 @@ void main() {
       expect(ids, hasLength(2));
       expect(ids.toSet(), hasLength(2),
           reason: 'each file gets its own lasting id, handed to the queue');
+    });
+
+    test(
+        'a new Offer form never adopts what Android handed back for another '
+        'form; it stays kept for that form', () async {
+      final ownerForm = MediaPickOrigin.of(
+        accountId: _owner,
+        parent: MediaParent.owner,
+        recordId: _ownerRecord,
+        formSessionId: 'owner-form',
+      )!;
+      SharedPreferences.setMockInitialValues({
+        MediaPickRecovery.pendingOriginKey: jsonEncode(ownerForm.toJson()),
+      });
+      picker.lost = LostDataResponse(
+        files: [XFile(_file('owner-photo.jpg', _jpeg).path)],
+      );
+      final recovery = MediaPickRecovery();
+
+      final vm = AddOffersViewModel(
+        offerService: _FakeOfferService(),
+        usesMediaQueue: true,
+        mediaPicker: OfferMediaPicker(isAndroid: true, recovery: recovery),
+        chooseMediaSource: (context, remaining) async => null,
+      );
+      addTearDown(vm.dispose);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(vm.offerMediaItems, isEmpty);
+      expect(await recovery.take(ownerForm), hasLength(1),
+          reason: 'still there for the Owner it was picked on');
     });
   });
 

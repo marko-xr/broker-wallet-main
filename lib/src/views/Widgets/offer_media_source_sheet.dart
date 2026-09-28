@@ -13,9 +13,13 @@ import 'package:broker_wallet/src/services/offer_media_picker.dart';
 /// selection) and **Documents**, shown but not available for Offers until
 /// secure Offer documents exist (Task C), rather than offering an upload that
 /// would be refused.
+///
+/// The Owner form shows the same sheet; [documentsUnavailableKey] names the
+/// record in the Documents hint (see `MediaParent.documentsUnavailableKey`).
 Future<OfferMediaSource?> showOfferMediaSourceSheet(
   BuildContext context, {
   required int remaining,
+  String documentsUnavailableKey = OfferMediaSourceSheet.offerDocumentsHint,
 }) {
   final colors = Theme.of(context).colorScheme;
   return showModalBottomSheet<OfferMediaSource>(
@@ -26,15 +30,28 @@ Future<OfferMediaSource?> showOfferMediaSourceSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (_) => OfferMediaSourceSheet(remaining: remaining),
+    builder: (_) => OfferMediaSourceSheet(
+      remaining: remaining,
+      documentsUnavailableKey: documentsUnavailableKey,
+    ),
   );
 }
 
 class OfferMediaSourceSheet extends StatelessWidget {
-  const OfferMediaSourceSheet({super.key, required this.remaining});
+  const OfferMediaSourceSheet({
+    super.key,
+    required this.remaining,
+    this.documentsUnavailableKey = offerDocumentsHint,
+  });
 
-  /// How many more items the Offer can take.
+  static const String offerDocumentsHint =
+      'offerMediaSourceDocumentsUnavailable';
+
+  /// How many more items the record can take.
   final int remaining;
+
+  /// The ARB key of the Documents tile's "not available" hint.
+  final String documentsUnavailableKey;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +116,7 @@ class OfferMediaSourceSheet extends StatelessWidget {
                     key: const Key('offerMediaSource.documents'),
                     icon: Icons.description_outlined,
                     label: loc.translate('offerMediaSourceDocuments'),
-                    hint: loc.translate('offerMediaSourceDocumentsUnavailable'),
+                    hint: loc.translate(documentsUnavailableKey),
                     onTap: null,
                   ),
                 ),

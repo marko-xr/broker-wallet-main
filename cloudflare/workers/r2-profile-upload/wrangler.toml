@@ -32,6 +32,10 @@ ALLOWED_ORIGIN = "*"
 # Ships off. Changing it is an owner-approved step: dry_run first, inspect the
 # logged counts, and only then on.
 OFFER_MEDIA_SWEEP_MODE = "off"
+# Owner-media cleanup sweeps (worker.js runOwnerMediaSweeps), switched
+# separately: off | dry_run | on. Ships off, under the same owner-approved
+# procedure as the Offer sweeps.
+OWNER_MEDIA_SWEEP_MODE = "off"
 
 [secrets]
 required = [
@@ -72,6 +76,8 @@ R2_S3_ENDPOINT = "https://cb2f5eeef339651f8c7d94dd04866726.r2.cloudflarestorage.
 ALLOWED_ORIGIN = "*"
 # Offer-media cleanup sweeps: off | dry_run | on. Ships off (see above).
 OFFER_MEDIA_SWEEP_MODE = "off"
+# Owner-media cleanup sweeps: off | dry_run | on. Ships off (see above).
+OWNER_MEDIA_SWEEP_MODE = "off"
 
 [env.staging.secrets]
 required = [

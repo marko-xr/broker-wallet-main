@@ -134,12 +134,32 @@ short-lived signed URLs, and the service-role-only `confirm_offer_media_upload`
 function attaches them (migration `20260926092220`, APPLIED + VERIFIED_HOSTED).
 Signed links are held in memory only. Limits: 10 items per Offer, images
 10 MiB, videos 100 MiB and 3 minutes, checked on the device and again by the
-Worker. Production Worker `ecaf125d-a0e3-4c26-add6-5f2c684c2516`
-(owner-reported; rollback `bacad8d6-b7e2-434b-88e4-965c91c82874`) runs with the
+Worker. The production Worker (`6387e2c0-db49-43eb-a0e0-edaca76e3e5e` since
+the Owner media deployment of 2026-09-28, owner-reported; it served Offer
+media as `ecaf125d-a0e3-4c26-add6-5f2c684c2516` before that) runs with the
 Offer-media sweeps `off`. Interruption, account switching, permission refusal,
 process death, iOS and sweep scenarios are NOT RUN (`MEDIA-12`…`MEDIA-26` in
-the deferred master test plan). Private Offer documents (Task C) are deferred;
-Owner media is the next separate checkpoint.
+the deferred master test plan). Private Offer documents (Task C) are deferred.
+
+Owner private media is the active checkpoint (2026-09-28): the Offer media
+lifecycle for Owner records, under the same rules (owner decision). Source is
+written for all three layers — the `confirm_owner_media_upload` migration with
+its pgTAP and rollback-only validation, the Worker's Owner routes with
+per-entity abandoned-upload cleanup (F1), and the Flutter Owner form, details
+gallery, shared upload queue and per-form lost-picker recovery (F2). The owner
+reports the Worker suite at 120/120 and the targeted Flutter suite at 60/60,
+and `flutter analyze` with no errors or warnings. The migration is APPLIED +
+VERIFIED_HOSTED as version `20260928131828` (owner-applied and read back; the
+repository file carries that version). The Worker with the Owner routes is
+deployed (owner-reported): staging `ac033060-5cbf-4b9c-8932-592bd88ab6ef`,
+where the repository's acceptance runner
+(`cloudflare/workers/r2-profile-upload/staging-acceptance/`) passed 126/126,
+and production `6387e2c0-db49-43eb-a0e0-edaca76e3e5e` (rollback
+`ecaf125d-a0e3-4c26-add6-5f2c684c2516`), whose smoke tests passed; every media
+sweep stays `off`. Still open: the second, day-later phase of the F1 staging
+check, and all Owner media device acceptance, including F2's lost-picker
+scenario (see `docs/CURRENT_CHECKPOINT.md`). The milestone is committed
+locally on `feature/owner-private-media`.
 
 The Realtime `RealtimeSubscribeException` on `public.notifications` observed
 during the first failed recovery test did not reproduce after the quarantine

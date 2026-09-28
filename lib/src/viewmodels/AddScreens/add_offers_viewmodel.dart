@@ -13,6 +13,8 @@ import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/media_parent.dart';
+import 'package:broker_wallet/src/services/media_pick_recovery.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
@@ -23,6 +25,7 @@ import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_source_sheet.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
+import 'package:uuid/uuid.dart';
 import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../services/ScreenServices/offer_service.dart';
@@ -102,6 +105,18 @@ class AddOffersViewModel extends ChangeNotifier
   /// The Offer this form's media belongs to, once it has an id.
   String? get _mediaOfferId => _editOfferId ?? _offerId;
 
+  /// This form while its Offer has no id yet (see [MediaPickOrigin]).
+  final String _mediaPickSession = const Uuid().v4();
+
+  /// Which form a picker opened here belongs to: this account, an Offer, and
+  /// this Offer — or this form, until the Offer has an id.
+  MediaPickOrigin? get _mediaPickOrigin => MediaPickOrigin.of(
+        accountId: _offerService.currentOwnerId,
+        parent: MediaParent.offer,
+        recordId: _mediaOfferId,
+        formSessionId: _mediaPickSession,
+      );
+
   void _startOfferMedia() {
     _offerService.offerMediaUploadChanges.addListener(_onUploadsChanged);
     _uploadCompletions = _offerService.offerMediaUploadCompletions.listen(
@@ -122,11 +137,13 @@ class AddOffersViewModel extends ChangeNotifier
   }
 
   /// Picks Android handed back after it stopped the app while the picker was
-  /// open: screened and added like any other selection, so nothing the user
-  /// chose is silently lost — they appear in the form's grid.
+  /// open on this same form — this account, this Offer: screened and added
+  /// like any other selection, so nothing the user chose is silently lost —
+  /// they appear in the form's grid. Another form's pick is never adopted.
   Future<void> _recoverLostSelection() async {
     try {
-      final recovered = await _mediaPicker.recoverLostSelection();
+      final recovered =
+          await _mediaPicker.recoverLostSelection(origin: _mediaPickOrigin);
       if (recovered.isEmpty || _disposed) return;
       await addPickedOfferMedia(recovered);
     } catch (_) {
@@ -787,15 +804,20 @@ class AddOffersViewModel extends ChangeNotifier
     try {
       final source = await _chooseMediaSource(context, remaining);
       if (source == null || !context.mounted) return;
+      final origin = _mediaPickOrigin;
       switch (source) {
         case OfferMediaSource.gallery:
-          picked = await _mediaPicker.pickFromGallery(limit: remaining);
+          picked = await _mediaPicker.pickFromGallery(
+            limit: remaining,
+            origin: origin,
+          );
         case OfferMediaSource.cameraPhoto:
-          final photo = await _mediaPicker.capturePhoto();
+          final photo = await _mediaPicker.capturePhoto(origin: origin);
           picked = [if (photo != null) photo];
         case OfferMediaSource.cameraVideo:
           final video = await _mediaPicker.recordVideo(
             maxDuration: OfferMediaPolicy.maxVideoDuration,
+            origin: origin,
           );
           picked = [if (video != null) video];
       }

@@ -68,8 +68,10 @@ function isoAgo(ms) {
 }
 
 /** Matches simple PostgREST filters: eq.x, is.null, lt.x and like.x* (with `*`
- * as the wildcard). Enough for these tests. */
+ * as the wildcard), each optionally negated with `not.`. Enough for these
+ * tests. */
 function matches(rowValue, filter) {
+  if (filter.startsWith('not.')) return !matches(rowValue, filter.slice('not.'.length));
   const dot = filter.indexOf('.');
   const op = filter.slice(0, dot);
   const operand = filter.slice(dot + 1);

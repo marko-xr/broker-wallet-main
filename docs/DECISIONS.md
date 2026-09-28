@@ -357,7 +357,8 @@
   app-made explanation dialog and no READ_MEDIA_* request is shown for it. Camera
   permission is requested once by the system dialog at use. Documents stay
   unavailable for Offers until a secure Offer-document backend is approved
-  (Task C). Owner, profile and Toolkit pickers keep their existing flows.
+  (Task C). Profile and Toolkit pickers keep their existing flows; Owner
+  media uses this sheet (below).
 - Video players are owned by holders: a widget that receives a controller from
   VideoPlayerResourceManager holds it until it calls release; the manager
   disposes a controller only when no widget holds it (idle players make room,
@@ -370,5 +371,56 @@
   camera on flutter.dev's `camera` package was approved and built on
   2026-09-27, crashed on the Samsung after the permission grant, and the
   owner withdrew that approval the same day. Camera output is screened by
-  its real size, type and length like any Gallery pick. Owner, profile and
-  Toolkit keep their existing capture flows.
+  its real size, type and length like any Gallery pick. Profile and Toolkit
+  keep their existing capture flows; Owner media uses this one (below).
+- Owner media follows the Offer media rules (owner decision, 2026-09-28):
+  photos and videos only; at most 10 per Owner record; photos ≤ 10 MiB after
+  HEIC → JPEG; videos ≤ 100 MiB and ≤ 3 minutes; Documents unavailable until
+  a secure document workflow is approved; a soft-deleted Owner's media kept 7
+  days, its cleanup sweeps (`OWNER_MEDIA_SWEEP_MODE`) off until the owner
+  approves them. The attachment UX is the Offer's: system camera (Take photo /
+  Record video), one combined Gallery selection, no app-made permission
+  dialog.
+- Owner media reuses the Offer media lifecycle rather than a second system:
+  one Media Worker lifecycle parameterized by the parent record
+  (`MEDIA_PARENTS`: its own routes `/owner-media…`, table `owners`, link table
+  `owner_media`, key segment `profiles/<uid>/owners/<id>/` and service-role
+  confirm function `confirm_owner_media_upload`), and one Flutter upload queue
+  whose tasks name their parent (one box, one directory, one sweep, one
+  account purge). Parents never reach each other's media: every Worker check
+  and the database function compare the object key with the parent's own.
+- The Worker's abandoned-upload cleanup at authorize (pending_upload older
+  than 24 h) is scoped to one media entity, never the whole account (owner
+  decision F1, 2026-09-28): the profile-image authorize withdraws only the
+  account's own profile-image keys (`profiles/<uid>/<id>.<ext>`, nothing
+  nested), an Offer or Owner authorize only that record's own keys
+  (`profiles/<uid>/<segment>/<recordId>/`). The key filter is in the query
+  (another entity's older rows cannot fill the 10-row batch) and every row is
+  re-checked against the entity's exact key before deletion. Same 24 h
+  policy, same batch, account and bucket filters; eligibility only narrowed.
+- A photo or video Android hands back after it stopped the app mid-pick
+  (`retrieveLostData`) goes back only to the form it was picked on (owner
+  decision F2, 2026-09-28), routed by a persisted origin, never by timing
+  (`MediaPickRecovery`): before an Offer/Owner picker opens, the form's origin
+  — account, Offer/Owner, record id, or a per-form session id while the
+  record has none — is saved, and cleared when the picker returns; once per
+  process, at start-up before any picker can open, Android's result is kept
+  under the origin that was pending, or not adopted when none was (another
+  picker in the app) or when it was a not-yet-saved record's form (that form
+  did not survive the restart); a form takes only a result whose origin is
+  exactly its own, once. Consequence accepted with it: a pick lost while
+  adding a new Offer/Owner is not recovered.
+- A migration file in `supabase/migrations/` carries the version the hosted
+  migration history registered when the owner applied it, so local and hosted
+  histories match: the file is renamed afterwards with its SQL byte-identical
+  (SHA-256 compared before and after), as for `20260926092220` (Offer) and
+  `20260928131828` (Owner). The rollback-only validation script that passed
+  against the hosted database is kept exactly as it was run, even where its
+  labels still name the earlier file (owner instruction, 2026-09-28).
+- Owner media's staging acceptance is a repository runner
+  (`cloudflare/workers/r2-profile-upload/staging-acceptance/`), run only by
+  the owner and only against the staging Worker, with fresh disposable
+  accounts and records. It records statuses, Worker codes and ids only —
+  never credentials, account ids, object keys or URLs — and its reports stay
+  local (gitignored). F1 needs abandoned uploads older than 24 h, so it runs
+  in two phases a day apart (`-Mode Full` seeds, `-Mode F1Verify` checks).

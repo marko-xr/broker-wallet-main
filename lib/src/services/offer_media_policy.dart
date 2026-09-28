@@ -39,6 +39,8 @@ enum OfferMediaRejection {
         'video_too_large' => OfferMediaRejection.videoTooLarge,
         'video_too_long' => OfferMediaRejection.videoTooLong,
         'offer_media_limit_reached' => OfferMediaRejection.limitReached,
+        // The same refusal for an Owner record (see MediaParent.owner).
+        'owner_media_limit_reached' => OfferMediaRejection.limitReached,
         'upload_rejected' => OfferMediaRejection.rejected,
         'idempotency_mismatch' => OfferMediaRejection.rejected,
         'media_id_conflict' => OfferMediaRejection.rejected,

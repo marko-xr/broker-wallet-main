@@ -11,6 +11,8 @@ import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:broker_wallet/src/services/media_pick_recovery.dart';
+
 /// Where new Offer media comes from.
 enum OfferMediaSource { cameraPhoto, cameraVideo, gallery }
 
@@ -53,19 +55,28 @@ class OfferMediaPickerException implements Exception {
 /// Offer media rules (count, size, real type, duration, HEIC conversion)
 /// before it enters the form, and the upload queue copies it into the app's
 /// own storage when the Offer is saved.
+///
+/// Every picker is opened for an `origin` — the form asking (see
+/// [MediaPickOrigin]). On Android, what the system hands back after it
+/// stopped the app mid-pick goes back to that form alone
+/// ([recoverLostSelection]); never to another record, kind of record or
+/// account.
 class OfferMediaPicker {
   OfferMediaPicker({
     ImagePicker? picker,
     Future<bool> Function()? cameraPermanentlyDenied,
     bool? isAndroid,
+    MediaPickRecovery? recovery,
   })  : _picker = picker ?? ImagePicker(),
         _cameraPermanentlyDenied =
             cameraPermanentlyDenied ?? _cameraIsPermanentlyDenied,
-        _isAndroid = isAndroid ?? (!kIsWeb && Platform.isAndroid);
+        _isAndroid = isAndroid ?? (!kIsWeb && Platform.isAndroid),
+        _recovery = recovery ?? MediaPickRecovery.instance;
 
   final ImagePicker _picker;
   final Future<bool> Function() _cameraPermanentlyDenied;
   final bool _isAndroid;
+  final MediaPickRecovery _recovery;
 
   /// Photos keep the scale and quality the app's pickers already use.
   static const double _maxImageDimension = 1920;
@@ -80,43 +91,74 @@ class OfferMediaPicker {
   }
 
   /// Photos and videos chosen together in one native selection, at most
-  /// [limit]. Empty when the user cancels.
-  Future<List<File>> pickFromGallery({required int limit}) async {
+  /// [limit], for the form [origin]. Empty when the user cancels.
+  Future<List<File>> pickFromGallery({
+    required int limit,
+    required MediaPickOrigin? origin,
+  }) async {
     if (limit < 1) return const <File>[];
-    final picked = await _withPhotoPicker(() => _picker.pickMultipleMedia(
-          limit: limit,
-          imageQuality: _imageQuality,
-          maxWidth: _maxImageDimension,
-          maxHeight: _maxImageDimension,
-        ));
+    final picked = await _forOrigin(
+        origin,
+        () => _withPhotoPicker(() => _picker.pickMultipleMedia(
+              limit: limit,
+              imageQuality: _imageQuality,
+              maxWidth: _maxImageDimension,
+              maxHeight: _maxImageDimension,
+            )));
     return [for (final file in picked) File(file.path)];
   }
 
-  /// A photo taken with the camera, or null when the user cancels.
-  Future<File?> capturePhoto() => _camera(() => _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: _imageQuality,
-        maxWidth: _maxImageDimension,
-        maxHeight: _maxImageDimension,
-      ));
+  /// A photo taken with the camera for the form [origin], or null when the
+  /// user cancels.
+  Future<File?> capturePhoto({required MediaPickOrigin? origin}) => _camera(
+      origin,
+      () => _picker.pickImage(
+            source: ImageSource.camera,
+            imageQuality: _imageQuality,
+            maxWidth: _maxImageDimension,
+            maxHeight: _maxImageDimension,
+          ));
 
-  /// A video recorded with the camera, or null when the user cancels.
-  Future<File?> recordVideo({required Duration maxDuration}) => _camera(() =>
-      _picker.pickVideo(source: ImageSource.camera, maxDuration: maxDuration));
+  /// A video recorded with the camera for the form [origin], or null when the
+  /// user cancels.
+  Future<File?> recordVideo({
+    required Duration maxDuration,
+    required MediaPickOrigin? origin,
+  }) =>
+      _camera(
+          origin,
+          () => _picker.pickVideo(
+              source: ImageSource.camera, maxDuration: maxDuration));
 
-  /// Media picked just before Android stopped the app while the picker was
-  /// open, which Android hands back at the next opportunity. Empty when there
-  /// is none (and on every other platform).
-  Future<List<File>> recoverLostSelection() async {
+  /// Media picked on the form [origin] just before Android stopped the app
+  /// while its picker was open, which Android hands back after the restart.
+  /// Empty when there is none for exactly this form (and on every other
+  /// platform): another form's result is never handed out here.
+  Future<List<File>> recoverLostSelection({
+    required MediaPickOrigin? origin,
+  }) async {
     if (!_isAndroid) return const <File>[];
     try {
-      final response = await _picker.retrieveLostData();
-      if (response.isEmpty) return const <File>[];
-      final files =
-          response.files ?? [if (response.file != null) response.file!];
-      return [for (final file in files) File(file.path)];
+      return await _recovery.take(origin);
     } catch (_) {
       return const <File>[];
+    }
+  }
+
+  /// Runs [pick] with [origin] recorded as the form waiting for it, so that a
+  /// result Android hands back after stopping the app can go back to it alone.
+  /// The record is cleared when [pick] returns here: a pick, a cancel or an
+  /// error.
+  Future<T> _forOrigin<T>(
+    MediaPickOrigin? origin,
+    Future<T> Function() pick,
+  ) async {
+    if (!_isAndroid) return pick();
+    await _recovery.beginPick(origin);
+    try {
+      return await pick();
+    } finally {
+      await _recovery.endPick();
     }
   }
 
@@ -132,9 +174,12 @@ class OfferMediaPicker {
     }
   }
 
-  Future<File?> _camera(Future<XFile?> Function() pick) async {
+  Future<File?> _camera(
+    MediaPickOrigin? origin,
+    Future<XFile?> Function() pick,
+  ) async {
     try {
-      final picked = await pick();
+      final picked = await _forOrigin(origin, pick);
       return picked == null ? null : File(picked.path);
     } on PlatformException catch (error) {
       if (error.code == 'camera_access_denied') {

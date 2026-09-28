@@ -132,11 +132,19 @@ class AddOwnersView extends StatelessWidget {
                             onClearAll: vm.clearAllFiles,
                             isUploading: vm.isUploading,
                             localization: localization,
-                            maxDisplayFiles: 3, // Standardized to 3 like offers
+                            // Standardized to 3 like offers; "+N more" opens
+                            // the rest, so every item stays reachable.
+                            maxDisplayFiles: vm.mediaDisplayCount,
                             showUploadButton:
                                 false, // Disable upload button - we save immediately
                             showImagePreview: false,
                             hintText: localization.translate('uploadMediaHint'),
+                            offerMedia: vm.usesOwnerMediaItems
+                                ? vm.ownerMediaItems
+                                : null,
+                            onRemoveOfferMedia: vm.removeOwnerMediaAt,
+                            onRetryOfferMedia: vm.retryOwnerMediaAt,
+                            onShowAllMedia: vm.showAllMedia,
                           ),
                         ],
                       ),

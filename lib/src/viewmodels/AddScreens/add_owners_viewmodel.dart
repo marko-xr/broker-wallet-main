@@ -11,14 +11,18 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
 import 'package:broker_wallet/src/services/clean_media_service.dart';
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/offer_media_picker.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/common/enums/add_owners_mode.dart';
+import 'package:broker_wallet/src/viewmodels/private_media_form.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
 import '../../services/ScreenServices/owner_service.dart';
 
 class AddOwnersViewModel extends ChangeNotifier
     implements LocationCapableViewModel {
-  final OwnerService _ownerService = OwnerService();
+  final OwnerService _ownerService;
   final CleanMediaService _cleanMediaService = CleanMediaService();
 
   // Edit mode properties
@@ -31,8 +35,23 @@ class AddOwnersViewModel extends ChangeNotifier
     AddOwnersMode mode = AddOwnersMode.add,
     String? ownerId,
     OwnerModel? ownerData,
+    OwnerService? ownerService,
+    bool? usesMediaQueue,
+    OfferMediaPicker? mediaPicker,
+    Future<OfferMediaSource?> Function(BuildContext context, int remaining)?
+        chooseMediaSource,
   })  : _mode = mode,
-        _editOwnerId = ownerId {
+        _editOwnerId = ownerId,
+        _ownerService = ownerService ?? OwnerService(),
+        _usesMediaQueue = usesMediaQueue ?? SupabaseConfig.useSupabaseAuth {
+    if (_usesMediaQueue) {
+      _media = PrivateMediaForm(
+        store: _ownerService,
+        onChanged: _onMediaChanged,
+        picker: mediaPicker,
+        chooseSource: chooseMediaSource,
+      );
+    }
     if (_mode == AddOwnersMode.edit) {
       if (ownerData != null) {
         // Use pre-loaded data for instant UI fill
@@ -43,6 +62,53 @@ class AddOwnersViewModel extends ChangeNotifier
         _loadOwnerForEdit();
       }
     }
+    _media?.start(editRecordId: isEditMode ? _editOwnerId : null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owner private media (Supabase mode): the Offer media lifecycle for Owner
+  // records — private R2 through the Media Worker's Owner routes, the shared
+  // upload queue, local-first display — addressed by identity, never by URL.
+  // The legacy Firebase mode keeps its own picker and upload below.
+  // ---------------------------------------------------------------------------
+
+  final bool _usesMediaQueue;
+  PrivateMediaForm? _media;
+  String? _createdOwnerId;
+  bool _disposed = false;
+
+  void _onMediaChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Whether the Owner media form uses [ownerMediaItems].
+  bool get usesOwnerMediaItems => _usesMediaQueue;
+
+  /// Owner media as the form shows it (Supabase mode); empty otherwise.
+  List<OfferMediaRef> get ownerMediaItems =>
+      _media?.items ?? const <OfferMediaRef>[];
+
+  /// How many items the media grid shows: the first three, or all of them
+  /// once "+N more" was tapped.
+  int get mediaDisplayCount => _media?.displayCount ?? 3;
+
+  void showAllMedia() => _media?.showAll();
+
+  /// Removes the item at [index] of [ownerMediaItems]: a picked file at once;
+  /// a server item or a queued upload when the Owner is saved.
+  void removeOwnerMediaAt(int index) => _media?.removeAt(index);
+
+  /// Retries the queued upload at [index] of [ownerMediaItems].
+  void retryOwnerMediaAt(int index) => _media?.retryAt(index);
+
+  @visibleForTesting
+  PrivateMediaForm? get mediaForm => _media;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _media?.dispose();
+    super.dispose();
   }
 
   // Getters for mode
@@ -148,8 +214,9 @@ class AddOwnersViewModel extends ChangeNotifier
   List<PlatformFile> get selectedFiles => _selectedFiles;
   List<String> get uploadedFileUrls => _uploadedFileUrls;
   bool get isUploading => _isUploading;
-  bool get hasMediaFiles =>
-      _selectedFiles.isNotEmpty || _uploadedFileUrls.isNotEmpty;
+  bool get hasMediaFiles => _usesMediaQueue
+      ? ownerMediaItems.isNotEmpty
+      : _selectedFiles.isNotEmpty || _uploadedFileUrls.isNotEmpty;
 
   // Phone getters
   String get phone => _phone;
@@ -301,6 +368,13 @@ class AddOwnersViewModel extends ChangeNotifier
 
   // Media selection using clean permission system
   Future<void> selectMedia(BuildContext context) async {
+    final media = _media;
+    if (media != null) {
+      // Supabase mode: the Offer media sheet and pickers (system camera,
+      // one combined Gallery selection, no app-made permission dialog).
+      await media.select(context);
+      return;
+    }
     // Debug log suppressed: selectMedia called - starting media selection with clean permissions
     try {
       // Show comprehensive media selection dialog
@@ -361,6 +435,11 @@ class AddOwnersViewModel extends ChangeNotifier
 
   // Clear all selected files
   void clearAllFiles() {
+    final media = _media;
+    if (media != null) {
+      media.clearAll();
+      return;
+    }
     // Track all existing URLs for removal if we're in edit mode
     if (isEditMode) {
       _removedMediaUrls.addAll(_uploadedFileUrls);
@@ -413,6 +492,21 @@ class AddOwnersViewModel extends ChangeNotifier
         return;
       }
 
+      final media = _media;
+      if (media != null) {
+        // Re-checked at save time, not only at selection: media may have
+        // been added on another device since this form opened. The Media
+        // Worker enforces the same limit authoritatively.
+        if (media.isOverLimit) {
+          _error = AppLocalizations.of(context)
+              .translate(media.parent.limitReachedKey);
+          _showToast(_error!, Colors.red);
+          return;
+        }
+        await _saveWithUploadQueue(context, media);
+        return;
+      }
+
       if (isEditMode) {
         await _handleEditMode(context);
       } else {
@@ -433,6 +527,102 @@ class AddOwnersViewModel extends ChangeNotifier
       _isLoading = false;
       notifyListeners();
       // Debug log suppressed: SAVE PROCESS COMPLETED
+    }
+  }
+
+  /// Saves the Owner and hands its new media to the upload queue (Supabase).
+  ///
+  /// The Owner is saved without waiting for any upload, and what happened to
+  /// its media is reported as it went: new items are uploading, never
+  /// "uploaded". An item that could not be queued or removed stays in the
+  /// form, which stays open, and Save retries exactly that — every item keeps
+  /// its id, so nothing is ever duplicated.
+  Future<void> _saveWithUploadQueue(
+    BuildContext context,
+    PrivateMediaForm media,
+  ) async {
+    final loc = AppLocalizations.of(context);
+    final editOwnerId = isEditMode ? _editOwnerId : null;
+    final editing = editOwnerId != null;
+    final String recordId;
+    if (editOwnerId != null) {
+      recordId = editOwnerId;
+    } else {
+      // Once created, a retried Save updates the same Owner: no second quota
+      // check and no second count.
+      if (_createdOwnerId == null) {
+        final canAdd = await CoreEntityQuotaBridge.canCreate(
+          context: context,
+          section: 'owners',
+        );
+        if (!canAdd) return;
+      }
+      recordId = _ownerId ??= _ownerService.generateNewOwnerId();
+    }
+    media.recordId = recordId;
+
+    final removed = media.removedIds;
+    final cancelled = media.cancelledIds;
+    final owner = _createOwnerModel();
+    final result = await _ownerService.saveOwnerWithMedia(
+      owner: owner,
+      ownerRecordId: recordId,
+      newMedia: media.drafts,
+      removedMediaIds: removed,
+      cancelledUploadIds: cancelled,
+    );
+
+    if (!editing && _createdOwnerId == null) {
+      _createdOwnerId = recordId;
+      await CoreEntityQuotaBridge.recordCreated(section: 'owners');
+    }
+
+    media.applySaveResult(
+      removed: removed,
+      cancelled: cancelled,
+      failedRemovalIds: result.failedRemovalIds,
+      failedToQueueIds: result.failedToQueueIds,
+    );
+
+    if (!context.mounted) return;
+    if (!result.isComplete) {
+      if (result.failedToQueueIds.isNotEmpty) {
+        _showToast(loc.translate(media.parent.prepareFailedKey), Colors.red);
+      }
+      if (result.failedRemovalIds.isNotEmpty) {
+        _showToast(loc.translate(media.parent.removeFailedKey), Colors.red);
+      }
+      return;
+    }
+
+    final uploading = result.queuedCount > 0;
+    if (editing) {
+      _showToast(
+        uploading
+            ? loc.translate(media.parent.updatedUploadingKey)
+            : 'Owner updated successfully!',
+        Colors.green,
+      );
+      // The saved row, read back, goes to Owner Details — with its id, so
+      // Details can load the Owner's media again.
+      OwnerModel returned = owner.copyWith(
+        id: recordId,
+        createdAt: _originalOwner?.createdAt,
+      );
+      try {
+        returned = await _ownerService.getOwner(recordId) ?? returned;
+      } catch (_) {
+        // The locally built model, with its id, is still correct to show.
+      }
+      if (context.mounted) context.pop(returned);
+    } else {
+      _showToast(
+        uploading
+            ? loc.translate(media.parent.savedUploadingKey)
+            : 'Owner saved successfully!',
+        Colors.green,
+      );
+      context.go('/home');
     }
   }
 

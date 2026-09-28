@@ -1,6 +1,11 @@
 ﻿import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/action_decorations.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
+import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
+    show OfferMediaUploadCompleted;
+import 'package:broker_wallet/src/views/Screens/ViewDetails/private_media_gallery_loader.dart';
 import 'dart:async';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
@@ -57,6 +62,12 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   // Upload completion listener
   StreamSubscription<UploadCompletedEvent>? _uploadCompletionSubscription;
 
+  // Owner private media (Supabase mode): the record's media, and the upload
+  // queue's items for it and each one the server has accepted.
+  PrivateMediaGalleryLoader? _mediaLoader;
+  Listenable? _ownerMediaUploads;
+  StreamSubscription<OfferMediaUploadCompleted>? _ownerMediaCompletions;
+
   // Track current owner data (may be updated after edit)
   late OwnerModel _currentOwner;
 
@@ -71,8 +82,61 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     _optimisticFavoritesService =
         Provider.of<OptimisticFavoritesService>(context, listen: false);
     _setupAnimations();
+    _createMediaLoader();
     _initializeMediaController();
     _setupUploadCompletionListener();
+    _setupOwnerMediaUploadListener();
+    unawaited(_mediaLoader?.load());
+  }
+
+  /// Private R2 media, addressed by identity (Supabase mode). The legacy
+  /// Firebase backend keeps showing the Owner's stored media URLs.
+  bool get _usesPrivateMedia => SupabaseConfig.useSupabaseAuth;
+
+  void _createMediaLoader() {
+    final id = _currentOwner.id?.trim();
+    if (!_usesPrivateMedia || id == null || id.isEmpty) return;
+    _mediaLoader = PrivateMediaGalleryLoader(
+      recordId: id,
+      store: _ownerService,
+      onChanged: _handleMediaChanged,
+    );
+  }
+
+  void _setupOwnerMediaUploadListener() {
+    if (_mediaLoader == null) return;
+    try {
+      final uploads = _ownerService.uploadChanges;
+      uploads.addListener(_handleMediaChanged);
+      _ownerMediaUploads = uploads;
+      _ownerMediaCompletions =
+          _ownerService.uploadCompletions.listen((event) {
+        if (!mounted || event.offerId != _currentOwner.id) return;
+        // The item is on the server now: show it from there.
+        unawaited(_mediaLoader?.load());
+      }, onError: (Object _) {});
+      unawaited(_ownerService.loadUploads());
+    } catch (_) {
+      // Without the queue there is nothing pending to show.
+    }
+  }
+
+  void _handleMediaChanged() {
+    if (!mounted) return;
+    setState(() {
+      // Media can become drawable after this screen was first built, so the
+      // pager is created on demand.
+      _initializeMediaController();
+      _cachedMediaGallery = null;
+    });
+  }
+
+  /// Whether the header shows media (or its loading problem) rather than the
+  /// plain gradient. An Owner with no media keeps the compact header.
+  bool get _hasMediaHeader {
+    final loader = _mediaLoader;
+    if (loader != null) return loader.hasRenderableMedia || loader.loadFailed;
+    return _currentOwner.mediaUrls.isNotEmpty;
   }
 
   void _setupAnimations() {
@@ -117,7 +181,12 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   }
 
   void _initializeMediaController() {
-    if (_currentOwner.mediaUrls.isNotEmpty) {
+    if (_mediaPageController != null) return;
+    final loader = _mediaLoader;
+    final hasMedia = loader != null
+        ? loader.hasRenderableMedia
+        : _currentOwner.mediaUrls.isNotEmpty;
+    if (hasMedia) {
       _mediaPageController = PageController();
     }
   }
@@ -151,6 +220,9 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
 
   @override
   void dispose() {
+    _mediaLoader?.dispose();
+    _ownerMediaUploads?.removeListener(_handleMediaChanged);
+    _ownerMediaCompletions?.cancel();
     _uploadCompletionSubscription?.cancel();
     _mainAnimationController.dispose();
     _fabAnimationController.dispose();
@@ -197,7 +269,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return SliverAppBar(
-      expandedHeight: _currentOwner.mediaUrls.isNotEmpty ? 280 : 200,
+      expandedHeight: _hasMediaHeader ? 280 : 200,
       floating: false,
       pinned: true,
       stretch: true,
@@ -290,9 +362,76 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: RepaintBoundary(
-          child: _currentOwner.mediaUrls.isNotEmpty
-              ? _buildCachedMediaGallery()
+          child: _hasMediaHeader
+              ? _buildMediaHeader(context)
               : _buildGradientHeader(colors, texts),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaHeader(BuildContext context) {
+    final loader = _mediaLoader;
+    if (loader == null) return _buildCachedMediaGallery();
+    if (loader.hasRenderableMedia) return _buildPrivateMediaGallery(loader);
+    return _buildMediaErrorHeader(context);
+  }
+
+  /// The Owner's private media: photos, videos (with their still frames,
+  /// private playback and seeking) and this device's queued items with
+  /// their upload state — the Offer Details gallery, for an Owner.
+  Widget _buildPrivateMediaGallery(PrivateMediaGalleryLoader loader) {
+    _cachedMediaGallery ??= OptimizedMediaGalleryWidget(
+      mediaRefs: loader.displayItems,
+      imagePlaceholder: const MediaLoadingPlaceholder(),
+      pageController: _mediaPageController,
+      onPageChanged: (index) {
+        setState(() {
+          _currentMediaIndex = index;
+        });
+      },
+      showControls: true,
+      autoPlay: false,
+      fallbackSvgPath: 'assets/icons/profile-person.svg',
+      onRetry: () => unawaited(loader.retry()),
+      onRetryUpload: (mediaObjectId) =>
+          unawaited(_ownerService.retryUpload(mediaObjectId)),
+      onRemoveUpload: (mediaObjectId) =>
+          unawaited(_ownerService.cancelUpload(mediaObjectId)),
+      refreshSignedUrl: loader.refreshSignedUrl,
+    );
+    return _cachedMediaGallery!;
+  }
+
+  /// The Owner's media could not be loaded (nothing established about
+  /// access): the same explained, retryable state as Offer Details.
+  Widget _buildMediaErrorHeader(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return Container(
+      color: colors.errorContainer,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.broken_image_outlined,
+              size: 42,
+              color: colors.onErrorContainer,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              loc.translate('failedToLoadImage'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onErrorContainer,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => unawaited(_mediaLoader?.retry()),
+              child: Text(loc.translate('retry')),
+            ),
+          ],
         ),
       ),
     );
@@ -1359,6 +1498,8 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         _cachedMapWidget = null;
       });
     }
+    // Media may have been removed or added in the edit: read it again.
+    if (mounted) unawaited(_mediaLoader?.load());
   }
 
   // Show delete confirmation dialog

@@ -5744,7 +5744,7 @@ in the deferred master test plan stay NOT RUN.
 | Staging Worker `r2-profile-upload-staging` | `ab42e479-…`, 72/72 PASS (VERIFIED_HOSTED); its test Offers and 20 staging objects are retained |
 | Flutter tests | Not run by the agent after the camera revert. The last full-suite report (759 PASS / 5 FAIL) predates the revert and included the since-removed camera tests |
 | Task C — private Offer documents | DEFERRED |
-| Owner Media | Next independent checkpoint; not started |
+| Owner Media | ACTIVE since 2026-09-28 (see the next section) |
 
 **Known failing tests (not fixed here; never report them as passing).** Five
 tests read migration files by the names `0d7fb17` changed:
@@ -5761,16 +5761,375 @@ debug builds (since `ddb20a6`; `MEDIA-26`). The Offer-media sweeps stay `off`
 until an owner-approved dry run (`MEDIA-25`). iOS has not been exercised
 (`MEDIA-24`).
 
-**Commit candidate: prepared, NOT staged.** 38 modified and 24 new files, all
-Offer private media: implementation, the migration and its SQL checks,
-Flutter and Worker tests, and docs. Excluded: `lib/main.dart` and the seven
-generated plugin registrant files (line endings only, no content change).
-`pubspec.yaml`, `pubspec.lock` and `AndroidManifest.xml` equal `HEAD` again
-(the `camera` package was removed), so they are not part of it.
+**Committed and pushed.** The owner approved the 62-file candidate (38
+modified, 24 new) and it was committed as `06cd3964bc726be00ebcfc6f6cdc2d5451125dca`
+"feat(offer-media): complete private offer media lifecycle, picker and
+playback" on `feature/offer-private-media`; the owner pushed it. Checked
+2026-09-28 from the Git refs: the local branch and
+`origin/feature/offer-private-media` both point at `06cd396`. Excluded from
+it, and still excluded: generated plugin registrant files whose only
+difference is line endings. (The baseline `ed78c45`, recorded in the
+Phase 2 section as "not pushed", is also on origin now.)
 
-NOW — owner: approve or amend the proposed file list and commit message.
-Optionally run `flutter test` first: the test sources changed by the camera
-revert have not been executed.
+Offer Media is closed; its deferred scenarios stay in the master test plan.
+Owner Media is the active checkpoint (next section).
 
-NEXT — stage exactly those files by path, review `git diff --cached`, commit
-without pushing; then select Owner Media as the next checkpoint.
+## OWNER PRIVATE MEDIA — ACTIVE CHECKPOINT (2026-09-28)
+
+**Owner decision (2026-09-28):** Owner media follows the Offer media rules —
+photos and videos only; at most 10 per Owner record; photos ≤ 10 MiB after
+HEIC → JPEG; videos ≤ 100 MiB and ≤ 3:00; Documents shown but unavailable; a
+soft-deleted Owner's media kept 7 days, its cleanup sweeps off until the owner
+approves them. The same attachment UX as Offers: system camera (Take photo /
+Record video), one combined Gallery selection, no app-made permission dialog.
+
+**State found (source, 2026-09-28).**
+
+- Database: `public.owner_media` (owner_record_id → owners, media_id →
+  media_objects, role, ordinal, unique (owner_record_id, role, ordinal)) with
+  RLS select-own (`owns_owner_record`), the `owner_media_validate_owner`
+  ownership trigger and an index already exist (baseline migrations). No
+  confirm function existed for Owners.
+- Worker: Offer routes only; no Owner routes.
+- Flutter: in Supabase mode, Owner media upload was switched off
+  (`saveOwnerWithMediaFast` threw when files were attached); the Owner form
+  used the legacy `CleanMediaService` dialog; Owner Details showed only legacy
+  Firebase `mediaUrls` (always empty in Supabase mode); Edit never uploaded.
+
+**Backend change (source written, NOT applied, NOT deployed).**
+
+- `supabase/migrations/20260928100000_owner_media_confirm_rpc.sql`:
+  `public.confirm_owner_media_upload(...)`, the line-for-line Owner
+  counterpart of `confirm_offer_media_upload` (lock on the Owner row, per-bucket
+  limit, append ordinal, idempotent, key prefix `profiles/<uid>/owners/<id>/`,
+  outcome `owner_not_found`, 100 MiB ceiling, `SECURITY DEFINER`, empty
+  search_path, service_role only). No table, RLS, index or trigger change.
+  With `supabase/tests/owner_media_confirm_test.sql` (pgTAP, 27) and
+  `supabase/validation/owner_media_confirm_validation.sql` (rollback-only,
+  installs the exact migration text, ends in `ROLLBACK`). Not executed against
+  any database yet. The hosted version number is whatever the owner's apply
+  records; reconcile the file name to it afterwards, as for Offers.
+- `cloudflare/workers/r2-profile-upload/worker.js`: the Offer media handlers
+  are now generalized over a `MEDIA_PARENTS` descriptor (Offer, Owner) and
+  serve `POST /owner-media/authorize`, `POST /owner-media/confirm`,
+  `GET /owner-media?ownerRecordId=`, `POST /owner-media/remove`; Owner sweeps
+  (`runOwnerMediaSweeps`) behind their own `OWNER_MEDIA_SWEEP_MODE` (added
+  `"off"` to both `wrangler.toml` environments). Offer requests, responses,
+  error codes and sweep reports are unchanged. The working-tree `worker.js` is
+  therefore no longer the deployed production source (`94b3ca4a…`).
+- Worker tests: new `test/owner_media.test.mjs` (13). **`npm test` run
+  locally by the agent (Node, no deployment): 116 PASS, 0 FAIL** — the 103
+  existing (Offer media, account deletion, staging gate) plus the 13 Owner.
+
+**Flutter (source written, not built or run).**
+
+- Shared, not copied: `MediaParent` (Offer/Owner routes, id field, limit,
+  record-named messages); `R2OfferMediaUploadService(parent:)`; ONE upload
+  queue whose tasks record their parent (an Owner task persists `parent`, an
+  Offer task is stored exactly as before; per-parent transport, listing,
+  blocking, forgetting and completion events; one box, one directory, one
+  retired-copy sweep, one account purge); `SupabaseCoreEntitiesService`
+  `cachedOwnerMedia` / `resolveOwnerMedia` (the Offer logic, extracted and
+  shared); the device catalogue keyed by record id; the sheet (Documents hint
+  per record), picker, screening, gallery, video tile, posters, full screen.
+- `OwnerService`: `saveOwnerWithMedia` (row first, removals through the Owner
+  routes, cancellations, new items queued as Owner media), media API
+  (`PrivateMediaStore`), Owner delete forgets its queued items and local
+  copies.
+- NEW `PrivateMediaForm` (the Offer form's media behaviour for any record) used
+  by `AddOwnersViewModel` in Supabase mode: sheet, system camera, combined
+  Gallery, screening, remove/retry, lost-data recovery, limit re-check at Save,
+  honest per-item outcomes; Edit loads the Owner's media and returns the saved
+  Owner (with its id) to Details. The legacy Firebase Owner flow is unchanged.
+- NEW `PrivateMediaGalleryLoader` for Owner Details: cached → queued →
+  server list, signed-link refresh for video, revoked access cleared; the
+  header shows the private gallery when there is media, the compact header
+  otherwise (unchanged for Owners without media), a retry state on failure.
+- 7 EN/AR strings (`ownerMedia…`, `ownerSaved…`, `ownerUpdated…`).
+- Offer contract test updated to read the Worker's Offer descriptor (the
+  refactor moved the text it checked); NEW `test/owners/owner_media_test.dart`
+  and `test/owners/owner_media_confirm_contract_test.dart`. Flutter tests NOT
+  run (owner-run).
+
+**Security.** Ownership stays server-side: every Owner route verifies the
+signed-in account owns the live Owner record; media keys name the parent, so
+an Offer's media (or another Owner's) is refused on the Owner routes and vice
+versa (`media_mismatch` / `idempotency_mismatch`, Worker-tested); the
+database function refuses media outside the Owner's key prefix; account B
+gets 404 and nothing is revealed; no signed URL is stored; no credential in
+Flutter; no RLS change. Account deletion already sweeps `profiles/<uid>/`
+(Owner keys included) and the queue purge covers Owner tasks.
+
+**Deploy order (all owner actions):** validation script (SQL Editor,
+rollback-only) → apply the migration → staging Worker deploy + Owner E2E →
+production Worker deploy → Samsung acceptance.
+
+**Backend handoff review (2026-09-28, source only; no hosted access, no
+test run).** Reviewed files (sha256 of the bytes on disk, all LF):
+migration `20260928100000_owner_media_confirm_rpc.sql` `059e31c7ab5ff929…6c4fbb`,
+validation `867405230facbdc4…c73e7444`, pgTAP `df21b80bed368e37…5a5df8f84`;
+`worker.js` (CRLF throughout) `241d367b220e91a5…fb8ea374`. The validation's
+embedded install is byte-identical to the migration with only its `begin;` /
+`commit;` lines removed; the script has one `begin;`, no `commit`, ends in
+`rollback;`, and contains no non-transactional statement. The only effect a
+ROLLBACK cannot undo would come from a database event trigger fired by its
+DDL that advances a sequence (pg_graphql's schema-version counter, if
+installed: a cache counter, no data); PostgREST's `pg_notify` and any
+pg_net webhook are delivered only on commit, so they are discarded. The
+hosted triggers and event triggers were not read (no hosted access); the
+owner can list them read-only first. No blocker found; no source change.
+Open, NOT accepted:
+
+- The Worker's inline abandoned-upload cleanup
+  (`bestEffortCleanupAbandonedPending`, already deployed for profile and Offer
+  authorize) is account-scoped but parent-agnostic: an Owner authorize can
+  remove the same account's `pending_upload` rows older than 24 h under any
+  key (Offer, Owner, profile), and an Offer authorize an Owner's. Never
+  another account's, never ready/failed/recent rows; the app re-authorizes
+  under the same id.
+- Android lost picker data: `retrieveLostData` carries no origin, and both
+  the Offer form and the Owner form adopt it on open, so a photo or video
+  recovered after Android killed the app lands as a draft in whichever
+  Offer/Owner form (any record, and possibly another signed-in account on the
+  same device) opens first; it is attached only if that form is saved.
+
+The Worker suite was run once (116/116) before the owner's instruction not to
+run Worker tests without authorization; it has not been run since.
+
+**Owner's hosted read-only inspection (reported by the owner, 2026-09-28):**
+the required `owners` / `owner_media` / `media_objects` columns, the Owner
+media uniqueness constraint, the enabled `owner_media_validate_owner`
+trigger, the Owner/media SELECT policies and `confirm_offer_media_upload` are
+present; `confirm_owner_media_upload` is NOT installed and `20260928100000`
+is NOT in the hosted migration history; relevant table/event triggers
+inspected; nothing modified. (Owner-reported; not re-read by the agent.)
+
+**Pre-deploy corrections F1 and F2 (owner-approved, 2026-09-28): SOURCE
+WRITTEN, NOT RUN — no build, test, analyzer, Worker test, migration or
+deployment.** The reviewed SQL is unchanged (same three hashes as above).
+
+- F1 — abandoned-upload cleanup per entity. `worker.js`:
+  `bestEffortCleanupAbandonedPending(userId, env, scope)` now selects only
+  the entity's own keys, in the query itself, and re-checks each row's exact
+  key before deleting: `profileCleanupScope` (`/authorize`: the account's
+  `profiles/<uid>/<id>.<ext>` keys, `like` plus `not.like …/*/*`) and
+  `parentCleanupScope` (Offer/Owner authorize: `profiles/<uid>/<segment>/<recordId>/`).
+  Same 24 h cutoff, 10-row batch, account and bucket filters; sweeps and
+  account deletion untouched; both sweep modes still `off`. New
+  `worker.js` sha256 `3b16d8e6aa893833…0b54f92af` (CRLF; LF-normalized
+  `2344b330fb72cc33…570b1977a`). Regression source: 4 new tests in
+  `test/owner_media.test.mjs`; the Offer and Owner test fakes learned
+  `not.` filters.
+- F2 — lost picker result goes back to its own form only. NEW
+  `lib/src/services/media_pick_recovery.dart` (`MediaPickOrigin`,
+  `MediaPickRecovery`); `OfferMediaPicker` records the form's origin before
+  each Gallery/camera launch and clears it on return, and recovers only via
+  `take(origin)`; the Offer form and the shared Owner form pass their origin
+  (account, Offer/Owner, record id or per-form session); `main.dart` routes
+  Android's result once at start-up (`MediaPickRecovery.reconcileAtStartup()`,
+  Android only, non-blocking). Picker, camera, combined Gallery, screening
+  and the upload queue are otherwise unchanged. A pick lost while adding a
+  NEW Offer/Owner is no longer recovered (its form does not survive the
+  restart). Regression source: NEW `test/offers/media_pick_recovery_test.dart`;
+  `test/offers/offer_media_picker_test.dart` updated to the origin API plus a
+  cross-form test.
+- Device/hosted verification pending: `MEDIA-33` (F1, staging) and `MEDIA-34`
+  (F2, Samsung) in the master test plan.
+
+NOW — superseded by the staging preparation section below (the owner ran the
+checks, the validation and the migration).
+
+NEXT — see that section's own NOW/NEXT.
+
+## OWNER PRIVATE MEDIA — HOSTED MIGRATION RECONCILED, STAGING PREPARED (2026-09-28)
+
+This completes the preparation an earlier agent session could not finish: its
+shell tools were blocked by a Claude Code permission-classifier failure (a
+session problem, not a repository, Git, Supabase or Cloudflare one). Nothing
+was deployed, applied, committed or pushed here, and no Flutter, Worker-test,
+adb or hosted-SQL command was run by the agent.
+
+**Owner-run results (owner-reported; not re-run by the agent).**
+
+- Worker suite (`npm test`, including the F1 regressions): 120/120 PASS.
+- Targeted Flutter suite: 60/60 PASS.
+- `flutter analyze`: no errors or warnings; 113 informational findings.
+- Hosted rollback-only `supabase/validation/owner_media_confirm_validation.sql`:
+  34/34 PASS; its temporary results table does not exist afterwards.
+- The migration was applied through Supabase's migration interface and read
+  back independently. Registered version:
+  `20260928131828_owner_media_confirm_rpc`. `confirm_owner_media_upload`
+  exists, `SECURITY DEFINER`, owner `postgres`, empty `search_path`; EXECUTE
+  denied to PUBLIC, `anon` and `authenticated`, allowed to `service_role`;
+  `confirm_offer_media_upload` preserved. **APPLIED + VERIFIED_HOSTED
+  (owner-verified). Do not apply it again.**
+
+**Repository reconciled to the hosted version.**
+
+- `supabase/migrations/20260928100000_owner_media_confirm_rpc.sql` renamed to
+  `supabase/migrations/20260928131828_owner_media_confirm_rpc.sql` (an
+  untracked file, so a plain rename). SHA-256 before and after:
+  `059e31c7ab5ff9296aca7d8cd76eb8c17fbb6a5e66175b6b3da5b4f42d6c4fbb` (8,258
+  bytes, LF): the reviewed bytes, unchanged.
+- `test/owners/owner_media_confirm_contract_test.dart` reads the new path (one
+  line).
+- `supabase/validation/owner_media_confirm_validation.sql` is kept byte for
+  byte as it was run (`867405230facbdc4…c73e7444`); its stage labels still
+  name `20260928100000`, the file name when it passed.
+  `supabase/tests/owner_media_confirm_test.sql` is unchanged
+  (`df21b80bed368e37…5a5df8f84`).
+
+**Worker candidate (unchanged since F1).** `worker.js` sha256
+`3b16d8e6aa893833ea65626eb6ec843fa2f18670ed1bd085cd5572f0b54f92af` (CRLF;
+LF-normalized `2344b330fb72cc331bb9627856e4a2f1d164a5c32c36d6f24ddcddf570b1977a`);
+`wrangler.toml` sha256
+`3de84126b7ccdd1b8fb7d2bbd60f48bfd8e229fea18690a48b3a46216659b0e0` (CRLF;
+LF-normalized `1d5aedd9dad48b8fd759a527a9b9d09a06c688d3bdd2f7bab1cd94bb897320e1`).
+Both environments set `OFFER_MEDIA_SWEEP_MODE = "off"` and
+`OWNER_MEDIA_SWEEP_MODE = "off"` (a missing or unknown value is also off in
+`worker.js`). Buckets: production `broker-wallet-media`, staging
+`broker-wallet-media-staging`.
+
+**Cloudflare, read first-hand (wrangler 4.136.3, read-only, 2026-09-28).**
+
+- Staging `r2-profile-upload-staging` serves
+  `ab42e479-7ff2-445e-8e7e-08b945c9b4a6` (tag `op2-94b3ca4a`, the Offer
+  Phase 2 candidate) at 100%: fetch and scheduled handlers, compatibility
+  date 2024-11-01 with `nodejs_compat`; `MEDIA_BUCKET` →
+  `broker-wallet-media-staging`, `R2_BUCKET_NAME`
+  `broker-wallet-media-staging`, `OFFER_MEDIA_SWEEP_MODE` `"off"`,
+  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `R2_S3_ENDPOINT`,
+  `ALLOWED_ORIGIN`; secret names `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+  `STAGING_TEST_KEY`, `SUPABASE_SECRET_KEY` (values never read). The live
+  version predates the Owner routes and has no `OWNER_MEDIA_SWEEP_MODE`
+  binding. The version before it is `d6e8fdb4-da48-43e4-b4cc-803fe8f204db`.
+- **Rollback target for the Owner staging deploy:
+  `ab42e479-7ff2-445e-8e7e-08b945c9b4a6`.**
+- Staging gate, probed without credentials: preflight 204; `GET /owner-media`
+  without a key 403, with a wrong key 403; `POST /owner-media/authorize`
+  without a key 403.
+- Bucket `broker-wallet-media-staging`: r2.dev public access disabled, no
+  custom domains, no CORS rules; 39 objects, 40.4 MB (the retained Offer test
+  data).
+- Production `r2-profile-upload` serves
+  `ecaf125d-a0e3-4c26-add6-5f2c684c2516` at 100%: untouched.
+
+**Staging acceptance runner (new, in the repository; not run).**
+`cloudflare/workers/r2-profile-upload/staging-acceptance/`:
+`owner_media_staging_acceptance.mjs` (Node built-ins only; outside
+`npm test`'s discovery), the launcher `run_owner_media_staging_acceptance.ps1`
+(masked input, clears its environment afterwards), `README.md`, the three
+synthetic fixtures from the Offer staging run, and a `.gitignore` for
+`reports/`. It covers the gate, Owner authorize, private PUT, confirm,
+listing, signed GET, video range reads, removal, idempotency and retry, the
+ten-item limit, cross-account and cross-parent isolation, a focused Offer
+regression, a non-destructive profile regression (it never confirms a
+profile image) and F1 in two phases: `-Mode Full` seeds abandoned uploads on
+two Owners, one Offer, the profile image and account B's Owner;
+`-Mode F1Verify`, at least 24 h 10 min later, proves each authorize withdraws
+only its own entity's (`MEDIA-33`). Fresh disposable accounts and records
+only; it logs statuses, codes and ids, never credentials, account ids, object
+keys or URLs. Only `node --check` and a PowerShell parse were run on it.
+
+**Owner commands (not run by the agent).** From
+`cloudflare/workers/r2-profile-upload`:
+
+1. `(Get-FileHash worker.js -Algorithm SHA256).Hash` → `3B16D8E6…0B54F92AF`.
+2. Dry run: `npx wrangler@4.136.3 deploy --env staging --dry-run`.
+3. Deploy: `npx wrangler@4.136.3 deploy --env staging --tag om1-3b16d8e6
+   --message "Owner media staging candidate (worker.js sha256 3b16d8e6)"`.
+4. Verify: `npx wrangler@4.136.3 deployments status --env staging`, then
+   `npx wrangler@4.136.3 versions view <new version id> --env staging` (both
+   sweep variables `"off"`, the four secret names, the staging bucket).
+5. Rollback if needed: `npx wrangler@4.136.3 rollback
+   ab42e479-7ff2-445e-8e7e-08b945c9b4a6 --env staging --message "Roll back
+   Owner media staging candidate"`.
+
+| Item | Status |
+| --- | --- |
+| `confirm_owner_media_upload` | APPLIED + VERIFIED_HOSTED (owner), version `20260928131828`; repository file renamed to match |
+| Worker candidate `3b16d8e6…` | CODE_PROVEN (owner-run suite 120/120); NOT DEPLOYED |
+| Staging Worker | `ab42e479-…` (Offer candidate), verified first-hand |
+| Production Worker | `ecaf125d-…`, untouched |
+| Owner staging acceptance | runner prepared; NOT RUN |
+| F1 (`MEDIA-33`) | NOT RUN (runner phase 1 + phase 2 prepared) |
+| Flutter Owner media | owner-run tests/analyzer reported clean; NOT DEVICE-VERIFIED (`MEDIA-27`…`MEDIA-32`, `MEDIA-34`) |
+
+NOW — superseded by the deployment section below (staging and production
+deployed, staging acceptance passed).
+
+NEXT — see that section's own NOW/NEXT.
+
+## OWNER PRIVATE MEDIA — DEPLOYED, STAGING ACCEPTED, LOCAL COMMIT (2026-09-28)
+
+**Owner-reported (not re-read by the agent; no Cloudflare or Supabase access
+in this step).**
+
+- Staging Worker `r2-profile-upload-staging`:
+  `ac033060-5cbf-4b9c-8932-592bd88ab6ef` (previously `ab42e479-…`).
+- Production Worker `r2-profile-upload`:
+  `6387e2c0-db49-43eb-a0e0-edaca76e3e5e`. Rollback target
+  `ecaf125d-a0e3-4c26-add6-5f2c684c2516`, the version production served
+  before this deployment (read first-hand in the preparation section above).
+- Both deployed from the `worker.js` candidate sha256
+  `3b16d8e6aa893833ea65626eb6ec843fa2f18670ed1bd085cd5572f0b54f92af`.
+- Production smoke tests: PASS (the individual checks were not supplied).
+- `OFFER_MEDIA_SWEEP_MODE` and `OWNER_MEDIA_SWEEP_MODE`: off in both
+  environments, as `wrangler.toml` ships them.
+- Worker suite 120/120 and targeted Flutter suite 60/60, as recorded above.
+
+**Staging acceptance — PASS (`VERIFIED_HOSTED`; owner-run, report read by
+the agent).** Runner `staging-acceptance/`, `-Mode Full`, run
+`20260928T144750Z` (14:47:50–14:51:20 UTC), two fresh disposable accounts:
+**126 PASS, 0 FAIL** — gate 5, setup 9, database 2, owner-authorize 5,
+owner-image 12, owner-video 6, owner-retry 12, owner-refuse 9, owner-limit 7,
+owner-remove 11, offer 8, cross-parent 15, cross-account 11, profile 7,
+f1-seed 7. Not run: the over-3:01 video refusal (no long video supplied;
+covered by Worker unit tests only). Account A had no profile photo and none
+was set. Test data created and kept (staging bucket; hosted rows of the two
+disposable accounts only): account A's Owners
+`7f813dfe-3e45-497a-82d8-d7bf16ad97db` (A1),
+`8ab620b8-556d-43f7-b1d1-363c885a8d27` (A2),
+`e3b9262a-69a5-4fb6-a40f-d65642f438cb` (A3-limit),
+`15570b6f-9f0a-4302-ad6a-f938f0072f3a` (F1-owner-one) and
+`ec063fa1-2e54-4e5f-9041-dbce39dc7e59` (F1-owner-two), account B's Owner
+`efe28a5c-4df7-428c-b6b0-7a3107ee291e` (B1), account A's Offers
+`2c8961ee-8665-4de1-99cf-7692b465be9a` (A-offer) and
+`115a728b-1623-4a83-b710-b7191c734e4f` (F1-offer), and 28 media objects (listed
+in the local, gitignored report). Nothing was cleaned up.
+
+**F1 (`MEDIA-33`) — PENDING.** Phase 1 seeded five abandoned uploads (two
+Owners, one Offer, the profile image and account B's Owner) at 14:51:20 UTC
+and showed a fresh authorize leaves recent ones alone. Phase 2
+(`-Mode F1Verify`, run `20260928T145634Z`, 14:56 UTC) passed its
+preconditions (same two accounts, all five still pending) and stopped as too
+early, changing nothing. It is due after **2026-09-29 15:01:20 UTC**, with
+the same two accounts and `reports/f1_state_20260928T144750Z.json`.
+
+**Not verified on a device.** No Owner media Samsung acceptance has been
+reported: `MEDIA-29`…`MEDIA-32` and F2's lost-picker scenario (`MEDIA-34`)
+stay NOT RUN.
+
+**Local commit.** Branch `feature/owner-private-media`, created from
+`06cd396` with the working tree kept; one commit
+`feat(owner-media): implement private owner media lifecycle`, not pushed.
+Excluded: the generated plugin registrant files under `linux/`, `macos/` and
+`windows/` (line endings only, no content change) and the runner's
+`reports/` (gitignored).
+
+| Item | Status |
+| --- | --- |
+| `confirm_owner_media_upload` | APPLIED + VERIFIED_HOSTED, version `20260928131828` |
+| Staging Worker | `ac033060-…` (owner-reported); Owner acceptance 126/126, VERIFIED_HOSTED |
+| Production Worker | `6387e2c0-…` (owner-reported); smoke PASS (owner-reported); rollback `ecaf125d-…` |
+| Media sweeps | off, Offer and Owner, both environments |
+| F1 (`MEDIA-33`) | PENDING — phase 2 after 2026-09-29 15:01:20 UTC |
+| Samsung (`MEDIA-29`…`MEDIA-32`), F2 (`MEDIA-34`) | NOT RUN |
+| Git | one local commit on `feature/owner-private-media`; not pushed |
+
+NOW — the owner reviews the local commit on `feature/owner-private-media` and
+decides whether to push it.
+
+NEXT — after 2026-09-29 15:01:20 UTC, run `-Mode F1Verify` with the same two
+accounts and record the result here; then the Owner media Samsung acceptance
+(`MEDIA-29`…`MEDIA-32`, `MEDIA-34`).

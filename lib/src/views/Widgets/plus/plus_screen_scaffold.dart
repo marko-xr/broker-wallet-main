@@ -35,7 +35,12 @@ class PlusScreenScaffold extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         leading: const BackArrowButton(),
-        title: Text(title, style: theme.textTheme.titleLarge),
+        // Scales down rather than ellipsizing, so a long title ("Manage payment
+        // methods", or its Arabic) stays whole on a narrow phone.
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(title, style: theme.textTheme.titleLarge),
+        ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: theme.scaffoldBackgroundColor,

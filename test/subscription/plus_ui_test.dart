@@ -281,7 +281,7 @@ void main() {
 
       // The old "what happens next" checklist is gone: the secure checkout
       // step says it once, in its own place.
-      expect(find.text(en('plusPaymentMethodsTitle')), findsNothing);
+      expect(find.text(en('plusPaymentDetailsTitle')), findsNothing);
       expect(find.text(en('plusManageSubscription')), findsNothing);
       expect(find.text(en('plusRowHistory')), findsNothing);
     });
@@ -719,6 +719,38 @@ void main() {
         ),
         'payment methods (${status.name})': (
           route: '/subscription-billing/payment-methods',
+          status: status,
+        ),
+      },
+      // The payment-methods family: each dedicated screen for Free, a healthy
+      // subscriber and a payment issue.
+      for (final status in [
+        SubscriptionStatus.free,
+        SubscriptionStatus.active,
+        SubscriptionStatus.billingIssue,
+      ]) ...{
+        'payment details (${status.name})': (
+          route: '/subscription-billing/payment-details',
+          status: status,
+        ),
+        'add payment method (${status.name})': (
+          route: '/subscription-billing/payment-methods/add',
+          status: status,
+        ),
+        'manage payment methods (${status.name})': (
+          route: '/subscription-billing/payment-methods/manage',
+          status: status,
+        ),
+        'backup payment methods (${status.name})': (
+          route: '/subscription-billing/payment-methods/backup',
+          status: status,
+        ),
+        'manage billing (${status.name})': (
+          route: '/subscription-billing/payment-methods/billing',
+          status: status,
+        ),
+        'payment method help (${status.name})': (
+          route: '/subscription-billing/payment-methods/help',
           status: status,
         ),
       },

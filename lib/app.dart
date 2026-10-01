@@ -42,7 +42,13 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/language_view.dart'
 import 'package:broker_wallet/src/Views/Screens/home/Profile/profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/share_app_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_add_payment_method_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_backup_payment_methods_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_billing_history_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_manage_billing_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_manage_payment_methods_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_payment_details_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_payment_help_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_change_period_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_legal_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_manage_subscription_view.dart';
@@ -766,8 +772,34 @@ GoRouter _createRouter(
         builder: (context, state) => const PlusChangePeriodView(),
       ),
       GoRoute(
+        path: PlusRoutes.paymentDetails,
+        builder: (context, state) => const PlusPaymentDetailsView(),
+      ),
+      GoRoute(
         path: PlusRoutes.paymentMethods,
         builder: (context, state) => const PlusPaymentMethodsView(),
+      ),
+      // The payment-methods family: one dedicated screen per task, pushed over
+      // the dashboard. The store's own credential UI is never reproduced here.
+      GoRoute(
+        path: PlusRoutes.paymentMethodsAdd,
+        builder: (context, state) => const PlusAddPaymentMethodView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.paymentMethodsManage,
+        builder: (context, state) => const PlusManagePaymentMethodsView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.paymentMethodsBackup,
+        builder: (context, state) => const PlusBackupPaymentMethodsView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.paymentMethodsBilling,
+        builder: (context, state) => const PlusManageBillingView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.paymentMethodsHelp,
+        builder: (context, state) => const PlusPaymentHelpView(),
       ),
       GoRoute(
         path: PlusRoutes.history,

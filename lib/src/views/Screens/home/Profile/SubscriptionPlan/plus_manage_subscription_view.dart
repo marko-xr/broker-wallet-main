@@ -67,7 +67,7 @@ class PlusManageSubscriptionView extends StatelessWidget {
         _StatusNotice(state: state, store: store),
         _PrimaryAction(state: state, store: store),
         PlusSectionLabel(l10n.translate('plusManageDetailsLabel')),
-        _Details(state: state, store: store),
+        PlusSubscriptionDetails(state: state, store: store),
         const SizedBox(height: 24),
         SettingsSectionCard(
           children: [
@@ -182,7 +182,7 @@ class _PrimaryAction extends StatelessWidget {
       case SubscriptionStatus.gracePeriod:
       case SubscriptionStatus.billingIssue:
         label = l10n.translate('plusFixPayment');
-        onPressed = () => context.push(PlusRoutes.paymentMethods);
+        onPressed = () => context.push(PlusRoutes.paymentDetails);
       case SubscriptionStatus.free:
       case SubscriptionStatus.active:
       case SubscriptionStatus.trial:
@@ -193,92 +193,6 @@ class _PrimaryAction extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: PlusPrimaryButton(label: label, onPressed: onPressed),
-    );
-  }
-}
-
-/// Plan, period, price, renewal, dates and charge: only what the state
-/// supplies. The price is the full amount of one billing period.
-class _Details extends StatelessWidget {
-  const _Details({required this.state, required this.store});
-
-  final SubscriptionUiState state;
-  final PlusStore store;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final status = state.status;
-
-    String? dateLabelKey;
-    DateTime? dateValue;
-    switch (status) {
-      case SubscriptionStatus.active:
-        dateLabelKey = 'plusDetailRenews';
-        dateValue = state.renewsOn;
-      case SubscriptionStatus.trial:
-        dateLabelKey = 'plusDetailTrialEnds';
-        dateValue = state.trialEndsOn;
-      case SubscriptionStatus.cancelledActive:
-        dateLabelKey = 'plusDetailAccessUntil';
-        dateValue = state.expiresOn;
-      case SubscriptionStatus.gracePeriod:
-        dateLabelKey = 'plusDetailGraceUntil';
-        dateValue = state.expiresOn;
-      case SubscriptionStatus.billingIssue:
-      case SubscriptionStatus.free:
-      case SubscriptionStatus.expired:
-        break;
-    }
-
-    final period = state.period;
-    final price = state.billingPeriodPrice;
-    final nextCharge = state.nextChargePrice;
-
-    return PlusCard(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        children: [
-          PlusDetailRow(
-            label: l10n.translate('plusDetailPlan'),
-            value: l10n.translate('plusBrandName'),
-          ),
-          if (period != null)
-            PlusDetailRow(
-              label: l10n.translate('plusDetailBilling'),
-              value: plusPeriodName(l10n, period),
-            ),
-          if (price != null && period != null)
-            PlusDetailRow(
-              label: l10n.translate('plusDetailPrice'),
-              value: plusPricePerPeriod(l10n, price, period),
-            ),
-          PlusDetailRow(
-            label: l10n.translate('plusDetailRenewal'),
-            value: status.autoRenews
-                ? l10n.translate('plusRenewalOn')
-                : l10n.translate('plusRenewalOff'),
-          ),
-          if (dateLabelKey != null && dateValue != null)
-            PlusDetailRow(
-              label: l10n.translate(dateLabelKey),
-              value: plusFormatDate(context, dateValue),
-            ),
-          if (status.autoRenews && nextCharge != null)
-            PlusDetailRow(
-              label: l10n.translate(
-                status == SubscriptionStatus.trial
-                    ? 'plusDetailAfterTrial'
-                    : 'plusDetailNextCharge',
-              ),
-              value: nextCharge,
-            ),
-          PlusDetailRow(
-            label: l10n.translate('plusDetailStore'),
-            value: plusStoreName(l10n, store),
-          ),
-        ],
-      ),
     );
   }
 }

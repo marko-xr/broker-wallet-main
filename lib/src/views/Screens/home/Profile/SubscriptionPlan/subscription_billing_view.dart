@@ -86,9 +86,9 @@ class SubscriptionBillingView extends StatelessWidget {
             if (showPayment)
               PlusActionRow(
                 icon: Icons.account_balance_wallet_outlined,
-                title: l10n.translate('plusPaymentMethodsTitle'),
+                title: l10n.translate('plusPaymentDetailsTitle'),
                 subtitle: plusManagedByText(l10n, store),
-                onTap: () => context.push(PlusRoutes.paymentMethods),
+                onTap: () => context.push(PlusRoutes.paymentDetails),
               ),
             if (showHistory)
               PlusActionRow(
@@ -164,7 +164,7 @@ class _PaymentIssueCallout extends StatelessWidget {
         const SizedBox(height: 12),
         PlusPrimaryButton(
           label: l10n.translate('plusFixPayment'),
-          onPressed: () => context.push(PlusRoutes.paymentMethods),
+          onPressed: () => context.push(PlusRoutes.paymentDetails),
         ),
       ],
     );

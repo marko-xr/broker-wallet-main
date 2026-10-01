@@ -7,7 +7,13 @@ import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/data/models/subscription/subscription_ui_models.dart';
 import 'package:broker_wallet/src/services/subscription/plus_billing_gateway.dart';
 import 'package:broker_wallet/src/viewmodels/plus_subscription_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_add_payment_method_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_backup_payment_methods_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_billing_history_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_manage_billing_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_manage_payment_methods_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_payment_details_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_payment_help_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_change_period_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_legal_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/plus_manage_subscription_view.dart';
@@ -192,6 +198,84 @@ Future<PlusTestCtx> openPlusScreen(
 String storeName(PlusStore store) =>
     store == PlusStore.appStore ? 'App Store' : 'Google Play';
 
+/// Scrolls the screen's list until [target] exists and is on screen.
+///
+/// The Subscription & Billing screens are lazy lists: a row below the visible
+/// area (plus a small cache) has not been built, so `find` matches nothing and
+/// `ensureVisible` has no element to work with. At large text on a small phone
+/// that is most rows. Scrolling the real scrollable builds the row, then brings
+/// it fully into view.
+Future<void> scrollToVisible(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
+/// Brings [target] into view (inside an open sheet or a pinned bar) and checks
+/// that it really is on the 320x568 screen, so an action that merely exists but
+/// cannot be reached fails the test.
+Future<void> expectReachable(WidgetTester tester, Finder target) async {
+  expect(target, findsOneWidget);
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+  final rect = tester.getRect(target);
+  expect(rect.top, greaterThanOrEqualTo(0), reason: 'clipped above the screen');
+  expect(rect.bottom, lessThanOrEqualTo(568),
+      reason: 'clipped below the screen');
+  expect(rect.left, greaterThanOrEqualTo(0));
+  expect(rect.right, lessThanOrEqualTo(320));
+}
+
+/// Words that would mean Broker Wallet is collecting, storing or showing a
+/// payment method of its own.
+const paymentWords = [
+  'Visa',
+  'Mastercard',
+  'CVV',
+  'Card number',
+  'Expiry',
+  'Expiration',
+  'Add card',
+  'Saved card',
+  'Default card',
+  'Credit',
+  'Debit',
+  'PayPal',
+  'Apple Pay',
+  'Google Pay',
+  'Stripe',
+  'Telr',
+  'MasterCard',
+  'Cardholder',
+  'Postal',
+  'Bank account',
+  'Subtotal',
+  'VAT',
+  'Discount',
+  '••',
+  '4242',
+];
+
+/// Asserts the screen on show collects, stores and displays no payment method:
+/// no card word, no input field, no payment-provider choice, no card icon.
+void expectNoPaymentForm(WidgetTester tester) {
+  for (final word in paymentWords) {
+    expect(find.textContaining(word), findsNothing, reason: word);
+  }
+  expect(find.byType(TextField), findsNothing);
+  expect(find.byType(TextFormField), findsNothing);
+  expect(
+    find.byWidgetPredicate((w) => w is Radio || w is RadioListTile),
+    findsNothing,
+  );
+  expect(find.byIcon(Icons.credit_card), findsNothing);
+  expect(find.byIcon(Icons.payment), findsNothing);
+  expect(tester.takeException(), isNull);
+}
+
 /// A billing source the test drives by hand.
 class FakePlusGateway implements PlusBillingGateway {
   FakePlusGateway({
@@ -357,8 +441,32 @@ Widget plusTestApp(
         builder: (_, __) => const PlusChangePeriodView(),
       ),
       GoRoute(
+        path: '/subscription-billing/payment-details',
+        builder: (_, __) => const PlusPaymentDetailsView(),
+      ),
+      GoRoute(
         path: '/subscription-billing/payment-methods',
         builder: (_, __) => const PlusPaymentMethodsView(),
+      ),
+      GoRoute(
+        path: '/subscription-billing/payment-methods/add',
+        builder: (_, __) => const PlusAddPaymentMethodView(),
+      ),
+      GoRoute(
+        path: '/subscription-billing/payment-methods/manage',
+        builder: (_, __) => const PlusManagePaymentMethodsView(),
+      ),
+      GoRoute(
+        path: '/subscription-billing/payment-methods/backup',
+        builder: (_, __) => const PlusBackupPaymentMethodsView(),
+      ),
+      GoRoute(
+        path: '/subscription-billing/payment-methods/billing',
+        builder: (_, __) => const PlusManageBillingView(),
+      ),
+      GoRoute(
+        path: '/subscription-billing/payment-methods/help',
+        builder: (_, __) => const PlusPaymentHelpView(),
       ),
       GoRoute(
         path: '/subscription-billing/history',

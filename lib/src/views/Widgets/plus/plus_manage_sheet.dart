@@ -69,11 +69,7 @@ class PlusManageSheet extends StatelessWidget {
       case PlusManageAction.resubscribe:
         return l10n.plusText('plusResubscribeTitle', {'store': storeName});
       case PlusManageAction.addPaymentMethod:
-        return l10n.translate(
-          store == PlusStore.googlePlay
-              ? 'plusPayAddTitle'
-              : 'plusPayChangeTitle',
-        );
+        return l10n.translate('plusPayAddTitle');
       case PlusManageAction.managePaymentMethods:
         return l10n.translate('plusPayManageTitle');
       case PlusManageAction.backupPaymentMethods:

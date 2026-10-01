@@ -287,7 +287,7 @@ void main() {
       expect(code, contains('plusManagedByText'));
       for (final route in const [
         'PlusRoutes.manage',
-        'PlusRoutes.paymentMethods',
+        'PlusRoutes.paymentDetails',
         'PlusRoutes.history',
         'PlusRoutes.restore',
         'PlusRoutes.usage',
@@ -311,19 +311,111 @@ void main() {
       }
     });
 
-    test('the payment-methods screen hands off to the store and nowhere else',
-        () {
+    test('the payment-methods dashboard navigates to dedicated screens', () {
       final code = _code(File(_screen('plus_payment_methods_view.dart')));
-      for (final action in const [
-        'PlusManageAction.managePaymentMethods',
-        'PlusManageAction.addPaymentMethod',
-        'PlusManageAction.backupPaymentMethods',
-        'PlusManageAction.updatePaymentMethod',
-        'PlusManageAction.manage',
+      for (final route in const [
+        'PlusRoutes.paymentMethodsAdd',
+        'PlusRoutes.paymentMethodsManage',
+        'PlusRoutes.paymentMethodsBilling',
+        'PlusRoutes.paymentMethodsHelp',
       ]) {
-        expect(code, contains(action), reason: action);
+        expect(code, contains(route), reason: route);
       }
-      expect(code.contains('launchUrl('), isFalse);
+      // One selected provider, never a choice of providers or cards.
+      expect(code, contains('selected: true'));
+      // Backup payment methods are reached from Manage payment methods only.
+      expect(code.contains('paymentMethodsBackup'), isFalse);
+      // No flow ends in a sheet opened from the dashboard.
+      for (final fragment in const [
+        'showPlusHandoff',
+        'PlusManageSheet',
+        'showModalBottomSheet',
+      ]) {
+        expect(code.contains(fragment), isFalse, reason: fragment);
+      }
+    });
+
+    test('each payment task is a screen whose last step is the store hand-off',
+        () {
+      const family = <String, List<String>>{
+        'plus_payment_details_view.dart': [
+          'PlusPaymentSummaryCard',
+          'PlusProviderCard',
+          'PlusRoutes.paymentMethods',
+        ],
+        'plus_add_payment_method_view.dart': [
+          'PlusManageAction.addPaymentMethod',
+        ],
+        'plus_manage_payment_methods_view.dart': [
+          'PlusManageAction.managePaymentMethods',
+          'PlusManageAction.updatePaymentMethod',
+          // Backup payment methods are Google Play only.
+          'if (isGoogle)',
+          'PlusRoutes.paymentMethodsBackup',
+        ],
+        'plus_backup_payment_methods_view.dart': [
+          'PlusManageAction.backupPaymentMethods',
+        ],
+        'plus_manage_billing_view.dart': ['PlusManageAction.manage'],
+      };
+      for (final entry in family.entries) {
+        final code = _code(File(_screen(entry.key)));
+        // A full screen, never a sheet standing in for one.
+        expect(code, contains('PlusScreenScaffold('), reason: entry.key);
+        expect(code.contains('showModalBottomSheet'), isFalse,
+            reason: entry.key);
+        for (final action in entry.value) {
+          expect(code, contains(action), reason: '${entry.key}: $action');
+        }
+        // Screens never open a store page themselves; only the sheet does.
+        expect(code.contains('launchUrl('), isFalse, reason: entry.key);
+      }
+    });
+
+    test('the backup screen is Google Play only and says so elsewhere', () {
+      final code =
+          _code(File(_screen('plus_backup_payment_methods_view.dart')));
+      expect(code, contains('PlusStore.googlePlay'));
+      expect(code, contains("'plusBackupUnavailableTitle'"));
+    });
+
+    test('no payment screen has a field for a card, expiry or CVV', () {
+      final screens = [
+        for (final name in const [
+          'plus_payment_details_view.dart',
+          'plus_payment_methods_view.dart',
+          'plus_add_payment_method_view.dart',
+          'plus_manage_payment_methods_view.dart',
+          'plus_backup_payment_methods_view.dart',
+          'plus_manage_billing_view.dart',
+          'plus_payment_help_view.dart',
+        ])
+          _code(File(_screen(name))),
+        _code(File('lib/src/views/Widgets/plus/plus_payment_widgets.dart')),
+      ].join('\n');
+      for (final fragment in const [
+        'TextField',
+        'TextFormField',
+        'InputDecoration',
+        'TextInputType',
+        'Form(',
+        'CreditCard',
+        'cardNumber',
+        'cvv',
+        'expiry',
+        'cardholder',
+        'postal',
+        'bankaccount',
+        // Nor a choice between providers: the provider is the platform's.
+        'Radio',
+        'ChoiceChip',
+        'DropdownButton',
+        'SegmentedButton',
+        'TabBar',
+      ]) {
+        expect(screens.toLowerCase().contains(fragment.toLowerCase()), isFalse,
+            reason: fragment);
+      }
     });
 
     test('hand-off sheets explain and never touch the subscription', () {
@@ -365,7 +457,13 @@ void main() {
         'PlusRoutes.billing',
         'PlusRoutes.manage',
         'PlusRoutes.changePeriod',
+        'PlusRoutes.paymentDetails',
         'PlusRoutes.paymentMethods',
+        'PlusRoutes.paymentMethodsAdd',
+        'PlusRoutes.paymentMethodsManage',
+        'PlusRoutes.paymentMethodsBackup',
+        'PlusRoutes.paymentMethodsBilling',
+        'PlusRoutes.paymentMethodsHelp',
         'PlusRoutes.history',
         'PlusRoutes.help',
         'PlusRoutes.legal',
@@ -377,22 +475,52 @@ void main() {
         expect(app.contains(route), isTrue, reason: route);
       }
       expect(app.contains('PaymentSelectionView'), isFalse);
-      expect(app.contains('SubscriptionView('), isFalse);
+      // The OLD screen must not return. Anchored to the exact class name: a
+      // bare substring would also match the authorized new screens such as
+      // `PlusManageSubscriptionView`.
+      expect(RegExp(r'\bSubscriptionView\(').hasMatch(app), isFalse,
+          reason: 'the old SubscriptionView route implementation is back');
+      // The authorized architecture: each task has its own screen.
+      for (final screen in const [
+        'SubscriptionBillingView(',
+        'PlusManageSubscriptionView(',
+        'PlusChangePeriodView(',
+        'PlusPaymentDetailsView(',
+        'PlusPaymentMethodsView(',
+        'PlusAddPaymentMethodView(',
+        'PlusManagePaymentMethodsView(',
+        'PlusBackupPaymentMethodsView(',
+        'PlusManageBillingView(',
+        'PlusPaymentHelpView(',
+        'PlusBillingHistoryView(',
+        'PlusSubscriptionHelpView(',
+        'PlusLegalView(',
+        'PlusUsageView(',
+        'PlusPaywallView(',
+        'PlusRestoreView(',
+      ]) {
+        expect(app.contains(screen), isTrue, reason: '$screen is not routed');
+      }
+      // The legacy paths are redirects only, not screens.
+      expect(app, contains('redirect: (context, state) => PlusRoutes.billing'));
+      expect(app, contains('redirect: (context, state) => PlusRoutes.paywall'));
     });
 
     test('every Subscription & Billing route is declared once', () {
       final routes = _code(File('lib/src/common/routes/plus_routes.dart'));
-      final paths = RegExp(r"static const String \w+ = '(/[^']+)';")
+      // `\s*` after `=`: a long path is wrapped onto the next line.
+      final paths = RegExp(r"static const String \w+ =\s*'(/[^']+)';")
           .allMatches(routes)
           .map((m) => m.group(1)!)
           .toList();
       expect(paths.toSet().length, paths.length,
           reason: 'a route path is declared twice');
-      // Seven tasks live under the hub: manage, change period, payment
-      // methods, history, help, legal and usage.
+      // Thirteen screens live under the hub: manage, change period, payment
+      // details, payment method plus its five dedicated screens (add, manage,
+      // backup, billing, help), history, help, legal and usage.
       expect(
         paths.where((p) => p.startsWith('/subscription-billing/')).length,
-        7,
+        13,
       );
     });
   });

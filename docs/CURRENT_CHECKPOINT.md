@@ -6429,3 +6429,219 @@ a documented, safe Google Play / Apple link for payment methods and purchase
 history (none is assumed today); whether a separate Subscription Terms document
 is wanted (none exists, none was written); whether "Change plan" should ever be
 a separate tier from the billing period.
+
+### ADDENDUM — OWNER TEST RUN AND ONE TEST-HARNESS CORRECTION (2026-10-01)
+
+Owner-run results for the rebuilt screens: `plus_billing_hub_test.dart` 61/61
+PASS; `plus_payment_methods_test.dart` 69 PASS, 1 FAIL ("small phone and large
+text hand-off sheets stay usable at 1.6x text", `StateError: No element` from
+`ensureVisible`).
+
+Root cause (TEST HARNESS BUG, source already correct): the test called
+`ensureVisible` on the "Add payment method" row of the payment-methods screen.
+That screen is a lazy `ListView`, so at 1.6x text on a 320x568 phone the row
+lies beyond the built area, `find.text` matched nothing and there was no element
+to scroll to. The hand-off sheet itself was not at fault: it is already
+`isScrollControlled` + `useSafeArea` with a `SingleChildScrollView` body, so its
+content and actions are reachable by scrolling. No production file changed.
+
+Correction (test only): the test now scrolls the real list with
+`scrollUntilVisible` before tapping, and it additionally proves reachability
+that the old version never checked — in the Update-payment-method sheet both
+"Continue to Google Play" and "Not now", and in the Add-payment-method sheet
+"Done", are brought into view and asserted to lie inside the 320x568 screen,
+then used to dismiss the sheet. It runs in English and Arabic (RTL) at 1.6x
+text. The 1.6x condition, small phone and assertions were not weakened.
+
+Owner re-run after the correction: `plus_payment_methods_test.dart` 71/71 PASS.
+
+### ADDENDUM — SUBSCRIPTION TEST SUITE CLOSED (2026-10-01)
+
+For this checkpoint only, the owner authorized running `flutter test` on the
+source-guard file and the subscription folder, and `flutter analyze`.
+
+One failure remained in the full folder run: `plus_source_guards_test.dart`,
+"the router registers the Plus routes and redirects the old ones", at
+`expect(app.contains('SubscriptionView('), isFalse)`. Cause (stale guard after
+the authorized routing change, no production defect): the guard meant to catch
+the OLD `SubscriptionView` screen returning, but a bare substring also matched
+the new, authorized `PlusManageSubscriptionView()` route at `app.dart`. The guard
+is now anchored to the exact class (`\bSubscriptionView\(`), and it also asserts
+that every authorized screen is routed (hub, manage, change period, payment
+methods, history, help, legal, usage, paywall, restore) and that the legacy
+paths are redirects only. Nothing was loosened: the old-screen, old
+payment-selection, card, PayPal and backend-write guards are unchanged.
+
+Result: `flutter test test/subscription/` = 379 passed, 0 failed.
+`flutter analyze` = 111 infos, 0 errors, 0 warnings; none in a file this
+checkpoint created or changed except one pre-existing `anonKey` deprecation in
+`test/auth/canonical_identity_test.dart` (present at `6413faa`, not caused here).
+The rest is historical deprecation debt (`deprecated_member_use` in unrelated
+widgets, services and quotation, plus one `unnecessary_import`), left alone.
+
+Status: PLUS / BILLING UI SOURCE + TESTS CLOSED (CODE_PROVEN by the full
+subscription suite and a clean checkpoint-scope analyzer). Not VERIFIED_RUNTIME:
+no device acceptance yet.
+
+## BROKER WALLET PLUS — PAYMENT METHODS UX COMPLETION (2026-10-01)
+
+Branch `upgrade-plus-plan-and-payment`, from `233bdd4`. Owner product gap: the
+Payment methods experience was one shallow screen plus explanation sheets. It is
+now a family of dedicated screens. Broker Wallet is still NOT a card processor:
+no card number, expiry, CVV, saved/default/masked card, Stripe, Telr or custom
+Apple/Google Pay field exists anywhere, and the store's credential UI is never
+reproduced. No backend, RevenueCat, StoreKit, Play Billing or dependency change.
+
+Routes (all GoRouter, under `/subscription-billing/payment-methods`):
+
+- `` (dashboard): provider identity (Google Play / Apple Account), where the
+  credentials live, then grouped rows — Android: Add payment method, Manage
+  payment methods, Backup payment methods; iOS (group "Payment & Shipping"): Add,
+  Manage; then Subscription billing (subscribers only: "Manage billing" on
+  Android, "Manage App Store subscription" on iOS) and Payment method help. The
+  two platforms have different icons, groups and rows, not one screen with a word
+  swapped. Free sees the payment rows only.
+- `/add`: dedicated screen — provider, what to expect (account/region on Google
+  Play, Payment & Shipping on Apple, "Broker Wallet does not see or store your
+  card details"), one pinned large action ("Continue to Google Play" / "Continue
+  to Apple") and secondary rows in the content (How to add / Payment & Shipping
+  help / Manage App Store subscription).
+- `/manage`: dedicated screen — where the real list lives, Add, "Manage in
+  Google Play" or "Payment & Shipping", help. With a payment issue it leads with
+  the notice and "Update payment method". No fake card list.
+- `/backup`: Google Play only — what a backup method is, why it helps, that
+  Google Play controls eligibility, "Manage backup payment methods". On the App
+  Store the dashboard and help never offer it, and a direct visit says it is not
+  available and leads back (no Apple equivalent is invented).
+- `/billing` (Manage billing): provider, billing period, renewal, next billing /
+  end date and full-period price (only supplied values, shared
+  `PlusSubscriptionDetails`), one large "Manage Google Play / App Store
+  subscription", and rows to Manage subscription, Payment methods, Billing
+  history & receipts, Restore. Free / expired see no renewal or charge data.
+- `/help`: accordion of short answers (Add, Change, Payment declined, Billing
+  issue, Backup [Google only], Manage subscription), each ending in an action to
+  a real screen, plus Contact support (existing Help & Support).
+
+Billing issue recovery: Subscription & Billing → Payment issue → Update payment
+method → Payment methods → Update payment method → Manage payment methods →
+Update payment method → store hand-off. Every step is a Plus screen.
+
+The hand-off sheet (`PlusManageSheet`) is now only the LAST step of a flow: it
+gives the exact steps and a plain Done, and offers "Continue to <store>" only
+where a documented link exists (the Google Play subscription page for fixing a
+subscription's payment method; the manage/change/resubscribe pages that were
+already in the code). Account-level payment-method destinations have no
+documented link, so none is assumed and the sheet never claims the store was
+opened. FUTURE SEAM: `plusManagementUri` plus `showPlusHandoff`.
+
+Defect found and fixed by the new tests: the Manage payment methods subtitle
+"See the steps in {store}" was passed through `translate` instead of `plusText`
+and showed a raw `{store}` on Google Play (a real source bug, caught by the
+raw-placeholder tests). A scan of all Plus source found no other instance.
+
+Tests (run by the AI this checkpoint, as authorized): new
+`plus_payment_screens_test.dart`; updated `plus_billing_hub_test.dart`,
+`plus_payment_methods_test.dart`, `plus_ui_test.dart`, `plus_test_support.dart`,
+`plus_source_guards_test.dart`. Two harness corrections, no assertion weakened:
+a route-count regex now tolerates a wrapped path, and a title check asserts the
+app bar (Google Play's "Payment methods" label repeats the title's words).
+Result: `flutter test test/subscription/` = 529 passed, 0 failed. `flutter
+analyze` = 111 infos (the same historical set as before), 0 errors, 0 warnings,
+none in a file this work created or changed.
+
+Status: PAYMENT METHODS FAMILY SOURCE + TESTS CLOSED (CODE_PROVEN). REAL
+REVENUECAT / STOREKIT / PLAY BILLING: NOT INTEGRATED. REAL PAYMENT: NOT
+PERFORMED. OWNER DEVICE UX: PENDING.
+
+NOW — Samsung: Profile → Subscription & Billing → preview sheet (science icon)
+→ Active; Payment methods (Google Play): Add payment method → Continue to Google
+Play (steps sheet) → Done; Manage payment methods → Manage in Google Play;
+Backup payment methods; Manage billing; Payment method help (open each topic and
+its action). Switch "Billed through" to App Store and repeat (no Backup, "Payment
+& Shipping", "Continue to Apple"). Set Billing issue and walk hub → Update
+payment method → … → hand-off. Repeat in Arabic, dark and large text.
+
+NEXT — only after the owner accepts these screens: the RevenueCat + Google Play
+Billing integration contract.
+
+### ADDENDUM — PAYMENT UI VISUAL REBUILD, GOOGLE PLAY FIRST (2026-10-02)
+
+The owner tested the payment screens on a Samsung and rejected them as still
+feeling like "settings → instructions → hand-off". The payment flow was rebuilt
+to read as payment management, using the owner's reference screenshots for
+hierarchy only (centered title, summary card, a prominent payment-method card
+with Change, large rounded cards, a bottom CTA). NOTE: the screenshots were not
+visible to the implementer; the rebuild follows the owner's written description
+of them. No branding, colour, price or card data was copied.
+
+Boundary (unchanged): Google Play and the Apple Account do not give Broker
+Wallet a list of saved payment methods, so no card, digits, expiry, brand, bank
+account or "default" marker exists anywhere, and there is no Card number / CVV /
+Expiry / Cardholder / Postal field. The PROVIDER is what the payment cards show.
+On Android the provider is Google Play only: no App Store, Apple, card or PayPal
+choice is offered (iOS wording remains for future iOS support and the debug
+preview). FUTURE SEAM: with Google Play Billing, Google's own purchase sheet will
+list eligible saved methods and offer to add one; Broker Wallet will not list or
+simulate them.
+
+Flow: Subscription & Billing (row "Payment details"; a payment issue's fix also
+goes here) → Payment details → Payment method → Manage payment methods / Add
+payment method → store hand-off.
+
+- `/payment-details` (new): ONE payment-summary card (Broker Wallet Plus, status,
+  period, price, renewal / access-until / trial / expired date, billed through —
+  only supplied values; no subtotal, tax, discount or total), then the payment
+  method as a provider card ("Google Play — Subscription payment method — Managed
+  securely by Google Play") with [Change], and one pinned bottom action
+  ("Manage payment method"). With a payment issue the card is the highlighted part
+  (calm tint, "Payment issue", "Update payment method") and the pinned action
+  becomes "Manage billing".
+- `/payment-methods` ("Payment method"): the provider as the single SELECTED card
+  (primary border, check), then one prominent action (Manage payment methods),
+  Add payment method, and for subscribers Manage subscription billing, with help
+  as a quiet row. No eight equal rows. Backup is not here.
+- `/payment-methods/manage`: provider card, then task cards each with its own
+  button — Change or manage ([Manage in Google Play], hand-off), Add ([Add payment
+  method], the Add screen), Backup ([Manage backup methods], Google Play only).
+  Apple: Payment & Shipping steps instead, no backup.
+- `/payment-methods/add`: checkout-weight full screen — a large provider visual,
+  three short icon lines (billed through the provider / added securely in your
+  account / Broker Wallet never receives or stores card details), a pinned
+  "Continue to Google Play" (Apple: "Continue to Apple") and a quiet "How to add a
+  payment method". It opens the final hand-off step with exact steps; no verified
+  link is assumed.
+- `/payment-methods/billing` (Manage billing): a billing dashboard — the plan
+  summary card, only Manage subscription, Payment method, Billing history &
+  receipts and Restore, and a pinned "Manage in Google Play".
+- Backup and help unchanged in role; backup is Google Play only and says so on the
+  App Store.
+
+Shared building blocks (`plus_payment_widgets.dart`): provider card / mark / hero,
+payment summary card, action card, task card, icon line. App-bar titles scale
+down instead of ellipsizing. Light, dark and RTL use the Broker Wallet theme only.
+
+Visual check: because the app cannot be run by the implementer, the screens were
+rendered to images with a throwaway test (deleted afterwards) and reviewed in
+light, dark, Arabic and iOS. Two layout defects found that way were fixed (the
+"managed securely" line squeezed beside Change; a truncated app-bar title).
+
+Tests: payment screen tests rewritten for the new screens; hub, UI and source-guard
+tests updated (stale after the authorized redesign, not weakened; guards now also
+forbid provider selectors and cardholder/postal fields). `flutter test
+test/subscription/` = 575 passed, 0 failed (was 529). `flutter analyze` = 111
+infos, 0 errors, 0 warnings, none in a Plus file; a transient run reporting 143
+was an analyzer artifact and re-ran to the same 111.
+
+Status: PAYMENT UI VISUAL REBUILD SOURCE + TESTS CLOSED (CODE_PROVEN). OWNER
+DEVICE ACCEPTANCE: PENDING. REAL REVENUECAT / PLAY BILLING / STOREKIT: NOT
+INTEGRATED. REAL PAYMENT: NOT PERFORMED.
+
+NOW — Samsung, debug build: Profile → Subscription & Billing → preview sheet →
+Active: "Payment details" (summary, Google Play card, Change, bottom action) →
+Change → Payment method (selected card, prominent Manage) → Manage payment
+methods (three task cards) → Add payment method (Continue to Google Play → steps →
+Done); Manage billing. Set Billing issue and walk hub → Payment details (highlight,
+Update payment method) → Payment method → Manage → hand-off. Repeat in Arabic,
+dark and large text.
+
+NEXT — only after the owner accepts this UI: Google Play Billing + RevenueCat.

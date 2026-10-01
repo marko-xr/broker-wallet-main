@@ -478,3 +478,26 @@
   payment methods and purchase history have no assumed link). Plus is one plan on
   two billing periods, so "Change plan" and "Change billing period" are one
   action. A purchase passes through a "Secure checkout" step before the store.
+- Payment methods are a family of dedicated screens, not one screen plus
+  explanation sheets (owner decision, 2026-10-01): dashboard, Add payment method,
+  Manage payment methods, Backup payment methods (Google Play only; no Apple
+  equivalent is invented), Manage billing and Payment method help, all under
+  `/subscription-billing/payment-methods`. Each is a Broker Wallet screen with its
+  own explanation and one large primary action; the short hand-off sheet is only
+  the last step. The screens differ by provider (Google Play: payment methods,
+  backup methods, subscription centre; Apple: Apple Account, Payment & Shipping,
+  App Store subscription management). Broker Wallet still never collects, stores
+  or displays card credentials; the store's credential UI is never reproduced,
+  and no link to a store account's payment methods is assumed until one is
+  officially verified (`plusManagementUri` is the single seam).
+- Payment screens read as payment management (owner decision, 2026-10-02, after
+  Samsung review): Subscription & Billing leads to Payment details (summary +
+  provider payment-method card with Change + one bottom action), then Payment
+  method (the provider as the one selected card), Manage payment methods (task
+  cards), Add payment method (checkout-weight screen) and Manage billing
+  (dashboard). The provider card stands in for a saved card: Google Play and the
+  Apple Account do not give Broker Wallet the user's cards, so no card, digits,
+  expiry, brand, bank account or default marker is ever shown or invented, and
+  there is no card-entry field. On Android the provider is Google Play only, with
+  no provider selector. Google's own purchase sheet will show saved methods once
+  Google Play Billing is integrated; Broker Wallet will not enumerate them.

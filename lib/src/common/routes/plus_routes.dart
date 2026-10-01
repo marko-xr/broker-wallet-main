@@ -29,8 +29,28 @@ class PlusRoutes {
   /// Change billing period (monthly or annual), confirmed in the store.
   static const String changePeriod = '/subscription-billing/change-period';
 
-  /// Payment methods: where the store's own payment methods are managed.
+  /// Payment details: the payment summary, the payment method and one action.
+  /// The first stop of the payment flow; the hub's payment row and a payment
+  /// issue both lead here.
+  static const String paymentDetails = '/subscription-billing/payment-details';
+
+  /// Payment method: the selected provider and the actions around it.
   static const String paymentMethods = '/subscription-billing/payment-methods';
+
+  /// The payment-methods family. Each is a dedicated screen; the store's own
+  /// credential UI is only ever reached from the last step of one of them.
+  static const String paymentMethodsAdd =
+      '/subscription-billing/payment-methods/add';
+  static const String paymentMethodsManage =
+      '/subscription-billing/payment-methods/manage';
+
+  /// Google Play only; the screen explains itself on the App Store.
+  static const String paymentMethodsBackup =
+      '/subscription-billing/payment-methods/backup';
+  static const String paymentMethodsBilling =
+      '/subscription-billing/payment-methods/billing';
+  static const String paymentMethodsHelp =
+      '/subscription-billing/payment-methods/help';
 
   /// Billing history and receipts, which the store keeps.
   static const String history = '/subscription-billing/history';

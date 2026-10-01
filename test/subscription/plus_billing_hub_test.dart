@@ -55,7 +55,7 @@ void main() {
         ],
         hidden: [
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
           en('plusRowHistory'),
           en('plusFixPayment'),
           en('plusIssueTitle'),
@@ -76,7 +76,7 @@ void main() {
           en('plusHeroRenewsOn', {'date': 'January 15, 2027'}),
           en('plusBilledThrough', {'store': 'Google Play'}),
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
           en('plusManagedByGoogle'),
           en('plusRowHistory'),
           en('plusRestorePurchases'),
@@ -98,7 +98,7 @@ void main() {
           en('plusStatusTrial'),
           en('plusHeroTrialEnds', {'date': 'January 8, 2027'}),
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
           en('plusRowHistory'),
         ],
         hidden: [
@@ -121,7 +121,7 @@ void main() {
         hidden: [
           en('plusStatusExpired'),
           // Renewal is off, so there is no payment method to fix.
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
           en('plusFixPayment'),
           en('plusIssueTitle'),
           en('plusUpgradeToPlus'),
@@ -138,7 +138,7 @@ void main() {
           }),
           en('plusFixPayment'),
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
         ],
         hidden: [
           en('plusStatusExpired'),
@@ -154,7 +154,7 @@ void main() {
           en('plusIssueBody', {'store': 'Google Play'}),
           en('plusFixPayment'),
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
         ],
         hidden: [
           en('plusStatusExpired'),
@@ -173,7 +173,7 @@ void main() {
         ],
         hidden: [
           en('plusManageSubscription'),
-          en('plusPaymentMethodsTitle'),
+          en('plusPaymentDetailsTitle'),
           en('plusFixPayment'),
           en('plusResubscribe'),
           en('plusUpgradeToPlus'),
@@ -349,9 +349,9 @@ void main() {
         row: en('plusManageSubscription'),
         landed: en('plusManageDetailsLabel'),
       ),
-      'Payment methods': (
-        row: en('plusPaymentMethodsTitle'),
-        landed: en('plusPmIntroGoogle'),
+      'Payment details': (
+        row: en('plusPaymentDetailsTitle'),
+        landed: en('plusPdSectionSummary'),
       ),
       'Billing history & receipts': (
         row: en('plusRowHistory'),
@@ -622,14 +622,15 @@ void main() {
       expect(c.vm.status, SubscriptionStatus.cancelledActive);
     });
 
-    testWidgets('a payment issue leads to Payment methods', (tester) async {
+    testWidgets('a payment issue leads to Payment details', (tester) async {
       await openPlusScreen(tester, _manage,
           status: SubscriptionStatus.billingIssue);
 
       await _tap(tester, en('plusFixPayment'));
 
-      expect(find.text(en('plusPmIntroGoogle')), findsOneWidget);
-      expect(find.text(en('plusIssueTitle')), findsOneWidget);
+      // Payment details, with the payment-method card highlighted.
+      expect(find.text(en('plusPdSectionSummary')), findsOneWidget);
+      expect(find.text(en('plusPdIssueTitle')), findsWidgets);
     });
 
     testWidgets('the App Store names itself in the hand-off', (tester) async {
@@ -790,18 +791,27 @@ void main() {
       SubscriptionStatus.gracePeriod,
       SubscriptionStatus.billingIssue,
     ]) {
-      testWidgets('${status.name}: hub -> Payment methods -> hand-off',
-          (tester) async {
+      testWidgets(
+          '${status.name}: hub -> Payment details -> Payment method -> Manage -> '
+          'hand-off', (tester) async {
         final c = await openPlusScreen(tester, _hub, status: status);
         final before = c.vm.entitlement;
 
         // 1. The hub's warning offers the fix.
         await _tap(tester, en('plusFixPayment'));
-        // 2. Payment methods opens on the same problem, with the same fix.
-        expect(find.text(en('plusPmIntroGoogle')), findsOneWidget);
+        // 2. Payment details highlights the payment method with its fix.
+        expect(find.text(en('plusPdSectionSummary')), findsOneWidget);
+        expect(find.text(en('plusPdIssueTitle')), findsWidgets);
+        await _tap(tester, en('plusFixPayment'));
+        // 3. Payment method: the same problem, and the way to manage it.
+        expect(find.text(en('plusPmSelectedCaption')), findsOneWidget);
+        expect(find.text(en('plusIssueTitle')), findsOneWidget);
+        await _tap(tester, en('plusPayManageTitle'));
+        // 4. Manage payment methods, a screen of its own, with the fix first.
+        expect(find.text(en('plusManageMethodsIntroGoogle')), findsOneWidget);
         expect(find.text(en('plusIssueTitle')), findsOneWidget);
         await _tap(tester, en('plusFixPayment'));
-        // 3. The platform hand-off: steps, and Continue to the store.
+        // 5. The platform hand-off: steps, and Continue to the store.
         expect(find.text(en('plusPayUpdateTitle')), findsWidgets);
         expect(find.text(en('plusPayStepAndroidUpdate')), findsOneWidget);
         expect(find.text(en('plusContinueToStore', {'store': 'Google Play'})),
@@ -824,6 +834,9 @@ void main() {
         store: PlusStore.appStore,
       );
 
+      // Payment method -> Manage payment methods -> the hand-off.
+      await _tap(tester, en('plusPayManageTitle'));
+      expect(find.text(en('plusManageMethodsIntroApple')), findsOneWidget);
       await _tap(tester, en('plusFixPayment'));
 
       expect(find.text(en('plusPayUpdateTitle')), findsWidgets);

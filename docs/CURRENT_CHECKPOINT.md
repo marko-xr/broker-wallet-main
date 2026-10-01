@@ -6246,3 +6246,431 @@ NOW — the owner reviews the completed local performance commit on
 
 NEXT — if satisfied, the owner safely pushes that branch; then return to F1
 phase 2 and the separate Owner media Samsung acceptance.
+
+## QUOTATION SOURCE IMPLEMENTATION — BLOCKED AT BACKEND BOUNDARY (2026-10-01)
+
+Branch `quotation-updated` was created directly from `main-last` at
+`6413faaa9e15e548b58b2871e1b513c35cf8ff18`. The seven generated plugin
+registrant files already showed line-ending-only drift; their normalized Git
+diff was empty and they were left untouched. No Quotation source was changed.
+
+Current source routes only to the Quotation list and add form. The form uses
+`AuthRepository.currentUserId` (Supabase Auth by default), while
+`QuotationService` reads/writes `users/{uid}/quotations` in Firestore and its
+logo/PDF paths use Firebase Storage. The checked-in `firestore.rules` permits
+quotation reads only with matching Firebase Auth and denies direct quotation
+writes; it requires a quota Cloud Function for creation. No Supabase-to-Firebase
+sign-in bridge exists in the default auth flow. The hosted Firestore rules were
+not read, so their deployed state remains unknown. An existing Supabase
+`public.quotations` schema does not mean this feature uses it; the owner
+explicitly excluded a backend migration from this checkpoint.
+
+The source review also found no edit route or edit initialization, disabled
+form validation, no synchronous save guard before the quota await, and PDF
+generation failures that are caught without user feedback. These are known
+source issues, not completed fixes. A source-only patch cannot honestly make
+create → save → reopen production-ready under the current authorized backend
+scope. Status: VERIFIED_SOURCE for the cited call paths; implementation
+BLOCKED; Flutter tests/analyzer/build and real-device verification NOT RUN by
+owner instruction. No hosted change, migration, commit, or push was made.
+
+NOW — the owner decides whether to authorize a separate Quotation backend
+contract checkpoint using the existing Supabase schema and an approved media
+path. Keep the Quotation entry points visible; report their real runtime
+capability during device testing.
+
+NEXT — after that contract is authorized and implemented, return to this
+Quotation source implementation, then have the owner run real-device create,
+save, reopen, edit, logo and PDF acceptance before marking it complete.
+
+## QUOTATION SUPABASE BACKEND CONTRACT — READ-ONLY VERIFICATION (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the active hosted `broker-wallet` Supabase project was inspected with read-only
+catalog queries. Migration history includes the baseline `20260821000100` and
+RLS optimization `20260821000300`. **VERIFIED_HOSTED (schema metadata):**
+`quotations`, all three quotation child tables, `quotation_media`, and
+`media_objects` exist. All have RLS enabled. Authenticated users have SELECT
+on their own rows, column-scoped INSERT/UPDATE on quotation headers, and
+owner-bound CRUD on the three child tables. Header hard DELETE and client media
+writes are not granted. `owner_id` points to `profiles.id`, which points to
+`auth.users.id`; the header policies check `owner_id = auth.uid()`, and child
+policies use `owns_quotation(quotation_id)`. These policy/grant conclusions are
+catalog-verified, not a cross-account runtime test.
+
+The hosted catalog has no Quotation aggregate save/update RPC. A Flutter
+sequence of independent header and child writes is not atomic, so a reviewed
+transactional RPC is required before production aggregate persistence. The
+existing form/model also store an editable `administrativeFees.total`, while
+the normalized hosted administrative-fees rows have no total column. The owner
+decided on 2026-10-01 that this total must always equal the sum of fee rows;
+a manual override is not authoritative and needs no database column. The later
+Flutter implementation must align that field's behavior without redesigning
+the screen. Header `date`/`startDate`/`endDate` remain display text as the
+schema decision specifies. `paymentType` and row `method` remain separate
+pending a later semantics decision.
+
+**VERIFIED_SOURCE:** `quotations.office_logo_media_id` and `pdf_media_id` are
+stable UUID references with owner-validation triggers; `quotation_media` has
+`logo`/`pdf` roles. The current private-media Worker and shared Flutter queue
+support Profile/Offer/Owner, not Quotation. The Worker has no Quotation routes
+or PDF upload policy. The direct media IDs and link rows are not synchronized
+by a database constraint. Quotation media needs a narrow extension of the
+existing private R2 lifecycle and a service-role-only confirm path; no signed
+URL should become canonical state. Account deletion inventories an account's
+`media_objects` and R2 prefix, so any future Quotation key must remain under
+`profiles/<uid>/`.
+
+Status: backend contract investigation only. No mutating SQL or hosted mutation,
+Worker deployment, Flutter change, test, analyzer, build, real-device check,
+commit, or push. The generated plugin registrant drift remains untouched.
+
+NOW — prepare one narrow Supabase migration/RPC checkpoint for atomic
+Quotation aggregate saves, including rollback-only database validation; do
+not apply it to hosted Supabase without separate authorization.
+
+NEXT — after that checkpoint succeeds, address the separate Quotation
+private-media backend extension before Flutter Quotation migration.
+
+## QUOTATION ATOMIC SAVE RPC — SOURCE ONLY (2026-10-01)
+
+On `quotation-updated` at base HEAD `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+`supabase/migrations/20260930204217_quotation_save_rpc.sql` adds
+`public.save_quotation(uuid,bigint,jsonb,jsonb,jsonb,jsonb)`. This is one
+`SECURITY INVOKER` PostgreSQL function with an empty search path, existing RLS
+and column grants, `auth.uid()` ownership, and EXECUTE only for `authenticated`
+(PUBLIC/anon revoked). It writes the 18 non-media header fields and replaces
+the three child sets in one function call. No table, policy, trigger, media
+column, or unrelated feature is changed. The migration filename uses the
+current UTC timestamp after the latest repository migration; the Supabase CLI
+is not installed here, so `supabase migration new` was unavailable.
+
+Input contract: client supplies a stable Quotation UUID, a nullable expected
+version (NULL=create; non-NULL=update), a complete header JSON object, required
+downpayment and administrative-fee arrays (empty arrays remove all), and an
+optional government-fee object (SQL/JSON null removes it). Every header key is
+required, with explicit JSON null for optional scalar values. Each child object
+requires its full documented keys. Unknown keys, including `owner_id`,
+`created_at`, `deleted_at`, `version`, `office_logo_media_id`, `pdf_media_id`,
+and child `quotation_id`, are rejected. `payment_type` and each downpayment
+`method` remain independent. A non-null downpayment `due_at` must be an ISO
+timestamp with an explicit timezone offset. Display dates remain text.
+Administrative total is the sum of child amounts and is not stored. The return row is
+`(quotation_id uuid, resulting_version bigint, outcome text, created_at
+timestamptz, updated_at timestamptz)`; outcome is `created`, `replayed`, or
+`updated`.
+
+Create retries with the same UUID return `replayed` only while the live stored
+version-one header and all child values exactly match. A different owner sees
+the ownership-safe not-found result; a changed same-owner row produces UUID
+conflict. Updates lock the owned row, reject tombstones/stale expected versions,
+and use the existing header trigger for exactly one version increment. The
+function raises machine-readable SQLSTATEs: `PQT01` unauthenticated, `PQT02`
+not found/foreign, `PQT03` deleted, `PQT04` version conflict, `PQT05` invalid
+payload, `PQT06` UUID conflict; existing CHECK failures retain `23514`.
+Statement failure rolls back the header and every child mutation.
+
+`supabase/validation/quotation_save_rpc_validation.sql` is a psql-only,
+transaction-wrapped script that includes the exact migration via `\ir` and ends
+in `ROLLBACK`. It stages reserved test identities, checks grants/auth/ownership,
+create/retry and mismatch, full child persistence and replacement, optional
+government fees, invalid values, media-field protection, stale/deleted saves,
+version advancement, and rollback after early or late child failure. Its source
+checks the row lock and version predicate; simultaneous committed-session
+contention cannot be conclusively exercised while all hosted writes remain
+rollback-only. The current direct child-table CRUD grants also mean writes
+that bypass this RPC do not advance the header version; the later client adapter
+must use this RPC for aggregate writes. The validation script was written but
+**NOT RUN**. The migration was **NOT APPLIED**; this RPC is
+**IMPLEMENTED_SOURCE, NOT VERIFIED_HOSTED**.
+No Flutter tests/analyzer/build/device commands, hosted SQL, commit, or push
+were run. The prior generated registrant line-ending drift remains untouched.
+
+NOW — owner reviews the exact migration and rollback-only validation source
+before authorizing any hosted execution.
+
+NEXT — only after owner approval, run that exact validation against hosted
+Supabase in a transaction ending in ROLLBACK; evaluate its result before any
+migration application or Quotation media checkpoint.
+
+## QUOTATION SAVE RPC FINAL SOURCE/SECURITY CORRECTION (2026-10-01)
+
+The prior `SECURITY INVOKER` proposal did not enforce its aggregate-write
+boundary. Read-only hosted catalog inspection reconfirmed authenticated
+column-level INSERT/UPDATE on `quotations` and direct CRUD on all three
+Quotation child tables. Such writes could bypass the RPC, leave partial child
+state, and change child rows without advancing `quotations.version`.
+
+The still-unapplied
+`supabase/migrations/20260930204217_quotation_save_rpc.sql` now uses a
+`postgres`-owned `SECURITY DEFINER` function with empty `search_path`, explicit
+`auth.uid()` ownership on every parent lookup/write, and no dynamic SQL. A
+migration guard refuses installation by another role. Function EXECUTE remains
+revoked from PUBLIC/anon and granted only to authenticated. The same migration
+revokes the existing authenticated header INSERT/aggregate UPDATE column grants
+and child INSERT/UPDATE/DELETE grants. Owner-scoped SELECT remains. Direct
+`UPDATE (deleted_at)` remains for the established soft-delete path, with a
+restrictive UPDATE policy allowing a live owned row to become tombstoned once
+and preventing direct resurrection. RLS is not weakened. Trusted service-role
+media writes remain separate; this RPC still neither writes nor accepts media
+IDs. The existing `bump_sync_version` trigger was checked against hosted source:
+it sets `updated_at=now()` and `version=old.version+1` on a header UPDATE; child
+replacement does not fire it.
+
+`supabase/validation/quotation_save_rpc_validation.sql` now checks definer
+ownership/search path, exact grants and policy, denied direct aggregate DML,
+retained owner soft delete, blocked resurrection, malformed JSON, equivalent
+numeric replay, explicit-null header clearing, government-fee update/removal,
+and post-ROLLBACK absence of the staged function/data/policy/grant changes.
+It still includes the exact migration inside BEGIN/ROLLBACK. Sequential stale
+version behavior and the lock/predicate are covered; true two-session
+contention remains REQUIRES SEPARATE RUNTIME CONCURRENCY TEST.
+
+Status: **SOURCE_CORRECTION_REQUIRED_AND_COMPLETED**. Source reasoning supports
+the corrected authority and transaction model, but migration and validation
+SQL remain **NOT EXECUTED**, **NOT APPLIED**, and **NOT VERIFIED_HOSTED**. No
+Flutter/media changes, commit, or push. The generated registrant drift remains
+untouched. Production application must use a transactional migration runner;
+the rollback-only psql validation is the next approved database exercise.
+
+NOW — owner reviews the corrected migration and validation files before
+authorizing the exact hosted rollback-only validation.
+
+NEXT — only after owner authorization, run the validation ending in ROLLBACK,
+inspect every check and the post-rollback confirmation, then decide whether
+the migration can be applied in a separate checkpoint.
+
+## QUOTATION RPC HOSTED ROLLBACK VALIDATION — BLOCKED (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the existing hosted Broker Wallet project `rbvcnvqpdqrhywcgxkne` matched the
+reviewed Quotation table ownership, RLS, grants, policies and version trigger.
+Migration `20260930204217` and the exact `save_quotation` function were absent.
+The local SQL hashes before execution were migration
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`
+and validation
+`44DA30C0C89DB3A8551463627675906A344B3D1482D552B0F50F2516FEA87549`.
+
+One hosted rollback-validation call was attempted through the SQL connector.
+Its local psql-directive expansion was malformed because JavaScript interpreted
+`$'` in the migration's timestamp regular expression as replacement syntax;
+the connector returned SQLSTATE `42601` (missing `THEN`). The script did not
+return its rollback confirmation, so no validation assertion is claimed as
+passed. A fresh read-only hosted snapshot matched preflight exactly: the
+function and migration remained absent, baseline grants/policies and public
+object digest were unchanged, and staged user, quotation, child and media row
+counts were zero. No persistent hosted change was found.
+
+The connector expansion was corrected locally without changing either SQL
+file, but both untracked Quotation SQL files disappeared from this workspace
+before the retry's final hash check. That check stopped the retry before any
+second hosted validation call. Their disappearance was not caused by a Git
+command in this checkpoint; unrelated Plus and generated registrant changes
+were left untouched. Status: **BLOCKED / NOT VERIFIED_HOSTED_ROLLBACK**. The
+migration was not applied; no Flutter/media work, deployment, commit or push
+occurred in this checkpoint.
+
+NOW — restore the exact two reviewed Quotation SQL files at the hashes above
+and inspect the working tree; do not execute a substitute script.
+
+NEXT — after source integrity is restored and the owner renews authorization,
+run the exact rollback-only validation and compare fresh hosted preflight and
+post-rollback snapshots before considering any separate migration application.
+
+## QUOTATION SQL SOURCE RESTORED AFTER BRANCH-SWITCH LOSS (2026-10-01)
+
+On `quotation-updated` at base HEAD `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the two reviewed Quotation SQL files and the Quotation checkpoint sections that
+had vanished from the working tree were restored from Git history, not
+rewritten. All four local branches (`quotation-updated`,
+`upgrade-plus-plan-and-payment`, `backend-implementation`, `main-last`) and their
+remotes pointed at this same commit, so none of the 2026-10-01 work had ever
+been committed; it survived only in two GitHub Desktop stash entries created
+while switching branches. The SQL files and the first four Quotation sections
+came from `stash@{1}` (taken on `quotation-updated` at 2026-10-01 11:04:42
++0400); the "HOSTED ROLLBACK VALIDATION — BLOCKED" section came from
+`stash@{0}`, where it had been carried to the Plus branch. The agent logs show
+no git or file command that deleted these files; the stash taken at the branch
+switch is the only place they remained.
+
+Restored and hash-verified byte for byte against the values recorded in the
+BLOCKED section above: migration
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047` and
+validation `44DA30C0C89DB3A8551463627675906A344B3D1482D552B0F50F2516FEA87549`.
+The Plus/Subscription changes that had been carried into the quotation stash
+were deliberately NOT restored here; they belong to
+`upgrade-plus-plan-and-payment`. Both stash commits are pinned under
+`refs/backup/` so a stash discard cannot lose them.
+
+Status: SOURCE RESTORED (CODE_PROVEN source integrity only). The migration is
+still NOT EXECUTED, NOT APPLIED and NOT VERIFIED_HOSTED; no hosted call, Flutter
+change, test, commit or push was made by this restoration.
+
+NOW — the owner secures these restored files (commit them on `quotation-updated`
+or otherwise protect them) before switching branches again.
+
+NEXT — the owner renews authorization, then the exact rollback-only validation
+runs as described in the BLOCKED section above.
+
+## QUOTATION RPC HOSTED ROLLBACK VALIDATION — SIGNATURE ASSERTION FAILURE (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+both restored SQL files matched their reviewed SHA-256 hashes:
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`
+(migration) and
+`44DA30C0C89DB3A8551463627675906A344B3D1482D552B0F50F2516FEA87549`
+(validation). Fresh read-only hosted preflight matched the reviewed baseline on
+project `rbvcnvqpdqrhywcgxkne`; migration and RPC were absent.
+
+Because no `psql` client was available, a temporary connector input was made
+by byte-copying the exact migration file at the validation file's `\ir` line
+and omitting only the two psql-only directive lines. The embedded migration
+bytes were compared individually, the assembled file's length/hash were
+checked, and the connector received that prepared file unchanged. The
+temporary local file was removed after the attempt.
+
+Hosted validation stopped with SQLSTATE `42883` at validation line 132:
+`'public.save_quotation(uuid,bigint,jsonb,jsonb,jsonb)'::regprocedure` names
+only five arguments, while the migration defines six (uuid, bigint and four
+jsonb). This is a validation-script defect. No completed assertion count or
+explicit `ROLLBACK` verdict was returned. A fresh read-only hosted snapshot
+matched preflight exactly: function/migration absent; grants, policies,
+constraints and public-object digest unchanged; validation users, quotations,
+all three child-table row sets and media rows absent. No persistent hosted
+change was found. The migration was not applied.
+
+Status: **BLOCKED / NOT VERIFIED_HOSTED_ROLLBACK**. Both reviewed SQL files
+remain byte-identical and unmodified because correcting the validation file
+would invalidate its reviewed hash. No Flutter/media work, deployment, commit
+or push occurred in this checkpoint; generated registrant drift was untouched.
+
+NOW — perform a new narrow source review of the validation signature assertion
+and any other exact-signature references, correct and re-hash the validation
+file, leaving the migration unchanged.
+
+NEXT — after that new source is reviewed and explicitly authorized, rerun the
+rollback-only hosted validation with fresh preflight and post-rollback read-back;
+only a clean pass can make migration application eligible for a separate
+owner authorization.
+
+## QUOTATION RPC VALIDATION SIGNATURE FIX — HOSTED ASSERTION BLOCKER (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the validation file's one five-argument `regprocedure` reference was corrected
+to the exact six-argument `save_quotation` signature. Reversing only that edit
+in memory reproduced the prior SHA-256, proving the change was one string.
+The new validation SHA-256 is
+`02D4F00D75890DD8BEEE26A4CB7D6BB8F1C451507DD881ADC05F36EF8CE99B76`;
+the migration SHA-256 remains
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+
+Fresh read-only hosted preflight on `rbvcnvqpdqrhywcgxkne` found the migration
+and RPC absent, the four quotation tables/postgres owners and baseline
+grants/RLS/trigger intact, 30 relevant constraints present, and no validation
+test residue. The corrected validation was submitted once using a raw-byte
+temporary transport: the migration's exact 19,211 bytes were embedded and
+compared, and the temporary file was removed afterwards. The script stopped
+at its first security assertion with SQLSTATE `P0001` and message
+`quotation validation failed: postgres-owned definer, empty search_path and
+least-privilege grants`. No successful assertion count or explicit `ROLLBACK`
+verdict was returned.
+
+Read-only catalog diagnosis found that PostgreSQL stores `SET search_path = ''`
+as `proconfig = {search_path=""}` on existing functions. The validation tests
+`proconfig @> array['search_path=']`, which is false for those empty-path
+functions; this is a validation-predicate defect. No correction or rerun was
+made after the failed assertion. A fresh hosted snapshot matched preflight
+exactly: function and migration absent; grants, policies, constraints and
+public-object digest unchanged; validation users, quotations, all child-table
+row sets and media rows absent. No persistent hosted change was found.
+
+Status: **BLOCKED / NOT VERIFIED_HOSTED_ROLLBACK**. The migration remains NOT
+APPLIED. True two-session contention remains REQUIRES LATER TEST. No
+Flutter/media work, deployment, commit or push was performed; unrelated
+generated registrant drift was untouched.
+
+NOW — conduct a separate narrow source review of the empty-search-path
+assertion, correct that validation-only predicate, and record a new hash.
+
+NEXT — only after renewed owner authorization, rerun the rollback-only hosted
+validation with fresh preflight and post-rollback read-back; a clean pass is
+required before any separate migration-application authorization.
+
+## QUOTATION VALIDATION SEARCH_PATH SOURCE CORRECTION (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the first RPC security assertion's `proconfig @> array['search_path=']`
+predicate was corrected. PostgreSQL had recorded an explicitly empty function
+search path as `search_path=""`, so the old literal array element could not
+match. The validation now parses `proconfig` into option name/value pairs with
+`pg_catalog.pg_options_to_table`, requires `option_name = 'search_path'`, and
+requires the option value to be either the empty string or PostgreSQL's own
+`pg_catalog.quote_ident('')` representation of the empty path. The same
+assertion still requires postgres ownership, `SECURITY DEFINER`, PUBLIC and
+anon EXECUTE denial, and authenticated EXECUTE allowance.
+
+The old validation SHA-256 was
+`02D4F00D75890DD8BEEE26A4CB7D6BB8F1C451507DD881ADC05F36EF8CE99B76`;
+the new SHA-256 is
+`05B1D68FE9D3024A32D555D515C02B7DE1C6B94986984CDDC08CD85495168287`.
+Reversing exactly this predicate edit in memory reproduced the old hash. The
+reviewed migration remained untouched at
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+Other catalog/deparsed-source assertions were inspected; no other proven
+representation defect was changed. `git diff --check` passed. No hosted SQL or
+rollback validation ran in this source-only checkpoint; the migration remains
+NOT APPLIED and hosted rollback remains NOT VERIFIED. True two-session
+concurrency still requires a later test.
+
+NOW — the corrected validation source is ready for separate owner-authorized
+hosted rollback-only validation, beginning with a fresh preflight and exact
+migration-byte transport check.
+
+NEXT — after a clean rollback verdict and post-rollback read-back, seek a
+separate owner authorization before applying the migration; do not apply it
+under this source-only checkpoint.
+
+## QUOTATION SAVE RPC HOSTED ROLLBACK VALIDATED (2026-10-01)
+
+On `quotation-updated` at `6413faaa9e15e548b58b2871e1b513c35cf8ff18`,
+the owner authorized a hosted rollback-only validation against project
+`rbvcnvqpdqrhywcgxkne`. The reviewed migration remained byte-identical at
+SHA-256 `ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+The starting validation SHA-256 was
+`05B1D68FE9D3024A32D555D515C02B7DE1C6B94986984CDDC08CD85495168287`.
+Fresh read-only preflight found the RPC and migration absent, the four
+postgres-owned RLS quotation tables, expected grants/policies/triggers and
+30 relevant constraints present, and no validation residue.
+
+The first run stopped at the first security assertion with SQLSTATE `42704`:
+`has_function_privilege('PUBLIC', ...)` attempts to resolve the PUBLIC
+pseudo-role as a real role. A fresh read-only hosted snapshot, constraints
+read-back and migration list matched preflight exactly, including zero test
+rows and unchanged public-object digest. Under the owner's explicit
+validation-script-only correction authorization, the PUBLIC EXECUTE check was
+changed to inspect function ACL entries with `aclexplode`, using `acldefault`
+for a null ACL and requiring no `grantee = 0` EXECUTE row. The anon and
+authenticated checks remained unchanged. The final validation SHA-256 is
+`FF72C060F77F359BC64D5A9CC73D5647AC607400B1517DC975BF64AB81A64BE5`.
+
+After a second fresh preflight matched the baseline, the exact migration
+bytes were inserted into the validation transaction using byte-safe in-memory
+transport. The successful hosted run returned
+`QUOTATION SAVE RPC ROLLBACK CONFIRMED`. All 76 explicit
+`assert_true`/`expect_error` calls (26 and 50 respectively), plus the
+procedural guards, completed without failure in that final run. A fresh
+read-only post-run snapshot, constraints read-back, project identity and
+migration list all matched preflight exactly: `save_quotation` absent,
+migration history unchanged, grants/policies/constraints/digest unchanged,
+and test user, quotation, child and media rows all zero.
+
+Status: **VERIFIED_HOSTED_ROLLBACK = YES; MIGRATION_APPLIED = NO**. This
+validates the exact migration under the rollback-only hosted exercise; it does
+not prove a committed two-session contention test or real-device behavior.
+No migration apply, deployment, Flutter/media change, commit or push occurred.
+
+NOW — request a separate owner-authorized apply plus hosted read-back of the
+exact reviewed migration.
+
+NEXT — after that apply and read-back succeed, perform the required real-device
+Quotation verification and a later two-session concurrency test.

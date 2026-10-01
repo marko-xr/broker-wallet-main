@@ -3,7 +3,9 @@
 /// This demonstrates how to use the QuotaService in a Flutter widget
 /// with optimistic UI updates and proper error handling.
 
-import 'package:broker_wallet/src/constants/constants.dart';
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/routes/plus_routes.dart';
+import 'package:broker_wallet/src/views/Widgets/plus/upgrade_to_plus_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:uuid/uuid.dart';
@@ -132,46 +134,17 @@ class _QuotaAwareSectionPageState extends State<QuotaAwareSectionPage> {
     }
   }
 
-  /// Show upgrade dialog when quota is exceeded
-  void _showUpgradeDialog(QuotaExceededException error) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Upgrade to Premium'),
-        content: Text(
-          '${error.message}\n\n'
-          'Unlock unlimited items and premium features:\n\n'
-          '• Unlimited items in all sections\n'
-          '• Priority support\n'
-          '• Advanced analytics\n'
-          '• Export capabilities\n\n'
-          'Plans:\n'
-          '• AED 120/year (Save 33%)\n'
-          '• AED 15/month',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Navigate to subscription/payment page
-              _showToast('Payment flow not yet implemented', isError: false);
-            },
-            child: Text(
-              'See Plans',
-              style: AppTextStyles.buttonText.copyWith(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
+  /// Offer Broker Wallet Plus when the quota is exceeded.
+  Future<void> _showUpgradeDialog(QuotaExceededException error) async {
+    final localization = AppLocalizations.of(context);
+    final upgrade = await UpgradeToPlusSheet.show(
+      context,
+      title: localization.translate('freePlanLimitReached'),
+      message: error.message,
     );
+    if (upgrade && mounted) {
+      PlusNavigation.openPaywall(context);
+    }
   }
 
   void _showToast(String message, {required bool isError}) {

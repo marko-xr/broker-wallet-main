@@ -438,3 +438,43 @@
   themselves. Lists are deliberately not cached across visits: a retained
   list would be account-scoped data that sign-out and Delete Account's cache
   inventory would have to clear, which is a separate owner decision.
+- Broker Wallet Plus subscription UI (owner decisions, 2026-10-01). The paid plan
+  is "Broker Wallet Plus" against Free; no other tier. Digital access is sold
+  through Google Play Billing and Apple StoreKit, with RevenueCat later, so the
+  app never owns a payment method: there is no card, expiry, CVV, saved or
+  default card, PayPal, Stripe, Telr, Apple Pay or Google Pay choice anywhere,
+  even in debug. The UI shows the BILLING PROVIDER ("Billed through App Store /
+  Google Play", payment methods "managed securely by" the store) and hands
+  billing, plan changes, cancellation and receipts to that store; it never
+  claims a change happened and invents no invoice, receipt, price or date.
+  Profile has one entry, "Subscription & Billing", opening a single management
+  centre (`/subscription-billing`, with `/my-plan` redirecting) whose content
+  adapts to Free, active, trial, cancelled-but-active, grace, billing issue and
+  expired; a cancelled-but-active plan is shown as still active with renewal off
+  and its access-until date, and a payment problem never states that access is
+  already lost. The UI is presentation state only (`PlusSubscriptionViewModel`)
+  behind one seam, `PlusBillingGateway`: success is shown only when the gateway
+  backs it with an entitlement, restore never creates one, and nothing is a client
+  `isPremium`. Prices, trial text and savings come only from the gateway as
+  complete localised store strings; no currency is assumed. Every non-debug build
+  uses the unavailable gateway; the preview sheet and its placeholder prices exist
+  only under `kDebugMode`, in memory, flagged as preview. The Free-versus-Plus
+  comparison advertises only what the app defines today (the free-plan creation
+  limit). The new screens never read the legacy Firestore `plan` / `subscription`
+  fields; the Plan usage screen keeps one isolated read of the `counts` /
+  `lifetimeCreated` usage counters.
+- Subscription & Billing information architecture (owner decision after
+  real-device review, 2026-10-01): the single long management page was rejected.
+  Subscription & Billing is a short hub (plan summary, one primary action for the
+  state, destination rows) and every task has its own screen: Manage
+  subscription, Change billing period, Payment methods, Billing history &
+  receipts, Subscription help, Legal, Plan usage. Payment methods are a real,
+  platform-aware destination (Google Play: manage / add / backup; App Store:
+  Add or change payment method under Payment & Shipping), but only ever a
+  Broker Wallet explanation and hand-off — the credential form stays the store's,
+  and Broker Wallet never collects, stores or shows card details. A hand-off
+  offers "Continue to <store>" only where a documented link exists; otherwise it
+  gives the exact steps and no button that pretends to navigate (account-level
+  payment methods and purchase history have no assumed link). Plus is one plan on
+  two billing periods, so "Change plan" and "Change billing period" are one
+  action. A purchase passes through a "Secure checkout" step before the store.

@@ -1,10 +1,11 @@
-import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:broker_wallet/src/services/quota_service.dart';
 import 'package:broker_wallet/src/common/utils/app_notifier.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/localization/plus_localization.dart';
+import 'package:broker_wallet/src/common/routes/plus_routes.dart';
+import 'package:broker_wallet/src/views/Widgets/plus/upgrade_to_plus_sheet.dart';
 
 /// Helper class to show quota-related dialogs and handle quota checks
 /// FREE PLAN LIMIT: 3 items per section
@@ -102,8 +103,6 @@ class QuotaHelper {
     int limit, {
     String? toolName,
   }) async {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final localization = AppLocalizations.of(context);
 
     // Translate section/toolkit name
@@ -129,87 +128,15 @@ class QuotaHelper {
           .replaceAll('{limit}', '$limit');
     }
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        icon: Icon(
-          Icons.lock,
-          color: colors.error,
-          size: 48,
-        ),
-        title: Text(localization.translate('freePlanLimitReached')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message,
-              style: theme.textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.workspace_premium,
-                          color: colors.primary, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        localization.translate('upgradeToPremium'),
-                        style: theme.textTheme.titleSmall!.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                      '✓ ${localization.translate('unlimitedItemsInAllSections')}'),
-                  Text('✓ ${localization.translate('prioritySupport')}'),
-                  Text('✓ ${localization.translate('advancedAnalytics')}'),
-                  const SizedBox(height: 8),
-                  Text(
-                    localization.translate('premiumPricing'),
-                    style: theme.textTheme.labelLarge!.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(localization.translate('notNow')),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.push('/subscription');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(
-              localization.translate('upgradeNow'),
-              style: AppTextStyles.buttonText.copyWith(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
+    // The sheet only asks; opening the paywall stays here with the caller.
+    final upgrade = await UpgradeToPlusSheet.show(
+      context,
+      title: localization.translate('freePlanLimitReached'),
+      message: message,
     );
+    if (upgrade && context.mounted) {
+      PlusNavigation.openPaywall(context);
+    }
   }
 
   /// Add import for Firestore
@@ -238,6 +165,7 @@ class QuotaHelper {
 
         final theme = Theme.of(context);
         final colors = theme.colorScheme;
+        final localization = AppLocalizations.of(context);
 
         return Container(
           margin: const EdgeInsets.all(16),
@@ -265,22 +193,25 @@ class QuotaHelper {
                   children: [
                     Text(
                       remaining == 1
-                          ? '⚠️ Last slot remaining!'
-                          : '⚠️ $remaining slots remaining',
+                          ? localization.translate('plusQuotaLastSlot')
+                          : localization.plusText(
+                              'plusQuotaSlotsRemaining',
+                              {'count': '$remaining'},
+                            ),
                       style: theme.textTheme.titleSmall!.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     Text(
-                      'Upgrade to Premium for unlimited items',
+                      localization.translate('plusQuotaBannerBody'),
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
               TextButton(
-                onPressed: () => context.push('/subscription'),
-                child: const Text('Upgrade'),
+                onPressed: () => PlusNavigation.openPaywall(context),
+                child: Text(localization.translate('upgrade')),
               ),
             ],
           ),

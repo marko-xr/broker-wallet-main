@@ -39,12 +39,22 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/info_placeholder_vi
 import 'package:broker_wallet/src/Views/Screens/home/Profile/help_support_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/legal_information_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/language_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/payment_selection_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/share_app_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/my_plan_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_billing_history_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_change_period_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_legal_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_manage_subscription_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_payment_methods_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_paywall_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_purchase_progress_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_purchase_review_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_restore_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_subscription_help_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/plus_usage_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_billing_view.dart';
+import 'package:broker_wallet/src/common/routes/plus_routes.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/notification_settings_view.dart';
 import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
 
@@ -89,7 +99,6 @@ import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 
@@ -722,23 +731,75 @@ GoRouter _createRouter(
         path: '/terms-conditions',
         builder: (context, state) => const TermsConditionsView(),
       ),
+      // ===== Broker Wallet Plus =====
+      // Presentation flow only: paywall -> review -> purchase progress/result,
+      // plus restore and the Subscription & Billing screens. No billing is
+      // integrated yet.
       GoRoute(
-        path: '/subscription',
-        builder: (context, state) => const SubscriptionView(),
+        path: PlusRoutes.paywall,
+        builder: (context, state) => const PlusPaywallView(),
       ),
       GoRoute(
-        path: '/my-plan',
-        builder: (context, state) => const MyPlanView(),
+        path: PlusRoutes.review,
+        builder: (context, state) => const PlusPurchaseReviewView(),
       ),
       GoRoute(
-        path: '/payment-selection/:plan',
-        builder: (context, state) {
-          final planName = state.pathParameters['plan'] ?? 'monthly';
-          final plan = planName == 'monthly'
-              ? SubscriptionPlan.monthly
-              : SubscriptionPlan.yearly;
-          return PaymentSelectionView(selectedPlan: plan);
-        },
+        path: PlusRoutes.purchase,
+        builder: (context, state) => const PlusPurchaseProgressView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.restore,
+        builder: (context, state) => const PlusRestoreView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.billing,
+        builder: (context, state) => const SubscriptionBillingView(),
+      ),
+      // Everything under Subscription & Billing is one tap from the hub and
+      // pushed over it, so back always returns to where the user came from.
+      GoRoute(
+        path: PlusRoutes.manage,
+        builder: (context, state) => const PlusManageSubscriptionView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.changePeriod,
+        builder: (context, state) => const PlusChangePeriodView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.paymentMethods,
+        builder: (context, state) => const PlusPaymentMethodsView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.history,
+        builder: (context, state) => const PlusBillingHistoryView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.help,
+        builder: (context, state) => const PlusSubscriptionHelpView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.legal,
+        builder: (context, state) => const PlusLegalView(),
+      ),
+      GoRoute(
+        path: PlusRoutes.usage,
+        builder: (context, state) => const PlusUsageView(),
+      ),
+      // "My Plan" became Subscription & Billing; notifications and old links
+      // still arrive here.
+      GoRoute(
+        path: PlusRoutes.myPlan,
+        redirect: (context, state) => PlusRoutes.billing,
+      ),
+      // Former subscription routes. The payment-method picker they led to no
+      // longer exists; anything still pointing at them lands on the paywall.
+      GoRoute(
+        path: PlusRoutes.legacySubscription,
+        redirect: (context, state) => PlusRoutes.paywall,
+      ),
+      GoRoute(
+        path: PlusRoutes.legacyPaymentSelection,
+        redirect: (context, state) => PlusRoutes.paywall,
       ),
       GoRoute(
         path: '/feedback',

@@ -14,6 +14,10 @@ import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
+import 'package:broker_wallet/src/data/models/subscription/subscription_ui_models.dart';
+import 'package:broker_wallet/src/common/routes/plus_routes.dart';
+import 'package:broker_wallet/src/viewmodels/plus_subscription_viewmodel.dart';
+import 'package:broker_wallet/src/views/Widgets/plus/plus_presentation.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -33,6 +37,8 @@ class ProfileView extends StatelessWidget {
           final theme = Theme.of(context);
           final colors = theme.colorScheme;
           final texts = theme.textTheme;
+          final plusState =
+              context.watch<PlusSubscriptionViewModel>().entitlement;
           final resolvedName = vm.displayName.isNotEmpty
               ? vm.displayName
               : localization.translate('favoritesGuestUser');
@@ -166,27 +172,23 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.premiumPlan,
                               isSvg: true,
-                              title: localization.translate('subscription'),
-                              subtitle: vm.isSubscribed
-                                  ? '⭐ ${localization.translate('plusPlan')} - ${_getLocalizedPlanName(context, vm.currentUser?.subscription.plan ?? 'premium')}'
-                                  : '${localization.translate('freePlan')} - ${localization.translate('upgradeToPremium')}',
+                              title: localization.translate('plusBillingTitle'),
+                              subtitle: plusProfileTileSubtitle(
+                                context,
+                                localization,
+                                plusState,
+                              ),
                               hasTrailing: true,
-                              trailingWidget: vm.isSubscribed
-                                  ? Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.star,
-                                          color: Colors.amber,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.check_circle,
-                                          color: Colors.green,
-                                          size: 20,
-                                        ),
-                                      ],
+                              trailingWidget: plusState.isCurrentPlus
+                                  ? Icon(
+                                      plusState.status.needsPaymentAttention
+                                          ? Icons.error_outline_rounded
+                                          : Icons.verified_rounded,
+                                      color:
+                                          plusState.status.needsPaymentAttention
+                                              ? colors.error
+                                              : colors.primary,
+                                      size: 22,
                                     )
                                   : Container(
                                       padding: const EdgeInsets.symmetric(
@@ -198,23 +200,19 @@ class ProfileView extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        localization.translate('upgrade'),
+                                        localization.translate(
+                                          plusState.status ==
+                                                  SubscriptionStatus.expired
+                                              ? 'plusResubscribe'
+                                              : 'upgrade',
+                                        ),
                                         style: texts.labelSmall!.copyWith(
                                           color: colors.onPrimary,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                     ),
-                              onTap: () => context.push('/subscription'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.premiumPlan,
-                              isSvg: true,
-                              title: localization.translate('myPlan'),
-                              subtitle:
-                                  localization.translate('viewQuotaUsage'),
-                              onTap: () => context.push('/my-plan'),
+                              onTap: () => PlusNavigation.open(context),
                             ),
                           ],
                         ),
@@ -368,21 +366,6 @@ class ProfileView extends StatelessWidget {
         },
       ),
     );
-  }
-
-  /// Helper function to get localized plan name
-  String _getLocalizedPlanName(BuildContext context, String plan) {
-    final localization = AppLocalizations.of(context);
-    final planLower = plan.toLowerCase();
-
-    if (planLower == 'monthly') {
-      return localization.translate('monthly');
-    } else if (planLower == 'yearly') {
-      return localization.translate('yearly');
-    } else {
-      // Fallback for 'premium' or any other plan type
-      return localization.translate('premiumPlan');
-    }
   }
 
   /// Navigates to the shared "not available yet" screen for

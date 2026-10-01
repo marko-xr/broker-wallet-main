@@ -7,6 +7,10 @@ import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/plus_subscription_viewmodel.dart';
+import 'package:broker_wallet/src/services/subscription/debug_plus_billing_gateway.dart';
+import 'package:broker_wallet/src/services/subscription/plus_billing_gateway.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
@@ -341,6 +345,28 @@ void main() async {
             service ??= OptimisticFavoritesService();
             service.syncAccountGeneration();
             return service;
+          },
+        ),
+        // Broker Wallet Plus presentation state. Holds no entitlement
+        // authority: it shows what a billing source reports (today: nothing,
+        // or the debug-only preview) and resets whenever the account changes
+        // so one account's state is never shown to another. Lazy, so it costs
+        // nothing until a Plus surface is opened.
+        ChangeNotifierProxyProvider<AuthViewModel, PlusSubscriptionViewModel>(
+          lazy: true,
+          create: (_) => PlusSubscriptionViewModel(
+            gateway: kDebugMode
+                ? DebugPlusBillingGateway()
+                : const UnavailablePlusBillingGateway(),
+          ),
+          update: (_, authVM, plus) {
+            plus ??= PlusSubscriptionViewModel(
+              gateway: kDebugMode
+                  ? DebugPlusBillingGateway()
+                  : const UnavailablePlusBillingGateway(),
+            );
+            plus.attachAccount(authVM.currentUserId);
+            return plus;
           },
         ),
         ChangeNotifierProxyProvider<AuthViewModel, NotificationViewModel>(

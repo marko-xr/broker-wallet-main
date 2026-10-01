@@ -6246,3 +6246,186 @@ NOW — the owner reviews the completed local performance commit on
 
 NEXT — if satisfied, the owner safely pushes that branch; then return to F1
 phase 2 and the separate Owner media Samsung acceptance.
+
+## BROKER WALLET PLUS — SUBSCRIPTION & BILLING UI (2026-10-01)
+
+Branch `upgrade-plus-plan-and-payment`, from `6413faaa9e15e548b58b2871e1b513c35cf8ff18`.
+UI / navigation / presentation state only: no RevenueCat, Play Billing or
+StoreKit, no Supabase, Firestore or Cloudflare change, no real purchase, no
+commit, no push.
+
+Owner-run baseline before the completion pass: `test/subscription/plus_ui_test.dart`
+68/68 PASS, `test/subscription/` 142/142 PASS, and the Plus-specific analyzer
+warning in `plus_paywall_view.dart` gone (unrelated repository analyzer items
+untouched).
+
+The Plus shell: `/plus` (paywall, Free versus Plus, billing period) →
+`/plus/review` (purchase review, no payment method) → `/plus/purchase`
+(progress, then success / pending / cancelled / failure), `/plus/restore`, and
+Subscription & Billing. It replaced the Firestore test-mode entitlement writes
+and the simulated Card/PayPal/Apple Pay/Google Pay screen; `/subscription` and
+`/payment-selection/:plan` only redirect to `/plus`. `PlusSubscriptionViewModel`
+holds presentation state behind one seam, `PlusBillingGateway`; every non-debug
+build uses the unavailable gateway (no plan is offered), and the preview sheet
+exists only under `kDebugMode`.
+
+Completion pass: Profile has ONE entry, "Subscription & Billing", whose tile
+summarises the real presentation state (for example "Plus • Active • Annual",
+"Plus • Active until <date>", "Plus • Payment issue", "Free Plan • Upgrade to
+Plus"). It opens `/subscription-billing`, one management centre for every state
+including Free, which replaced the separate "My Plan" row (its quota-usage
+counters now sit inside the same screen; `/my-plan` redirects to it, so
+notifications still work). Sections: plan summary (plan, status, price, renews /
+active-until / trial-end / expired date, billed through), calm status notice,
+Plan & billing details (only supplied values), Subscription actions (Manage,
+Change plan, Resubscribe, Fix payment), Payment & billing (which store bills,
+"managed securely by Apple / Google Play", Manage billing, Purchase history &
+receipts, Restore purchases), usage, Help (existing Help & Support), and the
+legal footer (existing Terms and Privacy). Cancelled-but-active reads "Active"
+plus "Renewal off" and the access-until date, never "ended". Every action only
+explains where the store does it (`PlusManageSheet`, one hand-off point,
+`plusManagementUri`) and never claims a change happened. There is no card
+number, expiry, CVV, saved card, default card or payment-provider choice
+anywhere; Broker Wallet shows the BILLING PROVIDER, not a card. Purchase
+history is a pointer to the store receipts and invents no invoices. The paywall
+comparison became one grouped card and the pinned bar and review now also state
+"Billed through <store>".
+
+Status: SUBSCRIPTION & BILLING UI SOURCE IMPLEMENTED. PAYMENT BACKEND NOT
+INTEGRATED. REVENUECAT / STOREKIT / PLAY BILLING NOT INTEGRATED. REAL PURCHASE
+NOT VERIFIED. REAL DEVICE NOT VERIFIED. New and updated test source is under
+`test/subscription/`; it has NOT been run since this pass (owner runs Flutter).
+Arabic wording and RTL are source-reviewed only.
+
+NOW — the owner runs `flutter test test/subscription/`, `flutter analyze`, then
+`flutter run` (debug) and walks Profile → Subscription & Billing through every
+state with the preview sheet (science icon), in English/light, Arabic/RTL, dark
+and a small screen, switching the "Billed through" store between Google Play and
+App Store.
+
+NEXT — one checkpoint: the RevenueCat + Google Play Billing integration
+contract (product IDs, user-identity mapping, entitlement and restore/transfer
+policy, server-side quota enforcement), implementing `PlusBillingGateway` and
+supplying `SubscriptionUiState.managementUri`.
+
+> SUPERSEDED IN PART by the next section: the single long "Subscription &
+> Billing" page described above was rejected on the owner's physical device and
+> rebuilt as a hub with its own task screens. The paywall, purchase progress,
+> restore, view model, gateway seam and debug preview are unchanged in kind.
+
+## BROKER WALLET PLUS — SUBSCRIPTION, BILLING & PAYMENT METHODS UX REBUILD (2026-10-01)
+
+Branch `upgrade-plus-plan-and-payment`, from `6413faaa9e15e548b58b2871e1b513c35cf8ff18`.
+Implementation checkpoint. No Flutter command was run (the owner builds, tests
+and runs). No RevenueCat, Play Billing, StoreKit, backend, Supabase, Cloudflare,
+Firestore, commit or push.
+
+Owner device feedback (authoritative): the previous Subscription & Billing
+screens work technically but the UX was rejected as confusing, crowded and not
+like a mature subscription experience, and Payment Methods / Add / Change
+Payment Method / billing management were not represented clearly. Only the Plus,
+subscription, billing and payment-method screens were redesigned; Profile keeps
+its single "Subscription & Billing" entry and the rest of Profile is untouched.
+
+Information architecture. BEFORE: one scrolling page — plan hero, notice, a
+"Plan & billing" details table, Subscription actions, delete-account note,
+"Payment & billing" rows (text in a bottom sheet), usage counters, help and
+legal text, all on one screen. AFTER: a hub with one task per screen.
+
+- `/subscription-billing` hub: plan summary (plan, status, period and price,
+  renews / active-until / trial-end / expired date, billed through — at most three
+  short lines), a calm payment-issue callout with "Update payment method" when
+  relevant, ONE primary action for the state (Upgrade / View plans /
+  Resubscribe), then destination rows: Manage subscription, Payment methods,
+  Billing history & receipts, Restore purchases, then Plan usage, Subscription
+  help, Legal. Rows that do not apply are not shown (Free: Restore only;
+  expired: receipts and Restore; cancelled-but-active: no payment-method row
+  because renewal is off).
+- `/subscription-billing/manage`: the plan's values (only supplied ones), a
+  status notice, "Resubscribe" or "Update payment method" where the state calls
+  for it, "Change billing period" (active / trial only) and "Manage or cancel in
+  <store>", plus the Deleting-your-account note. Free / expired see "No active
+  subscription" and View plans.
+- `/subscription-billing/change-period`: current period, Monthly / Annual
+  options (the store's own price only when the gateway supplied one), Continue
+  enabled only for a different period, then the store hand-off sheet. Plus is one
+  plan on two billing periods, so "Change plan" and "Change billing period" are
+  the same action and live here as one.
+- `/subscription-billing/payment-methods`: platform-aware. Google Play: provider
+  header, then Manage payment methods / Add payment method / Backup payment
+  methods, the Broker Wallet Plus subscription row, payment-method help. App
+  Store: "Apple Account" header, Payment & Shipping → "Add or change payment
+  method", the subscription row, help. A payment issue puts the notice and
+  "Update payment method" above the same list (hub → Payment issue → Update
+  payment method → Payment methods → hand-off).
+- Hand-off sheet (`PlusManageSheet`, shared): title, platform text, numbered
+  steps, "Broker Wallet does not see or store your card details", and — only
+  when a documented link exists — "Continue to <store>" with "Not now"; otherwise
+  the steps and "Done". Account-level payment methods (add / manage / backup) and
+  the App Store's payment methods have no documented link, so they are GUIDANCE
+  ONLY; "Continue to Google Play" exists only for manage / change period /
+  resubscribe and for fixing a Google Play subscription's payment method, using
+  the subscription-management URLs that were already in the code (no new URL).
+- `/subscription-billing/history`: store-owned, so it lists nothing and invents
+  nothing (no invoice, amount, date or card); it states whose record it is and
+  shows the steps to find it. `/help`: five topics, each opening an existing
+  screen (receipts, payment methods, restore, manage, existing Help & Support).
+  `/legal`: the existing subscription disclosure plus the existing Terms and
+  Privacy screens (no new legal text). `/usage`: the legacy usage counters, moved
+  off the plan screen and unchanged.
+- Paywall reordered so Plus, what it gives, the price and billing period come
+  first (comparison now below the plans, the redundant "billed" line removed from
+  each plan card). Purchase review is one summary (full charge, renewal, billed
+  through) and one Continue, which opens a "Secure checkout" sheet ("You'll
+  complete your purchase with <store>…", then "Continue to <store>") before the
+  purchase begins; the "what happens next" card was folded into that step.
+- Legacy routes still resolve: `/my-plan` → hub; `/subscription` and
+  `/payment-selection/:plan` → paywall. Quota prompts still open the paywall.
+- Debug preview (debug only, in memory): "Open a screen" and "Open a store
+  hand-off sheet" sections added (every new screen, the payment hand-offs and
+  Secure checkout), alongside the existing state / store / period / outcome knobs.
+
+Safety boundary (unchanged and tested): no card number, expiry, CVV, saved or
+default card, masked card, PayPal, Stripe, Telr, custom Apple Pay or Google Pay;
+no payment field anywhere; no store SDK; no backend or entitlement write; the
+hand-off sheets never read or change the view model.
+
+Localization: new `plus*` keys in `app_en.arb` / `app_ar.arb` (the Plus block
+was pruned of keys the redesign made dead and extended; both files remain valid
+JSON, identical key sets and placeholders). Arabic and RTL are source-reviewed
+only. Direction-aware chevrons, start/end geometry and theme colours only.
+
+Tests (written, NOT run): `test/subscription/plus_billing_hub_test.dart`,
+`plus_payment_methods_test.dart` (new), and updated `plus_ui_test.dart`,
+`plus_test_support.dart`, `plus_source_guards_test.dart`,
+`plus_localization_test.dart`. Static checks run read-only this session: a
+`dart format` syntax/format check and one `dart analyze` scoped to the touched
+Plus files (clean after one unused-declaration warning in the test file was
+removed). That is source evidence, not a test result.
+
+Status: PLUS / BILLING UI SOURCE IMPLEMENTED. REAL REVENUECAT: NOT INTEGRATED.
+REAL GOOGLE PLAY BILLING: NOT INTEGRATED. REAL STOREKIT: NOT INTEGRATED. REAL
+PAYMENT: NOT PERFORMED. REAL ENTITLEMENT: NOT VERIFIED. OWNER DEVICE UX: PENDING
+RE-ACCEPTANCE AFTER REDESIGN. The earlier 142/142 and 68/68 results are a
+historical baseline; they are not claimed for this source.
+
+NOW — the owner runs `flutter test test/subscription/`, then `flutter analyze`,
+then a debug build on the Samsung and walks Profile → Subscription & Billing:
+Free; then the preview sheet (science icon) → Active (hub, Manage subscription,
+Change billing period, Payment methods → Add payment method, Billing history,
+Subscription help, Legal, Plan usage); Billing issue (hub → Update payment
+method → Payment methods → Update payment method sheet); Cancelled (Resubscribe);
+switch "Billed through" to App Store and repeat Payment methods; then paywall →
+Continue → Continue → Secure checkout → Continue to <store> (preview purchase);
+repeat Arabic/RTL, dark and large text.
+
+NEXT — only after the owner accepts this UX: the RevenueCat + Google Play
+Billing integration contract (product IDs, identity mapping, entitlement and
+restore/transfer policy, server-side quota enforcement), implementing
+`PlusBillingGateway` and supplying `SubscriptionUiState.managementUri`.
+
+Open product / provider decisions: store product IDs and real prices;
+a documented, safe Google Play / Apple link for payment methods and purchase
+history (none is assumed today); whether a separate Subscription Terms document
+is wanted (none exists, none was written); whether "Change plan" should ever be
+a separate tier from the billing period.

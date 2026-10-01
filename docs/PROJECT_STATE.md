@@ -174,3 +174,18 @@ longer blanks the screen, with a visible loading placeholder and item-level
 delete progress. Owner-run verification: 43/43 targeted regression tests
 PASS, Flutter analyzer accepted, and Samsung physical-device acceptance PASS.
 No push, deployment or merge occurred; see `docs/CURRENT_CHECKPOINT.md`.
+
+The Broker Wallet Plus subscription UI is SOURCE IMPLEMENTED on
+`upgrade-plus-plan-and-payment` (2026-10-01): paywall, purchase review, purchase
+progress and results, restore, and a "Subscription & Billing" hub that Profile
+opens (rebuilt 2026-10-01 after the owner rejected the first layout on a device)
+with its own Manage subscription, Change billing period, Payment methods,
+Billing history & receipts, Subscription help, Legal and Plan usage screens,
+localised in English and Arabic. It is presentation only: RevenueCat, Play
+Billing and StoreKit are NOT INTEGRATED, no real purchase has been made, release
+builds say plans are not available yet, and Broker Wallet holds no card details
+(the store bills and manages payment; the Payment methods screens only explain
+and hand off). The owner reports the subscription tests 142/142 PASS before the
+Subscription & Billing work; the rebuilt screens' tests are written but not yet
+run, and nothing is verified on a device. See `docs/CURRENT_CHECKPOINT.md` and
+`docs/DECISIONS.md`.

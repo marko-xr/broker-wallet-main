@@ -5,7 +5,6 @@ import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
-import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/quotation/add_quotation_viewmodel.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -140,23 +139,6 @@ void main() {
       expect(homeVM.currentUserId, equals('home_user_456'));
 
       homeVM.dispose();
-    });
-
-    test(
-        'SubscriptionViewModel exposes canonical currentUserId from AuthRepository',
-        () {
-      mockRepo.mockUser = null;
-      final subVM = SubscriptionViewModel(authRepository: mockRepo);
-
-      expect(subVM.currentUserId, isNull);
-
-      mockRepo.mockUser = createTestUser(
-        uid: 'sub_user_789',
-        email: 'sub@realtig.com',
-      );
-      expect(subVM.currentUserId, equals('sub_user_789'));
-
-      subVM.dispose();
     });
 
     test(

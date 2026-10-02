@@ -2462,5 +2462,20 @@
   "securityPasswordHint": "تغيير كلمة مرور حسابك",
   "legalInformationStatus": "المعلومات القانونية",
   "legalContentPending": "النص القانوني النهائي بانتظار الموافقة القانونية وموافقة المنتج.",
-  "legalContentAvailableBeforeRelease": "سيتوفر هنا قبل الإطلاق العام."
+  "legalContentAvailableBeforeRelease": "سيتوفر هنا قبل الإطلاق العام.",
+  "quotationTitleRequired": "الرجاء إدخال عنوان العقار قبل الحفظ.",
+  "quotationAdminFeeTitleRequired": "الرجاء إدخال عنوان لكل رسم إداري.",
+  "quotationInvalidData": "بعض بيانات عرض السعر غير صالحة. يرجى مراجعة النموذج والمحاولة مرة أخرى.",
+  "quotationVersionConflict": "تم تعديل عرض السعر هذا على جهاز آخر. أغلقه ثم افتحه مجددًا لتحميل أحدث نسخة قبل الحفظ.",
+  "quotationNoLongerAvailable": "عرض السعر هذا لم يعد متاحًا.",
+  "quotationSessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
+  "quotationNetworkError": "تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
+  "quotationSaveFailed": "تعذر حفظ عرض السعر. يرجى المحاولة مرة أخرى.",
+  "quotationUpdatedSuccessfully": "تم تحديث عرض السعر بنجاح!",
+  "quotationSavedMediaFailure": "تم حفظ عرض السعر، لكن تعذر رفع الشعار أو ملف PDF. حاول الحفظ مرة أخرى.",
+  "quotationLoadFailed": "تعذر تحميل عرض السعر هذا. يرجى المحاولة مرة أخرى.",
+  "quotationLogoUnsupported": "يجب أن يكون شعار المكتب صورة بصيغة JPG أو PNG أو WebP وبحجم لا يتجاوز 10 ميغابايت.",
+  "quotationPdfUnavailable": "تعذر فتح ملف PDF حاليًا. يرجى المحاولة مرة أخرى.",
+  "quotationDeleteFailed": "تعذر حذف عرض السعر. يرجى المحاولة مرة أخرى.",
+  "quotationListLoadFailed": "تعذر تحميل عروض الأسعار. يرجى المحاولة مرة أخرى."
 }

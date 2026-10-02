@@ -26,6 +26,10 @@ import { stagingRequestAllowed } from './staging_gate.js';
  *   POST /owner-media/confirm
  *   GET  /owner-media
  *   POST /owner-media/remove
+ *   POST /quotation-media/authorize
+ *   POST /quotation-media/confirm
+ *   GET  /quotation-media
+ *   POST /quotation-media/remove
  *   POST /account/delete   (see account_deletion.js)
  *
  * Scheduled:
@@ -113,6 +117,21 @@ const OFFER_MEDIA_KEY_PATTERN = 'profiles/*/offers/*';
 const MAX_MEDIA_PER_OWNER = 10;
 const OWNER_MEDIA_CONFIRM_RPC = '/rest/v1/rpc/confirm_owner_media_upload';
 const OWNER_MEDIA_KEY_PATTERN = 'profiles/*/owners/*';
+const QUOTATION_MEDIA_KEY_PATTERN = 'profiles/*/quotations/*';
+const QUOTATION_MEDIA_TYPES = Object.freeze({
+  office_logo: Object.freeze({
+    'image/jpeg': { extension: 'jpg', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+    'image/png': { extension: 'png', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+    'image/webp': { extension: 'webp', mediaType: 'image', maxBytes: MAX_IMAGE_BYTES },
+  }),
+  quotation_pdf: Object.freeze({
+    'application/pdf': { extension: 'pdf', mediaType: 'pdf', maxBytes: 20 * 1024 * 1024 },
+  }),
+});
+const QUOTATION_ROLE_COLUMNS = Object.freeze({
+  office_logo: Object.freeze({ column: 'office_logo_media_id', linkRole: 'logo' }),
+  quotation_pdf: Object.freeze({ column: 'pdf_media_id', linkRole: 'pdf' }),
+});
 
 /**
  * The records private media can belong to. Everything that differs between an
@@ -160,6 +179,14 @@ const MEDIA_PARENTS = Object.freeze({
     sweepLogTag: 'owner-media-sweep',
     deletedParentReportKey: 'deletedOwnerMedia',
   }),
+  quotation: Object.freeze({
+    title: 'Quotation', noun: 'quotation', idField: 'quotationId',
+    table: 'quotations', linkTable: 'quotation_media', linkColumn: 'quotation_id',
+    keySegment: 'quotations', keyPattern: QUOTATION_MEDIA_KEY_PATTERN,
+    sweepModeVar: 'QUOTATION_MEDIA_SWEEP_MODE',
+    sweepLogTag: 'quotation-media-sweep',
+    deletedParentReportKey: 'deletedQuotationMedia',
+  }),
 });
 // ISO base-media `ftyp` brands, matched case-sensitively as written in the
 // file. HEIF image brands are handled by detectImageMimeFromBytes.
@@ -204,6 +231,10 @@ export default {
       if (request.method === 'POST' && path === '/owner-media/confirm') return await handleMediaConfirm(request, env, MEDIA_PARENTS.owner);
       if (request.method === 'GET' && path === '/owner-media') return await handleMediaList(request, env, MEDIA_PARENTS.owner);
       if (request.method === 'POST' && path === '/owner-media/remove') return await handleMediaRemove(request, env, MEDIA_PARENTS.owner);
+      if (request.method === 'POST' && path === '/quotation-media/authorize') return await handleQuotationAuthorize(request, env);
+      if (request.method === 'POST' && path === '/quotation-media/confirm') return await handleQuotationConfirm(request, env);
+      if (request.method === 'GET' && path === '/quotation-media') return await handleQuotationList(request, env);
+      if (request.method === 'POST' && path === '/quotation-media/remove') return await handleQuotationRemove(request, env);
       return corsResponse({ error: 'Not found' }, 404, env);
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
@@ -226,6 +257,8 @@ export default {
     // configured.
     ctx.waitUntil(runOfferMediaSweeps(env));
     ctx.waitUntil(runOwnerMediaSweeps(env));
+    // Missing mode is off. Enabling this sweep is a separate owner decision.
+    ctx.waitUntil(runQuotationMediaSweeps(env));
   },
 };
 
@@ -996,6 +1029,390 @@ async function handleMediaRemove(request, env, parent) {
   throw new WorkerError('Media changed during removal; try again', 409, 'invalid_state');
 }
 
+function quotationRole(value) {
+  if (typeof value !== 'string' || !Object.hasOwn(QUOTATION_ROLE_COLUMNS, value)) {
+    throw new WorkerError('Invalid quotation media role', 400, 'invalid_request');
+  }
+  return value;
+}
+
+function expectedQuotationMediaId(body) {
+  if (!Object.hasOwn(body, 'expectedMediaId')) {
+    throw new WorkerError('expectedMediaId is required', 400, 'invalid_request');
+  }
+  return body.expectedMediaId === null ? null : requireUuid(body.expectedMediaId, 'expectedMediaId');
+}
+
+function quotationObjectKey(userId, quotationId, role, mediaId, contentType) {
+  const extension = QUOTATION_MEDIA_TYPES[role]?.[contentType]?.extension;
+  return extension
+    ? `profiles/${userId}/quotations/${quotationId}/${role}/${mediaId}.${extension}`
+    : null;
+}
+
+function isExpectedQuotationObject(row, userId, quotationId, role) {
+  return row.object_key === quotationObjectKey(userId, quotationId, role, row.id, row.content_type);
+}
+
+function quotationKeyIdentity(row) {
+  if (!row) return null;
+  const parts = typeof row.object_key === 'string' ? row.object_key.split('/') : [];
+  if (parts.length !== 6 || parts[0] !== 'profiles' ||
+      parts[2] !== 'quotations' || !MEDIA_ID_PATTERN.test(parts[1]) ||
+      !MEDIA_ID_PATTERN.test(parts[3]) || !Object.hasOwn(QUOTATION_ROLE_COLUMNS, parts[4]) ||
+      row.object_key !== quotationObjectKey(parts[1], parts[3], parts[4], row.id, row.content_type)) {
+    return null;
+  }
+  return { userId: parts[1], quotationId: parts[3], role: parts[4] };
+}
+
+async function loadOwnedQuotation(quotationId, userId, env) {
+  const res = await supabaseServiceFetch(env, 'GET',
+    `/rest/v1/quotations?id=eq.${encodeURIComponent(quotationId)}&owner_id=eq.${encodeURIComponent(userId)}` +
+    '&deleted_at=is.null&select=id,office_logo_media_id,pdf_media_id');
+  if (!res.ok) throw new WorkerError('Failed to verify quotation ownership', 502);
+  const row = (await res.json())?.[0];
+  if (!row) throw new WorkerError('Quotation not found or not owned by user', 404, 'quotation_not_found');
+  return row;
+}
+
+function quotationCleanupScope(userId, quotationId, role) {
+  const prefix = `profiles/${userId}/quotations/${quotationId}/${role}/`;
+  return {
+    keyFilter: `&object_key=like.${encodeURIComponent(prefix)}*`,
+    includes: (row) => isExpectedQuotationObject(row, userId, quotationId, role),
+  };
+}
+
+async function cleanupAbandonedQuotationPending(userId, quotationId, role, env) {
+  const scope = quotationCleanupScope(userId, quotationId, role);
+  try {
+    const res = await supabaseServiceFetch(env, 'GET',
+      `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}` +
+      `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
+      `${scope.keyFilter}&select=id,bucket,object_key,content_type,status,created_at` +
+      '&order=created_at.asc&limit=10');
+    if (!res.ok) return;
+    const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
+    for (const row of (await res.json()) ?? []) {
+      if (!scope.includes(row) || Date.parse(row.created_at) > cutoff) continue;
+      // A status CAS wins over a racing confirm before any R2 bytes are
+      // removed. The tombstone remains retryable if R2 deletion fails.
+      if (await markMediaPendingDelete(row.id, 'pending_upload', env)) {
+        await completeQuotationMediaRemoval({ ...row, status: 'pending_delete' }, env);
+      }
+    }
+  } catch (_) {
+    console.error('[quotation-media] abandoned upload cleanup failed');
+  }
+}
+
+async function handleQuotationAuthorize(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const quotationId = requireUuid(body.quotationId, 'quotationId');
+  const role = quotationRole(body.role);
+  const expectedMediaId = expectedQuotationMediaId(body);
+  const requestedId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const type = QUOTATION_MEDIA_TYPES[role][body.contentType];
+  if (!type) throw new WorkerError('Unsupported content type', 400, 'unsupported_media_type');
+  if (!Number.isInteger(body.contentLength) || body.contentLength < 1 || body.contentLength > type.maxBytes) {
+    throw new WorkerError('Invalid quotation media size', 400, 'media_too_large');
+  }
+  const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  if (quotation[QUOTATION_ROLE_COLUMNS[role].column] !== expectedMediaId) {
+    throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
+  }
+  await cleanupAbandonedQuotationPending(userId, quotationId, role, env);
+  const mediaObjectId = requestedId ?? crypto.randomUUID();
+  const objectKey = quotationObjectKey(userId, quotationId, role, mediaObjectId, body.contentType);
+  const upload = {
+    userId, mediaObjectId, contentType: body.contentType,
+    contentLength: body.contentLength, objectKey, offerType: type,
+  };
+  if (requestedId) {
+    const existing = await findMediaById(requestedId, env);
+    if (existing) return resumeQuotationUpload(existing, upload, quotation, role, env);
+  }
+  const inserted = await supabaseServiceFetch(env, 'POST', '/rest/v1/media_objects', {
+    id: mediaObjectId, owner_id: userId, bucket: env.R2_BUCKET_NAME,
+    object_key: objectKey, media_type: type.mediaType,
+    content_type: body.contentType, size_bytes: body.contentLength,
+    original_file_name: sanitizeOriginalFileName(body.originalFileName),
+    status: 'pending_upload',
+  });
+  if (!inserted.ok) {
+    if (requestedId && inserted.status === 409) {
+      const raced = await findMediaById(requestedId, env);
+      if (raced) return resumeQuotationUpload(raced, upload, quotation, role, env);
+    }
+    throw new WorkerError('Failed to create pending quotation media', 502);
+  }
+  return signMediaUpload(upload, env, { createdNow: true });
+}
+
+async function resumeQuotationUpload(row, upload, quotation, role, env) {
+  if (row.owner_id !== upload.userId) {
+    throw new WorkerError('Media id is not available', 409, 'media_id_conflict');
+  }
+  if (row.bucket !== env.R2_BUCKET_NAME || row.object_key !== upload.objectKey ||
+      row.content_type !== upload.contentType ||
+      row.media_type !== upload.offerType.mediaType) {
+    throw new WorkerError('Media id was used for another upload', 409, 'idempotency_mismatch');
+  }
+  if (row.status === 'pending_upload') {
+    if (Number(row.size_bytes) !== upload.contentLength) {
+      throw new WorkerError('Media size changed', 409, 'idempotency_mismatch');
+    }
+    return signMediaUpload(upload, env, { createdNow: false });
+  }
+  if (row.status === 'ready' &&
+      quotation[QUOTATION_ROLE_COLUMNS[role].column] === row.id &&
+      await findQuotationLink(quotation.id, row.id, role, env)) {
+    return corsResponse({ status: 'ready', mediaObjectId: row.id,
+      objectKey: row.object_key, mediaType: upload.offerType.mediaType },
+    200, env, { 'Cache-Control': 'no-store' });
+  }
+  throw new WorkerError('Media id cannot be resumed', 409, 'invalid_state');
+}
+
+async function findQuotationLink(quotationId, mediaId, role, env) {
+  const res = await supabaseServiceFetch(env, 'GET',
+    `/rest/v1/quotation_media?quotation_id=eq.${encodeURIComponent(quotationId)}` +
+    `&media_id=eq.${encodeURIComponent(mediaId)}` +
+    `&role=eq.${QUOTATION_ROLE_COLUMNS[role].linkRole}&ordinal=eq.0&select=media_id`);
+  if (!res.ok) throw new WorkerError('Failed to read quotation media link', 502);
+  return Boolean((await res.json())?.[0]);
+}
+
+function detectQuotationMime(bytes, role) {
+  if (role === 'office_logo') return detectImageMimeFromBytes(bytes);
+  if (bytes.length < 8 || bytes[0] !== 0x25 || bytes[1] !== 0x50 ||
+      bytes[2] !== 0x44 || bytes[3] !== 0x46 || bytes[4] !== 0x2d ||
+      (bytes[5] !== 0x31 && bytes[5] !== 0x32) || bytes[6] !== 0x2e ||
+      bytes[7] < 0x30 || bytes[7] > 0x39) return null;
+  return 'application/pdf';
+}
+
+async function rejectInvalidQuotationUpload(row, userId, env, reason, code) {
+  const marked = await supabaseServiceFetch(env, 'PATCH',
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(row.id)}` +
+    `&owner_id=eq.${encodeURIComponent(userId)}` +
+    `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload`,
+    { status: 'failed' }, { preferRepresentation: true });
+  if (!marked.ok) throw new WorkerError('Failed to reject invalid quotation upload', 502);
+  if ((await marked.json()).length !== 1) {
+    // A concurrent confirm or cancellation won the status CAS. In particular,
+    // never delete bytes that could now be attached to a live Quotation.
+    throw new WorkerError('Quotation media changed during verification', 409, 'invalid_state');
+  }
+  await bestEffortDeleteObject(row.object_key, env);
+  throw new WorkerError(reason, 422, code);
+}
+
+async function handleQuotationConfirm(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const quotationId = requireUuid(body.quotationId, 'quotationId');
+  const role = quotationRole(body.role);
+  const mediaObjectId = requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const expectedMediaId = expectedQuotationMediaId(body);
+  const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  const row = await findOwnedMedia(mediaObjectId, userId, env);
+  if (!row) throw new WorkerError('Media not found', 404, 'media_not_found');
+  const type = QUOTATION_MEDIA_TYPES[role][row.content_type];
+  if (row.bucket !== env.R2_BUCKET_NAME || !type || row.media_type !== type.mediaType ||
+      !isExpectedQuotationObject(row, userId, quotationId, role)) {
+    throw new WorkerError('Media does not match quotation and role', 409, 'media_mismatch');
+  }
+  if (row.status === 'ready' &&
+      quotation[QUOTATION_ROLE_COLUMNS[role].column] === mediaObjectId &&
+      await findQuotationLink(quotationId, mediaObjectId, role, env)) {
+    return corsResponse({ quotationId, role, mediaObjectId, alreadyConfirmed: true }, 200, env);
+  }
+  if (quotation[QUOTATION_ROLE_COLUMNS[role].column] !== expectedMediaId) {
+    throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
+  }
+  if (row.status !== 'pending_upload') {
+    throw new WorkerError('Media upload cannot be confirmed', 409, 'invalid_state');
+  }
+  const object = await env.MEDIA_BUCKET.head(row.object_key);
+  if (!object) throw new WorkerError('Upload has not arrived', 409, 'upload_incomplete');
+  if (object.size < 1 || object.size > type.maxBytes) {
+    return rejectInvalidQuotationUpload(row, userId, env,
+      'R2 object size is invalid', 'media_too_large');
+  }
+  const signature = await env.MEDIA_BUCKET.get(row.object_key,
+    { range: { offset: 0, length: SIGNATURE_BYTES_TO_READ } });
+  if (!signature) throw new WorkerError('Upload has not arrived', 409, 'upload_incomplete');
+  const detected = detectQuotationMime(new Uint8Array(await signature.arrayBuffer()), role);
+  const observed = object.httpMetadata?.contentType ?? null;
+  if (detected !== row.content_type ||
+      (observed !== null && observed !== row.content_type)) {
+    return rejectInvalidQuotationUpload(row, userId, env,
+      'Uploaded type does not match authorized metadata', 'media_type_mismatch');
+  }
+  const resultRes = await supabaseServiceFetch(env, 'POST',
+    '/rest/v1/rpc/confirm_quotation_media_upload', {
+      p_user_id: userId, p_quotation_id: quotationId, p_media_id: mediaObjectId,
+      p_role: role, p_bucket: env.R2_BUCKET_NAME,
+      p_expected_media_id: expectedMediaId, p_observed_size: object.size,
+      p_observed_content_type: detected,
+    }, { preferRepresentation: true });
+  if (!resultRes.ok) throw new WorkerError('Failed to bind quotation media', 502);
+  const resultRows = await resultRes.json();
+  const result = Array.isArray(resultRows) ? resultRows[0] : resultRows;
+  if (result?.outcome === 'quotation_not_found') {
+    throw new WorkerError('Quotation not found or not owned by user', 404, 'quotation_not_found');
+  }
+  if (result?.outcome === 'stale_replacement') {
+    throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
+  }
+  if (!['attached', 'already_attached'].includes(result?.outcome)) {
+    throw new WorkerError('Media could not be bound', 409, result?.outcome || 'invalid_state');
+  }
+  let cleanupPending = false;
+  if (result.previous_media_id) {
+    const old = await findOwnedMedia(result.previous_media_id, userId, env);
+    cleanupPending = !old || !isExpectedQuotationObject(old, userId, quotationId, role) ||
+      (await completeQuotationMediaRemoval(old, env)).cleanupPending === true;
+  }
+  return corsResponse({ quotationId, role, mediaObjectId,
+    previousMediaId: result.previous_media_id ?? null,
+    resultingVersion: result.resulting_version,
+    ...(cleanupPending ? { cleanupPending: true } : {}) }, 200, env);
+}
+
+async function handleQuotationList(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const quotationId = requireUuid(new URL(request.url).searchParams.get('quotationId'), 'quotationId');
+  const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  const media = {};
+  for (const role of Object.keys(QUOTATION_ROLE_COLUMNS)) {
+    const id = quotation[QUOTATION_ROLE_COLUMNS[role].column];
+    if (!id) { media[role] = null; continue; }
+    const row = await findOwnedMedia(id, userId, env);
+    if (!row || row.status !== 'ready' || row.bucket !== env.R2_BUCKET_NAME ||
+        row.media_type !== (role === 'office_logo' ? 'image' : 'pdf') ||
+        !isExpectedQuotationObject(row, userId, quotationId, role) ||
+        !(await findQuotationLink(quotationId, id, role, env))) {
+      throw new WorkerError('Quotation media linkage is unavailable', 409, 'invalid_state');
+    }
+    media[role] = { mediaObjectId: id, contentType: row.content_type,
+      url: await createPresignedR2Url({ env, method: 'GET',
+        objectKey: row.object_key, expiresInSeconds: GET_URL_TTL_SECONDS }) };
+  }
+  return corsResponse({ quotationId, media, expiresInSeconds: GET_URL_TTL_SECONDS },
+    200, env, { 'Cache-Control': 'no-store' });
+}
+
+async function handleQuotationRemove(request, env) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const quotationId = requireUuid(body.quotationId, 'quotationId');
+  const role = quotationRole(body.role);
+  const expectedMediaId = expectedQuotationMediaId(body);
+  const pendingId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  if (pendingId) {
+    const pending = await findOwnedMedia(pendingId, userId, env);
+    if (pending && (pending.bucket !== env.R2_BUCKET_NAME ||
+        !isExpectedQuotationObject(pending, userId, quotationId, role))) {
+      throw new WorkerError('Media does not match quotation and role', 409, 'media_mismatch');
+    }
+    if ((pending?.status === 'pending_upload' || pending?.status === 'failed') &&
+        quotation[QUOTATION_ROLE_COLUMNS[role].column] === expectedMediaId) {
+      if (await markMediaPendingDelete(pendingId, pending.status, env)) {
+        const cleanup = await completeQuotationMediaRemoval({ ...pending, status: 'pending_delete' }, env);
+        return removalResponse(env, { quotationId, role, mediaObjectId: pendingId,
+          ...(cleanup.cleanupPending ? { cleanupPending: true } : {}) });
+      }
+    }
+    if (pending?.status === 'pending_delete') {
+      const cleanup = await completeQuotationMediaRemoval(pending, env);
+      return removalResponse(env, { quotationId, role, mediaObjectId: pendingId,
+        alreadyRemoved: true, ...(cleanup.cleanupPending ? { cleanupPending: true } : {}) });
+    }
+    if (pending?.status === 'deleted' || !pending) {
+      return removalResponse(env, { quotationId, role, mediaObjectId: pendingId, alreadyRemoved: true });
+    }
+    if (pendingId !== quotation[QUOTATION_ROLE_COLUMNS[role].column]) {
+      throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
+    }
+  }
+  const res = await supabaseServiceFetch(env, 'POST', '/rest/v1/rpc/remove_quotation_media', {
+    p_user_id: userId, p_quotation_id: quotationId, p_role: role,
+    p_bucket: env.R2_BUCKET_NAME, p_expected_media_id: expectedMediaId,
+  }, { preferRepresentation: true });
+  if (!res.ok) throw new WorkerError('Failed to remove quotation media', 502);
+  const rows = await res.json();
+  const result = Array.isArray(rows) ? rows[0] : rows;
+  if (result?.outcome === 'stale_replacement') {
+    throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
+  }
+  if (result?.outcome === 'quotation_not_found') {
+    throw new WorkerError('Quotation not found or not owned by user', 404, 'quotation_not_found');
+  }
+  if (!['removed', 'already_removed'].includes(result?.outcome)) {
+    throw new WorkerError('Media could not be removed', 409, result?.outcome || 'invalid_state');
+  }
+  let cleanupPending = false;
+  if (result.previous_media_id) {
+    const old = await findOwnedMedia(result.previous_media_id, userId, env);
+    cleanupPending = !old || !isExpectedQuotationObject(old, userId, quotationId, role) ||
+      (await completeQuotationMediaRemoval(old, env)).cleanupPending === true;
+  }
+  return removalResponse(env, { quotationId, role,
+    previousMediaId: result.previous_media_id,
+    resultingVersion: result.resulting_version,
+    ...(cleanupPending ? { cleanupPending: true } : {}) });
+}
+
+/** Finalizes a retired Quotation object. A soft-deleted quotation can still
+ * hold its pointer when the seven-day sweep begins; clear that pointer only
+ * while the quotation remains deleted and points at this exact object. */
+async function completeQuotationMediaRemoval(row, env) {
+  const identity = quotationKeyIdentity(row);
+  if (!identity || row.bucket !== env.R2_BUCKET_NAME || row.status !== 'pending_delete') {
+    return { cleanupPending: true };
+  }
+  const { userId, quotationId, role } = identity;
+  const column = QUOTATION_ROLE_COLUMNS[role].column;
+  try {
+    const linked = await supabaseServiceFetch(env, 'GET',
+      `/rest/v1/quotation_media?media_id=eq.${encodeURIComponent(row.id)}` +
+      '&select=quotation_id,role');
+    if (!linked.ok) return { cleanupPending: true };
+    const links = await linked.json();
+    if (links.some((link) => link.quotation_id !== quotationId ||
+        link.role !== QUOTATION_ROLE_COLUMNS[role].linkRole)) {
+      return { cleanupPending: true };
+    }
+    const quoteRes = await supabaseServiceFetch(env, 'GET',
+      `/rest/v1/quotations?id=eq.${encodeURIComponent(quotationId)}` +
+      `&select=id,owner_id,deleted_at,${column}`);
+    if (!quoteRes.ok) return { cleanupPending: true };
+    const quote = (await quoteRes.json())?.[0];
+    if (quote && quote.owner_id !== userId) return { cleanupPending: true };
+    if (quote?.[column] === row.id) {
+      if (!quote.deleted_at) return { cleanupPending: true };
+      const cleared = await supabaseServiceFetch(env, 'PATCH',
+        `/rest/v1/quotations?id=eq.${encodeURIComponent(quotationId)}` +
+        `&owner_id=eq.${encodeURIComponent(userId)}` +
+        `&${column}=eq.${encodeURIComponent(row.id)}&deleted_at=not.is.null`,
+        { [column]: null }, { preferRepresentation: true });
+      if (!cleared.ok || (await cleared.json()).length !== 1) return { cleanupPending: true };
+    }
+    return await completeMediaRemoval(MEDIA_PARENTS.quotation, row, env);
+  } catch (_) {
+    return { cleanupPending: true };
+  }
+}
+
 function removalResponse(env, body) {
   return corsResponse({ removed: true, ...body }, 200, env, { 'Cache-Control': 'no-store' });
 }
@@ -1083,7 +1500,7 @@ async function findMediaById(mediaObjectId, env) {
   const res = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&select=id,owner_id,bucket,object_key,status,content_type,size_bytes`,
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&select=id,owner_id,bucket,object_key,status,media_type,content_type,size_bytes`,
   );
   if (!res.ok) throw new WorkerError('Failed to load media object', 502);
   return (await res.json())?.[0] ?? null;
@@ -1094,7 +1511,7 @@ async function findOwnedMedia(mediaObjectId, userId, env) {
   const res = await supabaseServiceFetch(
     env,
     'GET',
-    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&owner_id=eq.${encodeURIComponent(userId)}&select=id,bucket,object_key,status,content_type`,
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&owner_id=eq.${encodeURIComponent(userId)}&select=id,bucket,object_key,status,media_type,content_type`,
   );
   if (!res.ok) throw new WorkerError('Failed to load media object', 502);
   return (await res.json())?.[0] ?? null;
@@ -1376,6 +1793,12 @@ export function runOwnerMediaSweeps(env, options = {}) {
   return runMediaSweeps(MEDIA_PARENTS.owner, env, options);
 }
 
+/** Separate, disabled-by-default Quotation cleanup. Never touches Offer,
+ * Owner or Profile objects; only exact logo/PDF quotation keys qualify. */
+export function runQuotationMediaSweeps(env, options = {}) {
+  return runMediaSweeps(MEDIA_PARENTS.quotation, env, options);
+}
+
 async function runMediaSweeps(parent, env, { now = () => Date.now() } = {}) {
   const configured = env?.[parent.sweepModeVar];
   const mode = OFFER_MEDIA_SWEEP_MODES.has(configured) ? configured : 'off';
@@ -1430,13 +1853,24 @@ async function sweepAbandonedUploads({ parent, env, at, apply, limit }) {
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
       `&created_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
-      `&select=id,object_key&order=created_at.asc&limit=${limit}`,
+      `&select=id,object_key,content_type&order=created_at.asc&limit=${limit}`,
   );
-  if (!apply) return { count: rows.length, errors: 0 };
+  const eligible = parent === MEDIA_PARENTS.quotation
+    ? rows.filter((row) => quotationKeyIdentity(row)) : rows;
+  if (!apply) return { count: eligible.length, errors: 0 };
   let count = 0;
   let errors = 0;
-  for (const row of rows) {
+  for (const row of eligible) {
     try {
+      if (parent === MEDIA_PARENTS.quotation) {
+        if (!(await markMediaPendingDelete(row.id, 'pending_upload', env))) continue;
+        const result = await completeQuotationMediaRemoval({
+          ...row, bucket: env.R2_BUCKET_NAME, status: 'pending_delete',
+        }, env);
+        if (result.cleanupPending) errors += 1;
+        else count += 1;
+        continue;
+      }
       // Row first: once it is gone no confirm can attach it, so deleting the
       // bytes afterwards can never leave a ready item without its object.
       if (!(await deleteMediaRowIfStatus(row.id, 'pending_upload', env))) continue;
@@ -1456,17 +1890,27 @@ async function sweepAbandonedUploads({ parent, env, at, apply, limit }) {
  */
 async function sweepDeletedParentMedia({ parent, env, at, apply, limit }) {
   const cutoff = new Date(at - OFFER_MEDIA_RETENTION_MS).toISOString();
+  const quotationOnly = parent === MEDIA_PARENTS.quotation;
   const rows = await selectRows(
     env,
-    `/rest/v1/${parent.linkTable}?select=media_id,${parent.table}!inner(deleted_at),media_objects!inner(id,bucket,status)` +
+    `/rest/v1/${parent.linkTable}?select=media_id,${quotationOnly ? 'quotation_id,role,' : ''}` +
+      `${parent.table}!inner(deleted_at${quotationOnly ? ',owner_id' : ''}),` +
+      `media_objects!inner(id,bucket,status${quotationOnly ? ',object_key,content_type' : ''})` +
       `&${parent.table}.deleted_at=lt.${encodeURIComponent(cutoff)}` +
       `&media_objects.bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&media_objects.status=eq.ready` +
+      (quotationOnly ? '&role=in.(logo,pdf)' : '') +
       `&limit=${limit}`,
   );
-  if (!apply) return { count: rows.length, errors: 0 };
+  const eligible = quotationOnly ? rows.filter((row) => {
+    const identity = quotationKeyIdentity(row.media_objects);
+    return identity && identity.quotationId === row.quotation_id &&
+      identity.userId === row.quotations?.owner_id &&
+      QUOTATION_ROLE_COLUMNS[identity.role].linkRole === row.role;
+  }) : rows;
+  if (!apply) return { count: eligible.length, errors: 0 };
   let count = 0;
   let errors = 0;
-  for (const row of rows) {
+  for (const row of eligible) {
     try {
       // From here the item is neither listed nor counted; the pending-delete
       // sweep owns finishing it, even if this run stops early.
@@ -1483,14 +1927,18 @@ async function sweepPendingDeletes({ parent, env, apply, limit }) {
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_delete` +
       `&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
-      `&select=id,object_key&order=updated_at.asc&limit=${limit}`,
+      `&select=id,bucket,object_key,content_type,status&order=updated_at.asc&limit=${limit}`,
   );
-  if (!apply) return { count: rows.length, errors: 0 };
+  const eligible = parent === MEDIA_PARENTS.quotation
+    ? rows.filter((row) => quotationKeyIdentity(row)) : rows;
+  if (!apply) return { count: eligible.length, errors: 0 };
   let count = 0;
   let errors = 0;
-  for (const row of rows) {
+  for (const row of eligible) {
     try {
-      const result = await completeMediaRemoval(parent, row, env);
+      const result = parent === MEDIA_PARENTS.quotation
+        ? await completeQuotationMediaRemoval(row, env)
+        : await completeMediaRemoval(parent, row, env);
       if (result.cleanupPending) errors += 1;
       else count += 1;
     } catch (_) {
@@ -1506,13 +1954,24 @@ async function sweepFailedUploads({ parent, env, at, apply, limit }) {
     env,
     `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.failed` +
       `&updated_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(parent.keyPattern)}` +
-      `&select=id,object_key&order=updated_at.asc&limit=${limit}`,
+      `&select=id,object_key,content_type&order=updated_at.asc&limit=${limit}`,
   );
-  if (!apply) return { count: rows.length, errors: 0 };
+  const eligible = parent === MEDIA_PARENTS.quotation
+    ? rows.filter((row) => quotationKeyIdentity(row)) : rows;
+  if (!apply) return { count: eligible.length, errors: 0 };
   let count = 0;
   let errors = 0;
-  for (const row of rows) {
+  for (const row of eligible) {
     try {
+      if (parent === MEDIA_PARENTS.quotation) {
+        if (!(await markMediaPendingDelete(row.id, 'failed', env))) continue;
+        const result = await completeQuotationMediaRemoval({
+          ...row, bucket: env.R2_BUCKET_NAME, status: 'pending_delete',
+        }, env);
+        if (result.cleanupPending) errors += 1;
+        else count += 1;
+        continue;
+      }
       if (!(await deleteMediaRowIfStatus(row.id, 'failed', env))) continue;
       await bestEffortDeleteObject(row.object_key, env);
       count += 1;

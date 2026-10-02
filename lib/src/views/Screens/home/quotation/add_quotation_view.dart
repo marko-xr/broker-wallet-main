@@ -13,7 +13,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 class AddQuotationView extends StatelessWidget {
-  const AddQuotationView({super.key});
+  const AddQuotationView({super.key, this.quotationId});
+
+  /// The Quotation to reopen and edit; null creates a new one.
+  final String? quotationId;
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +24,8 @@ class AddQuotationView extends StatelessWidget {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return ChangeNotifierProvider(
-      create: (_) => AddQuotationViewModel(),
+      create: (_) => AddQuotationViewModel(editQuotationId: quotationId)
+        ..loadForEdit(),
       child: Consumer<AddQuotationViewModel>(
         builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;
@@ -36,7 +40,11 @@ class AddQuotationView extends StatelessWidget {
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: Stack(
+            body: vm.isLoadingExisting
+                ? const Center(child: CircularProgressIndicator())
+                : vm.loadFailed
+                    ? _LoadFailedBody(onRetry: vm.loadForEdit, loc: loc)
+                    : Stack(
               fit: StackFit.expand,
               children: [
                 // Scrollable content
@@ -530,8 +538,7 @@ class AddQuotationView extends StatelessWidget {
                       child: SaveCancelButtons(
                         isLoading: vm.isLoading,
                         isEnabled: vm.hasAnyContent,
-                        isEditMode:
-                            false, // Quotation doesn't have mode like other add screens
+                        isEditMode: vm.isEditMode,
                         onSave: () => vm.save(context),
                         onCancel: () => vm.cancel(context),
                       ),
@@ -625,6 +632,38 @@ class AddQuotationView extends StatelessWidget {
 }
 
 // ==================== UI COMPONENTS ====================
+
+/// Shown instead of the form when an existing Quotation could not be loaded.
+class _LoadFailedBody extends StatelessWidget {
+  final Future<void> Function() onRetry;
+  final AppLocalizations loc;
+
+  const _LoadFailedBody({required this.onRetry, required this.loc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              loc.translate('quotationLoadFailed'),
+              style: AppTextStyles.bodyText,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: onRetry,
+              child: Text(loc.translate('retry')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _CollapsibleSection extends StatefulWidget {
   final String title;

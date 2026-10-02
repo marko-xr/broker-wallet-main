@@ -2537,5 +2537,20 @@
   "securityPasswordHint": "Change your account password",
   "legalInformationStatus": "LEGAL INFORMATION",
   "legalContentPending": "Final legal text is pending legal and product approval.",
-  "legalContentAvailableBeforeRelease": "It will be available here before public release."
+  "legalContentAvailableBeforeRelease": "It will be available here before public release.",
+  "quotationTitleRequired": "Please enter a property title before saving.",
+  "quotationAdminFeeTitleRequired": "Please give each administrative fee a title.",
+  "quotationInvalidData": "Some quotation details are not valid. Please check the form and try again.",
+  "quotationVersionConflict": "This quotation was changed on another device. Close it and open it again to load the latest version before saving.",
+  "quotationNoLongerAvailable": "This quotation is no longer available.",
+  "quotationSessionExpired": "Your session has expired. Please sign in again.",
+  "quotationNetworkError": "Check your internet connection and try again.",
+  "quotationSaveFailed": "Unable to save the quotation. Please try again.",
+  "quotationUpdatedSuccessfully": "Quotation updated successfully!",
+  "quotationSavedMediaFailure": "The quotation was saved, but its logo or PDF could not be uploaded. Try saving again.",
+  "quotationLoadFailed": "Couldn't load this quotation. Please try again.",
+  "quotationLogoUnsupported": "The office logo must be a JPG, PNG or WebP image of up to 10 MB.",
+  "quotationPdfUnavailable": "The PDF couldn't be opened right now. Please try again.",
+  "quotationDeleteFailed": "Couldn't delete the quotation. Please try again.",
+  "quotationListLoadFailed": "Couldn't load your quotations. Please try again."
 }

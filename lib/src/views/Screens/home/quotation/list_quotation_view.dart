@@ -7,9 +7,6 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
-import 'dart:io';
 
 import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
@@ -61,8 +58,8 @@ class _QuotationListViewState extends State<QuotationListView> {
                       }
 
                       if (snapshot.hasError) {
-                        return _buildErrorWidget(
-                            vm, colors, texts, loc, snapshot.error.toString());
+                        return _buildErrorWidget(vm, colors, texts, loc,
+                            loc.translate('quotationListLoadFailed'));
                       }
 
                       if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -233,8 +230,8 @@ class _QuotationListViewState extends State<QuotationListView> {
                 quotation: quotation,
                 onDelete: () =>
                     _showDeleteConfirmation(quotation, vm, loc, colors),
-                onView: () => _viewPdf(quotation),
-                onShare: () => _sharePdf(quotation),
+                onView: () => _viewPdf(quotation, vm),
+                onShare: () => _sharePdf(quotation, vm),
                 viewModel: vm, // Pass the ViewModel
                 loc: loc,
                 index: index,
@@ -250,7 +247,7 @@ class _QuotationListViewState extends State<QuotationListView> {
       ColorScheme colors, TextTheme texts, AppLocalizations loc) {
     final totalQuotations = quotations.length;
     final quotationsWithPdf = quotations
-        .where((q) => q.pdfUrl != null && q.pdfUrl!.isNotEmpty)
+        .where((q) => q.hasPdf)
         .length;
 
     return Container(
@@ -328,172 +325,57 @@ class _QuotationListViewState extends State<QuotationListView> {
     );
   }
 
-  // View PDF functionality - Displays PDFs within the app
-  Future<void> _viewPdf(QuotationModel quotation) async {
-    if (quotation.pdfUrl != null && quotation.pdfUrl!.isNotEmpty) {
-      try {
-        if (quotation.pdfUrl!.startsWith('local://')) {
-          // Local file - display in-app using Syncfusion PDF viewer
-          final localPath = quotation.pdfUrl!.substring('local://'.length);
-          final file = File(localPath);
-
-          if (await file.exists()) {
-            // Navigate to in-app PDF viewer with local file
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => PdfViewerScreen(
-                  localFile: file,
-                  title:
-                      '${AppLocalizations.of(context).translate('quotation')} - ${quotation.propertyTitle.isEmpty ? AppLocalizations.of(context).translate('untitled') : quotation.propertyTitle}',
-                ),
-              ),
-            );
-          } else {
-            if (context.mounted) {
-              _showToast(
-                  'PDF file not found locally. Please wait for upload to complete.',
-                  Colors.orange);
-            }
-          }
-          return;
-        } else {
-          // Firebase URL - display in-app using Syncfusion PDF viewer
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => PdfViewerScreen(
-                networkUrl: quotation.pdfUrl!,
-                title:
-                    '${AppLocalizations.of(context).translate('quotation')} - ${quotation.propertyTitle.isEmpty ? AppLocalizations.of(context).translate('untitled') : quotation.propertyTitle}',
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          _showToast('Could not open PDF: ${e.toString()}', Colors.red);
-        }
-      }
-    } else {
-      if (context.mounted) {
-        _showToast('PDF not available for this quotation', Colors.orange);
-      }
-    }
-  }
-
-  // Share PDF functionality - Instant sharing with smooth UX
-  Future<void> _sharePdf(QuotationModel quotation) async {
-    if (quotation.pdfUrl == null || quotation.pdfUrl!.isEmpty) {
-      if (context.mounted) {
-        _showToast('PDF not available for this quotation', Colors.orange);
-      }
+  // View PDF functionality - Displays PDFs within the app. The PDF is private:
+  // it comes from this device's copy of the exact media object, or from one
+  // download through a fresh short-lived signed link (never a public URL).
+  Future<void> _viewPdf(
+      QuotationModel quotation, QuotationListViewModel vm) async {
+    if (!quotation.hasPdf) {
+      _showToast('PDF not available for this quotation', Colors.orange);
       return;
     }
-
+    final loc = AppLocalizations.of(context);
+    final title =
+        '${loc.translate('quotation')} - ${quotation.propertyTitle.isEmpty ? loc.translate('untitled') : quotation.propertyTitle}';
     try {
-      // First, try to find and immediately share the local PDF file
-      final localPath = await _getLocalPdfPath(quotation);
-      if (localPath != null) {
-        final localFile = File(localPath);
-        if (await localFile.exists()) {
-          // Instantly share the local file without any loading message
-          await SharePlus.instance.share(
-            ShareParams(
-              files: [XFile(localPath)],
-              text: 'Quotation for ${quotation.propertyTitle}',
-              subject: 'Quotation Document',
-            ),
-          );
-          return; // Exit early - successful instant share!
-        }
-      }
-
-      // Only show loading message if we need to download from Firebase
-      if (context.mounted) {
-        _showToast('Preparing PDF for sharing...', Colors.blue);
-      }
-
-      // Download the PDF from Firebase Storage
-      final response = await http.get(Uri.parse(quotation.pdfUrl!));
-
-      if (response.statusCode == 200) {
-        // Get application documents directory for consistent storage
-        final appDir = await getApplicationDocumentsDirectory();
-
-        // Create a filename for the PDF (consistent with PDF generation service)
-        final fileName =
-            'quotation_${quotation.id ?? DateTime.now().millisecondsSinceEpoch}.pdf';
-        final filePath = '${appDir.path}/$fileName';
-
-        // Write the PDF to local file
-        final file = File(filePath);
-        await file.writeAsBytes(response.bodyBytes);
-
-        // Share the PDF file using the system share sheet
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(filePath)],
-            text: 'Quotation for ${quotation.propertyTitle}',
-            subject: 'Quotation Document',
+      final file = await vm.resolvePdf(quotation);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => PdfViewerScreen(
+            localFile: file,
+            title: title,
           ),
-        );
-
-        // Keep the file for future instant sharing
-      } else {
-        throw Exception(
-            'Failed to download PDF (Status: ${response.statusCode})');
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _showToast('Could not share PDF: ${e.toString()}', Colors.red);
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        _showToast(loc.translate('quotationPdfUnavailable'), Colors.red);
       }
     }
   }
 
-  // Helper method to get local PDF path - Optimized for instant access
-  Future<String?> _getLocalPdfPath(QuotationModel quotation) async {
+  // Share PDF functionality - shares the same private local copy
+  Future<void> _sharePdf(
+      QuotationModel quotation, QuotationListViewModel vm) async {
+    if (!quotation.hasPdf) {
+      _showToast('PDF not available for this quotation', Colors.orange);
+      return;
+    }
+    final loc = AppLocalizations.of(context);
     try {
-      // Priority 1: Check if PDF URL is already a local path (most common case)
-      if (quotation.pdfUrl != null &&
-          quotation.pdfUrl!.startsWith('local://')) {
-        final localPath = quotation.pdfUrl!.substring('local://'.length);
-        final file = File(localPath);
-        if (await file.exists()) {
-          return localPath;
-        }
+      final file = await vm.resolvePdf(quotation);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'Quotation for ${quotation.propertyTitle}',
+          subject: 'Quotation Document',
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        _showToast(loc.translate('quotationPdfUnavailable'), Colors.red);
       }
-
-      // Priority 2: Look for standard filename pattern (fast check)
-      if (quotation.id != null) {
-        final appDir = await getApplicationDocumentsDirectory();
-        final fileName = 'quotation_${quotation.id}.pdf';
-        final filePath = '${appDir.path}/$fileName';
-
-        final file = File(filePath);
-        if (await file.exists()) {
-          return filePath;
-        }
-
-        // Priority 3: Only do expensive directory search as last resort
-        // (This should rarely happen in normal operation)
-        final directory = Directory(appDir.path);
-        try {
-          final files = await directory.list().toList();
-          for (final fileEntity in files) {
-            if (fileEntity is File &&
-                fileEntity.path.contains('quotation_${quotation.id}') &&
-                fileEntity.path.endsWith('.pdf')) {
-              return fileEntity.path;
-            }
-          }
-        } catch (dirError) {
-          // If directory listing fails, just return null - don't crash
-        }
-      }
-
-      return null;
-    } catch (e) {
-      // Silently handle errors to avoid breaking the sharing flow
-      return null;
     }
   }
 
@@ -798,7 +680,10 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: () {},
+              onTap: widget.quotation.id == null
+                  ? null
+                  : () => context.push(
+                      '/add-quotation?mode=edit&id=${widget.quotation.id}'),
               onTapDown: (_) => _controller.forward(),
               onTapUp: (_) => _controller.reverse(),
               onTapCancel: () => _controller.reverse(),
@@ -859,8 +744,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: (widget.quotation.pdfUrl != null &&
-                                    widget.quotation.pdfUrl!.isNotEmpty)
+                            color: widget.quotation.hasPdf
                                 ? Colors.green.withValues(alpha: 0.1)
                                 : Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
@@ -871,20 +755,17 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               Icon(
                                 Icons.picture_as_pdf,
                                 size: 16,
-                                color: (widget.quotation.pdfUrl != null &&
-                                        widget.quotation.pdfUrl!.isNotEmpty)
+                                color: widget.quotation.hasPdf
                                     ? Colors.green
                                     : Colors.orange,
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                (widget.quotation.pdfUrl != null &&
-                                        widget.quotation.pdfUrl!.isNotEmpty)
+                                widget.quotation.hasPdf
                                     ? widget.loc.translate('pdf')
                                     : widget.loc.translate('noPdf'),
                                 style: texts.bodySmall?.copyWith(
-                                  color: (widget.quotation.pdfUrl != null &&
-                                          widget.quotation.pdfUrl!.isNotEmpty)
+                                  color: widget.quotation.hasPdf
                                       ? Colors.green
                                       : Colors.orange,
                                   fontWeight: FontWeight.w600,
@@ -988,8 +869,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           child: Container(
                             height: 44,
                             decoration: BoxDecoration(
-                              color: (widget.quotation.pdfUrl != null &&
-                                      widget.quotation.pdfUrl!.isNotEmpty)
+                              color: widget.quotation.hasPdf
                                   ? const Color(0xFFE3F2FD) // Blue for View PDF
                                   : const Color(0xFFF5F5F5), // Disabled gray
                               borderRadius: BorderRadius.circular(12),
@@ -998,8 +878,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               color: Colors.transparent,
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: (widget.quotation.pdfUrl != null &&
-                                        widget.quotation.pdfUrl!.isNotEmpty)
+                                onTap: widget.quotation.hasPdf
                                     ? widget.onView // View existing PDF
                                     : null, // Disabled if no PDF
                                 child: Row(
@@ -1008,9 +887,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                     Icon(
                                       Icons
                                           .visibility_outlined, // Always use view icon
-                                      color: (widget.quotation.pdfUrl != null &&
-                                              widget
-                                                  .quotation.pdfUrl!.isNotEmpty)
+                                      color: widget.quotation.hasPdf
                                           ? const Color(
                                               0xFF1976D2) // Blue for view
                                           : Colors.grey, // Grey for disabled
@@ -1018,17 +895,13 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      (widget.quotation.pdfUrl != null &&
-                                              widget
-                                                  .quotation.pdfUrl!.isNotEmpty)
+                                      widget.quotation.hasPdf
                                           ? widget.loc.translate('viewPdf')
                                           : widget.loc.translate(
                                               'noPdf'), // Show "No PDF" if not available
                                       style: texts.bodyMedium?.copyWith(
                                         color:
-                                            (widget.quotation.pdfUrl != null &&
-                                                    widget.quotation.pdfUrl!
-                                                        .isNotEmpty)
+                                            widget.quotation.hasPdf
                                                 ? const Color(0xFF1976D2)
                                                 : Colors.grey,
                                         fontWeight: FontWeight.w600,
@@ -1048,8 +921,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           child: Container(
                             height: 44,
                             decoration: BoxDecoration(
-                              color: (widget.quotation.pdfUrl != null &&
-                                      widget.quotation.pdfUrl!.isNotEmpty)
+                              color: widget.quotation.hasPdf
                                   ? const Color(0xFFFFF3E0) // Orange for share
                                   : const Color(0xFFF5F5F5), // Disabled gray
                               borderRadius: BorderRadius.circular(12),
@@ -1058,8 +930,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               color: Colors.transparent,
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: (widget.quotation.pdfUrl != null &&
-                                        widget.quotation.pdfUrl!.isNotEmpty)
+                                onTap: widget.quotation.hasPdf
                                     ? widget.onShare
                                     : null,
                                 child: Row(
@@ -1067,9 +938,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                   children: [
                                     Icon(
                                       Icons.share_outlined,
-                                      color: (widget.quotation.pdfUrl != null &&
-                                              widget
-                                                  .quotation.pdfUrl!.isNotEmpty)
+                                      color: widget.quotation.hasPdf
                                           ? const Color(
                                               0xFFFF9800) // Orange for share
                                           : Colors.grey,
@@ -1079,10 +948,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                     Text(
                                       widget.loc.translate('share'),
                                       style: texts.bodyMedium?.copyWith(
-                                        color: (widget.quotation.pdfUrl !=
-                                                    null &&
-                                                widget.quotation.pdfUrl!
-                                                    .isNotEmpty)
+                                        color: widget.quotation.hasPdf
                                             ? const Color(
                                                 0xFFFF9800) // Orange for share
                                             : Colors.grey,

@@ -1,13 +1,25 @@
+import 'dart:io';
+
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'services/quotation_service.dart';
 
 class QuotationListViewModel extends ChangeNotifier {
-  final QuotationService _quotationService = QuotationService();
+  QuotationListViewModel({
+    QuotationService? quotationService,
+    void Function(String message, Color color)? toast,
+  })  : _quotationService = quotationService ?? QuotationService(),
+        _toast = toast ?? _showPlatformToast {
+    _initializeStream();
+  }
+
+  final QuotationService _quotationService;
+  final void Function(String message, Color color) _toast;
 
   // Loading state
-  bool _isLoading = true;
+  final bool _isLoading = true;
   bool get isLoading => _isLoading;
 
   // Error state
@@ -15,16 +27,12 @@ class QuotationListViewModel extends ChangeNotifier {
   String? get error => _error;
 
   // Quotations list
-  List<QuotationModel> _quotations = [];
+  final List<QuotationModel> _quotations = [];
   List<QuotationModel> get quotations => _quotations;
 
   // Stream subscription
   Stream<List<QuotationModel>>? _quotationsStream;
   Stream<List<QuotationModel>>? get quotationsStream => _quotationsStream;
-
-  QuotationListViewModel() {
-    _initializeStream();
-  }
 
   void _initializeStream() {
     _quotationsStream = _quotationService.getUserQuotations();
@@ -32,26 +40,33 @@ class QuotationListViewModel extends ChangeNotifier {
 
   // Refresh quotations
   Future<void> refreshQuotations() async {
-    // The stream will automatically update when data changes
+    // The stream refreshes itself after every mutation
     _initializeStream();
   }
 
-  // Delete a quotation
+  /// A local file for the Quotation's PDF: this device's copy of that exact
+  /// media object, or one download through a fresh short-lived signed link.
+  /// Throws when it cannot be had.
+  Future<File> resolvePdf(QuotationModel quotation) =>
+      _quotationService.resolvePdfFile(quotation);
+
+  // Delete a quotation (soft delete: the row is hidden, never destroyed here)
   Future<void> deleteQuotation(String quotationId, BuildContext context) async {
+    final loc = AppLocalizations.of(context);
     try {
       await _quotationService.deleteQuotation(quotationId);
 
       if (context.mounted) {
-        _showToast('Quotation deleted successfully', Colors.green);
+        _toast('Quotation deleted successfully', Colors.green);
       }
-    } catch (e) {
+    } catch (_) {
       if (context.mounted) {
-        _showToast('Failed to delete quotation: ${e.toString()}', Colors.red);
+        _toast(loc.translate('quotationDeleteFailed'), Colors.red);
       }
     }
   }
 
-  void _showToast(String message, Color bgColor) {
+  static void _showPlatformToast(String message, Color bgColor) {
     Fluttertoast.showToast(
       msg: message,
       toastLength: Toast.LENGTH_SHORT,

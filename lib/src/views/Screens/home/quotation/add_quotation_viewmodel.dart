@@ -1,16 +1,121 @@
 // lib/src/viewmodels/AddScreens/add_quotation_viewmodel.dart
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_workflow.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/pdf_generation_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
-import 'package:broker_wallet/src/services/quota_helper.dart';
+import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
+import 'dart:async';
 import 'dart:io';
+
+/// Renders a Quotation to a local PDF file and returns its path.
+typedef QuotationPdfGenerator = Future<String> Function(
+    QuotationModel quotation, {Locale? locale});
+
+/// How one save attempt ended.
+enum QuotationSaveKind {
+  /// The Quotation, its logo change (if any) and its PDF are all saved.
+  saved,
+
+  /// The Quotation is saved, but the logo or the PDF did not finish. Saving
+  /// again retries them against the saved Quotation.
+  mediaIncomplete,
+
+  /// The Quotation itself was not saved.
+  failed,
+
+  /// The form cannot be saved as it is; nothing was sent.
+  invalid,
+
+  /// Another save was already running.
+  busy,
+}
+
+/// How picking an office logo ended.
+enum QuotationLogoPick {
+  /// A valid logo is now selected (it is uploaded when the Quotation is saved).
+  selected,
+
+  /// The user closed the picker without choosing.
+  dismissed,
+
+  /// The chosen file is not an accepted logo (type or size).
+  rejected,
+
+  /// The picker itself failed.
+  failed,
+}
+
+/// The result of [AddQuotationViewModel.performSave]: what happened, and the
+/// localization key of the message that tells the user.
+class QuotationSaveOutcome {
+  const QuotationSaveOutcome._(
+    this.kind, {
+    this.failure,
+    this.validation,
+    this.logoFailure,
+    this.pdfFailure,
+    this.wasUpdate = false,
+  });
+
+  const QuotationSaveOutcome.busy() : this._(QuotationSaveKind.busy);
+
+  final QuotationSaveKind kind;
+  final QuotationFailure? failure;
+  final QuotationValidationReason? validation;
+  final QuotationMediaFailure? logoFailure;
+  final QuotationMediaFailure? pdfFailure;
+
+  /// The Quotation already existed on the server, so this was an update.
+  final bool wasUpdate;
+
+  /// The localization key to show, or null for the existing create message.
+  String? get messageKey {
+    switch (kind) {
+      case QuotationSaveKind.busy:
+        return null;
+      case QuotationSaveKind.saved:
+        return wasUpdate ? 'quotationUpdatedSuccessfully' : null;
+      case QuotationSaveKind.mediaIncomplete:
+        return 'quotationSavedMediaFailure';
+      case QuotationSaveKind.invalid:
+        return validation ==
+                QuotationValidationReason.administrativeFeeTitleRequired
+            ? 'quotationAdminFeeTitleRequired'
+            : 'quotationTitleRequired';
+      case QuotationSaveKind.failed:
+        switch (failure) {
+          case QuotationFailure.versionConflict:
+            return 'quotationVersionConflict';
+          case QuotationFailure.notFound:
+          case QuotationFailure.deleted:
+            return 'quotationNoLongerAvailable';
+          case QuotationFailure.invalidPayload:
+            return 'quotationInvalidData';
+          case QuotationFailure.notSignedIn:
+          case QuotationFailure.permissionDenied:
+            return 'quotationSessionExpired';
+          case QuotationFailure.network:
+            return 'quotationNetworkError';
+          case QuotationFailure.idConflict:
+          case QuotationFailure.unknown:
+          case null:
+            return 'quotationSaveFailed';
+        }
+    }
+  }
+}
 
 /// Lightweight row model used only by the ViewModel/UI.
 class DownpaymentRowVM {
@@ -41,15 +146,68 @@ class AdministrativeFeeRowVM {
 class AddQuotationViewModel extends ChangeNotifier {
   final QuotationService _quotationService;
   final AuthRepository _authRepository;
+  final QuotationPdfGenerator _generatePdf;
+  final Future<File?> Function() _pickLogoFile;
+  final void Function(String message, Color color) _toast;
+  final Uuid _uuid;
+
+  /// The Quotation being edited, or null when creating a new one.
+  final String? editQuotationId;
 
   AddQuotationViewModel({
     QuotationService? quotationService,
     AuthRepository? authRepository,
+    this.editQuotationId,
+    QuotationPdfGenerator? pdfGenerator,
+    Future<File?> Function()? logoPicker,
+    void Function(String message, Color color)? toast,
+    Uuid? uuid,
   })  : _quotationService = quotationService ?? QuotationService(),
         _authRepository =
-            authRepository ?? RepositoryProvider.instance.authRepository;
+            authRepository ?? RepositoryProvider.instance.authRepository,
+        _generatePdf = pdfGenerator ?? PdfGenerationService.generateQuotationPdf,
+        _pickLogoFile = logoPicker ?? _pickLogoFromDevice,
+        _toast = toast ?? _showPlatformToast,
+        _uuid = uuid ?? const Uuid();
 
   bool _disposed = false;
+
+  // ===== Hosted identity (server-controlled; never typed by the user) =====
+  /// The Quotation's id: the one being edited, or the one generated for the
+  /// first save and kept so a retry replays the same Quotation.
+  String? _quotationId;
+
+  /// The version the server last reported. Null until the Quotation exists on
+  /// the server; a save with a version is an optimistic update against it.
+  int? _version;
+
+  /// The media the server confirmed as bound. Replaced only after a confirm.
+  String? _boundLogoMediaId;
+  String? _boundPdfMediaId;
+
+  /// The identity of the selected logo file's upload, reused when the same
+  /// logo is retried so a lost confirm answer resolves instead of failing.
+  String? _pendingLogoMediaId;
+
+  /// The user cleared a logo that is bound on the server.
+  bool _logoRemovalRequested = false;
+
+  /// The last logo file uploaded in this session, kept to draw the PDF.
+  File? _uploadedLogoFile;
+
+  // ===== Existing-quotation loading =====
+  bool _isLoadingExisting = false;
+  bool _loadFailed = false;
+
+  bool get isEditMode => editQuotationId != null;
+  bool get isLoadingExisting => _isLoadingExisting;
+  bool get loadFailed => _loadFailed;
+
+  /// The server version this form is based on, for display and tests.
+  int? get version => _version;
+  String? get quotationId => _quotationId;
+  String? get boundLogoMediaId => _boundLogoMediaId;
+  String? get boundPdfMediaId => _boundPdfMediaId;
 
   // ===== Header / General =====
   String propertyTitle = '';
@@ -100,7 +258,8 @@ class AddQuotationViewModel extends ChangeNotifier {
   // ===== Office =====
   String officeName = '';
   String officeLogoFileName = '';
-  String? _officeLogoUrl;
+
+  /// A logo the user picked that is not yet bound on the server.
   File? _selectedLogoFile;
 
   // ===== Loading states =====
@@ -108,11 +267,11 @@ class AddQuotationViewModel extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   File? get selectedLogoFile => _selectedLogoFile;
-  String? get officeLogoUrl => _officeLogoUrl;
 
-  // Check if logo is selected (either file or URL available)
+  // Check if a logo is selected (a new file, or one bound on the server)
   bool get hasLogoSelected =>
-      _selectedLogoFile != null || _officeLogoUrl != null;
+      _selectedLogoFile != null ||
+      (_boundLogoMediaId != null && !_logoRemovalRequested);
 
   /// Check if smart calculation can be performed
   bool get canGenerateSmartDownpayments {
@@ -515,39 +674,81 @@ class AddQuotationViewModel extends ChangeNotifier {
   }
 
   // ===== Media (logo) =====
+  /// The device's file picker, restricted to images. Returns null when the
+  /// user dismisses it.
+  static Future<File?> _pickLogoFromDevice() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    final path = result?.files.single.path;
+    return path == null ? null : File(path);
+  }
+
+  /// Picks a logo. Nothing is sent until the Quotation is saved; a file the
+  /// server would refuse (not a JPG, PNG or WebP, or over 10 MB) is turned
+  /// away here, before it can replace anything.
   Future<void> selectLogo(BuildContext context) async {
+    final loc = AppLocalizations.of(context);
+    final result = await pickLogo();
+    if (_disposed) return;
+    switch (result) {
+      case QuotationLogoPick.selected:
+        _toast('Logo selected: $officeLogoFileName', Colors.green);
+      case QuotationLogoPick.rejected:
+        _toast(loc.translate('quotationLogoUnsupported'), Colors.red);
+      case QuotationLogoPick.failed:
+        _toast('Error selecting logo', Colors.red);
+      case QuotationLogoPick.dismissed:
+        break;
+    }
+  }
+
+  /// The picking itself, without any UI: opens the picker, checks the chosen
+  /// file, and selects it only if it passes.
+  Future<QuotationLogoPick> pickLogo() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-      );
+      final file = await _pickLogoFile();
+      if (file == null || _disposed) return QuotationLogoPick.dismissed;
 
-      if (result != null && result.files.single.path != null) {
-        _selectedLogoFile = File(result.files.single.path!);
-        officeLogoFileName = result.files.single.name;
-
-        // Don't upload immediately - will be handled during save
-        // Just update UI to show file is selected
-        if (!_disposed) {
-          _showToast('Logo selected: ${officeLogoFileName}', Colors.green);
-          notifyListeners();
-        }
+      try {
+        await QuotationMediaWorkflow.checkLogo(file);
+      } on QuotationMediaException {
+        return QuotationLogoPick.rejected;
       }
+
+      _selectedLogoFile = file;
+      officeLogoFileName = _fileName(file.path);
+      // A new selection is a new upload identity, and cancels a pending
+      // removal: the replacement itself supersedes the bound logo.
+      _pendingLogoMediaId = null;
+      _logoRemovalRequested = false;
+
+      // Don't upload immediately - will be handled during save
+      // Just update UI to show file is selected
+      if (!_disposed) notifyListeners();
+      return QuotationLogoPick.selected;
     } catch (e) {
-      debugPrint('Logo picking error: $e');
-      if (!_disposed)
-        _showToast('Error selecting logo: ${e.toString()}', Colors.red);
+      if (kDebugMode) debugPrint('Logo picking failed: ${e.runtimeType}');
+      return QuotationLogoPick.failed;
     }
   }
 
   void clearLogo() {
     _selectedLogoFile = null;
-    _officeLogoUrl = null;
+    _pendingLogoMediaId = null;
     officeLogoFileName = '';
+    // A logo bound on the server is removed on save; until then it stays.
+    _logoRemovalRequested = _boundLogoMediaId != null;
     if (!_disposed) {
-      _showToast('Logo cleared', Colors.orange);
+      _toast('Logo cleared', Colors.orange);
       notifyListeners();
     }
+  }
+
+  static String _fileName(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    return normalized.contains('/') ? normalized.split('/').last : normalized;
   }
 
   // // ===== Validation =====
@@ -644,127 +845,420 @@ class AddQuotationViewModel extends ChangeNotifier {
   }
 
   // ===== Save =====
+  /// Saves the Quotation, then its logo change and its PDF, and tells the user
+  /// how it went. Creating a Quotation needs free-plan quota; updating one
+  /// does not.
   Future<void> save(BuildContext context) async {
-    if (_disposed) return;
-    // if (!_validateForm()) return;
+    if (_disposed || _isLoading) return;
 
-    // QUOTA CHECK: Check if user can add more quotations
     final currentUserId = _authRepository.currentUserId;
     if (currentUserId == null) {
       _showToast('User must be logged in to create quotations', Colors.red);
       return;
     }
 
-    final canAdd = await QuotaHelper.checkAndWarnQuota(
-      context: context,
-      uid: currentUserId,
-      section: 'quotations',
-    );
+    if (_version == null) {
+      final canAdd = await CoreEntityQuotaBridge.canCreate(
+        context: context,
+        section: 'quotations',
+      );
+      if (!canAdd) return; // User hit quota limit
+      if (_disposed || !context.mounted) return;
+    }
 
-    if (!canAdd) {
-      return; // User hit quota limit
+    final loc = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context);
+    final wasEditing = isEditMode;
+    final outcome = await performSave(locale: locale);
+    if (_disposed ||
+        !context.mounted ||
+        outcome.kind == QuotationSaveKind.busy) {
+      return;
+    }
+
+    final key = outcome.messageKey;
+    switch (outcome.kind) {
+      case QuotationSaveKind.saved:
+        _showToast(
+          key == null
+              ? 'Quotation and PDF saved successfully!'
+              : loc.translate(key),
+          Colors.green,
+        );
+        if (wasEditing && context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
+      case QuotationSaveKind.mediaIncomplete:
+        _showToast(loc.translate(key!), Colors.orange);
+      case QuotationSaveKind.failed:
+      case QuotationSaveKind.invalid:
+        _showToast(loc.translate(key!), Colors.red);
+      case QuotationSaveKind.busy:
+        break;
+    }
+  }
+
+  /// One save attempt, without any UI: the aggregate through `save_quotation`
+  /// (a create, or an update against [version]), then the logo change, then a
+  /// freshly generated PDF.
+  ///
+  /// The database aggregate and the media are separate trusted lifecycles, so
+  /// this is not a transaction. The Quotation is saved first; the logo and the
+  /// PDF are then bound to the saved Quotation, each replacing the previous
+  /// one only after the server confirms it. A media failure leaves the saved
+  /// Quotation intact (and the previously bound media in place) and is
+  /// reported in the outcome; saving again retries it as an update.
+  Future<QuotationSaveOutcome> performSave({Locale? locale}) async {
+    if (_disposed || _isLoading) return const QuotationSaveOutcome.busy();
+
+    final userId = _authRepository.currentUserId;
+    if (userId == null) {
+      return const QuotationSaveOutcome._(
+        QuotationSaveKind.failed,
+        failure: QuotationFailure.notSignedIn,
+      );
     }
 
     _computeDerivedTotals();
-
     _isLoading = true;
     if (!_disposed) notifyListeners();
 
     try {
-      final dpItems = downpayments.map((r) {
-        return DownpaymentItem(
-          method: PaymentMethodX.fromString(r.method),
-          number: _toIntOrNull(r.number) ?? 0,
-          date: _toDateOrNull(r.date),
-          amount: _toDoubleOrNull(r.amount) ?? 0,
-        );
-      }).toList();
+      final wasUpdate = _version != null;
+      final id = _quotationId ??=
+          editQuotationId ?? _quotationService.generateNewQuotationId();
+      final model = _buildModel(userId);
 
-      final quotation = QuotationModel(
-        userId: currentUserId,
-        propertyTitle: propertyTitle,
-        propertyType: propertyType.isEmpty ? null : propertyType,
-        parking: parking,
-        date: date.isEmpty ? null : date,
-        startDate: startDate.isEmpty ? null : startDate,
-        endDate: endDate.isEmpty ? null : endDate,
-        currencyCode: currencyCode.isEmpty ? 'AED' : currencyCode,
-        totalAmount: _toDoubleOrNull(totalAmount) ?? 0,
-        numberOfInstallments: _toIntOrNull(numberOfInstallments),
-        paymentType: paymentType,
-        insuranceAmount: _toDoubleOrNull(insuranceAmount),
-        insuranceReturnable: insuranceReturnable,
-        officeName: officeName,
-        officeLogoUrl: _officeLogoUrl,
-        customNote: customNote.isEmpty ? null : customNote,
-        welcomeMessageMode: welcomeMessageMode,
-        customWelcomeMessage:
-            customWelcomeMessage.isEmpty ? null : customWelcomeMessage,
-        downpayments: dpItems,
-        governmentFees: GovernmentFees(
-          percentOfTotalRent: _toDoubleOrNull(govPercentOfTotalRent),
-          municipality: _toDoubleOrNull(govMunicipality),
-          electricity: _toDoubleOrNull(govElectricity),
-          sewerage: _toDoubleOrNull(govSewerage),
-          total: _toDoubleOrNull(govTotal),
-        ),
-        administrativeFees: AdministrativeFees(
-          fees: administrativeFees.map((fee) {
-            return AdministrativeFeeItem(
-              title: fee.title,
-              amount: _toDoubleOrNull(fee.amount) ?? 0,
-            );
-          }).toList(),
-          total: _toDoubleOrNull(admTotal),
-        ),
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
+      final QuotationSaveResult saved;
+      try {
+        saved = await _quotationService.saveQuotation(
+          model,
+          quotationId: id,
+          expectedVersion: _version,
+        );
+      } on QuotationValidationException catch (error) {
+        return QuotationSaveOutcome._(
+          QuotationSaveKind.invalid,
+          validation: error.reason,
+        );
+      } on QuotationException catch (error) {
+        return QuotationSaveOutcome._(
+          QuotationSaveKind.failed,
+          failure: error.failure,
+        );
+      } catch (_) {
+        return const QuotationSaveOutcome._(
+          QuotationSaveKind.failed,
+          failure: QuotationFailure.unknown,
+        );
+      }
+      _version = saved.version;
+      if (!wasUpdate && saved.outcome == 'created') {
+        unawaited(CoreEntityQuotaBridge.recordCreated(section: 'quotations'));
+      }
+
+      final logoFailure = await _syncLogo(id);
+      final pdfFailure = await _publishPdf(id, model, locale);
+      await _refreshServerState(id);
+
+      return QuotationSaveOutcome._(
+        logoFailure == null && pdfFailure == null
+            ? QuotationSaveKind.saved
+            : QuotationSaveKind.mediaIncomplete,
+        logoFailure: logoFailure,
+        pdfFailure: pdfFailure,
+        wasUpdate: wasUpdate,
       );
-
-      String? quotationId;
-      if (_selectedLogoFile != null) {
-        quotationId = await _quotationService.saveQuotationWithMediaFast(
-          quotation,
-          [_selectedLogoFile!],
-        );
-      } else {
-        quotationId = await _quotationService.saveQuotation(quotation);
-      }
-
-      if (quotationId != null && !_disposed) {
-        // Update quota count
-        await _incrementQuotaCount(currentUserId, 'quotations');
-
-        // Generate PDF locally FIRST (fast local operation)
-        await _generateAndSavePdfLocally(quotationId, quotation, context);
-      }
-
-      if (!_disposed && quotationId != null && context.mounted) {
-        _showToast('Quotation and PDF saved successfully!', Colors.green);
-        context.go('/home');
-      }
-    } catch (e) {
-      debugPrint('Save error: $e');
-      if (!_disposed) {
-        _showToast('Failed to save quotation: ${e.toString()}', Colors.red);
-      }
     } finally {
-      if (!_disposed) {
-        _isLoading = false;
-        notifyListeners();
-      }
+      _isLoading = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
-  Future<void> _incrementQuotaCount(String uid, String section) async {
+  /// Binds a newly picked logo, or removes a cleared one, against the logo the
+  /// server last confirmed. The bound logo changes only when the server says
+  /// so; on any failure it is left exactly as it was.
+  Future<QuotationMediaFailure?> _syncLogo(String quotationId) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'counts': {section: FieldValue.increment(1)},
-        'lifetimeCreated': {section: FieldValue.increment(1)},
-      }, SetOptions(merge: true));
-    } catch (e) {
+      final selected = _selectedLogoFile;
+      if (selected != null) {
+        final pendingId = _pendingLogoMediaId ??= _uuid.v4();
+        final binding = await _quotationService.uploadOfficeLogo(
+          quotationId: quotationId,
+          file: selected,
+          expectedMediaId: _boundLogoMediaId,
+          mediaObjectId: pendingId,
+          originalFileName: officeLogoFileName,
+        );
+        _boundLogoMediaId = binding.mediaObjectId;
+        _uploadedLogoFile = selected;
+        _selectedLogoFile = null;
+        _pendingLogoMediaId = null;
+        _logoRemovalRequested = false;
+        if (binding.resultingVersion != null) {
+          _version = binding.resultingVersion;
+        }
+      } else if (_logoRemovalRequested) {
+        if (_boundLogoMediaId != null) {
+          final removal = await _quotationService.removeOfficeLogo(
+            quotationId: quotationId,
+            expectedMediaId: _boundLogoMediaId,
+          );
+          if (removal.resultingVersion != null) {
+            _version = removal.resultingVersion;
+          }
+        }
+        _boundLogoMediaId = null;
+        _uploadedLogoFile = null;
+        _logoRemovalRequested = false;
+      }
+      return null;
+    } on QuotationMediaException catch (error) {
+      return error.failure;
+    } catch (_) {
+      return QuotationMediaFailure.unknown;
     }
   }
+
+  /// Generates the PDF for the Quotation as just saved and binds it, replacing
+  /// the previous one only after the server confirms.
+  Future<QuotationMediaFailure?> _publishPdf(
+    String quotationId,
+    QuotationModel model,
+    Locale? locale,
+  ) async {
+    File? generated;
+    try {
+      final logoSource = await _logoSourceForPdf(quotationId);
+      final forPdf = model.copyWith(id: quotationId, officeLogoUrl: logoSource);
+      generated = File(await _generatePdf(forPdf, locale: locale));
+      final binding = await _quotationService.publishPdf(
+        quotationId: quotationId,
+        pdf: generated,
+        expectedMediaId: _boundPdfMediaId,
+      );
+      _boundPdfMediaId = binding.mediaObjectId;
+      if (binding.resultingVersion != null) _version = binding.resultingVersion;
+      return null;
+    } on QuotationMediaException catch (error) {
+      await _deleteQuietly(generated);
+      return error.failure;
+    } catch (_) {
+      await _deleteQuietly(generated);
+      return QuotationMediaFailure.unknown;
+    }
+  }
+
+  /// Where the PDF draws the office logo from: the file just picked, the file
+  /// just uploaded, or a short-lived signed URL for the bound logo. Never
+  /// stored; null when the Quotation has no logo.
+  Future<String?> _logoSourceForPdf(String quotationId) async {
+    final selected = _selectedLogoFile;
+    if (selected != null) return Uri.file(selected.path).toString();
+    if (_logoRemovalRequested || _boundLogoMediaId == null) return null;
+    final uploaded = _uploadedLogoFile;
+    if (uploaded != null && await uploaded.exists()) {
+      return Uri.file(uploaded.path).toString();
+    }
+    try {
+      return (await _quotationService.signedOfficeLogo(quotationId))?.url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Media changes bump the server version; adopt it (and the bound ids) so
+  /// the next save is an update against what the server really holds.
+  Future<void> _refreshServerState(String quotationId) async {
+    try {
+      final state = await _quotationService.getMediaState(quotationId);
+      if (state == null) return;
+      _version = state.version;
+      _boundLogoMediaId = state.officeLogoMediaId;
+      _boundPdfMediaId = state.pdfMediaId;
+    } catch (_) {
+      // Keep the tracked values; the next save reports any real difference.
+    }
+  }
+
+  Future<void> _deleteQuietly(File? file) async {
+    if (file == null) return;
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  /// The form as a [QuotationModel]. Media ids are not part of it: they are
+  /// server-controlled and are never sent by a save.
+  QuotationModel _buildModel(String userId) {
+    final dpItems = downpayments.map((r) {
+      return DownpaymentItem(
+        method: PaymentMethodX.fromString(r.method),
+        number: _toIntOrNull(r.number) ?? 0,
+        date: _toDateOrNull(r.date),
+        amount: _toDoubleOrNull(r.amount) ?? 0,
+      );
+    }).toList();
+
+    return QuotationModel(
+      userId: userId,
+      propertyTitle: propertyTitle,
+      propertyType: propertyType.isEmpty ? null : propertyType,
+      parking: parking,
+      date: date.isEmpty ? null : date,
+      startDate: startDate.isEmpty ? null : startDate,
+      endDate: endDate.isEmpty ? null : endDate,
+      currencyCode: currencyCode.isEmpty ? 'AED' : currencyCode,
+      totalAmount: _toDoubleOrNull(totalAmount) ?? 0,
+      numberOfInstallments: _toIntOrNull(numberOfInstallments),
+      paymentType: paymentType,
+      insuranceAmount: _toDoubleOrNull(insuranceAmount),
+      insuranceReturnable: insuranceReturnable,
+      officeName: officeName,
+      customNote: customNote.isEmpty ? null : customNote,
+      welcomeMessageMode: welcomeMessageMode,
+      customWelcomeMessage:
+          customWelcomeMessage.isEmpty ? null : customWelcomeMessage,
+      downpayments: dpItems,
+      governmentFees: GovernmentFees(
+        percentOfTotalRent: _toDoubleOrNull(govPercentOfTotalRent),
+        municipality: _toDoubleOrNull(govMunicipality),
+        electricity: _toDoubleOrNull(govElectricity),
+        sewerage: _toDoubleOrNull(govSewerage),
+        total: _toDoubleOrNull(govTotal),
+      ),
+      administrativeFees: AdministrativeFees(
+        fees: administrativeFees.map((fee) {
+          return AdministrativeFeeItem(
+            title: fee.title,
+            amount: _toDoubleOrNull(fee.amount) ?? 0,
+          );
+        }).toList(),
+        total: _toDoubleOrNull(admTotal),
+      ),
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  // ===== Reopen / edit =====
+  /// Loads the hosted aggregate into the form and keeps its version, so the
+  /// next save is an update against exactly that version.
+  Future<void> loadForEdit() async {
+    final id = editQuotationId;
+    if (id == null || _disposed) return;
+    _isLoadingExisting = true;
+    _loadFailed = false;
+    notifyListeners();
+    try {
+      final quotation = await _quotationService.getQuotationById(id);
+      if (quotation == null) {
+        _loadFailed = true;
+      } else {
+        _quotationId = id;
+        _applyModel(quotation);
+        await _loadLogoName();
+      }
+    } catch (_) {
+      _loadFailed = true;
+    } finally {
+      _isLoadingExisting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadLogoName() async {
+    final logoId = _boundLogoMediaId;
+    if (logoId == null) return;
+    String? name;
+    try {
+      name = await _quotationService.getMediaFileName(logoId);
+    } catch (_) {}
+    officeLogoFileName = name ?? 'logo';
+  }
+
+  /// Fills the form from a loaded Quotation. A value the user did not type is
+  /// not auto-recalculated over: a loaded schedule and end date count as
+  /// entered, and a stored government total that differs from the sum of its
+  /// parts counts as a manual total.
+  void _applyModel(QuotationModel q) {
+    propertyTitle = q.propertyTitle;
+    propertyType = q.propertyType ?? '';
+    parking = q.parking ?? false;
+    date = q.date ?? '';
+    startDate = q.startDate ?? '';
+    endDate = q.endDate ?? '';
+    customNote = q.customNote ?? '';
+    welcomeMessageMode = q.welcomeMessageMode;
+    customWelcomeMessage = q.customWelcomeMessage ?? '';
+    currencyCode = (q.currencyCode == null || q.currencyCode!.isEmpty)
+        ? 'AED'
+        : q.currencyCode!;
+    // A blank total is stored as 0; show it blank again.
+    totalAmount = (q.totalAmount == null || q.totalAmount == 0)
+        ? ''
+        : _numberText(q.totalAmount!);
+    numberOfInstallments = q.numberOfInstallments?.toString() ?? '';
+    paymentType = q.paymentType ?? '';
+    insuranceAmount =
+        q.insuranceAmount == null ? '' : _numberText(q.insuranceAmount!);
+    insuranceReturnable = q.insuranceReturnable ?? false;
+    officeName = q.officeName;
+
+    downpayments
+      ..clear()
+      ..addAll(q.downpayments.map((d) => DownpaymentRowVM(
+            method: d.method.asString,
+            number: '${d.number}',
+            date: d.date == null ? '' : _dateText(d.date!),
+            amount: d.amount.toStringAsFixed(2),
+          )));
+
+    final gov = q.governmentFees;
+    govPercentOfTotalRent = gov.percentOfTotalRent == null
+        ? ''
+        : _numberText(gov.percentOfTotalRent!);
+    govMunicipality =
+        gov.municipality == null ? '' : _numberText(gov.municipality!);
+    govElectricity =
+        gov.electricity == null ? '' : _numberText(gov.electricity!);
+    govSewerage = gov.sewerage == null ? '' : _numberText(gov.sewerage!);
+    govTotal = gov.total == null ? '' : gov.total!.toStringAsFixed(2);
+    _recalcGovCalculatedAmount();
+
+    administrativeFees
+      ..clear()
+      ..addAll(q.administrativeFees.fees.map((f) => AdministrativeFeeRowVM(
+            title: f.title,
+            amount: _numberText(f.amount),
+          )));
+    admTotal = q.administrativeFees.fees.isEmpty
+        ? ''
+        : _calcAdmTotal().toStringAsFixed(2);
+
+    _downpaymentsManuallyModified = downpayments.isNotEmpty;
+    _endDateManuallyOverridden = endDate.isNotEmpty;
+    _govTotalManual =
+        gov.total != null && (gov.total! - _calcGovTotal()).abs() > 0.005;
+    _admTotalManual = false;
+
+    _version = q.version;
+    _boundLogoMediaId = q.officeLogoMediaId;
+    _boundPdfMediaId = q.pdfMediaId;
+    _selectedLogoFile = null;
+    _pendingLogoMediaId = null;
+    _logoRemovalRequested = false;
+    officeLogoFileName = '';
+  }
+
+  String _numberText(double value) =>
+      value % 1 == 0 ? value.toInt().toString() : value.toString();
+
+  String _dateText(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   // ===== Cancel =====
   void cancel(BuildContext context) {
@@ -855,7 +1349,10 @@ class AddQuotationViewModel extends ChangeNotifier {
   }
 
   // ===== Toast =====
-  void _showToast(String message, Color backgroundColor) {
+  void _showToast(String message, Color backgroundColor) =>
+      _toast(message, backgroundColor);
+
+  static void _showPlatformToast(String message, Color backgroundColor) {
     Fluttertoast.showToast(
       msg: message,
       toastLength: Toast.LENGTH_SHORT,
@@ -897,111 +1394,13 @@ class AddQuotationViewModel extends ChangeNotifier {
     admTotal = '';
     officeName = '';
     officeLogoFileName = '';
-    _officeLogoUrl = null;
     _selectedLogoFile = null;
+    _pendingLogoMediaId = null;
+    _logoRemovalRequested = false;
     _govTotalManual = false;
     _admTotalManual = false;
     _downpaymentsManuallyModified = false;
     _endDateManuallyOverridden = false; // Reset end date override flag
     if (!_disposed) notifyListeners();
-  }
-
-  // ===== Local-First PDF Generation =====
-  /// Generates PDF locally first, saves to local storage, updates DB with local path,
-  /// then uploads to Firebase in background - Professional app approach
-  Future<void> _generateAndSavePdfLocally(
-    String quotationId,
-    QuotationModel quotation,
-    BuildContext context,
-  ) async {
-    try {
-      // Get the current locale from context
-      final currentLocale = Localizations.localeOf(context);
-
-      // If user selected a logo file, inject it into the quotation for PDF generation
-      final quotationForPdf = (_selectedLogoFile != null)
-          ? quotation.copyWith(
-              officeLogoUrl: 'file://${_selectedLogoFile!.path}')
-          : quotation;
-
-      // Check if we need to wait for logo upload completion
-      final hasLocalLogo =
-          quotation.officeLogoUrl?.startsWith('local://') == true ||
-              quotation.officeLogoUrl?.startsWith('file://') == true;
-
-      // Wait a small moment for logo upload to complete if needed
-      if (hasLocalLogo) {
-        await Future.delayed(const Duration(milliseconds: 300));
-
-        // Get updated quotation data with uploaded logo
-        final latestQuotation =
-            await _quotationService.getQuotationById(quotationId);
-        final quotationToUse = latestQuotation ?? quotationForPdf;
-
-        // Generate PDF locally with updated data (may have file:// URL)
-        final localPdfPath = await PdfGenerationService.generateQuotationPdf(
-          quotationToUse,
-          locale: currentLocale,
-        );
-
-        // Create local URL for immediate use
-        final localPdfUrl = 'local://$localPdfPath';
-
-        // Update quotation with LOCAL PDF URL immediately (user sees PDF instantly)
-        await _quotationService.updateQuotation(
-          quotationId,
-          quotationToUse.copyWith(pdfUrl: localPdfUrl),
-        );
-
-        // Upload to Firebase in background (non-blocking)
-        _uploadPdfToFirebaseInBackground(
-            localPdfPath, quotationId, quotationToUse);
-      } else {
-        // Logo already uploaded or not needed, generate PDF immediately
-        final pdfPath = await PdfGenerationService.generateQuotationPdf(
-          quotationForPdf, // Use quotationForPdf which may have file:// URL
-          locale: currentLocale,
-        );
-
-        // Create local URL for immediate use
-        final localPdfUrl = 'local://$pdfPath';
-
-        // Update quotation with LOCAL PDF URL immediately
-        await _quotationService.updateQuotation(
-          quotationId,
-          quotationForPdf.copyWith(pdfUrl: localPdfUrl),
-        );
-
-        // Upload to Firebase in background (non-blocking)
-        _uploadPdfToFirebaseInBackground(pdfPath, quotationId, quotation);
-      }
-
-    } catch (e) {
-      // Don't show error to user for PDF generation, just log it
-    }
-  }
-
-  /// Uploads PDF to Firebase Storage in background and updates database with Firebase URL
-  Future<void> _uploadPdfToFirebaseInBackground(
-    String localPdfPath,
-    String quotationId,
-    QuotationModel quotation,
-  ) async {
-    try {
-      // Upload PDF to Firebase Storage
-      final firebasePdfUrl = await PdfGenerationService.uploadPdfToStorage(
-        localPdfPath,
-        quotationId,
-      );
-
-      // Update quotation with Firebase URL (replaces local URL)
-      await _quotationService.updateQuotation(
-        quotationId,
-        quotation.copyWith(pdfUrl: firebasePdfUrl),
-      );
-
-    } catch (e) {
-      // PDF remains available locally, just log the upload error
-    }
   }
 }

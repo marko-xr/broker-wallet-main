@@ -1,519 +1,220 @@
-import 'dart:async';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'dart:io';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:path/path.dart' as path;
+// The Quotation feature's service: persistence on the hosted Supabase
+// aggregate (`save_quotation`) and private media on the Media Worker / R2.
+//
+// This replaces the former Firestore / Firebase Storage implementation. The
+// Quotation is no longer stored in, or read from, Firebase: identity is the
+// canonical Supabase session, the aggregate is saved atomically with an
+// optimistic version, the office logo and the generated PDF are private media
+// referenced only by stable media id, and a delete is the soft `deleted_at`
+// path. Firebase mode (USE_SUPABASE_AUTH=false) no longer has a Quotation
+// backend: the list is empty and saving fails.
 
-import 'package:broker_wallet/src/services/offline_media_service.dart';
-import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
+import 'dart:async';
+import 'dart:io';
+
+import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_workflow.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 
 class QuotationService {
-  // Use lazy getters to avoid accessing Firebase before initialization
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  /// Every collaborator is optional so the feature can be exercised without a
+  /// network; the defaults are lazy and touch neither Supabase nor the disk
+  /// until used.
+  QuotationService({
+    QuotationRemote? remote,
+    QuotationMediaTransport? mediaTransport,
+    QuotationPdfCache? pdfCache,
+    http.Client? httpClient,
+    Uuid? uuid,
+  }) : this._(
+          remote ?? SupabaseQuotationService(),
+          mediaTransport ?? R2QuotationMediaService(),
+          pdfCache ?? QuotationPdfCache(),
+          httpClient ?? http.Client(),
+          uuid ?? const Uuid(),
+        );
 
-  String? get _currentUserId =>
-      RepositoryProvider.instance.authRepository.currentUserId;
-  static const String _collectionName = 'users';
+  QuotationService._(
+    this._remote,
+    this._transport,
+    this._pdfCache,
+    this._http,
+    this._uuid,
+  ) : _media = QuotationMediaWorkflow(_transport);
 
-  // Generate new quotation ID without saving (for file uploads)
-  String generateNewQuotationId() {
-    if (_currentUserId == null) {
-      throw Exception('User not authenticated');
-    }
+  final QuotationRemote _remote;
+  final QuotationMediaTransport _transport;
+  final QuotationMediaWorkflow _media;
+  final QuotationPdfCache _pdfCache;
+  final http.Client _http;
+  final Uuid _uuid;
 
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('quotations')
-        .doc()
-        .id;
-  }
+  static const Duration _downloadTimeout = Duration(seconds: 60);
 
-  // Save quotation with existing ID
-  Future<String?> saveQuotation(QuotationModel quotation,
-      {String? quotationId}) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
+  /// A new Quotation id. The client chooses it, so a create that is retried
+  /// after a lost answer replays the same Quotation instead of making another.
+  String generateNewQuotationId() => _uuid.v4();
 
-      final String docId = quotationId ?? generateNewQuotationId();
+  // -------------------------------------------------------------------------
+  // Aggregate
+  // -------------------------------------------------------------------------
 
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(docId)
-          .set(
-            quotation
-                .copyWith(
-                  id: docId,
-                  userId: _currentUserId!,
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                )
-                .toFirestore(),
-          );
-
-      return docId;
-    } catch (e) {
-      // Error saving quotation - suppressed debug log
-      rethrow;
-    }
-  }
-
-  // Fast save method for quotations with media
-  Future<String> saveQuotationWithMediaFast(
-    QuotationModel quotation,
-    List<File> logoFiles,
-  ) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final String quotationId = generateNewQuotationId();
-      // Fast save quotation - generated ID (log suppressed)
-
-      // Create data for FastMediaUploadService (no Timestamp objects)
-      final quotationData = {
-        'id': quotationId,
-        'userId': _currentUserId!,
-        'propertyTitle': quotation.propertyTitle,
-        'propertyType': quotation.propertyType,
-        'parking': quotation.parking,
-        'subtitle': quotation.subtitle,
-        'date': quotation.date,
-        'startDate': quotation.startDate,
-        'endDate': quotation.endDate,
-        'currencyCode': quotation.currencyCode,
-        'professionalFee': quotation.professionalFee,
-        'totalAmount': quotation.totalAmount,
-        'numberOfInstallments': quotation.numberOfInstallments,
-        'paymentType': quotation.paymentType,
-        'insuranceAmount': quotation.insuranceAmount,
-        'insuranceReturnable': quotation.insuranceReturnable,
-        'customNote': quotation.customNote,
-        'welcomeMessageMode': quotation.welcomeMessageMode.asString,
-        'customWelcomeMessage': quotation.customWelcomeMessage,
-        'downpayments': quotation.downpayments
-            .map((e) => {
-                  'method': e.method.asString,
-                  'number': e.number,
-                  'date': e.date?.toIso8601String(), // Convert to ISO string
-                  'amount': e.amount,
-                })
-            .toList(),
-        'governmentFees': quotation.governmentFees.toMap(),
-        'administrativeFees': quotation.administrativeFees.toMap(),
-        'officeName': quotation.officeName,
-        'pdfUrl': quotation.pdfUrl,
-        'createdAt': DateTime.now(),
-        'updatedAt': DateTime.now(),
-      };
-
-      // Use FastMediaUploadService for proper logo upload
-      final FastMediaUploadService _fastUploadService =
-          FastMediaUploadService();
-      final docId = await _fastUploadService.saveDataWithMedia(
-        data: quotationData,
-        mediaFiles: logoFiles,
-        collection: 'quotations',
-        documentId: quotationId,
-      );
-
-      // Wait a moment for the upload to start, then update officeLogoUrl from mediaUrls
-      await _updateOfficeLogoUrlFromMediaUrls(quotationId);
-
-      // Fast save quotation completed (log suppressed)
-      return docId;
-    } catch (e) {
-      // Error in fast save quotation - suppressed debug log
-      rethrow;
-    }
-  }
-
-  /// Custom media upload for quotations that updates officeLogoUrl instead of mediaUrls
-
-  /// Save media files locally
-  /// Background upload for quotation logos
-  Future<void> _uploadQuotationLogosInBackground(String quotationId) async {
-    try {
-      // Starting background logo upload for quotation (log suppressed)
-
-      final pendingBox = await Hive.openBox('pending_uploads');
-      final localBox = await Hive.openBox('local_media');
-
-      final pendingData = pendingBox.get(quotationId);
-      if (pendingData == null) {
-        // No pending data found for quotation (log suppressed)
-        return;
-      }
-
-      // Found pending data for quotation (log suppressed)
-
-      // Upload logo files to Firebase Storage
-      List<String> firebaseUrls = [];
-      final logoFilePaths = List<String>.from(pendingData['logoFiles'] ?? []);
-
-      // Found ${logoFilePaths.length} logo files to upload (log suppressed)
-
-      for (int i = 0; i < logoFilePaths.length; i++) {
-        final file = File(logoFilePaths[i]);
-        if (await file.exists()) {
-          // Uploading logo (log suppressed)
-          final url = await _uploadLogoToFirebaseStorage(file, quotationId, i);
-          firebaseUrls.add(url);
-
-          // Map the Firebase URL to the local file for offline access
-          await OfflineMediaService.instance
-              .mapUrlToLocalFile(url, logoFilePaths[i]);
-          // Uploaded logo (log suppressed)
-        } else {
-          // Logo file not found (log suppressed)
-        }
-      }
-
-      // Update Firestore with final logo URL
-      if (firebaseUrls.isNotEmpty) {
-        // Updating Firestore with Firebase logo URL (log suppressed)
-        await _firestore
-            .collection('users')
-            .doc(pendingData['userId'])
-            .collection('quotations')
-            .doc(quotationId)
-            .update({
-          'officeLogoUrl':
-              firebaseUrls.first, // Use first logo as main office logo
-          'status': 'synced',
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        // Update local data with final URL
-        final localData = localBox.get(quotationId);
-        if (localData != null) {
-          localData['status'] = 'synced';
-          localData['officeLogoUrl'] = firebaseUrls.first;
-          await localBox.put(quotationId, localData);
-          // Updated local data with Firebase URL (log suppressed)
-        }
-      }
-
-      // Clean up pending upload
-      await pendingBox.delete(quotationId);
-      // Quotation logo upload completed (log suppressed)
-      // Final logo URL: ${firebaseUrls.isNotEmpty ? firebaseUrls.first : 'None'} (log suppressed)
-    } catch (e) {
-      // Error uploading quotation logos (log suppressed)
-      // Don't rethrow - this is a background operation
-    }
-  }
-
-  /// Upload logo to Firebase Storage
-  Future<String> _uploadLogoToFirebaseStorage(
-      File file, String quotationId, int index) async {
-    try {
-      final fileName = 'logo_$index${path.extension(file.path)}';
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('users')
-          .child(_currentUserId!)
-          .child('quotations')
-          .child(quotationId)
-          .child('logos')
-          .child(fileName);
-
-      // Uploading ${file.path} to Firebase Storage (log suppressed)
-      final uploadTask = ref.putFile(file);
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      // Upload completed (log suppressed)
-      return downloadUrl;
-    } catch (e) {
-      // Error uploading logo to Firebase Storage (log suppressed)
-      rethrow;
-    }
-  }
-
-  /// Manually trigger background upload for pending quotations
-  Future<void> triggerPendingUploads() async {
-    try {
-      final pendingBox = await Hive.openBox('pending_uploads');
-      final keys = pendingBox.keys.toList();
-
-      // Found ${keys.length} pending uploads to process (log suppressed)
-
-      for (final key in keys) {
-        if (key is String) {
-          // Triggering upload for pending key (log suppressed)
-          _uploadQuotationLogosInBackground(key);
-        }
-      }
-    } catch (e) {
-      // Error triggering pending uploads (log suppressed)
-    }
-  }
-
-  Future<void> updateQuotation(
-      String quotationId, QuotationModel quotation) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Update with all current model fields
-      final updateData = quotation.toFirestore();
-      updateData['updatedAt'] = Timestamp.fromDate(DateTime.now());
-
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(quotationId)
-          .update(updateData);
-    } catch (e) {
-      // Error updating quotation (log suppressed)
-      rethrow;
-    }
-  }
-
-  // Update only PDF URL
-  Future<void> updateQuotationPdfUrl(String quotationId, String pdfUrl) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final updateData = {
-        'pdfUrl': pdfUrl,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      };
-
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(quotationId)
-          .update(updateData);
-    } catch (e) {
-      // Error updating quotation PDF URL (log suppressed)
-      rethrow;
-    }
-  }
-
-  Stream<List<QuotationModel>> getUserQuotations() {
-    if (_currentUserId == null) {
-      return Stream.value([]);
-    }
-
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('quotations')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => QuotationModel.fromFirestore(doc))
-            .toList());
-  }
-
-  Future<QuotationModel?> getQuotationById(String quotationId) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final doc = await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(quotationId)
-          .get();
-
-      if (doc.exists) {
-        return QuotationModel.fromFirestore(doc);
-      }
-      return null;
-    } catch (e) {
-      // Error getting quotation - suppressed debug log
-      rethrow;
-    }
-  }
-
-  Future<void> deleteQuotation(String quotationId) async {
-    try {
-      if (_currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(quotationId)
-          .delete();
-    } catch (e) {
-      // Error deleting quotation - suppressed debug log
-      rethrow;
-    }
-  }
-
-  // Batch operations for better performance
-  Future<List<QuotationModel>> getUserQuotationsList() async {
-    if (_currentUserId == null) {
-      return [];
-    }
-
-    try {
-      final snapshot = await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      return snapshot.docs
-          .map((doc) => QuotationModel.fromFirestore(doc))
-          .toList();
-    } catch (e) {
-      // Error getting quotations list - suppressed debug log
-      rethrow;
-    }
-  }
-
-  // Search quotations
-  Stream<List<QuotationModel>> searchQuotations(String searchTerm) {
-    if (_currentUserId == null) {
-      return Stream.value([]);
-    }
-
-    if (searchTerm.isEmpty) {
-      return getUserQuotations();
-    }
-
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('quotations')
-        .where('propertyTitle', isGreaterThanOrEqualTo: searchTerm)
-        .where('propertyTitle', isLessThanOrEqualTo: searchTerm + '\uf8ff')
-        .orderBy('propertyTitle')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => QuotationModel.fromFirestore(doc))
-            .toList());
-  }
-
-  // Get quotations with pagination
-  Future<List<QuotationModel>> getQuotationsPaginated({
-    int limit = 10,
-    DocumentSnapshot? startAfter,
+  /// Creates ([expectedVersion] null) or updates the Quotation atomically.
+  /// Throws [QuotationException] (version conflict, deleted, invalid data, …)
+  /// or `QuotationValidationException` for a form that can never be saved.
+  Future<QuotationSaveResult> saveQuotation(
+    QuotationModel quotation, {
+    required String quotationId,
+    int? expectedVersion,
   }) async {
-    if (_currentUserId == null) {
-      return [];
-    }
-
-    try {
-      Query query = _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .orderBy('createdAt', descending: true)
-          .limit(limit);
-
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-
-      final snapshot = await query.get();
-      return snapshot.docs
-          .map((doc) => QuotationModel.fromFirestore(doc))
-          .toList();
-    } catch (e) {
-      // Error getting paginated quotations - suppressed debug log
-      rethrow;
-    }
+    final result = await _remote.save(
+      quotation,
+      quotationId: quotationId,
+      expectedVersion: expectedVersion,
+    );
+    CoreEntityMutationNotifier.notify();
+    return result;
   }
 
-  /// Update officeLogoUrl from mediaUrls array for PDF generation compatibility
-  Future<void> _updateOfficeLogoUrlFromMediaUrls(String quotationId) async {
-    try {
-      if (_currentUserId == null) return;
-
-      final docRef = _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('quotations')
-          .doc(quotationId);
-
-      // Wait for initial document to be created, then check for mediaUrls
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final snapshot = await docRef.get();
-      if (snapshot.exists) {
-        final data = snapshot.data();
-        final mediaUrls = data?['mediaUrls'] as List<dynamic>?;
-
-        if (mediaUrls != null && mediaUrls.isNotEmpty) {
-          final firstMediaUrl = mediaUrls.first as String;
-
-          // Update officeLogoUrl with the first media URL
-          await docRef.update({
-            'officeLogoUrl': firstMediaUrl,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-
-          // Updated officeLogoUrl (log suppressed)
-        } else {
-          // If no mediaUrls yet, set up a listener for background upload completion
-          _setupMediaUrlsListener(quotationId);
-        }
-      }
-    } catch (e) {
-      // Error updating officeLogoUrl from mediaUrls (log suppressed)
-    }
+  /// The signed-in account's live Quotations, newest first, refreshed after
+  /// every mutation in this process.
+  Stream<List<QuotationModel>> getUserQuotations() {
+    if (!SupabaseConfig.useSupabaseAuth) return Stream.value(const []);
+    return _remote.watchQuotations();
   }
 
-  /// Set up listener for mediaUrls updates from background upload
-  void _setupMediaUrlsListener(String quotationId) {
-    if (_currentUserId == null) return;
+  /// The whole Quotation, or null when it does not exist or was deleted.
+  Future<QuotationModel?> getQuotationById(String quotationId) =>
+      _remote.getQuotation(quotationId);
 
-    final docRef = _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('quotations')
-        .doc(quotationId);
+  /// The version and bound media ids as the server holds them now.
+  Future<QuotationMediaState?> getMediaState(String quotationId) =>
+      _remote.getMediaState(quotationId);
 
-    late StreamSubscription subscription;
-    subscription = docRef.snapshots().listen((snapshot) async {
-      if (snapshot.exists) {
-        final data = snapshot.data();
-        final mediaUrls = data?['mediaUrls'] as List<dynamic>?;
+  /// The name the account gave a bound media object, or null when unknown.
+  Future<String?> getMediaFileName(String mediaId) =>
+      _remote.getMediaFileName(mediaId);
 
-        if (mediaUrls != null && mediaUrls.isNotEmpty) {
-          final firstMediaUrl = mediaUrls.first as String;
+  /// Soft-deletes the Quotation and forgets this device's copy of its PDF.
+  Future<void> deleteQuotation(String quotationId) async {
+    await _remote.softDelete(quotationId);
+    await _pdfCache.purge(quotationId);
+    CoreEntityMutationNotifier.notify();
+  }
 
-          // Only update if it's a Firebase URL (not local://)
-          if (firstMediaUrl.startsWith('https://')) {
-            await docRef.update({
-              'officeLogoUrl': firstMediaUrl,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
+  // -------------------------------------------------------------------------
+  // Private media
+  // -------------------------------------------------------------------------
 
-            // Updated officeLogoUrl with Firebase URL (log suppressed)
-            subscription.cancel(); // Stop listening once updated
-          }
-        }
-      }
-    });
+  /// Uploads and binds [file] as the office logo. See
+  /// [QuotationMediaWorkflow.uploadLogo].
+  Future<QuotationMediaBinding> uploadOfficeLogo({
+    required String quotationId,
+    required File file,
+    required String? expectedMediaId,
+    required String mediaObjectId,
+    String? originalFileName,
+  }) async {
+    final binding = await _media.uploadLogo(
+      quotationId: quotationId,
+      file: file,
+      expectedMediaId: expectedMediaId,
+      mediaObjectId: mediaObjectId,
+      originalFileName: originalFileName,
+    );
+    CoreEntityMutationNotifier.notify();
+    return binding;
+  }
 
-    // Auto-cancel after 2 minutes to prevent memory leaks
-    Future.delayed(const Duration(minutes: 2), () {
-      subscription.cancel();
-    });
+  /// Removes the bound office logo.
+  Future<QuotationMediaRemoval> removeOfficeLogo({
+    required String quotationId,
+    required String? expectedMediaId,
+  }) async {
+    final removal = await _media.removeLogo(
+      quotationId: quotationId,
+      expectedMediaId: expectedMediaId,
+    );
+    CoreEntityMutationNotifier.notify();
+    return removal;
+  }
+
+  /// Uploads and binds the generated [pdf], then keeps it as this device's
+  /// copy of exactly that media object. The generated file is consumed.
+  Future<QuotationMediaBinding> publishPdf({
+    required String quotationId,
+    required File pdf,
+    required String? expectedMediaId,
+  }) async {
+    final binding = await _media.uploadPdf(
+      quotationId: quotationId,
+      file: pdf,
+      expectedMediaId: expectedMediaId,
+      currentExpected: () async =>
+          (await _remote.getMediaState(quotationId))?.pdfMediaId,
+    );
+    try {
+      await _pdfCache.adopt(pdf, quotationId, binding.mediaObjectId);
+    } catch (_) {
+      // The PDF is bound; a missing local copy is fetched on first open. The
+      // generated file is private user data and is not left behind.
+      try {
+        if (await pdf.exists()) await pdf.delete();
+      } catch (_) {}
+    }
+    CoreEntityMutationNotifier.notify();
+    return binding;
+  }
+
+  /// A local file for the Quotation's bound PDF: this device's copy of that
+  /// exact media object when it has one, otherwise downloaded once through a
+  /// fresh short-lived signed URL (which is never kept).
+  Future<File> resolvePdfFile(QuotationModel quotation) async {
+    final quotationId = quotation.id;
+    final boundId = quotation.pdfMediaId;
+    if (quotationId == null || boundId == null || boundId.isEmpty) {
+      throw const QuotationMediaException(QuotationMediaFailure.unknown);
+    }
+    final cached = await _pdfCache.existing(quotationId, boundId);
+    if (cached != null) return cached;
+
+    final signed = await _transport.fetchSigned(quotationId);
+    final pdf = signed.quotationPdf;
+    if (pdf == null) {
+      throw const QuotationMediaException(QuotationMediaFailure.unknown);
+    }
+    // The server's current PDF wins over a possibly older list row.
+    final current = await _pdfCache.existing(quotationId, pdf.mediaObjectId);
+    if (current != null) return current;
+
+    final http.Response response;
+    try {
+      response = await _http.get(Uri.parse(pdf.url)).timeout(_downloadTimeout);
+    } on TimeoutException {
+      throw const QuotationMediaException(QuotationMediaFailure.interrupted);
+    } catch (_) {
+      throw const QuotationMediaException(QuotationMediaFailure.unavailable);
+    }
+    if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+      // Includes an expired link: the next call fetches a fresh one.
+      throw QuotationMediaException(
+        QuotationMediaFailure.unavailable,
+        statusCode: response.statusCode,
+      );
+    }
+    return _pdfCache.write(quotationId, pdf.mediaObjectId, response.bodyBytes);
+  }
+
+  /// A short-lived signed URL for the bound office logo, or null when there is
+  /// none. Used immediately to draw the PDF and never stored.
+  Future<SignedQuotationMedia?> signedOfficeLogo(String quotationId) async {
+    final signed = await _transport.fetchSigned(quotationId);
+    return signed.officeLogo;
   }
 }

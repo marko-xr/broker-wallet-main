@@ -1,5 +1,4 @@
-// lib/src/data/models/ScreensModel/quotation_model.dart
-import 'package:cloud_firestore/cloud_firestore.dart';
+// lib/src/views/Screens/home/quotation/quotation_model.dart
 
 /// Payment method for a single downpayment row.
 enum PaymentMethod { cash, cheque, bankTransfer, other }
@@ -74,30 +73,6 @@ class DownpaymentItem {
     required this.amount,
     this.date,
   });
-
-  Map<String, dynamic> toMap() => {
-        'method': method.asString,
-        'number': number,
-        'date': date == null ? null : Timestamp.fromDate(date!),
-        'amount': amount,
-      };
-
-  factory DownpaymentItem.fromMap(Map<String, dynamic>? data) {
-    if (data == null) {
-      return DownpaymentItem(
-        method: PaymentMethod.other,
-        number: 0,
-        amount: 0,
-        date: null,
-      );
-    }
-    return DownpaymentItem(
-      method: PaymentMethodX.fromString(data['method'] as String?),
-      number: _toInt(data['number']),
-      date: _toDate(data['date']),
-      amount: _toDouble(data['amount']),
-    );
-  }
 }
 
 /// Government fees section (e.g., 2% of total rent, Municipality, Electricity, Sewerage, Total).
@@ -116,24 +91,13 @@ class GovernmentFees {
     this.total,
   });
 
-  Map<String, dynamic> toMap() => {
-        'percentOfTotalRent': percentOfTotalRent,
-        'municipality': municipality,
-        'electricity': electricity,
-        'sewerage': sewerage,
-        'total': total,
-      };
-
-  factory GovernmentFees.fromMap(Map<String, dynamic>? data) {
-    if (data == null) return GovernmentFees();
-    return GovernmentFees(
-      percentOfTotalRent: _toNullableDouble(data['percentOfTotalRent']),
-      municipality: _toNullableDouble(data['municipality']),
-      electricity: _toNullableDouble(data['electricity']),
-      sewerage: _toNullableDouble(data['sewerage']),
-      total: _toNullableDouble(data['total']),
-    );
-  }
+  /// Whether any value is present. An all-empty section is not stored.
+  bool get isEmpty =>
+      percentOfTotalRent == null &&
+      municipality == null &&
+      electricity == null &&
+      sewerage == null &&
+      total == null;
 
   GovernmentFees copyWith({
     double? percentOfTotalRent,
@@ -161,65 +125,20 @@ class AdministrativeFeeItem {
     required this.title,
     required this.amount,
   });
-
-  Map<String, dynamic> toMap() => {
-        'title': title,
-        'amount': amount,
-      };
-
-  factory AdministrativeFeeItem.fromMap(Map<String, dynamic> data) {
-    return AdministrativeFeeItem(
-      title: data['title'] ?? '',
-      amount: _toNullableDouble(data['amount']) ?? 0.0,
-    );
-  }
 }
 
 /// Administrative fees section with dynamic fee items.
 class AdministrativeFees {
   final List<AdministrativeFeeItem> fees;
-  final double? total; // optional, may be computed on the fly
+
+  /// The section total. The hosted contract stores the fee rows only, so a
+  /// reopened Quotation carries the sum of its rows here.
+  final double? total;
 
   AdministrativeFees({
     this.fees = const [],
     this.total,
   });
-
-  Map<String, dynamic> toMap() => {
-        'fees': fees.map((fee) => fee.toMap()).toList(),
-        'total': total,
-      };
-
-  factory AdministrativeFees.fromMap(Map<String, dynamic>? data) {
-    if (data == null) return AdministrativeFees();
-
-    List<AdministrativeFeeItem> feesList = [];
-    if (data['fees'] != null) {
-      final feesData = data['fees'] as List;
-      feesList =
-          feesData.map((item) => AdministrativeFeeItem.fromMap(item)).toList();
-    }
-    // Support legacy format for backward compatibility
-    else if (data['commission'] != null || data['typing'] != null) {
-      if (data['commission'] != null) {
-        feesList.add(AdministrativeFeeItem(
-          title: 'Commission',
-          amount: _toNullableDouble(data['commission']) ?? 0.0,
-        ));
-      }
-      if (data['typing'] != null) {
-        feesList.add(AdministrativeFeeItem(
-          title: 'Typing',
-          amount: _toNullableDouble(data['typing']) ?? 0.0,
-        ));
-      }
-    }
-
-    return AdministrativeFees(
-      fees: feesList,
-      total: _toNullableDouble(data['total']),
-    );
-  }
 
   AdministrativeFees copyWith({
     List<AdministrativeFeeItem>? fees,
@@ -234,6 +153,12 @@ class AdministrativeFees {
 
 /// The main Quotation model adjusted to match the final DOCX format.
 /// All fields are optional-friendly so empty rows/sections can be hidden in the PDF.
+///
+/// Persistence is the hosted Supabase aggregate (`save_quotation`). Private
+/// media is referenced by stable media id only ([officeLogoMediaId],
+/// [pdfMediaId]); both are server-controlled and are never part of a save.
+/// [officeLogoUrl] is a transient presentation source for PDF generation (a
+/// local file path or a short-lived signed URL) and is never persisted.
 class QuotationModel {
   final String? id;
   final String userId;
@@ -254,13 +179,13 @@ class QuotationModel {
   final double? totalAmount; // "Total amount" (overall)
   final int? numberOfInstallments; // "Number of installments"
   final String?
-      paymentType; // "Cheques or Cash" (store literal: 'cheques' or 'cash')
+      paymentType; // 'cash' | 'cheque' | 'bankTransfer' | 'other' (UI form)
   final double? insuranceAmount; // e.g., 2000
   final bool? insuranceReturnable; // "returnable"
 
   // Office
   final String officeName;
-  final String? officeLogoUrl;
+  final String? officeLogoUrl; // transient presentation source, never stored
 
   // Notes
   final String? customNote; // extra note line if needed
@@ -274,8 +199,17 @@ class QuotationModel {
   final GovernmentFees governmentFees;
   final AdministrativeFees administrativeFees;
 
-  // Storage
-  final String? pdfUrl;
+  // Hosted identity (server-controlled)
+  /// The aggregate version the server last reported. Null until the
+  /// Quotation exists on the server.
+  final int? version;
+
+  /// The bound office logo's stable media id, or null.
+  final String? officeLogoMediaId;
+
+  /// The bound PDF's stable media id, or null.
+  final String? pdfMediaId;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -306,84 +240,17 @@ class QuotationModel {
     this.downpayments = const [],
     GovernmentFees? governmentFees,
     AdministrativeFees? administrativeFees,
-    this.pdfUrl,
+    this.version,
+    this.officeLogoMediaId,
+    this.pdfMediaId,
   })  : governmentFees = governmentFees ?? GovernmentFees(),
         administrativeFees = administrativeFees ?? AdministrativeFees();
 
-  /// Firestore serialization
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'propertyTitle': propertyTitle,
-      'propertyType': propertyType,
-      'parking': parking,
-      'subtitle': subtitle,
-      'date': date,
-      'startDate': startDate,
-      'endDate': endDate,
-      'currencyCode': currencyCode,
-      'professionalFee': professionalFee,
-      'totalAmount': totalAmount,
-      'numberOfInstallments': numberOfInstallments,
-      'paymentType': paymentType,
-      'insuranceAmount': insuranceAmount,
-      'insuranceReturnable': insuranceReturnable,
-      'officeName': officeName,
-      'officeLogoUrl': officeLogoUrl,
-      'customNote': customNote,
-      'welcomeMessageMode': welcomeMessageMode.asString,
-      'customWelcomeMessage': customWelcomeMessage,
-      'downpayments': downpayments.map((e) => e.toMap()).toList(),
-      'governmentFees': governmentFees.toMap(),
-      'administrativeFees': administrativeFees.toMap(),
-      'pdfUrl': pdfUrl,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': Timestamp.fromDate(updatedAt),
-    };
-  }
+  /// Whether a generated PDF is bound to this Quotation.
+  bool get hasPdf => pdfMediaId != null && pdfMediaId!.isNotEmpty;
 
-  /// Firestore deserialization
-  factory QuotationModel.fromFirestore(DocumentSnapshot doc) {
-    final data = (doc.data() as Map<String, dynamic>? ?? {});
-    final List<dynamic> dpRaw = (data['downpayments'] as List?) ?? const [];
-    final Map<String, dynamic>? govRaw =
-        data['governmentFees'] as Map<String, dynamic>?;
-    final Map<String, dynamic>? admRaw =
-        data['administrativeFees'] as Map<String, dynamic>?;
-
-    return QuotationModel(
-      id: doc.id,
-      userId: (data['userId'] ?? '') as String,
-      propertyTitle: (data['propertyTitle'] ?? '') as String,
-      propertyType: data['propertyType'] as String?,
-      parking: data['parking'] as bool?,
-      subtitle: data['subtitle'] as String?,
-      date: data['date'] as String?,
-      startDate: data['startDate'] as String?,
-      endDate: data['endDate'] as String?,
-      currencyCode: data['currencyCode'] as String?,
-      professionalFee: _toNullableDouble(data['professionalFee']),
-      totalAmount: _toNullableDouble(data['totalAmount']),
-      numberOfInstallments: _toNullableInt(data['numberOfInstallments']),
-      paymentType: data['paymentType'] as String?,
-      insuranceAmount: _toNullableDouble(data['insuranceAmount']),
-      insuranceReturnable: data['insuranceReturnable'] as bool?,
-      officeName: (data['officeName'] ?? '') as String,
-      officeLogoUrl: data['officeLogoUrl'] as String?,
-      customNote: data['customNote'] as String?,
-      welcomeMessageMode:
-          WelcomeMessageModeX.fromString(data['welcomeMessageMode'] as String?),
-      customWelcomeMessage: data['customWelcomeMessage'] as String?,
-      downpayments: dpRaw
-          .map((e) => DownpaymentItem.fromMap(e as Map<String, dynamic>?))
-          .toList(),
-      governmentFees: GovernmentFees.fromMap(govRaw),
-      administrativeFees: AdministrativeFees.fromMap(admRaw),
-      pdfUrl: data['pdfUrl'] as String?,
-      createdAt: _toDate(data['createdAt']) ?? DateTime.now(),
-      updatedAt: _toDate(data['updatedAt']) ?? DateTime.now(),
-    );
-  }
+  /// Whether an office logo is bound to this Quotation.
+  bool get hasLogo => officeLogoMediaId != null && officeLogoMediaId!.isNotEmpty;
 
   QuotationModel copyWith({
     String? id,
@@ -410,7 +277,9 @@ class QuotationModel {
     List<DownpaymentItem>? downpayments,
     GovernmentFees? governmentFees,
     AdministrativeFees? administrativeFees,
-    String? pdfUrl,
+    int? version,
+    String? officeLogoMediaId,
+    String? pdfMediaId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -439,54 +308,11 @@ class QuotationModel {
       downpayments: downpayments ?? this.downpayments,
       governmentFees: governmentFees ?? this.governmentFees,
       administrativeFees: administrativeFees ?? this.administrativeFees,
-      pdfUrl: pdfUrl ?? this.pdfUrl,
+      version: version ?? this.version,
+      officeLogoMediaId: officeLogoMediaId ?? this.officeLogoMediaId,
+      pdfMediaId: pdfMediaId ?? this.pdfMediaId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
-}
-
-/// -------- Helpers --------
-
-double _toDouble(dynamic v) {
-  if (v == null) return 0;
-  if (v is double) return v;
-  if (v is int) return v.toDouble();
-  if (v is String) return double.tryParse(v) ?? 0;
-  return 0;
-}
-
-double? _toNullableDouble(dynamic v) {
-  if (v == null) return null;
-  if (v is double) return v;
-  if (v is int) return v.toDouble();
-  if (v is String) return double.tryParse(v);
-  return null;
-}
-
-int _toInt(dynamic v) {
-  if (v == null) return 0;
-  if (v is int) return v;
-  if (v is double) return v.toInt();
-  if (v is String) return int.tryParse(v) ?? 0;
-  return 0;
-}
-
-int? _toNullableInt(dynamic v) {
-  if (v == null) return null;
-  if (v is int) return v;
-  if (v is double) return v.toInt();
-  if (v is String) return int.tryParse(v);
-  return null;
-}
-
-DateTime? _toDate(dynamic v) {
-  if (v == null) return null;
-  if (v is Timestamp) return v.toDate();
-  if (v is DateTime) return v;
-  if (v is String) {
-    // Allow free-form strings; parsing best-effort.
-    return DateTime.tryParse(v);
-  }
-  return null;
 }

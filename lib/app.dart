@@ -620,7 +620,15 @@ GoRouter _createRouter(
       ),
       GoRoute(
         path: '/add-quotation',
-        builder: (context, state) => const AddQuotationView(),
+        builder: (context, state) {
+          final mode = state.uri.queryParameters['mode'];
+          final id = state.uri.queryParameters['id'];
+          return AddQuotationView(
+            quotationId: mode == 'edit' && id != null && id.isNotEmpty
+                ? id
+                : null,
+          );
+        },
       ),
 
       // ===== Details screens =====

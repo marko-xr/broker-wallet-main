@@ -6674,3 +6674,876 @@ exact reviewed migration.
 
 NEXT — after that apply and read-back succeed, perform the required real-device
 Quotation verification and a later two-session concurrency test.
+
+## QUOTATION SAVE RPC MIGRATION APPLY — HASH GATE BLOCKED (2026-10-02)
+
+The owner authorized one hosted apply of
+`20260930204217_quotation_save_rpc.sql` followed by read-only hosted
+verification. Before the attempted apply, the source on `quotation-updated` at
+`6413faaa9e15e548b58b2871e1b513c35cf8ff18` had the authoritative
+SHA-256 `ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+A fresh hosted preflight matched the rollback-validated baseline exactly, and
+the linked Supabase CLI `db push --dry-run --skip-vault` listed only this
+migration. The first actual apply command was **not executed**: automatic
+approval review returned a usage-limit error before process creation.
+
+On the owner's continuation, the checkout had changed to commit
+`7ea6c251b7e875a379489e76d83069356e4b8841` with a clean working tree.
+The tracked migration's working-tree bytes are now CRLF and hash to
+`E08C59636EB9C52E376F8757D856FBAFAF88EF36737F8E9687EB7C928BD2D362`.
+An in-memory LF normalization reproduces the authoritative hash exactly; no
+migration source content difference was found. Nevertheless, the owner's
+literal migration-hash gate requires the file itself to hash to the
+authoritative value, so application stopped. A fresh hosted migration-list
+read still did not contain version `20260930204217`. A separate read-only
+snapshot request was rejected by automatic review because its query argument
+was absent; it was not retried or used as evidence. No hosted apply, migration
+history registration, Flutter/media work or new commit/push occurred here.
+
+Status: **BLOCKED — MIGRATION NOT APPLIED; VERIFIED_HOSTED_ROLLBACK remains YES**.
+
+NOW — restore the migration working-tree file to its authoritative LF bytes
+under explicit owner direction, then verify its SHA-256 and rerun fresh hosted
+preflight and a one-file CLI dry run.
+
+NEXT — only after those gates pass, run the owner-authorized single linked
+migration apply and complete the hosted read-back; the two-session concurrency
+test remains a separate later checkpoint.
+
+## QUOTATION SAVE RPC HOSTED APPLICATION VERIFIED (2026-10-02)
+
+The owner authorized reconciliation and LF-only restoration before a single
+hosted migration apply. Branch `quotation-updated` was at
+`7ea6c251b7e875a379489e76d83069356e4b8841`, a direct descendant of
+`6413faaa9e15e548b58b2871e1b513c35cf8ff18`. That commit added the
+already-reviewed migration, rollback validation source and checkpoint docs;
+its migration blob had the exact reviewed LF SHA-256
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+It did not change Plus/subscription or Flutter source. The working-tree
+`20260930204217_quotation_save_rpc.sql` had only 380 CRLF pairs in place of
+LF, giving raw SHA-256
+`E08C59636EB9C52E376F8757D856FBAFAF88EF36737F8E9687EB7C928BD2D362`.
+Replacing those CRLF pairs with LF and no other bytes restored the reviewed
+SHA-256. No SQL content or validation SQL changed.
+
+The earlier exact-source hosted rollback validation remains **76 PASS, 0 FAIL,
+ROLLBACK reached, hosted state restored exactly**. Fresh preflight against the
+healthy project `rbvcnvqpdqrhywcgxkne` found migration `20260930204217` and
+`public.save_quotation` absent, all four postgres-owned quotation tables under
+RLS, the two unchanged quotation triggers, 15 existing policies, 30 relevant
+constraints, expected baseline grants, and zero validation residue. The linked
+Supabase CLI dry run listed only `20260930204217_quotation_save_rpc.sql`, with
+no seeds or roles. The final local SHA-256 and project ref were rechecked;
+the CLI then applied exactly that one migration and registered version
+`20260930204217` through normal migration history.
+
+**VERIFIED_HOSTED:** Direct read-back found the migration registered exactly
+once and `public.save_quotation(uuid,bigint,jsonb,jsonb,jsonb,jsonb)` present,
+owned by `postgres`, `SECURITY DEFINER`, PL/pgSQL, with explicit empty
+`search_path`. Its return columns are `quotation_id uuid`,
+`resulting_version bigint`, `outcome text`, and `created_at`/`updated_at`
+`timestamptz`. EXECUTE is denied to PUBLIC and anon and allowed to
+authenticated. Authenticated direct quotation INSERT and DELETE are denied;
+the sole UPDATE-able column is `deleted_at`, restricted by the new owned,
+live-row soft-delete policy. Direct child INSERT/UPDATE/DELETE are denied on
+downpayments, government fees and administrative fees; SELECT remains.
+All four tables retain RLS and postgres ownership. The 15 existing policies
+remain, including the `auth.uid()` ownership policies, with only the intended
+restrictive soft-delete policy added. `owner_id`, `created_at`, `version`,
+`office_logo_media_id` and `pdf_media_id` are not directly UPDATE-able.
+The before/after public-schema digest for columns, constraints, foreign keys,
+indexes, triggers and existing policies matched exactly; unrelated table ACL
+digest matched too. Validation residue remained zero. No unrelated schema
+changes were observed and no quotation test data was created.
+
+Status: **QUOTATION ATOMIC CRUD BACKEND HOSTED COMPLETE** for this migration
+and catalog read-back. True two-session concurrency and real-device behavior
+remain unverified. Quotation media and Flutter Quotation implementation are
+not started. No Cloudflare/R2 deployment, new commit or push was performed
+in this checkpoint.
+
+NOW — close this hosted migration application checkpoint with the verified
+catalog evidence above; do not infer real-device verification.
+
+NEXT — run the separate narrow true two-session concurrency verification
+checkpoint when authorized; then continue the remaining Quotation product
+work under its own checkpoints.
+
+## QUOTATION TWO-SESSION CONCURRENCY — IDENTITY GATE BLOCKED (2026-10-02)
+
+The owner authorized one hosted two-session contention test, conditioned on
+using an existing clearly dedicated Broker Wallet test account. Read-only
+preflight confirmed project `rbvcnvqpdqrhywcgxkne` is healthy, migration
+`20260930204217` is registered exactly once, the six-argument
+`public.save_quotation` RPC exists and is postgres-owned, and the existing
+`quotations_bump_sync_version` trigger is present.
+
+The hosted Auth inventory contained seven accounts, all with `gmail.com`
+addresses. No account carried an explicit test/QA/validation/sandbox/demo
+marker in its email or inspected metadata, and no profile matched such a
+marker. Consequently, no existing account could safely be classified as
+dedicated test-only. The owner's STOP gate was reached before selecting a
+quotation UUID, establishing authenticated sessions or writing any hosted
+data. No test Quotation, child row, media object or user/profile change was
+made; no concurrency result or cleanup claim is inferred.
+
+Status: **TRUE_TWO_SESSION_CONCURRENCY = BLOCKED / NOT VERIFIED_HOSTED**.
+The earlier atomic CRUD migration and catalog read-back remain VERIFIED_HOSTED;
+real-device behavior, Flutter Quotation and Quotation media remain unverified
+or not started. No migration, RPC, grant, RLS or other source change was made.
+
+NOW — identify an existing clearly dedicated test account and a safe way to
+establish two independent authenticated sessions for it, without exposing
+credentials or tokens.
+
+NEXT — after that identity/session gate passes, rerun hosted preflight and
+perform the single owner-authorized same-version contention test, aggregate
+read-back, exact test-row cleanup and post-test security/schema read-back.
+
+## QUOTATION TWO-SESSION CONCURRENCY — LOCAL AUTH ENV BLOCKED (2026-10-02)
+
+The owner identified existing user
+`317d7619-01da-4420-8c7f-fe7c3fc2d6e7` as the dedicated test-only account
+for the previously authorized hosted concurrency test. This resolves the
+test-identity ambiguity above. A presence-only check of the local process
+environment found both `BW_TEST_EMAIL` and `BW_TEST_PASSWORD` absent. No
+values were printed or searched for elsewhere. Under the owner's explicit
+STOP condition, no authentication, new hosted preflight, test Quotation,
+concurrent call, cleanup operation or hosted write was attempted.
+
+Status: **TRUE_TWO_SESSION_CONCURRENCY = BLOCKED / NOT VERIFIED_HOSTED**.
+The prior migration application and catalog read-back remain VERIFIED_HOSTED;
+no new runtime concurrency evidence exists. No source, migration, grants,
+RLS, policies, user/profile, existing Quotation, media or Flutter code changed.
+
+NOW — make `BW_TEST_EMAIL` and `BW_TEST_PASSWORD` available to the Codex local
+process environment without placing their values in chat.
+
+NEXT — after both variables are present and the email matches the designated
+account, rerun preflight and the authorized two-session test with exact test
+data cleanup and post-test read-back.
+
+## QUOTATION TRUE TWO-SESSION CONCURRENCY VERIFIED HOSTED (2026-10-02)
+
+The owner confirmed the existing dedicated test-only identity and supplied
+`BW_TEST_EMAIL`, `BW_TEST_PASSWORD` and `BW_TEST_USER_ID` through the local
+Windows user environment. The values were never printed or written to a file.
+Presence and exact designated-identity comparisons passed locally; hosted
+`auth.users` and `public.profiles` matched the designated identity before any
+test write. Two separate password sign-ins produced distinct authenticated
+Auth session IDs and access tokens; each session was verified with the hosted
+Auth user endpoint. Both sessions were closed after the test.
+
+Fresh preflight found migration `20260930204217` registered exactly once, the
+six-argument `public.save_quotation` RPC and version trigger present, and no
+existing row or child with temporary UUID
+`d09066c9-ff4d-44ae-abcb-2c9d17cc5c48`. Session A created one non-media
+test aggregate through `save_quotation`; hosted read-back confirmed owner,
+header and one row in each child table, with initial version **V = 1**.
+
+The two independent authenticated sessions each submitted a distinct complete
+aggregate to that UUID with `expected_version = 1`. Their RPC request intervals
+started 1 ms apart and overlapped for 484 ms (A: 21:40:43.623–44.108 UTC;
+B: 21:40:43.624–44.141 UTC). **A succeeded** with `outcome = updated` and
+`resulting_version = 2`; **B failed** with SQLSTATE `PQT04`. Hosted read-back
+showed final version **2 = V + 1**, never 3. The header, one downpayment,
+government-fee row and administrative-fee row all matched A's payload; no B
+field or child value, mixed aggregate or partial replacement was present.
+The request-window overlap is direct client evidence; a separate server-side
+lock-wait sample was not obtained, so no claim of a measured wait duration is
+made.
+
+An admin cleanup transaction checked the exact test UUID, owner, version,
+test-only title, null media IDs and one row per child, then removed exactly
+those three child rows and the temporary quotation. Read-only verification
+found zero remaining rows under that UUID and the existing Auth user/profile
+still present. Whole-table quotation and child row counts returned to their
+pretest values; the test profile digest was unchanged. Before/after hosted
+digests for the RPC definition/config/ACL, table and column grants, RLS,
+policies and version trigger matched. Migration history remained 15 total
+entries with `20260930204217` registered once. No unrelated data or schema
+change was observed.
+
+Status: **QUOTATION DATABASE BACKEND = COMPLETE + VERIFIED_HOSTED** and
+**TRUE_TWO_SESSION_CONCURRENCY = VERIFIED_HOSTED** for the two independent,
+overlapping authenticated client RPC calls and persisted aggregate outcome.
+This is database-level evidence only; Flutter Quotation, private Quotation
+media and real-device behavior remain unverified or not started. No migration,
+RPC, grant, RLS, policy, media, Flutter, Cloudflare/R2, commit or push change
+occurred in this checkpoint.
+
+NOW — close the Quotation database backend checkpoint with the hosted
+concurrency evidence and confirmed zero test-data residue.
+
+NEXT — begin the separate Quotation private media backend contract and
+implementation checkpoint for the office logo and generated PDF when
+authorized; do not start it under this concurrency checkpoint.
+
+## QUOTATION PRIVATE MEDIA BACKEND SOURCE (2026-10-02)
+
+The Quotation atomic CRUD database backend remains **COMPLETE +
+VERIFIED_HOSTED**, including true two-session concurrency. This checkpoint
+adds source for private office-logo images and generated Quotation PDFs only;
+the media backend is **SOURCE ONLY / NOT HOSTED VERIFIED**. No Quotation
+Flutter, media UI, Worker deployment, hosted SQL validation or write, migration
+application, commit or push occurred.
+
+Hosted read-only schema inspection confirmed that `media_objects`,
+`quotation_media`, `quotations.office_logo_media_id` and `pdf_media_id` already
+exist under RLS. Both header media IDs remain server-controlled and absent
+from the six-argument `save_quotation` payload. The existing
+`quotation_media` role check uses `logo`/`pdf`; the new Worker API and R2 paths
+name the roles `office_logo`/`quotation_pdf`. Private keys are
+`profiles/<uid>/quotations/<quotationId>/<role>/<mediaId>.<ext>`, keeping them
+under the established account-deletion prefix and separate from Offer/Owner
+media. No new table, public URL, identity system, grant or RLS policy was
+added.
+
+New migration source:
+`supabase/migrations/20261001220000_quotation_private_media_rpc.sql` adds
+service-role-only `confirm_quotation_media_upload` and
+`remove_quotation_media`. Each locks the live owned Quotation, checks its
+current media slot against `expectedMediaId`, and writes the Quotation pointer,
+`quotation_media` link and `media_objects` state atomically. Confirm additionally
+checks the exact owner/bucket/role/key/MIME/type/size and pending state; a
+successful replacement marks the prior object `pending_delete`. A stale
+confirm cannot replace the winner. These media slot changes advance the
+existing Quotation version trigger exactly once; `save_quotation` source and
+its non-media CRUD semantics are unchanged. The migration contains no
+transaction control so its exact bytes can be included by the rollback-only
+validation source, `supabase/validation/quotation_private_media_validation.sql`.
+That SQL validation has **NOT** run against hosted Supabase.
+
+`cloudflare/workers/r2-profile-upload/worker.js` now has four Quotation routes:
+authorize, confirm, signed GET and remove. They reuse Supabase Auth bearer
+verification, the private R2 binding, signing, account-deletion quarantine and
+the existing media state model. Logo uploads accept JPEG/PNG/WebP up to 10 MiB;
+PDF uploads accept `application/pdf` up to 20 MiB. Confirm checks stored R2
+size, content type and leading bytes before the RPC. Removal and replacement
+attempt immediate R2 cleanup and retain a `pending_delete` tombstone for
+retry on failure. Pending-upload cancellation and aged-upload cleanup use a
+status compare-and-set before deleting bytes. Soft-deleted Quotations cannot
+authorize, confirm, list or remove; the separate seven-day Quotation cleanup
+sweep can clear their media pointers, remove links and retire private bytes.
+`QUOTATION_MEDIA_SWEEP_MODE` is absent and therefore **off** in every current
+environment. No global sweep was enabled or configuration changed.
+
+Targeted Worker behavior source is
+`cloudflare/workers/r2-profile-upload/test/quotation_media.test.mjs`.
+The local Node suite passed **128/128** after the final targeted additions.
+These tests use in-memory Supabase/R2 fakes and establish no
+hosted or real-device result. The rollback-only SQL source includes grant,
+cross-user, cross-parent, role/MIME, stale replacement, idempotency, removal
+and deleted-Quotation cases; it remains unexecuted. The reviewed
+`save_quotation` migration retained raw SHA-256
+`ED1EF8D1E5C26A94775E3983F92C4845335291299C6DA27DDF3B3EE9D6856047`.
+
+NOW — obtain separate owner authorization to run the exact rollback-only
+Quotation private-media SQL validation against hosted Supabase. The migration
+and Worker remain unapplied and undeployed.
+
+NEXT — after hosted rollback validation passes and a separate deployment
+checkpoint is authorized, apply the migration, then stage and verify the
+Worker routes with the private staging R2 bucket before any production
+deployment. Flutter Quotation integration remains a later checkpoint.
+
+## QUOTATION PRIVATE MEDIA HOSTED ROLLBACK VALIDATION (2026-10-02)
+
+Target `rbvcnvqpdqrhywcgxkne` (`broker-wallet`) passed a fresh read-only
+preflight: migration `20261001220000` was absent, both new media RPCs were
+absent, the three existing media/Quotation tables and media-ID columns,
+foreign keys, indexes, RLS and client write restrictions matched the source
+assumptions, and validation IDs/bucket had no residue. The hosted
+`save_quotation` definition digest was `0a7e5e6e9e774d3dd9af0cd807f38c32`.
+
+The exact migration source
+`supabase/migrations/20261001220000_quotation_private_media_rpc.sql` had
+SHA-256 `8C5BE0CFC961498B0DBC29CB258D720955B0613CAFB3EF09BE24215E49C74005`
+before and after validation. The validation source
+`supabase/validation/quotation_private_media_validation.sql` initially had
+SHA-256 `456C1641AC72E7A6E0F5D28B98F7152FE867BB8DC2134CE19051FC314BFD7A67`.
+Only that validation file changed: WebP, PDF regeneration/isolation/removal and
+failed-binding consistency cases were added, then its empty `search_path`
+assertion was corrected from `search_path=` to PostgreSQL's stored
+`search_path=""` representation. Its final SHA-256 is
+`0986207DE6A476CF6DAA718617894A8011728FCB5D35F1EF7A8344266A3603D0`.
+Byte-safe assembly replaced only the psql `\ir` include and `\set` directive;
+the embedded migration slice rehashed to the unchanged migration SHA-256.
+
+The first hosted attempt failed on that validation-only `search_path`
+assertion (SQLSTATE `P0001`) before reaching explicit `ROLLBACK`. An immediate
+hosted read-back found the migration, new RPCs, validation rows and bucket
+absent, with the saved RPC and existing media digest unchanged. The corrected
+run executed **40/40 assertions**, **0 failures**, and returned
+`QUOTATION_PRIVATE_MEDIA_ROLLBACK_RESTORED` after its explicit `ROLLBACK`.
+The final read-back exactly matched the captured preflight for migration
+history, RPC absence, `save_quotation` definition/config/ACL, three table and
+media-column grants, RLS state, six policy definitions, 28 constraints, 14
+indexes, Quotation media IDs/links, all 156 existing media-object rows, and
+zero validation users/profiles/Quotations/media rows. No unrelated media or
+unexpected scoped schema object persisted. The migration is **NOT APPLIED**;
+the Worker is **NOT DEPLOYED**; Flutter Quotation is **NOT STARTED**; real-device
+behavior is **NOT VERIFIED**. No commit or push occurred.
+
+NOW — the exact private-media migration source is ready for a separate
+owner-authorized hosted application checkpoint.
+
+NEXT — after that separate application and hosted read-back succeed, stage
+the Worker routes with the private staging R2 bucket before any production
+deployment; do not apply or deploy under this rollback checkpoint.
+
+## QUOTATION PRIVATE MEDIA HOSTED MIGRATION APPLICATION (2026-10-02)
+
+On `quotation-updated` at `7ea6c251b7e875a379489e76d83069356e4b8841`,
+the owner authorized application of only
+`supabase/migrations/20261001220000_quotation_private_media_rpc.sql`. Its raw
+SHA-256 matched the rollback-validated source exactly:
+`8C5BE0CFC961498B0DBC29CB258D720955B0613CAFB3EF09BE24215E49C74005`.
+The prior hosted rollback validation remains **40/40 PASS, 0 FAIL, explicit
+ROLLBACK and exact baseline restoration**; it was not rerun here.
+
+Fresh preflight against the linked healthy project `rbvcnvqpdqrhywcgxkne`
+found 15 registered migrations, version `20261001220000` absent, both new RPCs
+absent, and no relevant schema, grant, RLS, constraint, index, data or
+`save_quotation` drift from the validated baseline. The linked Supabase CLI
+`db push --linked --dry-run` listed only the authorized file. After a final
+local hash and linked-project-ref check, `db push --linked --yes` applied that
+one file and completed successfully. The CLI warned that its optional local
+pg-delta catalog cache could not access Docker; hosted read-back below is the
+authoritative application result.
+
+Direct hosted read-back found **16 migrations total**, with
+`20261001220000_quotation_private_media_rpc` registered **exactly once**.
+`public.confirm_quotation_media_upload(uuid,uuid,uuid,text,text,uuid,bigint,text)`
+and `public.remove_quotation_media(uuid,uuid,text,text,uuid)` are present,
+owned by `postgres`, PL/pgSQL `SECURITY DEFINER`, with explicit empty
+`search_path`. Their stored bodies MD5-match the respective bodies extracted
+from the exact migration source (`79026d8501670a554afd8bd451853954` and
+`ba0318cf0e7a603152e04b86b2227420`). Both have EXECUTE for
+`service_role` only; PUBLIC, anon and authenticated have none. The stored
+contract includes the owned-row lock, exact media role/key checks,
+compare-and-swap expected slot, and `pending_delete` transition already
+exercised in the 40/40 rollback validation.
+
+Authenticated direct UPDATE remains denied for
+`quotations.office_logo_media_id` and `quotations.pdf_media_id`, and direct
+`quotation_media` INSERT remains denied. The six-argument `save_quotation`
+definition/config/ACL digest is unchanged
+(`0a7e5e6e9e774d3dd9af0cd807f38c32`); its migration remains registered
+once and its payload still has no media-ID write path. The three relevant
+tables retain RLS, owners and ACLs; six policies, 28 constraints and 14
+indexes retain their preflight digests. Existing `media_objects` data retains
+156 rows and the exact preflight digest; Quotations and `quotation_media`
+remain empty. Captured Offer/Owner/Profile-related ACL digest also matches.
+No unintended hosted schema or data change was observed. Source, Worker,
+Cloudflare/R2 settings, sweep modes and Flutter were not changed; no commit or
+push occurred.
+
+Status: **QUOTATION PRIVATE MEDIA DATABASE = COMPLETE + VERIFIED_HOSTED** for
+the exact applied SQL migration and catalog read-back. Worker deployment is
+**NOT DEPLOYED**, Flutter Quotation is **NOT STARTED**, and real-device behavior
+is **NOT VERIFIED**.
+
+NOW — close this single hosted database application checkpoint with migration
+history, exact function bodies, privileges and unchanged baseline verified.
+
+NEXT — under a separate owner-authorized checkpoint, deploy the already-tested
+Quotation-capable Worker source to the private staging Worker and run staging
+E2E against the private staging R2 bucket; do not start that deployment here.
+
+## QUOTATION PRIVATE MEDIA STAGING — GATE KEY BLOCKED (2026-10-02)
+
+Continuation of the staging Worker E2E checkpoint on `quotation-updated` at
+`7ea6c251b7e875a379489e76d83069356e4b8841`, working tree preserved (no reset,
+restore, clean, stash, commit or push). The Worker was **not deployed** and no
+hosted or R2 write occurred; the checkpoint stopped at the credential gate.
+
+**Source.** `worker.js` working-tree SHA-256
+`a07e7bc5c0aee421d5fc50d1c642cbf14027700302f82eba6ab17107a9ba42aa`;
+`test/quotation_media.test.mjs`
+`227a3fea28191b9ec7bee2298e5da98997cc6074e38430e705ccd9d137a0cf26`. The Node
+suite was re-run against this exact source: **128/128 PASS**, so it still
+corresponds to the previously tested source. Still CODE_PROVEN only.
+
+**Live staging preflight (read-only, VERIFIED first-hand).** Cloudflare login
+valid for account `cb2f5eeef339651f8c7d94dd04866726` (the R2 endpoint's
+account). Staging `r2-profile-upload-staging` serves 100% of version
+`ac033060-5cbf-4b9c-8932-592bd88ab6ef` (tag `om1-3b16d8e6`, 2026-09-28) — the
+rollback target. Its `MEDIA_BUCKET` and `R2_BUCKET_NAME` are
+`broker-wallet-media-staging`; `OFFER_MEDIA_SWEEP_MODE` and
+`OWNER_MEDIA_SWEEP_MODE` are `"off"`; `QUOTATION_MEDIA_SWEEP_MODE` is not bound
+(off). Secret names present: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`STAGING_TEST_KEY`, `SUPABASE_SECRET_KEY` (values unreadable and not read).
+Production `r2-profile-upload` serves 100% of `6387e2c0-db49-43eb-a0e0-edaca76e3e5e`,
+binds `broker-wallet-media`, holds three secrets and **no** `STAGING_TEST_KEY`.
+Staging and production share only the hosted Supabase project, as designed.
+Production Worker, traffic and bucket were not touched.
+
+**Blockers (credential gate).**
+
+1. The staging gate key is not available to the agent process. Every staging
+   HTTP request needs `X-Broker-Wallet-Staging-Key` equal to the Worker secret
+   `STAGING_TEST_KEY`; secrets cannot be read back, earlier runs had the owner
+   type it into the masked launcher prompt, and no environment variable at
+   Process, User or Machine scope holds it.
+2. Cross-user negatives (foreign owner, foreign Quotation, foreign media id)
+   need a second authenticated test identity. Only the designated account
+   `317d7619-01da-4420-8c7f-fe7c3fc2d6e7` is configured (`BW_TEST_EMAIL`,
+   `BW_TEST_PASSWORD`, `BW_TEST_USER_ID` present; the id matches). Accounts are
+   not created by the agent.
+
+Status: **WORKER STAGING = NOT DEPLOYED; STAGING OFFICE LOGO / PDF E2E = NOT RUN;
+OFFER / OWNER REGRESSION = NOT RUN**. Quotation private-media database remains
+COMPLETE + VERIFIED_HOSTED; Production Worker, Flutter and real device are
+unchanged / not started.
+
+NOW — owner supplies the staging gate key to the local environment (a User
+environment variable such as `BW_E2E_STAGING_KEY`, never in chat) and a second
+dedicated test identity (`BW_TEST_B_EMAIL`, `BW_TEST_B_PASSWORD`,
+`BW_TEST_B_USER_ID`), or instead authorizes a staging-only rotation of
+`STAGING_TEST_KEY` to a value held only in the agent process.
+
+NEXT — deploy the candidate to staging only (`--env staging`, rollback target
+`ac033060-…`) and run the staging E2E, security negatives, Offer/Owner
+regression, read-back and scoped cleanup in the same session.
+
+## QUOTATION PRIVATE MEDIA STAGING — CANDIDATE DEPLOYED, E2E RUNNER READY (2026-10-02)
+
+The owner authorized (A) rotating only the staging gate secret and (B) a
+temporary second Auth account. **A is done; B was not performed by the agent**:
+creating an account on the hosted identity provider is an action the agent must
+leave to the owner even when authorized, so the authenticated E2E (which signs
+in with account passwords) is handed to an owner-run runner, the pattern this
+repo already uses for Owner media.
+
+**Staging gate key rotated (value omitted).** A new random 256-bit
+`STAGING_TEST_KEY` was set on `r2-profile-upload-staging` only, and stored as
+the User-scope variable `BW_E2E_STAGING_KEY` on the owner's machine. It was
+never printed, logged or committed. No other secret was touched; production
+still holds only its three secrets and no `STAGING_TEST_KEY`.
+
+**Staging candidate deployed (staging only, `--env staging`).** Version trail:
+`ac033060-5cbf-4b9c-8932-592bd88ab6ef` (Owner media, old gate key) →
+`fc93b776-92df-42f0-8888-ceed16bb1df2` (same code, new gate key) →
+**`f875b2f7-9131-49c9-8bd2-9a35c5f4f1a2`** (tag `qm1-a07e7bc5`, `worker.js`
+SHA-256 `a07e7bc5c0aee421d5fc50d1c642cbf14027700302f82eba6ab17107a9ba42aa`),
+now 100%. Bindings: `MEDIA_BUCKET`/`R2_BUCKET_NAME` =
+`broker-wallet-media-staging`; Offer/Owner sweeps `"off"`;
+`QUOTATION_MEDIA_SWEEP_MODE` unbound (off); four staging secret names present.
+Rollback: `fc93b776-…` (previous code, current gate key). Rolling back to
+`ac033060-…` would restore the old, unrecoverable gate key. Production is
+unchanged: `6387e2c0-db49-43eb-a0e0-edaca76e3e5e` at 100%, bucket
+`broker-wallet-media`, no production traffic, secret or R2 change.
+
+**Verified at runtime without any account credential** (HTTP probes of the
+deployed staging Worker): no gate key and a wrong key → 403; the new key with no
+session → 401, and with an invalid bearer → 401, on Quotation authorize,
+confirm, remove and list; Offer, Owner and profile authorize still 401 under the
+same conditions; an unknown route 404. The new key therefore works, the old one
+is dead, and the Quotation routes are live behind the auth wall.
+
+**Hosted baseline captured read-only (before any test data)** for the post-run
+comparison: 16 migrations (`20260930204217` and `20261001220000` once each),
+`save_quotation` definition digest prefix `0a7e5e6e`, the three Quotation
+functions postgres-owned SECURITY DEFINER, 0 Quotations, 0 `quotation_media`,
+156 `media_objects`, 7 auth users, designated account A present with 0
+Quotations/media. 8 Offers and 6 Owners named `staging-e2e…` already exist from
+the earlier Owner-media staging run and are not part of this checkpoint; cleanup
+must use only this run's ids, never a name pattern.
+
+**Runner prepared, not yet run against staging.**
+`staging-acceptance/quotation_media_staging_acceptance.mjs`, its launcher
+`run_quotation_media_staging_acceptance.ps1` and `QUOTATION_MEDIA_README.md`
+cover the gate, office-logo (JPEG/PNG/WebP, refusals, replacement, stale,
+removal), PDF (refusals, regeneration, stale, removal), wrong role, cross-parent,
+deleted Quotation, direct-write denial, cross-user (A vs temporary B), and an
+Offer/Owner/profile regression. Its offline self-test
+(`quotation_media_offline_selftest.mjs`) runs the real `worker.js` and the runner
+against in-memory fakes: **204 PASS, 0 FAIL**, and seven injected faults behave
+as designed (five detected, two correctly held by the Worker's own guards). That
+is CODE_PROVEN only. `npm test` is unchanged at 128/128. Untracked and
+uncommitted.
+
+Status: **WORKER STAGING = DEPLOYED (candidate `f875b2f7-…`), runtime-probed
+without credentials; STAGING OFFICE LOGO / PDF E2E, CROSS-USER SECURITY and
+OFFER / OWNER REGRESSION = NOT RUN**. Temporary account B: NOT CREATED.
+Production, Flutter and real device: unchanged / not started. No commit or push.
+
+NOW — the owner creates temporary account B in the Supabase dashboard
+(Authentication → Users → Add user, Auto Confirm) and runs the launcher in their
+own terminal.
+
+NEXT — the agent reads the run's report and does the hosted and R2 read-back and
+the narrow cleanup of exactly the report's ids; the owner then deletes account
+B; only then can staging be classified VERIFIED_RUNTIME.
+
+## QUOTATION PRIVATE MEDIA STAGING — VERIFIED_RUNTIME (2026-10-02)
+
+**Acceptance run (owner-run, report read by the agent).** Runner
+`quotation_media_staging_acceptance.mjs`, run `20261002T100914Z`
+(10:09:14–10:11:56 UTC) against staging candidate `f875b2f7-…`:
+**203 PASS, 0 FAIL** — gate 6, unauthenticated 3, invalid-auth 2, setup 10,
+logo-refuse 9, logo 36, pdf 28, role-parent 9, deleted 8, direct-write 11,
+cross-user 25, regression 40, removal 16. The offline self-test counts 204; the
+difference is the optional "B matches the expected id" check, skipped when
+`BW_TEST_B_USER_ID` is unset. Designated account A
+(`317d7619-01da-4420-8c7f-fe7c3fc2d6e7`) matched; temporary TEST USER B was
+`4778c51e-8fb3-428c-a040-fcfd527e0e4c`. Observed designed behaviour: a replaced
+or removed object is tombstoned `deleted` immediately (no lingering
+`pending_delete`); a stale remove while a newer media holds the slot is 409, and
+removing an already-empty slot is idempotent. Not exercised against the real
+bucket: the 10 MiB and 20 MiB limits were refused at declaration, no object that
+size was uploaded.
+
+**Post-run hosted read-back (before cleanup).** Versus the pre-run baseline,
+migration history (16, both Quotation migrations once), all five media and
+Quotation function definitions/owners/config/ACLs (`save_quotation` included),
+RLS, policies, table and column grants, the 156-row media digest and designated
+account A were identical. The only deltas were this run's footprint: +17
+`media_objects` (16 `deleted`, 1 never-uploaded `pending_upload` on the
+soft-deleted Quotation), +4 Quotations (every media slot null, no
+`quotation_media`, no child rows), +1 Offer, +1 Owner, and B's auth user and
+profile. Nothing outside the report's ledger existed.
+
+**Staging R2.** `broker-wallet-media-staging` holds 55 objects, equal to the
+database's 55 pre-existing `ready` staging rows (none from this run), so the run
+left no bytes and no object outside the expected prefixes. All 17 of this run's
+exact keys are absent (probe validated by a positive control on an unrelated
+object). Private at bucket level: no custom domain, r2.dev access disabled.
+
+**Cleanup (only the report's ids; no sweep).** One atomic guarded transaction
+checked every id's owner, bucket, run window, run name and zero link rows, then
+deleted exactly 17 `media_objects`, 4 Quotations, 1 Offer and 1 Owner, each
+count asserted. The 8 Offers and 6 Owners named `staging-e2e…` from the earlier
+Owner-media run were not touched. After cleanup the full baseline is identical
+to pre-run except `auth_users` and `profiles` each +1 (TEST USER B): this run's
+Quotations, `quotation_media`, `media_objects` and Offer/Owner rows are 0, A is
+unchanged and the seven pre-existing profiles' digest is unchanged. B holds no
+media, Quotation, Offer or Owner; across all 35 foreign keys to `profiles` and
+`auth.users` B has rows only in `auth.identities`, `auth.sessions` and
+`public.profiles`, all cascade-on-delete from `auth.users`. B was NOT deleted
+by the agent.
+
+**Production unchanged.** Worker `r2-profile-upload` still serves 100% of
+`6387e2c0-db49-43eb-a0e0-edaca76e3e5e` (created 2026-09-28), three secrets and no
+`STAGING_TEST_KEY`, bound to `broker-wallet-media`; no deploy, traffic, secret or
+binding change. Staging remains on `f875b2f7-…` (no redeploy). No pre-run count
+was captured for the production bucket (now 79 objects); its untouched state
+rests on there being no write path: the runner refuses non-staging hosts, the
+staging Worker binds only the staging bucket, every R2 command here named the
+staging bucket, and the database has no row from this run in the production
+bucket.
+
+Status: **QUOTATION PRIVATE MEDIA STAGING = VERIFIED_RUNTIME** (hosted staging
+Worker, private staging R2, hosted Supabase). Quotation CRUD, true concurrency
+and the media database remain VERIFIED_HOSTED. Production Worker, Flutter
+Quotation and real-device behaviour are NOT verified / NOT started. No commit or
+push; the runner files are untracked.
+
+NOW — the owner deletes TEST USER B in Supabase Authentication (safe: no
+dependent data).
+
+NEXT — separate owner-authorized checkpoint: Production Worker promotion
+(rollback target `6387e2c0-…`) plus Production smoke verification.
+
+## QUOTATION PRIVATE MEDIA PRODUCTION PROMOTION — PROMOTED, CREDENTIAL-FREE SMOKE PASS, AUTHENTICATED SMOKE PENDING (2026-10-02)
+
+**Preflight (read-only, before any change).** TEST USER B
+(`4778c51e-8fb3-428c-a040-fcfd527e0e4c`): auth user, identities, sessions and
+profile all absent; 7 auth users; account A present. Branch `quotation-updated`
+at `7ea6c251…`, working tree preserved. `worker.js` SHA-256 is exactly
+`a07e7bc5c0aee421d5fc50d1c642cbf14027700302f82eba6ab17107a9ba42aa`, the source
+of the 128/128 suite and the 203/203 staging acceptance (staging `f875b2f7-…`
+was deployed from it). Production `r2-profile-upload` served 100% of
+`6387e2c0-db49-43eb-a0e0-edaca76e3e5e` (the rollback target), bucket
+`broker-wallet-media`, three secrets, no `STAGING_TEST_KEY`, Offer/Owner sweeps
+`"off"`, `QUOTATION_MEDIA_SWEEP_MODE` unbound (off). Baseline: R2 production
+bucket 79 objects (436 MB), staging bucket 55 at that reading; hosted
+`media_objects` 156 (production bucket 85 rows: 77 ready, 7 failed, 1 deleted;
+staging bucket 71 rows); 0 Quotations / `quotation_media`; 16 migrations (digest
+`ff7c305c…`); the five media/Quotation functions' definition digests unchanged;
+RLS, policy, grant, `offer_media`/`owner_media` and profile-media digests
+captured. Both buckets: no custom domain, r2.dev access disabled.
+
+**Candidate and promotion.** `wrangler versions upload --env ""` created
+**`5eff52cb-5390-4a6a-9ea1-3a81dcedb12a`** (tag `qm1-a07e7bc5`, same 136.90 KiB
+bundle as the staging candidate) without deploying. Its effective configuration
+was verified before promotion: `MEDIA_BUCKET`/`R2_BUCKET_NAME` =
+`broker-wallet-media`, Offer/Owner sweeps `"off"`, the three inherited secrets
+and no gate secret; its preview URL answered 401 on the Quotation, Offer and
+Owner routes and 404 on an unknown one. `wrangler versions deploy
+5eff52cb-…@100% --env ""` then promoted exactly that version at 2026-10-02
+10:30:56Z. Production now serves 100% of `5eff52cb-…`; the staging Worker is
+unchanged (`f875b2f7-…`). The cron trigger was not touched by the version
+deployment (not independently re-read). Rollback target remains
+`6387e2c0-db49-43eb-a0e0-edaca76e3e5e`.
+
+**Credential-free Production smoke — PASS** (`media-api.brokerwallet.ae`): all
+four Quotation routes 401 without a session; an invalid bearer 401; an unknown
+route 404; Offer, Owner and profile authorize/list/lookup 401 as before;
+Production has no staging gate (a junk gate header gets the ordinary 401).
+
+**Open observation.** The staging bucket's reported object count moved from 55
+(two earlier readings) to 57 and stayed 57 for five minutes, while the database
+for both buckets is byte-identical to the pre-promotion baseline (no row created
+or updated), the staging Worker is unchanged, all 24 non-`ready` rows in both
+buckets have no bytes, and all 17 keys of the earlier staging run are absent. It
+is consistent with R2's storage metric delivering a delayed mid-run snapshot (55
++ the logo and PDF that were bound together) but is not proven; to be
+re-measured at the end of this checkpoint.
+
+Status: **PRODUCTION WORKER = PROMOTED (`5eff52cb-…`); credential-free smoke
+PASS; authenticated Production logo/PDF smoke and Offer/Owner/Profile regression
+= NOT RUN; PRODUCTION BACKEND NOT YET VERIFIED_RUNTIME.** Flutter and real device
+unchanged / not started. No commit or push.
+
+NOW — the owner runs `run_quotation_media_production_smoke.ps1` (designated
+account A only; one temporary Quotation, Offer and Owner; no staging gate).
+
+NEXT — the agent reads its report, does the hosted and Production-R2 read-back,
+cleans up exactly the report's ids, compares with the pre-promotion baseline and
+rolls back to `6387e2c0-…` if anything fails.
+
+## QUOTATION PRIVATE MEDIA PRODUCTION BACKEND — VERIFIED_RUNTIME (2026-10-02)
+
+**Production authenticated smoke (owner-run, report read by the agent).**
+Runner `quotation_media_production_smoke.mjs`, run `20261002T105934Z`
+(10:59:34–11:00:07 UTC) against `media-api.brokerwallet.ae` on version
+`5eff52cb-…` as the designated account A only: **60 PASS, 0 FAIL** —
+credential-free 10, setup 3, office logo 15, PDF 15, regression 17. One temporary
+Quotation created through `save_quotation`; one logo and one PDF each went
+authorize → signed PUT → confirm → hosted read-back → signed GET (exact bytes) →
+remove → read-back, in bucket `broker-wallet-media` under
+`profiles/<A>/quotations/<Q>/office_logo|quotation_pdf/<id>.<ext>`; the bare
+object URL was refused; signed URLs were pinned to the production bucket and
+exact key. Offer and Owner: authenticated list/unknown-id/authorize still
+correct under their own prefixes and a never-uploaded authorization withdrawn;
+Quotation, Offer and Owner ids do not cross routes; profile lookup 200 and a
+foreign `userId` 403. Not re-run in Production (VERIFIED_RUNTIME in staging):
+replacement, races, MIME matrix, cross-user.
+
+**Post-run hosted read-back (before cleanup).** The Quotation was at version 5
+(create, logo confirm/remove, PDF confirm/remove), both media slots null, no
+`quotation_media` rows, no child rows. Of the four ledger media ids only the logo
+and PDF still had rows, both tombstoned `deleted` in the production bucket (the
+two never-uploaded Offer/Owner authorizations had already been withdrawn and had
+no rows). Nothing outside the ledger was created or updated. Versus the
+pre-promotion baseline, migration history, all five media/Quotation functions
+(definition, owner, config, ACL), RLS, policies, table and column grants, the
+Offer/Owner/Profile media digests, designated account A and the entire staging
+bucket state were identical; the only deltas were the ledger's rows (+2
+`deleted` media, +1 Quotation, +1 Offer, +1 Owner).
+
+**Production R2.** All four keys of this smoke (logo, PDF, and the two
+never-uploaded Offer/Owner keys) are absent from `broker-wallet-media`; the
+objects were written to the production bucket only (pinned by the runner's URL
+checks and the rows' bucket). Both buckets remain private: no custom domain,
+r2.dev access disabled.
+
+**Cleanup (only the report's ids; no sweep).** One atomic guarded transaction
+asserted owner A, the production bucket, the run window, the run name, the
+two withdrawn rows' absence and zero link rows, then deleted exactly 2
+`media_objects`, 1 Quotation, 1 Offer and 1 Owner, each count asserted. After
+cleanup all 24 captured baseline items (counts, 156-row media digest,
+production- and staging-bucket digests, function definitions and ACLs, RLS,
+policies, grants, migration history, profile and link digests, A's rows) are
+identical to the pre-promotion baseline; this smoke's Quotations,
+`quotation_media`, `media_objects`, Offer and Owner rows are 0. TEST USER A is
+present and untouched (profile media null, own rows unchanged).
+
+**Bucket-count observation resolved.** The staging bucket's reported count read
+57 at 10:31–10:38 UTC and was back at 55 by 11:02 UTC with no database or Worker
+change: R2's storage metric delivers a delayed snapshot (57 = 55 + the logo and
+PDF bound together mid-run), not stray objects. Production reads 79 (baseline 79,
+three readings 5–7 minutes after the smoke); because the metric lags ~20 minutes,
+a transient +1 could still appear there and is not evidence of residue — the
+key-level probes above are the authoritative proof. The 79 objects versus 77
+`ready` rows (2 more bytes than rows) is pre-existing and unchanged from before
+promotion.
+
+**Workers.** Production `r2-profile-upload` still serves 100% of
+`5eff52cb-5390-4a6a-9ea1-3a81dcedb12a` (bucket `broker-wallet-media`, three
+secrets, no gate secret, Offer/Owner sweeps `"off"`, Quotation sweep unbound).
+Staging still serves `f875b2f7-9131-49c9-8bd2-9a35c5f4f1a2`. Rollback was not
+required; the rollback target remains `6387e2c0-db49-43eb-a0e0-edaca76e3e5e`.
+The cron trigger was not changed by the version deployment (not independently
+re-read).
+
+Status: **QUOTATION PRIVATE MEDIA PRODUCTION BACKEND = VERIFIED_RUNTIME.**
+Quotation CRUD, true concurrency and the media database VERIFIED_HOSTED; staging
+Worker VERIFIED_RUNTIME. Flutter Quotation and real-device behaviour are NOT
+started / NOT verified. No commit or push; the runner and smoke files are
+untracked.
+
+NOW — Production backend for Quotation private media is closed; no further backend
+action is pending.
+
+NEXT — begin Flutter Quotation integration in a separate implementation
+checkpoint (not started automatically).
+
+## QUOTATION FLUTTER SUPABASE + PRIVATE MEDIA INTEGRATION — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+**Source implemented; no Flutter command was run by the agent.** The Flutter
+Quotation feature now persists through the hosted `save_quotation` aggregate and
+keeps its office logo and generated PDF in private R2 through the verified
+Worker routes. Tests: **NOT RUN BY AI**. Analyzer: **NOT RUN BY AI**. Real
+device: **NOT VERIFIED**. Backend, Worker, SQL and the acceptance runners are
+unchanged (`worker.js` still `a07e7bc5…42aa`, media migration still
+`8C5BE0CF…4005`).
+
+**Before.** Quotation CRUD wrote `users/{uid}/quotations` in Firestore (hard
+`delete()`), the logo went through Hive + Firebase Storage and the PDF to
+`quotations/{uid}/{id}.pdf` in Firebase Storage, saved with Firestore
+`createdAt` and a `pdfUrl` string, and the quota counter was a direct Firestore
+write.
+
+**Files changed (lib).** `quotation/quotation_model.dart` (Firebase types and
+`pdfUrl` removed; `version`, `officeLogoMediaId`, `pdfMediaId`, `hasPdf`);
+`quotation/services/quotation_service.dart` (Firestore/Hive/Firebase Storage
+implementation replaced by the facade over the new services);
+`quotation/services/pdf_generation_service.dart` (Firebase Storage upload and the
+`local://` branch removed; rendering unchanged); `quotation/add_quotation_viewmodel.dart`
+(create + edit, ordered save, media sync, conflict handling);
+`quotation/add_quotation_view.dart` (optional id, existing loading style,
+Save/Update label); `quotation/list_quotations_viewmodel.dart`;
+`quotation/list_quotation_view.dart` (PDF open/share via the private path,
+`hasPdf`, card tap); `lib/app.dart` (`/add-quotation?mode=edit&id=` as Owner
+does); `lib/src/common/localization/app_en.arb` + `app_ar.arb` (15 keys, valid
+JSON, CRLF kept). **New:** `quotation/services/quotation_supabase_mapper.dart`,
+`supabase_quotation_service.dart`, `r2_quotation_media_service.dart`,
+`quotation_media_workflow.dart`, `quotation_pdf_cache.dart`.
+
+**Supabase aggregate.** Create: the client chooses a UUID v4 and calls
+`save_quotation` with a null `expected_version` (an identical retry replays, so a
+lost answer can never make two Quotations). Update: the version loaded on reopen
+is sent as `expected_version`; `resulting_version` and every media confirm/remove
+version are adopted, and the state is re-read after the media phase. `PQT04` is a
+fixed "changed on another device" message and nothing is overwritten; `PQT01–06`
+and `42501` map to fixed localized messages, never provider text. All 18 header
+keys are always sent; media ids, owner, version and timestamps never are; there
+is no direct write to any child table. Downpayment sequence is the list order;
+due dates are the calendar date at UTC midnight with an explicit offset (the same
+date on every device); `bankTransfer`↔`bank_transfer`, `cheques`→`cheque`; an
+empty government section is not stored; untouched empty administrative rows are
+skipped. Reads: one embedded select for reopen, header columns only for the list.
+Delete is the soft `deleted_at` update of a live row (no hard delete), which also
+removes this device's cached PDF; every mutation signals Home/list refresh.
+
+**Private media.** Logo (JPEG/PNG/WebP ≤ 10 MiB, checked by real bytes at pick
+time) and PDF (`application/pdf` ≤ 20 MiB): authorize → signed PUT (no Supabase
+token sent to storage) → trusted confirm, each against `expectedMediaId`. The
+bound logo/PDF changes only when confirm succeeds, so a failed replacement leaves
+the previous one in place; a retry reuses the same logo upload identity, and a
+stale authorize is resolved by an idempotent confirm; a PDF whose slot moved is
+re-read and retried once. Save order: aggregate, then logo, then PDF; a media
+failure leaves the saved Quotation intact, stays on the form with a localized
+message, and the next Save is an update. The PDF is regenerated on every save (a
+new media object; the server retires the old one) and drawn from the local logo
+file or a short-lived signed URL used immediately. Opening/sharing a PDF uses a
+local copy named by its media id, otherwise one download through a fresh signed
+link; nothing signed is stored or logged.
+
+**Legacy removed from the active path.** No `cloud_firestore`, `firebase_storage`,
+Hive, `FirebaseAuth` or quota-Firestore reference remains in the Quotation
+feature (quota now goes through `CoreEntityQuotaBridge`, a no-op in Supabase
+mode). Firebase mode (`USE_SUPABASE_AUTH=false`) no longer has a Quotation
+backend: the list is empty and saving fails. **Not migrated, by design:**
+`analytics_service.dart` still reads Firestore `quotations` (so Analytics will not
+see Supabase Quotations); `media_type_service.uploadQuotationLogo` and
+`media_upload_service_compat.uploadQuotationLogo` are now dead shared helpers.
+
+**UI.** No visual redesign. The only behaviour added is wiring the list card's
+existing empty `onTap` to open the Quotation in the existing form (the edit
+entry point); revert that one line to remove it. New text exists in English and
+Arabic. A blank total is stored as `0` and shows blank on reopen; the
+administrative-fees total is not a hosted column, so a reopened Quotation shows
+the sum of its fees.
+
+**Test source added (not run).** `test/quotation/`:
+`quotation_supabase_mapper_test.dart` (payload contract, enums, dates, round
+trip), `supabase_quotation_service_test.dart` (RPC/read/soft-delete requests,
+PQT mapping), `r2_quotation_media_service_test.dart` (Worker bodies, no token to
+storage, code mapping, no URL in errors), `quotation_media_workflow_test.dart`
+(order, failed PUT never confirms or removes, stale/lost-confirm, PDF retry),
+`quotation_service_test.dart` (notify, soft delete + cache purge, cache keyed by
+media id, publish/download), `add_quotation_viewmodel_test.dart` (create, update
+with `expected_version`, conflict, logo select/replace/remove/failure/retry, PDF
+failure, busy), `quotation_legacy_removal_test.dart` (no Firebase, no direct
+writes, no secrets, localization). The guard checks were replayed in Node against
+the real sources and passed; Dart syntax was parsed with `dart format
+--output=none`; neither is a substitute for the owner's runs.
+
+**Owner commands.**
+1. `flutter test test/quotation test/auth/canonical_identity_test.dart`
+2. `flutter analyze lib/src/views/Screens/home/quotation lib/app.dart test/quotation`
+   (then a full `flutter analyze` if wanted)
+3. Only after 1 and 2 pass: `flutter run` (Supabase mode is the default; the
+   Worker defaults to the verified production address).
+
+**Device acceptance.** Create with title/office/total/dates/fees and a logo →
+Save → card shows a PDF badge; View PDF opens (first open downloads once, the
+second is instant) and Share works → tap the card (reopen): every field, the
+schedule, fees and logo name match → change a field and Update → "Quotation
+updated" and the list refreshes → reopen shows the change → replace the logo,
+Update, reopen → clear the logo, Update → try a HEIC/PDF/GIF as logo (rejected
+with a message) → delete by swipe (the card goes, Home count drops) → cold
+restart (list, reopen and PDF still work) → switch to Arabic (RTL, Arabic
+messages) → dark mode → optional: change the same Quotation on a second device
+and save from the stale one (must show the "changed on another device" message).
+
+Status: **FLUTTER QUOTATION INTEGRATION = SOURCE COMPLETE; tests/analyzer not
+run; device NOT VERIFIED.** Quotation soft-deleted media is not retired from R2
+until a separate sweep checkpoint enables `QUOTATION_MEDIA_SWEEP_MODE` (off).
+No commit or push.
+
+**Test-harness fix (owner run 1: 136 pass, 18 fail).** All 18 failures were in
+`test/quotation/supabase_quotation_service_test.dart` and all surfaced as
+`QuotationException(unknown)`. One shared harness defect: the `MockClient`
+answered with `http.Response` objects that carried no `request`; `MockClient`
+copies `response.request`, and postgrest's response parser dereferences it
+unconditionally (success and error paths), so a null-check `TypeError` — not a
+`PostgrestException` — reached the service, which correctly maps an unrecognised
+error to `unknown`. Production service code was correct and is unchanged. The
+test `_Backend.client` now re-binds every answer to its request (the same
+pattern as `test/favorites/favorites_create_upsert_test.dart`), and the list
+test accepts postgrest's default `created_at.desc.nullslast`. Not re-run by the
+AI.
+
+NOW — the owner reruns ONLY `flutter test test/quotation/supabase_quotation_service_test.dart`.
+
+NEXT — if that passes, run the three commands above in order (1 first); no
+analyzer or device testing until the full targeted suite passes; then real-device
+acceptance of the checklist and record the result here.
+
+## QUOTATION FLUTTER SUPABASE + PRIVATE MEDIA — OWNER-VERIFIED, MILESTONE COMMIT (2026-10-02)
+
+Recorded from the owner's own runs; the AI did not run Flutter tests, the analyzer
+or a device. This section supersedes the "tests/analyzer not run; device NOT
+VERIFIED" status line of the section above; that section is left as written.
+
+**Owner evidence.**
+- `flutter test test/quotation/supabase_quotation_service_test.dart` — 22 / 22 PASS
+  (after the test-harness fix recorded above; production service code unchanged).
+- `flutter test test/quotation test/auth/canonical_identity_test.dart` — 154 / 154 PASS.
+- `flutter analyze lib/src/views/Screens/home/quotation lib/app.dart test/quotation`
+  — 0 errors, 0 warnings, 3 info-only `Color.red/green/blue` deprecation notices
+  (accepted for this milestone; no unrelated cleanup made).
+- Real device (Samsung): the Quotation create / save / reopen / edit / media / PDF
+  flow was tested by the owner and reported PASS.
+
+**Status.**
+- Quotation CRUD backend: COMPLETE + VERIFIED_HOSTED (true concurrency VERIFIED_HOSTED).
+- Quotation private-media database: COMPLETE + VERIFIED_HOSTED.
+- Quotation private-media Worker: Staging VERIFIED_RUNTIME (203 / 203); Production
+  VERIFIED_RUNTIME (60 / 60).
+- Flutter Quotation: **OWNER-VERIFIED_REAL_DEVICE for the tested flow.**
+- Still off / out of scope: `QUOTATION_MEDIA_SWEEP_MODE` (soft-deleted media is
+  not yet retired from R2; a separate sweep checkpoint).
+
+Committed as one milestone commit on `quotation-updated`: `feat(quotation): migrate
+CRUD and private media to Supabase R2`. Generated plugin-registrant drift, runtime
+reports and unrelated work were not staged. Not pushed.
+
+NOW — the Quotation milestone is committed locally.
+
+NEXT — pushing requires separate owner authorization.

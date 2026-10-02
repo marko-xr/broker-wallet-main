@@ -1,12 +1,9 @@
 import 'dart:io';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -948,21 +945,8 @@ class PdfGenerationService {
         return pw.MemoryImage(bytes);
       }
 
-      // Handle local URLs (temporary files)
-      if (url.startsWith('local://')) {
-        // Get the actual local file path from the OfflineMediaService (synchronous call)
-        final localPath = OfflineMediaService.instance.getLocalFilePath(url);
-        if (localPath != null) {
-          final file = File(localPath);
-          if (await file.exists()) {
-            final bytes = await file.readAsBytes();
-            return pw.MemoryImage(bytes);
-          }
-        }
-        throw Exception('Local file not found for URL: $url');
-      }
-
-      // Handle regular HTTP/HTTPS URLs
+      // Handle regular HTTP/HTTPS URLs (a short-lived signed link for a logo
+      // bound on the server, used immediately and never stored)
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         return pw.MemoryImage(response.bodyBytes);
@@ -970,31 +954,6 @@ class PdfGenerationService {
         throw Exception(
             'Failed to load image from URL: ${response.statusCode}');
       }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Upload PDF to Firebase Storage and return download URL
-  static Future<String> uploadPdfToStorage(
-      String localPath, String quotationId, [String? userId]) async {
-    try {
-      final file = File(localPath);
-      final currentUserId = userId ??
-          RepositoryProvider.instance.authRepository.currentUserId;
-
-      if (currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('quotations')
-          .child(currentUserId)
-          .child('$quotationId.pdf');
-
-      await ref.putFile(file);
-      return await ref.getDownloadURL();
     } catch (e) {
       rethrow;
     }

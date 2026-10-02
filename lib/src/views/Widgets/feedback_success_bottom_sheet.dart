@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 
 class FeedbackSuccessBottomSheet extends StatelessWidget {
   const FeedbackSuccessBottomSheet({super.key});
@@ -80,7 +81,7 @@ class FeedbackSuccessBottomSheet extends StatelessWidget {
           // Done button
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: AppControlSizes.standardButtonHeight,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: colors.primary,

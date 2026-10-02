@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:broker_wallet/src/common/data/owner_location_codec.dart';
+import 'package:broker_wallet/src/common/data/uae_area_catalog.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
@@ -40,9 +42,11 @@ class AddOwnersViewModel extends ChangeNotifier
     OfferMediaPicker? mediaPicker,
     Future<OfferMediaSource?> Function(BuildContext context, int remaining)?
         chooseMediaSource,
+    OwnerLocationCodec? locationCodec,
   })  : _mode = mode,
         _editOwnerId = ownerId,
         _ownerService = ownerService ?? OwnerService(),
+        _locationCodec = locationCodec ?? OwnerLocationCodec(),
         _usesMediaQueue = usesMediaQueue ?? SupabaseConfig.useSupabaseAuth {
     if (_usesMediaQueue) {
       _media = PrivateMediaForm(
@@ -153,6 +157,7 @@ class AddOwnersViewModel extends ChangeNotifier
     countryCode = owner.countryCode;
     typeOfProperties = owner.typeOfProperties;
     propertyLocation = owner.propertyLocation;
+    _restoreLocationChips();
     notes = owner.notes;
     _pickUpLocation = owner.pickUpLocation;
     _pickUpLatitude = owner.pickUpLatitude;
@@ -301,7 +306,106 @@ class AddOwnersViewModel extends ChangeNotifier
 
   void setPropertyLocation(String v) {
     propertyLocation = v;
+    _dropStaleLocationChips();
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Property location chips. An Owner has ONE location, stored as the plain text
+  // in [propertyLocation]. A city and area chosen from the shared UAE catalog
+  // are written into that text ("Dubai Marina, Dubai") and read back from it, so
+  // no second value is stored and a location an owner typed long ago is left
+  // exactly as it is. The chips only show what the text currently says: typing
+  // never creates a choice, and it clears one once the text stops saying it.
+  // ---------------------------------------------------------------------------
+
+  final OwnerLocationCodec _locationCodec;
+  String _locationCity = '';
+  String _locationAreaKey = '';
+
+  /// The cities the location chips offer: the shared UAE catalog's.
+  List<String> get locationCities => UaeAreaCatalog.supportedCities;
+
+  /// The chosen city's name; empty when no city is chosen.
+  String get locationCity => _locationCity;
+
+  /// The chosen area, as the shared area chips take it: none, or one — an Owner
+  /// has a single location, however many areas a Request or Offer may hold.
+  List<String> get locationAreaKeys =>
+      _locationAreaKey.isEmpty ? const <String>[] : <String>[_locationAreaKey];
+
+  /// Chooses [city] and writes it into the location text in [language] (the
+  /// app's current language). An empty [city] clears the choice and keeps
+  /// whatever the owner wrote after it. The area is always cleared: an area
+  /// never outlives its city.
+  void selectLocationCity(String city, String language) {
+    if (city.isNotEmpty && !UaeAreaCatalog.supportedCities.contains(city)) {
+      return;
+    }
+    // Nothing is chosen, so there is nothing to clear: the text is the
+    // owner's own and is left alone.
+    if (city.isEmpty && _locationCity.isEmpty) return;
+    final detail = _locationDetail();
+    _locationCity = city;
+    _locationAreaKey = '';
+    propertyLocation = city.isEmpty
+        ? detail
+        : _locationCodec.encode(city: city, language: language, detail: detail);
+    notifyListeners();
+  }
+
+  /// Chooses [areaKey] within the chosen city, replacing any earlier area, or
+  /// clears it when it is already chosen. The text is rewritten in [language];
+  /// whatever the owner wrote after the choice stays.
+  void toggleLocationArea(String areaKey, String language) {
+    if (_locationCity.isEmpty ||
+        !UaeAreaCatalog.isAreaOf(_locationCity, areaKey)) {
+      return;
+    }
+    final detail = _locationDetail();
+    _locationAreaKey = _locationAreaKey == areaKey ? '' : areaKey;
+    propertyLocation = _locationCodec.encode(
+      city: _locationCity,
+      areaKey: _locationAreaKey,
+      language: language,
+      detail: detail,
+    );
+    notifyListeners();
+  }
+
+  /// What the owner wrote after the chosen city and area; empty when nothing is
+  /// chosen or nothing follows.
+  String _locationDetail() {
+    if (_locationCity.isEmpty) return '';
+    return _locationCodec.detailOf(
+          propertyLocation,
+          city: _locationCity,
+          areaKey: _locationAreaKey,
+        ) ??
+        '';
+  }
+
+  /// Shows the city and area a saved location starts with, if it starts with
+  /// any; any other text is the owner's own and shows no choice.
+  void _restoreLocationChips() {
+    final parts = _locationCodec.decode(propertyLocation);
+    _locationCity = parts?.city ?? '';
+    _locationAreaKey = parts?.areaKey ?? '';
+  }
+
+  /// Drops the chosen city and area once the text no longer starts with them.
+  void _dropStaleLocationChips() {
+    if (_locationCity.isEmpty) return;
+    final stillSaid = _locationCodec.detailOf(
+          propertyLocation,
+          city: _locationCity,
+          areaKey: _locationAreaKey,
+        ) !=
+        null;
+    if (!stillSaid) {
+      _locationCity = '';
+      _locationAreaKey = '';
+    }
   }
 
   void setNotes(String v) {

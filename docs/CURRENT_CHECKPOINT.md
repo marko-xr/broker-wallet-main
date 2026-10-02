@@ -7547,3 +7547,381 @@ reports and unrelated work were not staged. Not pushed.
 NOW — the Quotation milestone is committed locally.
 
 NEXT — pushing requires separate owner authorization.
+
+## UAE AREA CATALOG + EXPANDABLE AREA CHIPS — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+Scope: the "Choose City" area section of Add Request and Add Offer only. No
+backend, Quotation, Worker, R2, subscription or Request/Offer persistence change.
+
+**Backend check.** `request_areas.area` / `offer_areas.area` are `text not null`
+with only a non-empty check (primary key `(request_id, area)`); there is no enum,
+allow-list or length rule, so new area keys need no migration.
+
+**One shared catalog.** `lib/src/common/data/uae_area_catalog.dart`
+(`UaeAreaCatalog`) holds an ORDERED list of area keys for each of the nine
+supported cities (Dubai 91, Abu Dhabi 39, Sharjah 45, Ajman 28, Ras Al Khaimah
+24, Fujairah 20, Umm Al Quwain 18, Al Ain 31, Khor Fakkan 15; before: 10 each,
+and none for Khor Fakkan). The order is a product priority — current demand,
+market prominence, active inventory, recognisability, then newer and peripheral
+areas — not alphabetical and not an official ranking. Buildings, towers, project
+phases and numbered sub-districts are not areas. English and Arabic names live
+in the ARBs (+235 keys each, `showMore`, `showLess`). Names were cross-checked
+against Property Finder and Bayut area guides and, for Khor Fakkan, the
+Sharjah Ruler's published suburb division.
+
+**Stored values are unchanged.** An area is stored by its key. Every key an
+older picker offered kept its exact key; new areas got new keys. Keys no longer
+offered (`qalaatAlFujairah`, `alMuroorUAQ`, `alHadarah`, `alShabiya`) stay in
+`UaeAreaCatalog.legacyOnlyAreas`, localized, so an old record still renders. No
+hosted row was rewritten. Two existing English labels were aligned to current
+spelling (`murbah` Mirbah, `zakhir` Zakher) and the missing English `mussafah`
+was added (it previously fell back to Arabic text in English).
+
+**One shared component.** `lib/src/views/Widgets/expandable_area_chips.dart`
+(`ExpandableAreaChips`) replaces both forms' private `_getResidentialAreas`
+switch and chip loop. Collapsed it shows only the first three VISUAL rows,
+planned from the available width, text scale and language (`TextPainter`
+measurement that mirrors `Wrap`; never a fixed chip count), with a localized
+"Show more" / "Show less". A selected area the collapsed rows would hide (a
+saved area far down the list, or a legacy/unknown key) stays visible at the end
+of the last row. Expanding never changes the selection; a new city starts
+collapsed; the three-area cap is unchanged. Chip look is unchanged.
+
+**Related fix.** `request_share_options_dialog.dart` mapped area keys through a
+lossy switch and fell back to the raw camelCase key; it now translates the
+stored key directly when its mapping finds nothing. (The two details screens
+already pass unknown keys through.)
+
+**Tests (source only).** `test/areas/uae_area_catalog_test.dart`,
+`test/areas/expandable_area_chips_test.dart`. A plain-Node replay of the catalog
+assertions and of the row-planning algorithm (including a 20,000-case fuzz) passed;
+Dart syntax was parsed with `dart format --output=none`. None of that is a
+substitute for the owner's runs.
+
+Status: **AREA CATALOG / EXPANDABLE UI = SOURCE COMPLETE; tests/analyzer not run;
+device NOT VERIFIED.** No commit or push.
+
+NOW — the owner runs `flutter test test/areas`.
+
+NEXT — only if that passes, the scoped analyzer: `flutter analyze
+lib/src/common/data lib/src/views/Widgets/expandable_area_chips.dart
+lib/src/views/Screens/ViewAdd lib/src/views/Screens/ViewDetails/widgets/request_share_options_dialog.dart
+test/areas`; then check Add Request and Add Offer on a device in English and
+Arabic, light and dark, at a narrow and a wide phone.
+
+## OWNER PROPERTY TYPE CHIPS + SHARED UAE LOCATION — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+Scope: the Add/Edit Owner screen only, on top of the uncommitted Request/Offer
+UAE area-catalog work above. No backend, migration, RLS, Worker, R2, Owner media,
+Quotation, Request/Offer persistence or subscription change.
+
+**What an Owner stores (unchanged).** `typeOfProperties` and `propertyLocation` are
+two plain strings (`owners.property_type_text`, `owners.property_location`, both
+`text not null default ''`; no CHECK, enum or length rule in any migration).
+There is NO city or area column, so nothing here is a new persistence contract.
+
+**Property type chips.** `PropertyTypeChips` shows 19 quick picks (Villa, Apartment,
+Townhouse, Studio, Penthouse, Duplex, Whole Building, Residential Plot, Commercial
+Plot, Land, Farm, Office, Shop / Retail, Warehouse, Show Room, Labor Camp, Hotel,
+Hotel Apartment, Other) above the EXISTING free-text field, which stays and still
+accepts any wording. A tap puts the name, in the language in use, into that field;
+the field is the only stored value. A chip shows selected only while the text says
+it (case/space-insensitive, English or Arabic, plus the project's older spellings);
+custom text selects nothing and a saved value is never rewritten. The names reuse
+existing ARB keys (`villa`, `apartment`, `showRoom`, `laborCamp`, …); five new keys
+were added (`residentialPlot`, `commercialPlot`, `shopRetail`, `hotel`,
+`hotelApartment`). The existing wording was kept where it differs from the brief:
+`laborCamp` = "Labor Camp" / "مخيم عمال", `showRoom` = "Show Room", `penthouse` =
+"بنت هاوس"; the brief's spellings are recognised when matching saved text.
+
+**Property location on the shared catalog.** The Owner form uses the same
+`UaeAreaCatalog` (nine cities, ordered areas) and the same `ExpandableAreaChips`
+as Request and Offer, through the new `UaeCityAreaPicker` (city chips, selected-city
+pill, then the three-row expandable areas). An Owner has ONE location, so the
+picker runs with `maxSelectedAreas: 1`: tapping another area replaces the choice
+and no chip is dimmed (Request and Offer keep their three). A choice is written
+into the existing location text as `Area, City` (or `City`), in the language in use,
+optionally followed by `, the owner's own words`; `OwnerLocationCodec` reads it
+back in either language, so edit mode restores the city and area (a deep area or a
+dropped legacy area still shows). Anything else is the owner's own text: shown
+exactly, never normalized, no chip selected. Typing never creates a choice and
+clears one once the text stops saying it; changing the city clears the area and
+collapses the list. Choosing a city/area over custom text replaces that text
+(like the property-type chips); clearing the city keeps what the owner wrote after
+the choice. The existing "Property Location" text field stays below the picker.
+
+**Shared pieces.** `SelectableChip` is now the one chip look (area chips use it);
+`ExpandableAreaChips` gained the single-selection behaviour; `UaeAreaCatalog` gained
+`cityKey` and `isAreaOf`; `AppLocalizations.translateFor(language, key)` reads a
+name in a given language from the preloaded cache (no fallback). Request and Offer
+screens are unchanged and still use `ExpandableAreaChips` with three areas; their
+private city-chip rows remain (backlog: move them onto `UaeCityAreaPicker`).
+
+**Tests (source only).** `test/owners/owner_property_type_test.dart`,
+`test/owners/owner_location_test.dart`, plus a single-selection group in
+`test/areas/expandable_area_chips_test.dart`. A plain-Node replay of the codec, the
+Owner view-model's chip state machine, the property-type matching (5,937 checks) and
+the source guards passed against the real catalog and ARB files; Dart syntax was
+parsed with `dart format --output=none`. None of that is a substitute for the
+owner's runs.
+
+Status: **OWNER PROPERTY TYPE CHIPS / SHARED UAE LOCATION = SOURCE COMPLETE; Flutter
+tests NOT RUN; analyzer NOT RUN; device NOT VERIFIED.** More UI changes are still
+being grouped, so no run has been requested. No commit or push.
+
+NOW — nothing to run yet; finish the remaining grouped UI changes.
+
+NEXT — one targeted pass after they are done: `flutter test test/areas
+test/owners/owner_property_type_test.dart test/owners/owner_location_test.dart`,
+then the scoped analyzer over the changed folders, then the device check of Add
+Request, Add Offer and Add/Edit Owner (English and Arabic, light and dark, narrow
+and wide phone).
+
+## FLOATING SAVE / CANCEL FORM ACTIONS — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+Scope: the bottom Save / Cancel area of the seven form screens that use
+`SaveCancelButtons` — Add/Edit Request, Offer, Owner, Broker, Office, Watchman and
+Quotation. UI layout only: no save logic, view-model, backend, media or auth change.
+
+**Root cause.** `SaveCancelButtons` itself never had a background. Each of the seven
+screens wrapped it, identically (copy-pasted), in a bottom `Positioned` +
+`Container(color: colorScheme.surface, boxShadow: top shadow)` — the full-width dock —
+and reserved room for it with a hard-coded `100` of bottom scroll padding.
+
+**Shared fix.** The dock is gone from all seven screens: `SaveCancelButtons` now sits
+directly in the `Positioned` and owns the floating presentation once:
+- transparent: the page colour shows around the buttons; same 16 margins, same pill
+  buttons, colours, labels, loading/disabled/Update behaviour;
+- `SafeArea(top: false, left: false, right: false)`: the bottom system inset is still
+  cleared (the app already applies the same bottom-only SafeArea in `app.dart`, so no
+  inset is double-counted);
+- opaque buttons so scrolled content never shows through: Cancel is filled with the
+  page colour, Save's "nothing to save yet" tint is blended onto it (identical look on
+  the page, light and dark);
+- `SaveCancelButtons.clearanceOf(context)` = bottom inset + the actions' real height +
+  a 16 gap, replacing the hard-coded 100. It follows the text scale and the theme's
+  button line height, so the last field can always scroll fully above the buttons.
+
+**Keyboard (unchanged).** The actions are still left out while the keyboard is open and
+the scroll view still pads `keyboardHeight + 20`; the six screens with
+`resizeToAvoidBottomInset: false` keep it. Observed, NOT changed: Quotation lacks
+`resizeToAvoidBottomInset: false`, so with the keyboard open its body is resized and
+also padded by the keyboard height (extra blank scroll room) — pre-existing, backlog.
+
+Not in scope and untouched: the Request/Offer/Owner area, city and property-type work
+above, Edit Profile (its `bottom: 0` is an avatar badge) and every other screen.
+
+**Tests (source only).** `test/forms/save_cancel_buttons_test.dart`: render, Update,
+Arabic/RTL order, size and margins, no full-width painter behind the buttons, touches
+pass through the margins and the gap, opaque buttons in light and dark, SafeArea,
+the last field scrolled above the actions at four text scales and two insets, loading
+and disabled behaviour, and source guards that all seven screens use the shared
+component with no panel. A plain-Node replay of the guards and the clearance
+arithmetic passed (106 checks); Dart syntax was parsed with `dart format
+--output=none`. None of that is a substitute for the owner's runs.
+
+Status: **FLOATING SAVE / CANCEL ACTIONS = SOURCE COMPLETE; Flutter tests NOT RUN;
+analyzer NOT RUN; device NOT VERIFIED.** More UI changes may still be grouped. No
+commit or push.
+
+NOW — nothing to run yet; finish any remaining grouped UI changes.
+
+NEXT — one combined pass: `flutter test test/areas test/owners test/forms`, the scoped
+analyzer over the changed folders, then a Samsung acceptance of Add/Edit Request, Offer,
+Owner, Broker, Office, Watchman and Quotation (English and Arabic, light and dark): the
+buttons float with the page visible around them, clear the navigation area, the last
+field scrolls fully above them, and the keyboard hides them as before.
+
+## APP UI SIZE CONSISTENCY + COMPACT FORM ACTIONS — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+Scope: size consistency of the app's existing reusable controls, with Save / Cancel
+made more compact. Not a redesign: no colour, font, radius, field order or layout
+change. No backend, migration, RLS, Worker, R2, auth, subscription, persistence or
+business-logic change.
+
+**Canonical form action height: 48 dp (was 56).** The old buttons were an 18 dp
+vertical padding around a ~20 dp label. `SaveCancelButtons` now sizes both buttons
+with one shared value, so Save and Cancel are exactly the same height and level in
+every state (Save, Update, saving, "nothing to save yet", Arabic, light, dark).
+Horizontal padding was already 0 and still is; pill radius, colours, labels,
+margins (16), the gap between the buttons (18), RTL order and loading/disabled
+behaviour are unchanged. The two tints (30% / 50% of the primary colour) are now
+`withAlpha(77)` / `withAlpha(128)` — byte-identical to the old
+`Color.fromARGB((0.3 * 255).round(), …)`, which removes the deprecated
+`.red/.green/.blue` reads in this one component (the only one edited that had them).
+A button grows past 48 only when the text scale is so large that the label line plus
+8 above and below would not fit (about 1.6x and up), so a label is never clipped;
+labels are one line with an ellipsis.
+
+**Clearance.** `SaveCancelButtons.heightOf` = 2 x 16 margin + `buttonHeightOf` (48 at
+normal scale), so `clearanceOf` (bottom inset + that + 16) is built from the actual
+shared action height, not the old 56-high buttons. `SafeArea(top: false, left: false,
+right: false)` and the floating presentation (no full-width panel) are untouched.
+
+**Shared size system.** One small file, `lib/src/constants/app_control_sizes.dart`
+(`AppControlSizes`), beside `app_colors.dart` and `app_typography.dart`. Only sizes a
+whole KIND of control shares: `standardButtonHeight` 48 (large actions),
+`formActionHeight` (= standard), `compactButtonHeight` 40 (compact inline actions),
+`minTouchTarget` 48, and the chip metrics (`chipHorizontalPadding` 18,
+`chipVerticalPadding` 9, `chipBorderWidth` 1.3, `chipRadius` 32, `chipSpacing` 10).
+Chips, fields, icon buttons and large actions are deliberately NOT forced to one
+height.
+
+**Controls normalized.**
+- Save / Cancel (the seven forms: Request, Offer, Owner, Broker, Office, Watchman,
+  Quotation) — 48, via `AppControlSizes.formActionHeight`.
+- Large full-width actions in shared widgets that already hard-coded 48
+  (`feedback_success_bottom_sheet`, `logout_confirmation_bottom_sheet`,
+  `email_addition_dialog`) now read `standardButtonHeight`. No visual change.
+- Chips: `SelectableChip` reads the chip tokens (values unchanged). The Request and
+  Offer forms had private copies of the unselected city chip and of the selected-city
+  pill (the same 18 / 9 / 1.3 / 32 numbers); they now use `SelectableChip` and the new
+  `ClearableChip`, which the Owner's `UaeCityAreaPicker` also uses. One chip look, one
+  size. `chipSpacing` is the one gap the Wraps and the row planner share.
+- The selected-city pill's clear (x): its tap area was the bare 18 px icon; it is now
+  the icon plus the pill's own padding (44 x 38), with no visual change to the pill.
+- The area chips' "Show more / Show less" toggle (a compact inline action) has at
+  least `compactButtonHeight` (40) to tap, up from about 34; the label stays where it
+  was, with the room below it a little larger.
+
+**3-row collapse preserved.** `ExpandableAreaChips` plans rows from chip WIDTHS, the
+text scale and the language, never from chip height, and no chip width changed
+(padding, border and spacing are the same numbers), so the collapsed state is still
+three rendered rows. Request and Offer still use `ExpandableAreaChips` with
+`selectedAreas: vm.selectedAreas` / `onToggleArea: vm.selectArea` and the three-area
+cap; the Owner still has one area, property-type chips and the free-text fields.
+
+**Audited and intentionally left alone.**
+- Single-line text fields, the phone field, the pick-up location field and the
+  Quotation dropdown/date fields are already one size (52 dp, radius 10) across the
+  seven forms; Notes (min 84) is multi-line. Not changed.
+- Specialised controls: the Rent/Sell segmented tabs (50), the Quotation logo-attach
+  row (54), the rooms/baths number pills, media galleries/cards, maps, avatars.
+- Default Material buttons with no explicit size (the account sheets' `FilledButton`s,
+  etc.) are 40 dp visible with a 48 tap target. A theme-wide button size would change
+  ~80 files, so it is not done here.
+- Delete/confirm dialogs in the six lists and six detail screens (12 dp vertical
+  padding, about 47 dp, radius 12) and the share dialogs are consistent with each
+  other and about 48; they are copy-pasted per screen, not shared.
+- Map picker actions (44, commented "reduced height") and the phone dialog (40, 11 pt
+  label, radius 10) are deliberately compact.
+
+**Backlog, not implemented (outside the named screens or a layout change).**
+- `language_view.dart` Save is a 50 dp full-width action (`Size(0, 50)`); the standard
+  is 48. `match_details_view.dart` already uses 48 as a literal. Both are single
+  screens the task did not name.
+- The error-banner dismiss (x) in Add Broker / Office / Watchman is an `IconButton`
+  with `constraints: BoxConstraints()` and zero padding, so its tap target is the 18 px
+  icon. Enlarging it would make the banner taller; the owner should decide.
+- Request/Offer still have their own `_CityChips` wrappers (kept: existing source
+  guards rely on them); they could move onto `UaeCityAreaPicker`.
+- `AppTextStyles.fontFamily` is `Inter` while the theme font is `Montserrat`, and
+  neither is a bundled font family in `pubspec.yaml` (only Noto Sans / Naskh are). Not
+  investigated; the fixed 48 dp buttons centre their label, so it cannot clip either way.
+
+**Tests (source only).** `test/forms/save_cancel_buttons_test.dart` (48 instead of 56;
+equal heights in Save / Update / saving / disabled, English / Arabic, light / dark,
+text scales 0.85 to 2.0; labels inside their buttons; exact `heightOf` and
+`clearanceOf`; no old padding or deprecated colour reads) and the new
+`test/forms/control_sizes_test.dart` (the tokens; every chip kind one height; the
+pill and the clear tap area; the toggle's compact height; shared widgets read the
+token; no private copy of the chip padding). `test/areas` and `test/owners` needed no
+change. Dart syntax of every touched file was parsed with `dart format
+--output=none`, and each edited tracked file matches the in-package formatter except
+formatting differences that were already there.
+
+Status: **APP UI SIZE CONSISTENCY = SOURCE COMPLETE; Flutter tests NOT RUN; analyzer
+NOT RUN; device NOT VERIFIED.** Floating Save / Cancel, the Request/Offer UAE area
+catalog and Owner property-type / location work are preserved. No commit or push.
+
+NOW — nothing to run yet if more grouped UI changes are coming.
+
+NEXT — one owner-controlled pass once the grouped UI work is finished: `flutter test
+test/areas test/owners test/forms`, then the scoped analyzer over `lib/src/constants
+lib/src/common/data lib/src/views/Widgets lib/src/views/Screens/ViewAdd test/areas
+test/owners test/forms`, then Samsung acceptance (English and Arabic, light and dark,
+narrow and wide phone, a large font size): Save / Cancel visibly more compact, the same
+height on all seven forms, the last field clearing them, the city pill's x easy to hit,
+and the three-row areas with Show more / Show less unchanged. Only then commit.
+
+## CITY / AREA CHIP HEIGHT CONSISTENCY — SOURCE COMPLETE, NOT RUN (2026-10-02)
+
+Scope: the city chips, the selected-city pill and the area chips of Add Request, Add
+Offer and Add/Edit Owner. Follow-up to the size-consistency section above, after the
+owner saw area chips look taller than city chips on a device. It supersedes that
+section's detail about the pill (which was left without a border and 38 high).
+No backend, persistence or business-logic change; colours, radii, ordering,
+localization, the three-row collapse, Show more / Show less and the selection caps
+are unchanged.
+
+**Traced render paths.** All six are the same chip class. Request and Offer: unselected
+city chips = `SelectableChip`; selected city = `ClearableChip`; areas = `ExpandableAreaChips`
+-> `SelectableChip`. Owner: `UaeCityAreaPicker` -> the same three. Same Wrap spacing, same
+inherited text style (Material 3 body, 1.43 line height, identical in English and
+Arabic), same padding and border tokens. So the shared tokens were NOT enough to make
+the rendered geometry identical; two things in the shared file differed or could vary.
+
+**Root cause.**
+1. The selected-city pill drew no border. Every `SelectableChip` has a 1.3 border (in
+   all three states), so the pill was 2.6 dp shorter than the area chips directly under
+   it: about 38.0 against 40.6. This is the mismatch the owner saw once a city is chosen.
+2. A chip label was allowed to wrap. The catalog has names of up to 31 characters
+   ("Jumeirah Village Triangle (JVT)", "Tourist Club Area (Al Zahiyah)"); wider than the
+   row on a narrow phone or at a large font, such a name wrapped to a second line and
+   that one chip was about 20 dp taller than its neighbours. City names are short and
+   never wrapped.
+Also removed as a hazard: a line holding glyphs from two fonts (three Arabic names end
+in a Latin digit, e.g. "داماك هيلز 2") can get a slightly taller line box than a one-font line.
+
+**Fix (once, in `lib/src/views/Widgets/selectable_chip.dart`).**
+- One frame for every chip, `_chipDecoration`: fill, pill corners and the 1.3 border in
+  every state. `SelectableChip` and `ClearableChip` both use it; the border is drawn in
+  exactly one place.
+- `ClearableChip` is now a selected chip with a x: same border, same padding, same label.
+  Its height is the label cell's height (an `IntrinsicHeight` row), so the x can never
+  make it taller. It is 2.6 dp wider than before (the border); its x tap area is 44 wide
+  by the chip's inner height, no longer 38.
+- One label for both chips, `_ChipLabel`: one line (`labelMaxLines` = 1), ellipsized
+  rather than wrapped, with every line forced to the line box of the style it inherits
+  (`StrutStyle.fromTextStyle(..., forceStrutHeight: true)`, scaled with the text scale).
+  For Latin at normal scale the line box is the one it already had (14 x 1.43).
+- `ExpandableAreaChips` measures the same one-line, ellipsized label. A label wider than
+  the room could only ever take the whole row, so the three-row plan is unchanged.
+- Request and Offer city chips now carry the same `city-chip-<city>` keys the Owner's
+  have.
+- No fixed or minimum widths anywhere: a chip is still as wide as its label.
+
+Old vs new, at normal scale: city chip 40.6, area chip 40.6 (unless its name wrapped:
+about 60.6), pill 38.0. Now every one is label line + 18 padding + 2.6 border = 40.6;
+the label line scales with the text scale and is the same for all of them.
+
+**Property-type chips.** The Owner's quick-pick property types use `SelectableChip`, so
+they inherit the one-line label and the same line box; their padding, border, colours and
+spacing are unchanged. Request and Offer's own property-type rows are Material
+`ChoiceChip`s, a different chip, and are untouched.
+
+**Tests (source only).** New `test/forms/city_area_chip_height_test.dart`: for Request,
+Offer and Owner, English and Arabic, at 320 px with large text, 360 and 412, walks the
+form (city chips; the pill; collapsed areas; expanded areas, which include the longest
+names; areas chosen, which also dims the rest at the Request/Offer cap) and asserts every
+chip is the same height, every label is one line, and height = label + the shared padding
++ border. Further: a long name is ellipsized and still the same height; a chip never takes
+more than the row; width still follows the label; three rows, the three-area cap and the
+Owner's single area still hold; the pill matches a chip; source guards pin Request's and
+Offer's `_CityChips` and the Owner picker to the shared components with no frame of their
+own. `test/forms/control_sizes_test.dart` pill expectations were updated (same height as a
+chip; 44 x inner height tap area; +2.6 width). Request and Offer's section is a private
+widget, so the tests compose the same components in a stand-in and guard the screens by
+source; they do not pump the real screens.
+
+Status: **CITY / AREA CHIP HEIGHT = SOURCE COMPLETE; Flutter tests NOT RUN; analyzer
+NOT RUN; device NOT VERIFIED.** The cause was derived from source, not observed on the
+device. No commit or push.
+
+NOW — nothing to run yet if more grouped UI changes are coming.
+
+NEXT — the one owner pass already listed above (`flutter test test/areas test/owners
+test/forms`, the scoped analyzer, then Samsung acceptance). On the device, check in
+Request, Offer and Owner that the chosen-city pill, the area chips and the city chips are
+visually one height in English and Arabic, with a long name such as Jumeirah Village
+Triangle (JVT) and with a large font. If a difference remains, send a screenshot.

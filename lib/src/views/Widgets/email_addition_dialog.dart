@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 
 /// Bottom-sheet email addition UI that avoids keyboard push issues.
 /// Use with showModalBottomSheet(isScrollControlled: true).
@@ -223,7 +224,7 @@ class _EmailAdditionDialogState extends State<EmailAdditionDialog> {
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       child: SizedBox(
                         width: double.infinity,
-                        height: 48,
+                        height: AppControlSizes.standardButtonHeight,
                         child: FilledButton(
                           onPressed: _isLoading ? null : _handleSubmit,
                           style: FilledButton.styleFrom(

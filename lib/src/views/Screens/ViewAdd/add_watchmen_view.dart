@@ -66,7 +66,7 @@ class AddWatchmenView extends StatelessWidget {
                         top: 20,
                         bottom: keyboardHeight > 0
                             ? keyboardHeight + 20
-                            : 100, // Dynamic bottom padding
+                            : SaveCancelButtons.clearanceOf(context),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,30 +152,18 @@ class AddWatchmenView extends StatelessWidget {
                       ),
                     ),
 
-                    // Fixed buttons at bottom - hide when keyboard is visible
+                    // Floating actions: nothing behind them, hidden while the keyboard is open
                     if (keyboardHeight == 0)
                       Positioned(
                         bottom: 0,
                         left: 0,
                         right: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: colors.surface,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                offset: const Offset(0, -2),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: SaveCancelButtons(
-                            isLoading: vm.isLoading,
-                            isEnabled: vm.hasAnyContent,
-                            isEditMode: mode == AddWatchmenMode.edit,
-                            onSave: () => vm.save(context),
-                            onCancel: () => vm.cancel(context),
-                          ),
+                        child: SaveCancelButtons(
+                          isLoading: vm.isLoading,
+                          isEnabled: vm.hasAnyContent,
+                          isEditMode: mode == AddWatchmenMode.edit,
+                          onSave: () => vm.save(context),
+                          onCancel: () => vm.cancel(context),
                         ),
                       ),
                   ],

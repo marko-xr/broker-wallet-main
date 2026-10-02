@@ -4,7 +4,9 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
 import 'package:broker_wallet/src/Views/Widgets/media_upload_widget.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/Views/Widgets/property_type_chips.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/Views/Widgets/uae_city_area_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -65,7 +67,7 @@ class AddOwnersView extends StatelessWidget {
                         top: 20,
                         bottom: keyboardHeight > 0
                             ? keyboardHeight + 20
-                            : 100, // Dynamic bottom padding
+                            : SaveCancelButtons.clearanceOf(context),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -89,6 +91,14 @@ class AddOwnersView extends StatelessWidget {
                           ),
                           const SizedBox(height: 18),
                           _Label(localization.translate('typeOfProperties')),
+                          // Quick picks only: the text field below stays the
+                          // one stored value and accepts any property type.
+                          PropertyTypeChips(
+                            value: vm.typeOfProperties,
+                            onSelected: vm.setTypeOfProperties,
+                            localization: localization,
+                          ),
+                          const SizedBox(height: 12),
                           _TextFieldIcon(
                             iconAsset: 'assets/icons/building-property.svg',
                             hint: localization.translate('enterPropertiesType'),
@@ -97,6 +107,21 @@ class AddOwnersView extends StatelessWidget {
                           ),
                           const SizedBox(height: 18),
                           _Label(localization.translate('propertyLocation')),
+                          // The shared UAE city and area catalog, one choice:
+                          // an Owner has a single location. It is written into
+                          // the text field below, which stays the stored value.
+                          UaeCityAreaPicker(
+                            cities: vm.locationCities,
+                            selectedCity: vm.locationCity,
+                            onCityChanged: (city) => vm.selectLocationCity(
+                                city, localization.locale.languageCode),
+                            selectedAreas: vm.locationAreaKeys,
+                            onToggleArea: (areaKey) => vm.toggleLocationArea(
+                                areaKey, localization.locale.languageCode),
+                            maxSelectedAreas: 1,
+                            localization: localization,
+                          ),
+                          const SizedBox(height: 12),
                           _TextFieldIcon(
                             icon: Icons.location_on_outlined,
                             hint:
@@ -150,30 +175,18 @@ class AddOwnersView extends StatelessWidget {
                       ),
                     ),
 
-                    // Fixed buttons at bottom - hide when keyboard is visible
+                    // Floating actions: nothing behind them, hidden while the keyboard is open
                     if (keyboardHeight == 0)
                       Positioned(
                         bottom: 0,
                         left: 0,
                         right: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: colors.surface,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                offset: const Offset(0, -2),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: SaveCancelButtons(
-                            isLoading: vm.isLoading,
-                            isEnabled: vm.hasAnyContent,
-                            isEditMode: mode == AddOwnersMode.edit,
-                            onSave: () => vm.save(context),
-                            onCancel: () => vm.cancel(context),
-                          ),
+                        child: SaveCancelButtons(
+                          isLoading: vm.isLoading,
+                          isEnabled: vm.hasAnyContent,
+                          isEditMode: mode == AddOwnersMode.edit,
+                          onSave: () => vm.save(context),
+                          onCancel: () => vm.cancel(context),
                         ),
                       ),
                   ],

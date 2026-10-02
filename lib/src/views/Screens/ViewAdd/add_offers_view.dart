@@ -4,11 +4,14 @@ import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/expandable_area_chips.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/Views/Widgets/selectable_chip.dart';
 import 'package:broker_wallet/src/Views/Widgets/media_upload_widget.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/viewmodels/AddScreens/add_offers_viewmodel.dart';
@@ -69,7 +72,7 @@ class AddOffersView extends StatelessWidget {
                         top: 8,
                         bottom: keyboardHeight > 0
                             ? keyboardHeight + 20
-                            : 100, // Dynamic bottom padding
+                            : SaveCancelButtons.clearanceOf(context),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,30 +233,18 @@ class AddOffersView extends StatelessWidget {
                       ),
                     ),
 
-                    // Fixed buttons at bottom - hide when keyboard is visible
+                    // Floating actions: nothing behind them, hidden while the keyboard is open
                     if (keyboardHeight == 0)
                       Positioned(
                         bottom: 0,
                         left: 0,
                         right: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: colors.surface,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                offset: const Offset(0, -2),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: SaveCancelButtons(
-                            isLoading: vm.isLoading,
-                            isEnabled: vm.hasAnyContent,
-                            isEditMode: mode == AddOffersMode.edit,
-                            onSave: () => vm.save(context),
-                            onCancel: () => vm.cancel(context),
-                          ),
+                        child: SaveCancelButtons(
+                          isLoading: vm.isLoading,
+                          isEnabled: vm.hasAnyContent,
+                          isEditMode: mode == AddOffersMode.edit,
+                          onSave: () => vm.save(context),
+                          onCancel: () => vm.cancel(context),
                         ),
                       ),
                   ],
@@ -372,33 +363,14 @@ class _CityChips extends StatelessWidget {
     if (selected.isEmpty) {
       // Show main city chips
       return Wrap(
-        spacing: 10,
-        runSpacing: 10,
+        spacing: AppControlSizes.chipSpacing,
+        runSpacing: AppControlSizes.chipSpacing,
         children: cities.map((c) {
-          final labelKey = _cityLocalizationKey(c);
-          return GestureDetector(
+          return SelectableChip(
+            key: ValueKey<String>('city-chip-$c'),
+            label: localization.translate(_cityLocalizationKey(c)),
+            isSelected: false,
             onTap: () => onSelect(c),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 1.3,
-                ),
-              ),
-              child: Text(
-                localization.translate(labelKey),
-                style: AppTextStyles.chipText.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
           );
         }).toList(),
       );
@@ -406,97 +378,27 @@ class _CityChips extends StatelessWidget {
       // Show selected city with areas - updated for multiple selection
       return Consumer<AddOffersViewModel>(
         builder: (context, vm, _) {
-          final areas = _getResidentialAreas(selected);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          localization
-                              .translate(_cityLocalizationKey(selected)),
-                          style: AppTextStyles.chipText.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => onSelect(""),
-                          child:
-                              Icon(Icons.close, color: Colors.white, size: 18),
-                        ),
-                      ],
-                    ),
+                  ClearableChip(
+                    key: const ValueKey<String>('city-pill'),
+                    clearKey: const ValueKey<String>('city-pill-clear'),
+                    label:
+                        localization.translate(_cityLocalizationKey(selected)),
+                    onClear: () => onSelect(""),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              // Areas selection - allow multiple selection (1-3)
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: areas.map((areaKey) {
-                  final isSelected = vm.selectedAreas.contains(areaKey);
-                  final canSelect = vm.selectedAreas.length < 3 || isSelected;
-
-                  return GestureDetector(
-                    onTap: canSelect ? () => vm.selectArea(areaKey) : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : canSelect
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withValues(alpha: 0.07)
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withValues(alpha: 0.03),
-                        borderRadius: BorderRadius.circular(32),
-                        border: Border.all(
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : canSelect
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.3),
-                          width: 1.3,
-                        ),
-                      ),
-                      child: Text(
-                        localization.translate(areaKey),
-                        style: AppTextStyles.chipText.copyWith(
-                          color: isSelected
-                              ? Colors.white
-                              : canSelect
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.4),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+              // Areas selection - the shared catalog, three rows until expanded
+              ExpandableAreaChips(
+                city: selected,
+                selectedAreas: vm.selectedAreas,
+                onToggleArea: vm.selectArea,
+                localization: localization,
               ),
             ],
           );
@@ -960,117 +862,6 @@ String _cityLocalizationKey(String city) {
       return 'ummAlQuwain';
     default:
       return city; // fallback
-  }
-}
-
-List<String> _getResidentialAreas(String city) {
-  switch (city) {
-    case "Dubai":
-      return [
-        "jumeirah",
-        "alBarsha",
-        "deira",
-        "karama",
-        "mirdif",
-        "discoveryGardens",
-        "burDubai",
-        "jvc",
-        "downtownDubai",
-        "businessBay",
-      ];
-    case "Abu Dhabi":
-      return [
-        "alReemIsland",
-        "alRahaBeach",
-        "khalifaCity",
-        "mohammedBinZayedCity",
-        "baniyas",
-        "alShamkha",
-        "alMuroor",
-        "alMaqtaa",
-        "mussafah",
-        "alBateen",
-      ];
-    case "Sharjah":
-      return [
-        "alNahdaSharjah",
-        "muwaileh",
-        "alMajaz",
-        "alQasimia",
-        "alTaawun",
-        "abuShagara",
-        "alYarmook",
-        "alButina",
-        "alKhan",
-        "alFalah",
-      ];
-    case "Ajman":
-      return [
-        "alNuaimia",
-        "alRashidiya",
-        "alRawda",
-        "alHelio",
-        "alJurf",
-        "alHamidiya",
-        "alZahra",
-        "alMowaihat",
-        "emiratesCity",
-        "ajmanIndustrialArea",
-      ];
-    case "Ras Al Khaimah":
-      return [
-        "alDhait",
-        "alMairid",
-        "alQurm",
-        "alNakheel",
-        "seihAlUraibi",
-        "alJazeeraAlHamra",
-        "alRams",
-        "alUraibi",
-        "alMamourah",
-        "khuzam",
-      ];
-    case "Fujairah":
-      return [
-        "alFaseel",
-        "madhab",
-        "murbah",
-        "qalaatAlFujairah",
-        "dibbaFujairah",
-        "alGurfa",
-        "sakamkam",
-        "alTawyeen",
-        "dadna",
-        "alBidya",
-      ];
-    case "Umm Al Quwain":
-      return [
-        "alRaafa",
-        "alSalama",
-        "alRamlah",
-        "alMuroorUAQ",
-        "alKhorUAQ",
-        "alHadarah",
-        "alHaditha",
-        "falajAlMualla",
-        "ummaquwainIndustrialArea",
-        "alShabiya",
-      ];
-    case "Al Ain":
-      return [
-        "alJimi",
-        "alAinIndustrialArea",
-        "alMuwaiji",
-        "alAmeriya",
-        "alHili",
-        "alMarkhaniya",
-        "alYahar",
-        "alQattara",
-        "alKhabisi",
-        "zakhir",
-      ];
-    default:
-      return [];
   }
 }
 

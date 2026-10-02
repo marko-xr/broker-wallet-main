@@ -670,9 +670,14 @@ class _RequestShareOptionsDialogState extends State<RequestShareOptionsDialog> {
     List<String> localizedAreas = widget.request.selectedAreas.map((area) {
       final areaKey = _areaLocalizationKey(area);
       final localizedArea = loc.translate(areaKey);
+      if (localizedArea != '** $areaKey not found') return localizedArea;
+
+      // The stored value is the area picker's own key, which the mapping below
+      // does not know for every catalog area: translate it directly.
+      final direct = loc.translate(area);
 
       // If translation not found, use original
-      return localizedArea == '** $areaKey not found' ? area : localizedArea;
+      return direct == '** $area not found' ? area : direct;
     }).toList();
 
     return localizedAreas.join(', ');

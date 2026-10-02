@@ -55,6 +55,13 @@ class AppLocalizations {
   // Getter for testing - to check cached languages count
   static int get cachedLanguagesCount => _cachedStrings.length;
 
+  /// The text of [key] in [languageCode], read from the preloaded cache; null
+  /// when that language is not loaded or has no such key. Unlike [translate]
+  /// it never falls back to another language, so it can tell what a saved
+  /// value looks like in each language the app supports.
+  static String? translateFor(String languageCode, String key) =>
+      _cachedStrings[languageCode]?[key];
+
   Future<bool> load() async {
     // If cache is available, use it immediately (synchronous)
     if (_cachedStrings.containsKey(locale.languageCode)) {

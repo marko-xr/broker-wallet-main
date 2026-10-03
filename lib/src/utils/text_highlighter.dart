@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:broker_wallet/src/common/utils/search_text.dart';
 
 class TextHighlighter {
   /// Highlights matching text in a string with the specified color
@@ -198,7 +199,14 @@ class TextHighlighter {
     );
   }
 
-  /// Creates a highlighted text widget for search results
+  /// Creates a highlighted text widget for search results.
+  ///
+  /// Highlights what the search itself matched, so a result never looks like it
+  /// matched something else: every word of [query] wherever it occurs (a
+  /// two-word query highlights both words), compared the way Search compares —
+  /// case, Arabic diacritics and Alef/Yeh/Teh-Marbuta variants and Arabic-Indic
+  /// digits do not matter — and a phone-number fragment across the spaces and
+  /// dashes of a formatted number.
   static Widget searchHighlight(
     String text,
     String query, {
@@ -206,13 +214,47 @@ class TextHighlighter {
     int? maxLines,
     TextOverflow? overflow,
   }) {
-    return highlight(
-      text,
-      query,
-      style: style,
-      highlightColor: Colors.red.withValues(alpha: 0.3),
+    final ranges = SearchText.highlightRanges(text, SearchText.tokens(query));
+    if (ranges.isEmpty) {
+      return Text(
+        text,
+        style: style,
+        maxLines: maxLines,
+        overflow: overflow,
+      );
+    }
+
+    final highlightStyle = style?.copyWith(
+          backgroundColor: Colors.red.withValues(alpha: 0.3),
+          fontWeight: FontWeight.bold,
+        ) ??
+        TextStyle(
+          backgroundColor: Colors.red.withValues(alpha: 0.3),
+          fontWeight: FontWeight.bold,
+        );
+
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (final range in ranges) {
+      if (range.$1 > at) {
+        spans.add(TextSpan(text: text.substring(at, range.$1), style: style));
+      }
+      spans.add(
+        TextSpan(
+            text: text.substring(range.$1, range.$2), style: highlightStyle),
+      );
+      at = range.$2;
+    }
+    if (at < text.length) {
+      spans.add(TextSpan(text: text.substring(at), style: style));
+    }
+
+    // Text.rich, not RichText: only Text follows the system text scale, and a
+    // highlighted line must not ignore the font size the person chose.
+    return Text.rich(
+      TextSpan(children: spans),
       maxLines: maxLines,
-      overflow: overflow,
+      overflow: overflow ?? TextOverflow.ellipsis,
     );
   }
 }

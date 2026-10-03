@@ -34,6 +34,26 @@ class AppControlSizes {
   /// The smallest area a person is asked to hit.
   static const double minTouchTarget = 48;
 
+  /// A compact filter chip's visible height (the Search filters). Smaller than a
+  /// large action on purpose; the area it answers to is still [minTouchTarget].
+  static const double compactChipHeight = 36;
+
+  /// The Search field's visible height at normal text: Flutter's own minimum
+  /// interactive size, which a text field is never laid out below. It is reached
+  /// with [searchFieldVerticalPadding] above and below the field's one 24 dp text
+  /// line (16 sp on the theme's 1.5 line height); a larger system font makes the
+  /// line, and so the field, taller.
+  static const double searchFieldHeight = 48;
+
+  /// The padding above and below the Search field's text line that makes it
+  /// [searchFieldHeight].
+  static const double searchFieldVerticalPadding = 12;
+
+  /// The border of a text field that has focus: the thin line the chips draw,
+  /// in the theme's primary colour. A border is painted inside the field's
+  /// bounds, so its width never changes the field's size.
+  static const double focusedFieldBorderWidth = chipBorderWidth;
+
   /// Padding between a quick-pick chip's border and its label, each side.
   static const double chipHorizontalPadding = 18;
 

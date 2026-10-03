@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
@@ -38,6 +39,36 @@ class SearchResultCard extends StatefulWidget {
     required this.result,
     required this.onTap,
   });
+
+  // The card's layout: an image area over a content area, 5 : 4, inside a
+  // margin and a border, the content holding up to three one-line fields.
+  static const double _margin = 1.2;
+  static const double _border = 1;
+  static const double _contentPadding = 14;
+  static const double _fieldGap = 6;
+  static const int _fieldCount = 3;
+  static const double _imageFlex = 5;
+  static const double _contentFlex = 4;
+
+  /// The height a card needs so its three one-line fields fit at the current
+  /// text size, whatever the card's width. The list gives each card at least
+  /// this much: a fixed shape is fine at normal text, but on a narrow phone or
+  /// with a large system font it would cut the fields off.
+  static double minHeightForText(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    final fontSize = style?.fontSize ?? 12;
+    final lineHeight = style?.height ?? 1.33;
+    // A field is a 16 px icon beside one line of text.
+    final field = math.max(
+      16.0,
+      MediaQuery.textScalerOf(context).scale(fontSize) * lineHeight,
+    );
+    final content = 2 * _contentPadding +
+        _fieldCount * field +
+        (_fieldCount - 1) * _fieldGap;
+    final inner = content * (_imageFlex + _contentFlex) / _contentFlex;
+    return inner + 2 * (_margin + _border);
+  }
 
   @override
   State<SearchResultCard> createState() => _SearchResultCardState();

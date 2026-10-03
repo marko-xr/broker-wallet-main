@@ -1,90 +1,127 @@
 import 'dart:async';
-import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
-import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
+import 'dart:io' show SocketException;
+
 import 'package:broker_wallet/src/data/models/filter_model.dart';
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/services/supabase_core_entities_service.dart';
+import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, PostgrestException;
 
-enum SearchResultType {
-  request,
-  offer,
-  owner,
-  office,
-  broker,
-  watchmen,
+import 'search_data_source.dart';
+import 'search_engine.dart';
+import 'search_result.dart';
+import 'package:broker_wallet/src/common/utils/search_text.dart';
+
+// The result types are defined with [SearchResult]; Search code imports them
+// from here.
+export 'search_result.dart';
+
+/// Why a search could not be answered, in terms a screen can word for a person.
+/// The technical error itself is never shown.
+enum SearchErrorKind {
+  /// The records could not be reached: no connection, or it timed out.
+  network,
+
+  /// The sign-in is missing or no longer valid.
+  session,
+
+  /// Anything else.
+  generic,
 }
 
-class SearchResult {
-  final String id;
-  final String title;
-  final String subtitle;
-  final String tinytitle;
-  final String? imageUrl;
-  final SearchResultType type;
-  final dynamic data;
-  final String searchQuery;
-
-  SearchResult({
-    required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.tinytitle,
-    this.imageUrl,
-    required this.type,
-    required this.data,
-    required this.searchQuery,
-  });
-
-  // Helper method to get localized badge text
-  String getBadgeText(AppLocalizations localization) {
-    switch (type) {
-      case SearchResultType.request:
-        return localization.translate('requested').toUpperCase();
-      case SearchResultType.offer:
-        return localization.translate('offers').toUpperCase();
-      case SearchResultType.owner:
-        return localization.translate('owners').toUpperCase();
-      case SearchResultType.office:
-        return localization.translate('offices').toUpperCase();
-      case SearchResultType.broker:
-        return localization.translate('brokers').toUpperCase();
-      case SearchResultType.watchmen:
-        return localization.translate('watchmen').toUpperCase();
-    }
+/// Sorts a failure into a [SearchErrorKind].
+SearchErrorKind classifySearchError(Object error) {
+  if (error is TimeoutException || error is SocketException) {
+    return SearchErrorKind.network;
   }
-
-  String get favoriteTypeKey {
-    switch (type) {
-      case SearchResultType.request:
-        return 'requests';
-      case SearchResultType.offer:
-        return 'offers';
-      case SearchResultType.owner:
-        return 'owners';
-      case SearchResultType.office:
-        return 'offices';
-      case SearchResultType.broker:
-        return 'brokers';
-      case SearchResultType.watchmen:
-        return 'watchmen';
-    }
+  final type = error.runtimeType.toString();
+  if (type.contains('SocketException') ||
+      type.contains('ClientException') ||
+      type.contains('HandshakeException') ||
+      type.contains('Timeout') ||
+      type.contains('Retryable')) {
+    return SearchErrorKind.network;
   }
+  if (error is StateError && error.message.toLowerCase().contains('session')) {
+    return SearchErrorKind.session;
+  }
+  if (error is AuthException) return SearchErrorKind.session;
+  if (error is PostgrestException &&
+      (error.code == '42501' ||
+          error.code == 'PGRST301' ||
+          error.code == 'PGRST303')) {
+    return SearchErrorKind.session;
+  }
+  return SearchErrorKind.generic;
 }
 
+/// State of the Search screen.
+///
+/// Search is local. The first time there is something to search for, the signed
+/// in user's own records are loaded once, indexed, and every query after that is
+/// answered from memory. This class keeps that picture correct:
+///
+///  * **Latest query wins.** Every search is stamped with a generation; one that
+///    finishes after a newer one (or after the query was cleared, or after this
+///    object was disposed) is dropped and can change nothing.
+///  * **One load.** Searches that need the records while they are loading share
+///    that one load.
+///  * **Fresh records.** The records are reloaded when the user's own data
+///    changes anywhere in the app ([CoreEntityMutationNotifier]), when they are
+///    older than [cacheValidFor], and when the signed-in user is not the one
+///    they were loaded for.
+///  * **User-safe failures.** A failure becomes a [SearchErrorKind], never the
+///    technical message; if records are already loaded they keep serving.
 class SearchViewModel extends ChangeNotifier {
-  String query = '';
-  List<SearchResult> searchResults = [];
-  bool isLoading = false;
-  String? error;
+  SearchViewModel({
+    SearchDataSource? dataSource,
+    SearchEngine? engine,
+    this.debounce = defaultDebounce,
+    this.cacheValidFor = defaultCacheValidFor,
+    Stream<void>? dataChanges,
+    DateTime Function()? clock,
+  })  : _dataSource = dataSource ?? DefaultSearchDataSource(),
+        _engine = engine ?? SearchEngine(),
+        _clock = clock ?? DateTime.now {
+    _dataChanges = (dataChanges ?? CoreEntityMutationNotifier.changes)
+        .listen((_) => _dataVersion++);
+  }
 
+  /// How long typing must pause before a search runs.
+  static const Duration defaultDebounce = Duration(milliseconds: 300);
+
+  /// How long loaded records are trusted when nothing says they changed.
+  static const Duration defaultCacheValidFor = Duration(minutes: 5);
+
+  final Duration debounce;
+  final Duration cacheValidFor;
+
+  final SearchDataSource _dataSource;
+  final SearchEngine _engine;
+  final DateTime Function() _clock;
+  late final StreamSubscription<void> _dataChanges;
+
+  // ---- what the screen shows ------------------------------------------------
+
+  /// What is typed in the search field, as typed.
+  String query = '';
+
+  /// The query the results below answer, trimmed and with its whitespace
+  /// collapsed. Empty until a search has been answered.
+  String resultsQuery = '';
+
+  /// The answer: best match first, no record twice.
+  List<SearchResult> searchResults = const <SearchResult>[];
+
+  /// True while the records are being loaded for the first time and there is
+  /// nothing to show yet.
+  bool isLoading = false;
+
+  /// Why the last search failed; null when it did not.
+  SearchErrorKind? errorKind;
+
+  /// The kind of record to limit results to; exactly one chip is selected,
+  /// "All" unless the person chose another.
   final List<FilterModel> filters = [
     FilterModel(label: 'All', labelKey: 'all', selected: true),
     FilterModel(label: 'Requested', labelKey: 'requested'),
@@ -95,808 +132,260 @@ class SearchViewModel extends ChangeNotifier {
     FilterModel(label: 'Watchmen', labelKey: 'watchmen'),
   ];
 
-  // Use lazy getters to avoid accessing Firebase before initialization
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  // ---- internals ------------------------------------------------------------
 
   Timer? _debounceTimer;
+  bool _disposed = false;
 
-  // In-memory cache for all data
-  Map<String, List<dynamic>> _dataCache = {};
-  bool _cacheInitialized = false;
-  DateTime? _lastCacheUpdate;
-  static const Duration _cacheValidDuration = Duration(minutes: 5);
+  /// Bumped by every search and every clear; a search whose number is no longer
+  /// current has been superseded.
+  int _generation = 0;
 
-  // Pre-built search indices for faster lookups
-  Map<String, List<SearchResult>> _searchIndices = {};
+  SearchCorpus? _corpus;
+  DateTime? _corpusLoadedAt;
+  String? _corpusUserId;
+
+  /// Counts the user's own data changing; the corpus remembers the count it was
+  /// loaded at.
+  int _dataVersion = 0;
+  int _corpusDataVersion = 0;
+
+  Future<void>? _loading;
+
+  /// Identifies the question the current results answer (words + filter).
+  String? _resultsKey;
+
+  // ---- derived state --------------------------------------------------------
+
+  bool get hasQuery => SearchText.tokens(query).isNotEmpty;
+
+  bool get hasResults => hasQuery && searchResults.isNotEmpty;
+
+  /// Whether a search has been answered for the current question. Until it has,
+  /// an empty list means "not asked yet", not "nothing found".
+  bool get hasAnswer => _resultsKey != null;
+
+  /// The chip that is selected. Never changes state: a read is only a read.
+  FilterModel? get selectedFilter {
+    for (final filter in filters) {
+      if (filter.selected) return filter;
+    }
+    return filters.isEmpty ? null : filters.first;
+  }
+
+  String? get selectedFilterKey => selectedFilter?.labelKey ?? 'all';
+
+  SearchResultType? get _selectedType {
+    switch (selectedFilterKey) {
+      case 'requested':
+        return SearchResultType.request;
+      case 'offers':
+        return SearchResultType.offer;
+      case 'owners':
+        return SearchResultType.owner;
+      case 'offices':
+        return SearchResultType.office;
+      case 'brokers':
+        return SearchResultType.broker;
+      case 'watchmen':
+        return SearchResultType.watchmen;
+    }
+    return null;
+  }
+
+  // ---- input ----------------------------------------------------------------
+
+  /// The search text changed. Searches once typing pauses for [debounce]; an
+  /// empty or meaningless query (blank, or only punctuation) goes back to the
+  /// starting state at once.
+  void updateQuery(String value) {
+    if (value == query) return;
+    query = value;
+    _debounceTimer?.cancel();
+
+    final tokens = SearchText.tokens(value);
+    if (tokens.isEmpty) {
+      _clear();
+      return;
+    }
+    // Only spacing or case changed: the answer is the one already on screen.
+    if (_keyOf(tokens) == _resultsKey && errorKind == null && _corpusFresh) {
+      return;
+    }
+    _debounceTimer = Timer(debounce, () => unawaited(_search()));
+  }
+
+  /// The keyboard's Search action: search now, without waiting for a pause.
+  void submitQuery(String value) {
+    query = value;
+    _debounceTimer?.cancel();
+    if (SearchText.tokens(value).isEmpty) {
+      _clear();
+      return;
+    }
+    unawaited(_search());
+  }
+
+  /// Chooses the kind of record to search, or — when it is already chosen —
+  /// goes back to "All". One search runs, for the query as it is now.
+  void toggleFilter(int index) {
+    if (index < 0 || index >= filters.length) return;
+    final tapped = filters[index];
+    final isAll = tapped.labelKey == 'all';
+    if (tapped.selected && isAll) return; // already showing everything
+
+    final chosen = tapped.selected ? 0 : index;
+    for (var i = 0; i < filters.length; i++) {
+      filters[i].selected = i == chosen;
+    }
+
+    _debounceTimer?.cancel();
+    if (hasQuery) unawaited(_search());
+    _notify();
+  }
+
+  /// Tries again after a failure, reloading the records.
+  void retry() {
+    _debounceTimer?.cancel();
+    if (!hasQuery) return;
+    _corpusLoadedAt = null; // forces a reload
+    unawaited(_search());
+  }
+
+  /// Refreshes the answer if the records it was made from have changed or aged
+  /// out. Called when the Search tab comes back to the front.
+  void refreshIfStale() {
+    if (_disposed || !hasQuery || _corpusFresh) return;
+    unawaited(_search());
+  }
+
+  /// Drops loaded records so the next search reads them again.
+  void refreshCache() {
+    _corpusLoadedAt = null;
+    if (hasQuery) unawaited(_search());
+  }
+
+  // ---- searching ------------------------------------------------------------
+
+  bool get _corpusUsable =>
+      _corpus != null && _corpusUserId == _dataSource.currentUserId;
+
+  bool get _corpusFresh {
+    final loadedAt = _corpusLoadedAt;
+    if (!_corpusUsable || loadedAt == null) return false;
+    if (_corpusDataVersion != _dataVersion) return false;
+    return _clock().difference(loadedAt) < cacheValidFor;
+  }
+
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  String _keyOf(List<String> tokens) =>
+      '${tokens.join(' ')}|${selectedFilterKey ?? 'all'}';
+
+  Future<void> _search() async {
+    final generation = ++_generation;
+    final tokens = SearchText.tokens(query);
+    if (tokens.isEmpty) {
+      _clear();
+      return;
+    }
+    final display = SearchText.collapse(query);
+    final type = _selectedType;
+    final key = _keyOf(tokens);
+
+    try {
+      if (!_corpusUsable) {
+        // Nothing to search yet: show that, and leave the last answer alone
+        // until there is a new one.
+        isLoading = true;
+        errorKind = null;
+        _notify();
+      }
+
+      if (!_corpusFresh) {
+        try {
+          await _load();
+        } catch (error) {
+          if (!_isCurrent(generation)) return;
+          // Records already loaded keep serving; only a search with nothing to
+          // search through fails.
+          if (!_corpusUsable) {
+            searchResults = const <SearchResult>[];
+            resultsQuery = '';
+            _resultsKey = null;
+            errorKind = classifySearchError(error);
+            isLoading = false;
+            _notify();
+            return;
+          }
+        }
+        if (!_isCurrent(generation)) return;
+      }
+
+      final corpus = _corpus;
+      if (corpus == null || !_corpusUsable) return;
+
+      searchResults = _engine.search(
+        corpus,
+        tokens: tokens,
+        displayQuery: display,
+        type: type,
+      );
+      resultsQuery = display;
+      _resultsKey = key;
+      errorKind = null;
+      isLoading = false;
+      _notify();
+    } catch (error) {
+      if (!_isCurrent(generation)) return;
+      searchResults = const <SearchResult>[];
+      resultsQuery = '';
+      _resultsKey = null;
+      errorKind = classifySearchError(error);
+      isLoading = false;
+      _notify();
+    }
+  }
+
+  /// Loads and indexes the records, once however many searches ask for them. A
+  /// failed load is not remembered: the next search tries again.
+  Future<void> _load() {
+    return _loading ??= _loadRecords().whenComplete(() => _loading = null);
+  }
+
+  Future<void> _loadRecords() async {
+    final version = _dataVersion;
+    final userId = _dataSource.currentUserId;
+    final data = await _dataSource.load();
+    if (_disposed) return;
+    _corpus = _engine.index(data);
+    _corpusLoadedAt = _clock();
+    _corpusUserId = userId;
+    // If the user's data changed while this was loading, these records are
+    // already out of date, and the next search reads them again.
+    _corpusDataVersion = version;
+  }
+
+  /// Back to the starting state: nothing in flight may change it afterwards.
+  void _clear() {
+    _generation++;
+    searchResults = const <SearchResult>[];
+    resultsQuery = '';
+    _resultsKey = null;
+    errorKind = null;
+    isLoading = false;
+    _notify();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
   @override
   void dispose() {
+    _disposed = true;
     _debounceTimer?.cancel();
+    unawaited(_dataChanges.cancel());
     super.dispose();
-  }
-
-  void updateQuery(String q) {
-    query = q;
-
-    // Cancel previous timer
-    _debounceTimer?.cancel();
-
-    if (q.trim().isNotEmpty) {
-      // Reduce debounce time for better responsiveness
-      _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-        _performOptimizedSearch();
-      });
-    } else {
-      // Clear results immediately when query is empty
-      searchResults.clear();
-      error = null;
-      notifyListeners();
-    }
-  }
-
-  void toggleFilter(int index) {
-    // If the tapped filter is already selected, deselect it
-    if (filters[index].selected) {
-      filters[index].selected = false;
-    } else {
-      // Deselect all other filters
-      for (int i = 0; i < filters.length; i++) {
-        filters[i].selected = false;
-      }
-      // Select the tapped filter
-      filters[index].selected = true;
-    }
-
-    // Re-search if we have a query - this will be instant since data is cached
-    if (query.trim().isNotEmpty) {
-      _performOptimizedSearch();
-    }
-    notifyListeners();
-  }
-
-  FilterModel? get selectedFilter {
-    try {
-      return filters.firstWhere((filter) => filter.selected);
-    } catch (e) {
-      if (filters.isNotEmpty) {
-        filters[0].selected = true;
-        return filters[0];
-      }
-      return null;
-    }
-  }
-
-  String? get selectedFilterKey {
-    final selected = selectedFilter;
-    return selected?.labelKey ?? 'all';
-  }
-
-  bool get hasResults {
-    return query.isNotEmpty && searchResults.isNotEmpty;
-  }
-
-  bool get hasQuery {
-    return query.trim().isNotEmpty;
-  }
-
-  // Initialize cache on first search
-  Future<void> _initializeCache() async {
-    if (_cacheInitialized && _isCacheValid()) {
-      return; // Cache is still valid
-    }
-
-    try {
-      if (SupabaseConfig.useSupabaseAuth) {
-        final service = SupabaseCoreEntitiesService();
-        final results = await Future.wait<List<dynamic>>([
-          service.getRequests().first,
-          service.getOffers().first,
-          service.getOwners().first,
-          service.getOffices().first,
-          service.getBrokers().first,
-          service.getWatchmen().first,
-        ]);
-        _dataCache = {
-          'requests': results[0],
-          'offers': results[1],
-          'owners': results[2],
-          'offices': results[3],
-          'brokers': results[4],
-          'watchmen': results[5],
-        };
-        _cacheInitialized = true;
-        _lastCacheUpdate = DateTime.now();
-        _buildSearchIndices();
-        return;
-      }
-
-      final currentUserId =
-          RepositoryProvider.instance.authRepository.currentUserId;
-      if (currentUserId == null) return;
-
-      // Fetch all data in parallel
-      final futures = await Future.wait([
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('requests')
-            .get(),
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('offers')
-            .get(),
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('owners')
-            .get(),
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('offices')
-            .get(),
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('brokers')
-            .get(),
-        _firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('watchmen')
-            .get(),
-      ]);
-
-      // Convert to models and cache
-      _dataCache['requests'] = futures[0]
-          .docs
-          .map((doc) => RequestModel.fromFirestore(doc))
-          .toList();
-      _dataCache['offers'] =
-          futures[1].docs.map((doc) => OfferModel.fromFirestore(doc)).toList();
-      _dataCache['owners'] =
-          futures[2].docs.map((doc) => OwnerModel.fromFirestore(doc)).toList();
-      _dataCache['offices'] =
-          futures[3].docs.map((doc) => OfficeModel.fromFirestore(doc)).toList();
-      _dataCache['brokers'] =
-          futures[4].docs.map((doc) => BrokerModel.fromFirestore(doc)).toList();
-      _dataCache['watchmen'] = futures[5]
-          .docs
-          .map((doc) => WatchmenModel.fromFirestore(doc))
-          .toList();
-
-      _cacheInitialized = true;
-      _lastCacheUpdate = DateTime.now();
-
-      // Pre-build search indices for common queries
-      _buildSearchIndices();
-    } catch (e) {
-      // Handle initialization error silently
-    }
-  }
-
-  bool _isCacheValid() {
-    if (_lastCacheUpdate == null) return false;
-    return DateTime.now().difference(_lastCacheUpdate!) < _cacheValidDuration;
-  }
-
-  void _buildSearchIndices() {
-    // Pre-build indices for numbers 0-9 for faster phone number searches
-    for (int i = 0; i <= 9; i++) {
-      final digit = i.toString();
-      _searchIndices[digit] = _searchInCachedData(digit);
-    }
-
-    // Pre-build indices for common two-digit combinations
-    for (int i = 0; i <= 9; i++) {
-      for (int j = 0; j <= 9; j++) {
-        final combo = '$i$j';
-        if (combo == '05' ||
-            combo == '04' ||
-            combo == '02' ||
-            combo == '03' ||
-            combo == '06' ||
-            combo == '07' ||
-            combo == '09') {
-          _searchIndices[combo] = _searchInCachedData(combo);
-        }
-      }
-    }
-  }
-
-  // Optimized search using cached data
-  Future<void> _performOptimizedSearch() async {
-    if (query.trim().isEmpty) return;
-
-    // Set loading only for the initial cache load
-    if (!_cacheInitialized) {
-      isLoading = true;
-      notifyListeners();
-    }
-
-    try {
-      // Initialize cache if needed
-      await _initializeCache();
-
-      // Use pre-built index if available
-      if (_searchIndices.containsKey(query)) {
-        searchResults = _searchIndices[query]!
-            .where((result) => _matchesFilter(result))
-            .map((result) => SearchResult(
-                  id: result.id,
-                  title: result.title,
-                  subtitle: result.subtitle,
-                  tinytitle: result.tinytitle,
-                  imageUrl: result.imageUrl,
-                  type: result.type,
-                  data: result.data,
-                  searchQuery: query,
-                ))
-            .toList();
-      } else {
-        // Perform search in cached data
-        searchResults = _searchInCachedData(query)
-            .where((result) => _matchesFilter(result))
-            .map((result) => SearchResult(
-                  id: result.id,
-                  title: result.title,
-                  subtitle: result.subtitle,
-                  tinytitle: result.tinytitle,
-                  imageUrl: result.imageUrl,
-                  type: result.type,
-                  data: result.data,
-                  searchQuery: query,
-                ))
-            .toList();
-      }
-
-      error = null;
-    } catch (e) {
-      error = 'Search failed: ${e.toString()}';
-      searchResults.clear();
-    } finally {
-      isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  // Fast in-memory search
-  List<SearchResult> _searchInCachedData(String searchQuery) {
-    final results = <SearchResult>[];
-    final queryLower = searchQuery.toLowerCase();
-
-    // Search requests
-    final requests = _dataCache['requests'] as List<RequestModel>? ?? [];
-    for (final request in requests) {
-      if (_matchesRequestQuery(request, queryLower)) {
-        results.add(_createRequestSearchResult(request, searchQuery));
-      }
-    }
-
-    // Search offers
-    final offers = _dataCache['offers'] as List<OfferModel>? ?? [];
-    for (final offer in offers) {
-      if (_matchesOfferQuery(offer, queryLower)) {
-        results.add(_createOfferSearchResult(offer, searchQuery));
-      }
-    }
-
-    // Search owners
-    final owners = _dataCache['owners'] as List<OwnerModel>? ?? [];
-    for (final owner in owners) {
-      if (_matchesOwnerQuery(owner, queryLower) ||
-          _matchesPhoneNumberPartial(owner.phoneNumber, searchQuery)) {
-        results.add(_createOwnerSearchResult(owner, searchQuery));
-      }
-    }
-
-    // Search offices
-    final offices = _dataCache['offices'] as List<OfficeModel>? ?? [];
-    for (final office in offices) {
-      if (_matchesOfficeQuery(office, queryLower) ||
-          _matchesPhoneNumberPartial(office.phoneNumber, searchQuery)) {
-        results.add(_createOfficeSearchResult(office, searchQuery));
-      }
-    }
-
-    // Search brokers
-    final brokers = _dataCache['brokers'] as List<BrokerModel>? ?? [];
-    for (final broker in brokers) {
-      if (_matchesBrokerQuery(broker, queryLower) ||
-          _matchesPhoneNumberPartial(broker.phoneNumber, searchQuery)) {
-        results.add(_createBrokerSearchResult(broker, searchQuery));
-      }
-    }
-
-    // Search watchmen
-    final watchmen = _dataCache['watchmen'] as List<WatchmenModel>? ?? [];
-    for (final watchman in watchmen) {
-      if (_matchesWatchmenQuery(watchman, queryLower) ||
-          _matchesPhoneNumberPartial(watchman.phoneNumber, searchQuery)) {
-        results.add(_createWatchmenSearchResult(watchman, searchQuery));
-      }
-    }
-
-    return results;
-  }
-
-  // Filter results based on selected filter
-  bool _matchesFilter(SearchResult result) {
-    final selectedFilterKey = this.selectedFilterKey;
-    if (selectedFilterKey == 'all') return true;
-
-    switch (selectedFilterKey) {
-      case 'requested':
-        return result.type == SearchResultType.request;
-      case 'offers':
-        return result.type == SearchResultType.offer;
-      case 'owners':
-        return result.type == SearchResultType.owner;
-      case 'offices':
-        return result.type == SearchResultType.office;
-      case 'brokers':
-        return result.type == SearchResultType.broker;
-      case 'watchmen':
-        return result.type == SearchResultType.watchmen;
-      default:
-        return true;
-    }
-  }
-
-  // Optimized query matching methods with bilingual support
-  bool _matchesRequestQuery(RequestModel request, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      request.location,
-      request.selectedCity,
-      request.propertyType ?? '',
-      request.specificPropertyType,
-      request.requestType,
-      request.notes,
-      request.squareFootage,
-      request.minPrice,
-      request.maxPrice,
-      request.selectedAreas.join(' '),
-    ];
-
-    // Check if query matches any field in both languages
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(request.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    // Localized property type search (for translated content)
-    if (_matchesLocalizedPropertyType(request.propertyType, queryLower) ||
-        _matchesLocalizedPropertyType(
-            request.specificPropertyType, queryLower)) {
-      return true;
-    }
-
-    // City name search in both languages
-    if (_matchesLocalizedCity(request.selectedCity, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _matchesOfferQuery(OfferModel offer, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      offer.location,
-      offer.selectedCity,
-      offer.propertyType ?? '',
-      offer.specificPropertyType,
-      offer.offerType,
-      offer.notes,
-      offer.squareFootage,
-      offer.minPrice,
-      offer.maxPrice,
-      offer.pickUpLocation,
-      offer.pickUpAddress,
-      offer.selectedAreas.join(' '),
-    ];
-
-    // Check if query matches any field in both languages
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(offer.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    // Localized property type search (for translated content)
-    if (_matchesLocalizedPropertyType(offer.propertyType, queryLower) ||
-        _matchesLocalizedPropertyType(offer.specificPropertyType, queryLower)) {
-      return true;
-    }
-
-    // City name search in both languages
-    if (_matchesLocalizedCity(offer.selectedCity, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _matchesOwnerQuery(OwnerModel owner, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      owner.name,
-      owner.typeOfProperties,
-      owner.notes,
-      owner.propertyLocation,
-      owner.pickUpLocation,
-      owner.pickUpAddress,
-    ];
-
-    // Check if query matches any field
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(owner.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _matchesOfficeQuery(OfficeModel office, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      office.officeName,
-      office.officeLocation,
-      office.notes,
-      office.pickUpLocation,
-      office.pickUpAddress,
-    ];
-
-    // Check if query matches any field
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(office.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _matchesBrokerQuery(BrokerModel broker, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      broker.name,
-      broker.notes,
-    ];
-
-    // Check if query matches any field
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(broker.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _matchesWatchmenQuery(WatchmenModel watchmen, String queryLower) {
-    // Basic text fields search
-    final searchableFields = [
-      watchmen.name,
-      watchmen.buildingName,
-      watchmen.notes,
-      watchmen.buildingLocation,
-      watchmen.pickUpLocation,
-      watchmen.pickUpAddress,
-    ];
-
-    // Check if query matches any field
-    for (final field in searchableFields) {
-      if (_containsQuery(field, queryLower)) return true;
-    }
-
-    // Phone number search
-    if (_matchesPhoneNumberPartial(watchmen.phoneNumber, queryLower)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Optimized phone number matching
-  bool _matchesPhoneNumberPartial(String phoneNumber, String query) {
-    if (phoneNumber.isEmpty || query.length < 2) return false;
-
-    final cleanQuery = query.replaceAll(RegExp(r'[^\d]'), '');
-    if (cleanQuery.length < 2) return false;
-
-    final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
-
-    // Quick check for direct matches
-    if (cleanPhone.contains(cleanQuery)) return true;
-
-    // Check international/local format conversions
-    if (phoneNumber.startsWith('+971') && cleanPhone.length == 12) {
-      final localFormat = '0${cleanPhone.substring(3)}';
-      if (localFormat.contains(cleanQuery)) return true;
-    }
-
-    if (cleanPhone.startsWith('0') && cleanPhone.length == 10) {
-      final internationalFormat = '971${cleanPhone.substring(1)}';
-      if (internationalFormat.contains(cleanQuery)) return true;
-    }
-
-    return false;
-  }
-
-  // Optimized result creation methods
-  SearchResult _createRequestSearchResult(
-      RequestModel request, String searchQuery) {
-    String propertyDisplay = '';
-    if (request.propertyType != null && request.propertyType!.isNotEmpty) {
-      propertyDisplay = request.propertyType!;
-      if (request.specificPropertyType.isNotEmpty) {
-        propertyDisplay += ' - ${request.specificPropertyType}';
-      }
-    } else if (request.specificPropertyType.isNotEmpty) {
-      propertyDisplay = request.specificPropertyType;
-    }
-
-    return SearchResult(
-      id: request.id ?? '',
-      title: request.requestType.toUpperCase(),
-      subtitle: request.selectedCity,
-      tinytitle: propertyDisplay.isEmpty ? 'No property type' : propertyDisplay,
-      imageUrl: null,
-      type: SearchResultType.request,
-      data: request,
-      searchQuery: searchQuery,
-    );
-  }
-
-  SearchResult _createOfferSearchResult(OfferModel offer, String searchQuery) {
-    String propertyDisplay = '';
-    if (offer.propertyType != null && offer.propertyType!.isNotEmpty) {
-      propertyDisplay = offer.propertyType!;
-      if (offer.specificPropertyType.isNotEmpty) {
-        propertyDisplay += ' - ${offer.specificPropertyType}';
-      }
-    } else if (offer.specificPropertyType.isNotEmpty) {
-      propertyDisplay = offer.specificPropertyType;
-    }
-
-    return SearchResult(
-      id: offer.id ?? '',
-      title: offer.offerType.toUpperCase(),
-      subtitle: offer.selectedCity,
-      tinytitle: propertyDisplay.isEmpty ? 'No property type' : propertyDisplay,
-      imageUrl:
-          offer.mediaUrls.isNotEmpty ? offer.mediaUrls.first : offer.mediaUrl,
-      type: SearchResultType.offer,
-      data: offer,
-      searchQuery: searchQuery,
-    );
-  }
-
-  SearchResult _createOwnerSearchResult(OwnerModel owner, String searchQuery) {
-    return SearchResult(
-      id: owner.id ?? '',
-      title: owner.name,
-      subtitle: owner.typeOfProperties.isNotEmpty
-          ? owner.typeOfProperties
-          : 'No property type specified',
-      tinytitle: owner.phoneNumber.isNotEmpty
-          ? _formatPhoneNumberDisplay(owner.phoneNumber)
-          : 'No phone number',
-      imageUrl:
-          owner.mediaUrls.isNotEmpty ? owner.mediaUrls.first : owner.mediaUrl,
-      type: SearchResultType.owner,
-      data: owner,
-      searchQuery: searchQuery,
-    );
-  }
-
-  SearchResult _createOfficeSearchResult(
-      OfficeModel office, String searchQuery) {
-    return SearchResult(
-      id: office.id ?? '',
-      title: office.officeName,
-      subtitle: office.officeLocation,
-      tinytitle: office.phoneNumber.isNotEmpty
-          ? _formatPhoneNumberDisplay(office.phoneNumber)
-          : 'No phone number',
-      imageUrl: null,
-      type: SearchResultType.office,
-      data: office,
-      searchQuery: searchQuery,
-    );
-  }
-
-  SearchResult _createBrokerSearchResult(
-      BrokerModel broker, String searchQuery) {
-    return SearchResult(
-      id: broker.id ?? '',
-      title: broker.name,
-      subtitle: broker.phoneNumber.isNotEmpty
-          ? _formatPhoneNumberDisplay(broker.phoneNumber)
-          : 'No phone number',
-      tinytitle: '',
-      imageUrl: null,
-      type: SearchResultType.broker,
-      data: broker,
-      searchQuery: searchQuery,
-    );
-  }
-
-  SearchResult _createWatchmenSearchResult(
-      WatchmenModel watchmen, String searchQuery) {
-    return SearchResult(
-      id: watchmen.id ?? '',
-      title: watchmen.name,
-      subtitle: watchmen.buildingName,
-      tinytitle: watchmen.phoneNumber.isNotEmpty
-          ? _formatPhoneNumberDisplay(watchmen.phoneNumber)
-          : 'No phone number',
-      imageUrl: null,
-      type: SearchResultType.watchmen,
-      data: watchmen,
-      searchQuery: searchQuery,
-    );
-  }
-
-  String _formatPhoneNumberDisplay(String phoneNumber) {
-    if (phoneNumber.isEmpty) return '';
-
-    if (phoneNumber.startsWith('+971')) {
-      String numberWithoutCountryCode = phoneNumber.substring(4);
-      if (!numberWithoutCountryCode.startsWith('0')) {
-        numberWithoutCountryCode = '0$numberWithoutCountryCode';
-      }
-      return numberWithoutCountryCode;
-    }
-
-    if (phoneNumber.startsWith('05')) {
-      return phoneNumber;
-    }
-
-    if (phoneNumber.startsWith('5') && phoneNumber.length >= 8) {
-      return '0$phoneNumber';
-    }
-
-    return phoneNumber;
-  }
-
-  // Public method to refresh cache manually
-  void refreshCache() {
-    _cacheInitialized = false;
-    _dataCache.clear();
-    _searchIndices.clear();
-    if (query.trim().isNotEmpty) {
-      _performOptimizedSearch();
-    }
-  }
-
-  // Helper methods for bilingual search support
-
-  /// Enhanced text matching that supports both Arabic and English
-  bool _containsQuery(String text, String queryLower) {
-    if (text.isEmpty || queryLower.isEmpty) return false;
-
-    final textLower = text.toLowerCase();
-
-    // Direct text matching
-    if (textLower.contains(queryLower)) return true;
-
-    // Remove diacritics and special characters for Arabic text matching
-    final normalizedText = _normalizeArabicText(textLower);
-    final normalizedQuery = _normalizeArabicText(queryLower);
-
-    return normalizedText.contains(normalizedQuery);
-  }
-
-  /// Normalize Arabic text by removing diacritics and common variations
-  String _normalizeArabicText(String text) {
-    return text
-        .replaceAll(RegExp(r'[ًٌٍَُِّْ]'), '') // Remove diacritics
-        .replaceAll('أ', 'ا') // Normalize alef
-        .replaceAll('إ', 'ا') // Normalize alef
-        .replaceAll('آ', 'ا') // Normalize alef
-        .replaceAll('ة', 'ه') // Normalize taa marbouta
-        .replaceAll('ى', 'ي') // Normalize yaa
-        .trim();
-  }
-
-  /// Check if query matches localized property types
-  bool _matchesLocalizedPropertyType(String? propertyType, String queryLower) {
-    if (propertyType == null || propertyType.isEmpty) return false;
-
-    // Direct match
-    if (_containsQuery(propertyType, queryLower)) return true;
-
-    // Check common property type translations
-    final propertyTypeLower = propertyType.toLowerCase();
-
-    // English to Arabic common mappings
-    final translations = {
-      'apartment': ['شقة', 'شقه'],
-      'villa': ['فيلا', 'فيله'],
-      'studio': ['ستوديو', 'استوديو'],
-      'townhouse': ['تاون هاوس', 'تاونهاوس'],
-      'penthouse': ['بنتهاوس', 'بنت هاوس'],
-      'commercial': ['تجاري', 'تجارى'],
-      'residential': ['سكني', 'سكنى'],
-      'office': ['مكتب', 'مكاتب'],
-      'retail': ['تجزئة', 'متجر'],
-      'warehouse': ['مستودع', 'مخزن'],
-    };
-
-    for (final entry in translations.entries) {
-      if (propertyTypeLower.contains(entry.key)) {
-        for (final arabicTranslation in entry.value) {
-          if (_containsQuery(arabicTranslation, queryLower)) return true;
-        }
-      }
-
-      // Check reverse (Arabic to English)
-      for (final arabicTranslation in entry.value) {
-        if (_containsQuery(propertyType, arabicTranslation)) {
-          if (queryLower.contains(entry.key)) return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  /// Check if query matches localized city names
-  bool _matchesLocalizedCity(String city, String queryLower) {
-    if (city.isEmpty) return false;
-
-    // Direct match
-    if (_containsQuery(city, queryLower)) return true;
-
-    // Check city name translations
-    final cityLower = city.toLowerCase();
-
-    final cityTranslations = {
-      'dubai': ['دبي', 'دبى'],
-      'abu dhabi': ['أبوظبي', 'أبو ظبي', 'ابوظبي'],
-      'sharjah': ['الشارقة', 'شارجة'],
-      'ajman': ['عجمان', 'عجمان'],
-      'fujairah': ['الفجيرة', 'فجيرة'],
-      'ras al khaimah': ['رأس الخيمة', 'راس الخيمة'],
-      'umm al quwain': ['أم القيوين', 'ام القيوين'],
-    };
-
-    for (final entry in cityTranslations.entries) {
-      if (cityLower.contains(entry.key) || entry.key.contains(cityLower)) {
-        for (final arabicTranslation in entry.value) {
-          if (_containsQuery(arabicTranslation, queryLower)) return true;
-        }
-      }
-
-      // Check reverse (Arabic to English)
-      for (final arabicTranslation in entry.value) {
-        if (_containsQuery(city, arabicTranslation)) {
-          if (queryLower.contains(entry.key)) return true;
-        }
-      }
-    }
-
-    return false;
   }
 }

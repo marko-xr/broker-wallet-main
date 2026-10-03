@@ -7925,3 +7925,157 @@ test/forms`, the scoped analyzer, then Samsung acceptance). On the device, check
 Request, Offer and Owner that the chosen-city pill, the area chips and the city chips are
 visually one height in English and Arabic, with a long name such as Jumeirah Village
 Triangle (JVT) and with a large font. If a difference remains, send a screenshot.
+
+## SEARCH PRODUCTION READINESS — SOURCE COMPLETE, NOT RUN (2026-10-03)
+
+Branch `search-production-readiness`, created locally from `6afd4d3` (the committed UI
+checkpoint "refine property forms and shared controls"). Not pushed. Scope: the Search
+screen only. No backend, migration, RLS, Worker, R2, subscription or unrelated-screen change.
+
+**How Search works (traced, not assumed).** Search is local. It loads the signed-in user's
+OWN records once (Supabase: the six core-entity services, `owner_id`-scoped with RLS;
+legacy Firestore: the user's own collections), keeps them in memory and answers every query
+from that copy. The only filter is the record type (All, Requested, Offers, Owners, Offices,
+Brokers, Watchmen); there are no city, area, price or range filters, so none were added.
+There is no pagination: the user's own records are loaded once, which is bounded by one
+person's data. If a single user ever holds many thousands of records the answer is a backend
+search/pagination change, which is out of scope and was not made.
+
+**Hint jank — root cause.** The rotating hint was an `AnimatedSwitcher`, whose default
+layout is a CENTRED `Stack`. While one hint is replaced by another both are on screen; the
+Stack is as wide as the longer one, so the shorter hint sat in the middle of that width for
+the 350 ms fade (a slide toward the centre — the right in English, the left in Arabic) and
+snapped back to the start when the old hint left and the Stack shrank. Also: the screen
+passed a NEW list every rebuild, which reset the rotation each time; the timer kept firing
+while the tab was hidden (tickers are paused by `TickerMode`, timers are not), so swaps piled
+up and replayed together on return; the hint was an overlay at a hand-set `start: 50` while
+the field's own hint starts at 48. The Flutter SDK's own `InputDecorator` uses a start-aligned
+layout for exactly this reason. Verified in SDK source: the decorator lays a hint WIDGET out
+with a tight width equal to the input's, so a default centred switcher placed there would be
+centred from the very first frame.
+**Fix.** The rotating hint is now the field's own `InputDecoration.hint` (so its origin is
+the static hint's, focused or not); `AnimatedSearchHints` lays every hint out with
+`AlignmentDirectional.centerStart` (never moves sideways, LTR or RTL); the rotation is not
+restarted by a rebuild that changes no words (`listEquals`); nothing is swapped while the tab
+is hidden. The hint is styled like the field's own hint (theme input style, field style,
+hint style) so size and line box match. A decoration takes `hint` OR `hintText`, never both
+(SDK assert), so screen readers get the static hint through a `Semantics` label. No animation
+was added to hide the bug; the existing fade and rise are unchanged.
+Also in the field: the controller listener fired on every cursor move, restarting the search;
+it now reports only a change of TEXT. Clearing reports once and keeps focus. The keyboard Search
+action searches at once. Typing ASCII in an Arabic UI used to flip the WHOLE bar to LTR (the
+search icon jumped sides); now only the typed text takes that direction.
+
+**Filter UI.** The pinned bar was a full-width `SliverAppBar` with a page-colour container and
+a drop shadow (plus the Material 3 scroll-under tint): that was the "panel". It is now flat:
+no shadow, no tint, the page's own colour, still pinned. Chips: visible height
+`AppControlSizes.compactChipHeight` = 36 (shared token). The old chip was padding 10+10 around
+a natural 14 sp line plus a border, roughly 39 (font-dependent; not measured on a device).
+Every chip is one height, selected or not, with or without the check, English or Arabic; a
+fixed line box (1.2) makes that independent of the font. Each chip has a 48 dp touch target
+around it (a transparent area that answers to a tap, with the chip's own ripple nearer), and
+the row, and the chips, grow with a larger system font. Pill radius, colours, spacing token and
+RTL order are the app's existing ones. Reset: tapping the chosen chip goes back to All; All is a
+no-op when already chosen; when a filter hides every result the empty state offers "Clear Filter".
+
+**Search logic — defects found and fixed.**
+- No latest-query-wins guard and no `dispose` guard: each search is now stamped with a
+  generation and a superseded one is dropped; searches that need the records share ONE load;
+  a failed load is not remembered; nothing notifies after dispose.
+- A failed load was swallowed and shown as "No results", or shown as a raw
+  `Search failed: <exception>` string. Failures now become a kind (network, session, generic)
+  that the screen words from existing localized strings; records already loaded keep serving.
+  "Not asked yet", "loading", "error" and "no results" are four distinct states.
+- Deleted or edited records stayed searchable for 5 minutes. The records are now marked stale
+  by the existing `CoreEntityMutationNotifier`, reloaded on the next search, and refreshed when
+  the Search tab is shown again; they are also reloaded when older than 5 minutes, and never
+  reused for a different signed-in user.
+- Matching: no multi-word AND, no trimming, no ranking (requests always first), Arabic-Indic
+  digits and tatweel not handled, areas matched by raw key (Arabic area names never matched),
+  Al Ain and Khor Fakkan missing from a private seven-city map, a 17-scan precomputed index
+  rebuilt every cache load, exceptions used as control flow inside a state-mutating getter that
+  ran per result. Replaced by `SearchText` (comparison-only folding), `SearchRanking` and
+  `SearchEngine`: every word must match somewhere; names are searchable in BOTH languages from
+  the app's own strings and the shared UAE area catalog; phone numbers match as stored, local
+  and international; numbers match from their start only, by their whole part ("1,200.5" is
+  1200); exact beats prefix beats word-prefix beats contains, weighted name > place > note,
+  a phrase bonus, stable tie-break (type, title, id); records deduped by type + id (different
+  types never merged; a record without an id kept with its own key).
+- Arabic folding is deliberately light: diacritics and tatweel dropped, Alef variants to Alef,
+  Alef Maqsura to Yeh, Teh Marbuta to Heh, Arabic-Indic digits to digits, direction marks
+  dropped. Hamza on Waw/Yeh is NOT folded (so مؤمن does not match مومن). Stored values are never
+  rewritten.
+- Highlighting marked only the whole query as typed and used `RichText`, which ignores the
+  system text size. It now marks what the search matched (each word, folded, phone numbers across
+  formatting) through `Text.rich`.
+- Result cards: the fixed 3:4 shape cut the third field off on a 320 px phone even at normal
+  text, and at larger fonts; each card now gets at least the height its three one-line fields
+  need. Cards keep their state when results reorder (`findChildIndexCallback`); the keyboard is
+  put away before opening a result; dragging results dismisses it.
+
+**Left unchanged on purpose.** Per-card favorite status reads (an app-wide pattern against an
+ordering-guarded service), the cards' keep-alive and badge timers, the card visuals, navigation
+routes, colours, and the 300 ms debounce (already present and within range).
+
+**Tests (source only).** `test/search/`: `search_fixtures.dart`; `search_text_test.dart` and
+`search_ranking_test.dart` (pure Dart); `search_engine_test.dart` (matching, bilingual names,
+phones, numbers, ranking, filter, dedupe, stable order); `search_viewmodel_test.dart` (debounce,
+latest-query-wins, shared load, freshness, user change, errors, filters, dispose);
+`search_bar_test.dart` (hint position at every moment of a swap, English and Arabic, focus, clear,
+typing, submit, hidden tab, rebuilds); `search_filter_chips_test.dart` (height, tap target, panel,
+RTL, narrow, large text); `search_results_ui_test.dart` (highlighting and text scale, card height,
+states, error safety, navigation, data scope). The two pure-Dart suites were EXECUTED with the plain
+`dart` VM through a small stand-in for `expect` (32 and 20 cases, 0 failures) — that exercises the
+real `SearchText` and `SearchRanking` code but is NOT `flutter test`. A Node replay of the source
+guards (130 assertions) matched the real files. Nothing else was executed.
+
+Status: **SEARCH = SOURCE COMPLETE; Flutter tests NOT RUN; analyzer NOT RUN; device NOT
+VERIFIED.** Search work is uncommitted on the branch. No push.
+
+NOW — `flutter test test/search`.
+
+NEXT — only if that passes, the scoped analyzer: `flutter analyze lib/src/common/utils
+lib/src/views/Screens/home/search lib/src/utils/text_highlighter.dart lib/src/constants test/search`;
+then a Samsung check of Search in English and Arabic, light and dark: the hint never slides, the filter
+chips float with the page showing around them, results never cut off a field at a large font, and a
+deleted record disappears after returning to the tab.
+
+### Search — owner verification and final polish (2026-10-03)
+
+This addendum supersedes the "tests NOT RUN / analyzer NOT RUN / device NOT VERIFIED" lines
+of the Search section above, which described the state when that work was first written.
+
+**Verification by the owner.**
+- `flutter test test/search`: all pass (282 of 282 before the final polish; PASS again after it,
+  with its new tests).
+- Scoped analyzer over the Search sources, `lib/src/common/utils`, `text_highlighter.dart`,
+  `lib/src/constants` and `test/search`: no issues. Its first run had six findings (three
+  deprecated-API uses, one unnecessary import, two unused symbols); all were corrected without
+  changing behaviour.
+- Samsung acceptance of Search: PASS (hint stability, filters, results, general use), then a
+  quick check of the final polish below in English and Arabic, light and dark: PASS.
+
+**Corrections made while getting there (all test-side except where noted).**
+- Chip test read `en`/`ar` while tests were still being registered, before `setUpAll` ran.
+- A hint test compared the Text BOX width (272, the whole input slot the field hands a hint)
+  with the static hint's glyph width (247.5); it now measures where the glyphs start and end,
+  and a counter-example test proves the same measurements fail for a centred switcher.
+- Two touch-target tests tapped a chip that was off-screen at 360 px, and one finder also matched
+  the check mark's own 16 x 16 box; the large-font test asserted a formula to the hundredth
+  where the engine lays text out with its own rounding. Each now asserts the property that matters.
+- Production, deprecations only: `cacheExtent` -> `scrollCacheExtent: ScrollCacheExtent.pixels(1400)`
+  (the SDK's own mapping) and `TickerMode.of` -> `TickerMode.valuesOf(context).enabled` (the same
+  effective value and the same dependency, so the same behaviour).
+
+**Final Search-bar polish.**
+- Height 56 -> 48: vertical padding 16 -> 12 around the one 24 dp line. 48 is Flutter's own minimum
+  interactive size, so a text field is never laid out shorter; a larger system font still makes
+  it taller.
+- Focused border 2 -> 1.3, in the theme's primary colour (the chips' own thin line). A border is
+  painted inside the field's bounds and never enters the layout, so focused and unfocused are the
+  same box. Idle border, radius, icon size, hint and text fonts are unchanged.
+- New shared tokens in `AppControlSizes`: `searchFieldHeight`, `searchFieldVerticalPadding`,
+  `focusedFieldBorderWidth`.
+
+Status: **SEARCH = VERIFIED BY THE OWNER (tests, analyzer, Samsung); committed locally on
+`search-production-readiness`; not pushed.**

@@ -6,7 +6,7 @@ import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
@@ -270,9 +270,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
   // Share a combined document
   Future<void> _shareCombinedDocument(CombinedPdfDocument document) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(document.filePath)]),
-      );
+      await ShareLive.sendFiles(context, [document.filePath]);
     } catch (e) {
       final localization = AppLocalizations.of(context);
       _showToast(localization.translate('failedToShareDocument'), Colors.red);
@@ -333,9 +331,9 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       final selectedDocs =
           _selectedDocuments.map((index) => _combinedDocuments[index]).toList();
 
-      final files = selectedDocs.map((doc) => XFile(doc.filePath)).toList();
-      await SharePlus.instance.share(
-        ShareParams(files: files),
+      await ShareLive.sendFiles(
+        context,
+        [for (final doc in selectedDocs) doc.filePath],
       );
 
       _exitSelectionMode();
@@ -1753,10 +1751,13 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                     onTap: () => _previewCombinedDocument(document),
                     color: const Color(0xFFFF9800),
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.share,
-                    onTap: () => _shareCombinedDocument(document),
-                    color: Colors.blue,
+                  Tooltip(
+                    message: AppLocalizations.of(context).translate('share'),
+                    child: _buildGridActionButton(
+                      icon: Icons.share,
+                      onTap: () => _shareCombinedDocument(document),
+                      color: Colors.blue,
+                    ),
                   ),
                   _buildGridActionButton(
                     icon: Icons.download,

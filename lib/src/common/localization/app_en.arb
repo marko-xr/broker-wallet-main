@@ -2794,5 +2794,20 @@
   "commercialPlot": "Commercial Plot",
   "shopRetail": "Shop / Retail",
   "hotel": "Hotel",
-  "hotelApartment": "Hotel Apartment"
+  "hotelApartment": "Hotel Apartment",
+  "shareOwner": "Share Owner",
+  "shareBroker": "Share Broker",
+  "shareWatchman": "Share Watchman",
+  "shareOffice": "Share Office",
+  "shareQuotation": "Share Quotation",
+  "shareSelectAtLeastOne": "Select at least one item to share.",
+  "shareMediaPhotoN": "Photo {n}",
+  "shareMediaVideoN": "Video {n}",
+  "shareMediaCount": "{selected} of {total} selected",
+  "shareItemUnavailable": "Unavailable",
+  "shareErrorNetwork": "Couldn't prepare the files. Check your connection and try again.",
+  "shareErrorUnavailable": "Some of the selected files are no longer available. They were deselected — tap Share again to continue without them.",
+  "shareErrorSession": "Your session has expired. Please sign in again.",
+  "shareErrorGeneric": "Couldn't prepare this share. Please try again.",
+  "failedToShareDocuments": "Failed to share documents"
 }

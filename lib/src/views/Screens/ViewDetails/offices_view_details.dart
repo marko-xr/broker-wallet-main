@@ -19,6 +19,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 
 class OfficesDetailsView extends StatefulWidget {
   final OfficeModel office;
@@ -238,6 +240,7 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
           decoration: ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _shareOffice,
             padding: EdgeInsets.zero,
           ),
@@ -1247,11 +1250,10 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
   }
 
   void _shareOffice() {
-    final loc = AppLocalizations.of(context);
-    final text =
-        '${loc.translate('checkOutThisOffice')}: ${_currentOffice.officeName} ${loc.translate('managedBy')} ${_currentOffice.managerName}';
-    _showToast('${loc.translate('shareFunctionality')}: $text',
-        Theme.of(context).colorScheme.primary);
+    ShareOptionsDialog.show(
+      context,
+      source: OfficeShareSource(_currentOffice),
+    );
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
@@ -188,12 +188,19 @@ class SignedDocumentsHelper {
 
   /// Share a signed document
   static Future<void> shareDocument(
-      BuildContext context, SignedDocument document) async {
+          BuildContext context, SignedDocument document) =>
+      shareDocuments(context, [document]);
+
+  /// Share signed documents together, in one share sheet.
+  static Future<void> shareDocuments(
+      BuildContext context, List<SignedDocument> documents) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(document.filePath)]),
+      await ShareLive.sendFiles(
+        context,
+        [for (final document in documents) document.filePath],
       );
     } catch (e) {
+      if (!context.mounted) return;
       final localization = AppLocalizations.of(context);
       showToast(localization.translate('failedToShareDocument'), Colors.red);
     }

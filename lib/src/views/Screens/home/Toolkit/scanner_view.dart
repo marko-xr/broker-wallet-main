@@ -5,7 +5,7 @@ import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -599,13 +599,10 @@ class _ScannerViewState extends State<ScannerView>
 
   Future<void> _shareDocument(ScannedDocument document) async {
     try {
-      final file = XFile(document.filePath);
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [file],
-          text:
-              '${_localization.translate('scannedDocument')}: ${document.name}',
-        ),
+      await ShareLive.sendFiles(
+        context,
+        [document.filePath],
+        text: '${_localization.translate('scannedDocument')}: ${document.name}',
       );
     } catch (e) {
       _showToast(_localization.translate('failedToShareDocument'), Colors.red);
@@ -870,20 +867,19 @@ class _ScannerViewState extends State<ScannerView>
       final selectedDocs =
           _selectedDocuments.map((index) => _scannedDocuments[index]).toList();
 
-      final files = selectedDocs.map((doc) => XFile(doc.filePath)).toList();
+      final paths = [for (final doc in selectedDocs) doc.filePath];
 
-      await SharePlus.instance.share(
-        ShareParams(
-          files: files,
-          text: _localization
-              .translate('sharingDocuments')
-              .replaceAll('{count}', '${files.length}'),
-        ),
+      await ShareLive.sendFiles(
+        context,
+        paths,
+        text: _localization
+            .translate('sharingDocuments')
+            .replaceAll('{count}', '${paths.length}'),
       );
 
       _exitSelectionMode();
     } catch (e) {
-      _showToast(_localization.translate('failedToDeleteSelected'), Colors.red);
+      _showToast(_localization.translate('failedToShareDocuments'), Colors.red);
     }
   }
 
@@ -2224,10 +2220,13 @@ class _ScannerViewState extends State<ScannerView>
                     onTap: () => _previewDocument(document.filePath),
                     color: AppColors.primary,
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.share,
-                    onTap: () => _shareDocument(document),
-                    color: Colors.blue,
+                  Tooltip(
+                    message: AppLocalizations.of(context).translate('share'),
+                    child: _buildGridActionButton(
+                      icon: Icons.share,
+                      onTap: () => _shareDocument(document),
+                      color: Colors.blue,
+                    ),
                   ),
                   _buildGridActionButton(
                     icon: Icons.download,

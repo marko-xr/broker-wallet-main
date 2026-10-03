@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
+import 'package:broker_wallet/src/services/share/share_models.dart';
+import 'package:broker_wallet/src/services/share/share_preparer.dart'
+    show ShareAttachmentKind;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -28,6 +31,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final GlobalKey<SfPdfViewerState> _pdfViewerKey = GlobalKey();
   String? _errorMessage;
   bool _isLoading = true;
+  bool _isSharing = false;
 
   @override
   void initState() {
@@ -66,11 +70,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          // Share button for PDFs
-          IconButton(
-            icon: Icon(Icons.share, color: colors.onSurface),
-            onPressed: _sharePdf,
-            tooltip: loc.translate('share'),
+          // Share button for PDFs. The button's own box is where an iPad anchors
+          // the share sheet; it is off while a share is being prepared.
+          Builder(
+            builder: (buttonContext) => IconButton(
+              icon: Icon(Icons.share, color: colors.onSurface),
+              onPressed: _isSharing
+                  ? null
+                  : () => _sharePdf(ShareLive.originOf(buttonContext)),
+              tooltip: loc.translate('share'),
+            ),
           ),
         ],
       ),
@@ -188,73 +197,68 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     );
   }
 
-  Future<void> _sharePdf() async {
+  // Shares the PDF as a file under the document's own title. A PDF held on
+  // this phone is shared from there; one that was opened from a link is
+  // downloaded first. The link itself is never shared, and a failure shows a
+  // short localized message rather than the error.
+  Future<void> _sharePdf(ShareOrigin? origin) async {
+    if (_isSharing) return;
+    setState(() => _isSharing = true);
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
     try {
-      // Case 1: we already have a local file
-      if (widget.localFile != null && await widget.localFile!.exists()) {
-        final path = widget.localFile!.path;
+      File? source;
+      var isTemporary = false;
+      final local = widget.localFile;
+      if (local != null && await local.exists()) {
+        source = local;
+      } else if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) {
+        source = await _downloadPdfToCache(widget.networkUrl!);
+        isTemporary = true;
+      }
 
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(path)],
-            text: widget.title,
-            subject: widget.title,
-          ),
+      if (source == null || !await source.exists()) {
+        _showShareToast(
+          local == null && widget.networkUrl == null
+              ? loc.translate('noPdfAvailableToShare')
+              : loc.translate('failedToSharePdf'),
+          colors.error,
         );
         return;
       }
 
-      // Case 2: network URL — try to download then share as a file
-      if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) {
-        final downloaded = await _downloadPdfToCache(widget.networkUrl!);
-        if (downloaded != null && await downloaded.exists()) {
-          final path = downloaded.path;
-
-          await SharePlus.instance.share(
-            ShareParams(
-              files: [XFile(path)],
-              text: widget.title,
-              subject: widget.title,
-            ),
-          );
-          return;
-        }
-
-        // Fallback: share the link if download failed
-        await SharePlus.instance.share(
-          ShareParams(
-            text: widget.networkUrl!,
-            subject: widget.title,
-          ),
-        );
-        return;
-      }
-
-      // Nothing to share
-      Fluttertoast.showToast(
-        msg: AppLocalizations.of(context).translate('noPdfAvailableToShare'),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Theme.of(context).colorScheme.error,
-        textColor: Colors.white,
-        fontSize: 14.0,
+      await ShareLive.sendNamedFile(
+        source,
+        kind: ShareAttachmentKind.pdf,
+        baseName: widget.title,
+        origin: origin,
+        isTemporary: isTemporary,
+        text: widget.title,
+        subject: widget.title,
       );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg:
-            '${AppLocalizations.of(context).translate('failedToSharePdf')}: $e',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Theme.of(context).colorScheme.error,
-        textColor: Colors.white,
-        fontSize: 14.0,
-      );
+    } catch (_) {
+      // A ShareFailure or anything else: one short message, never the error.
+      _showShareToast(loc.translate('failedToSharePdf'), colors.error);
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
     }
+  }
+
+  void _showShareToast(String message, Color background) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: background,
+      textColor: Colors.white,
+      fontSize: 14.0,
+    );
   }
 
   Future<File?> _downloadPdfToCache(String url) async {
     try {
-      final res = await http.get(Uri.parse(url));
+      final res =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
       if (res.statusCode != 200) return null;
 
       final dir = await getTemporaryDirectory();

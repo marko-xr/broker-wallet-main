@@ -4,7 +4,9 @@ import 'package:broker_wallet/src/Views/Screens/ViewDetails/offer_details_load_c
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/share_options_dialog.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
+import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
@@ -26,7 +28,6 @@ import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 class OffersDetailsView extends StatefulWidget {
   final OfferModel offer;
@@ -433,6 +434,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           decoration: _ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _showShareDialog,
             padding: EdgeInsets.zero,
           ),
@@ -2158,18 +2160,17 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   // Action methods
   void _showShareDialog() {
-    final authVM = Provider.of<AuthViewModel>(context, listen: false);
-    final userPhoneNumber = authVM.currentUser?.phoneNumber ?? '';
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) {
-        return ShareOptionsDialog(
-          offer: _currentOffer,
-          userPhoneNumber: userPhoneNumber,
-        );
-      },
+    // Built from the Offer as this screen holds it, so the text works offline
+    // and shares this Offer's own phone number (the one shown above). Photos and
+    // videos are attached as files, fetched through this Offer's authorized
+    // media path; their links are never shared.
+    ShareOptionsDialog.show(
+      context,
+      source: PropertyShareSource.offer(
+        _currentOffer,
+        media: ShareMediaItem.fromRefs(_loadCoordinator.displayItems),
+      ),
+      refreshLink: _loadCoordinator.refreshSignedUrl,
     );
   }
 

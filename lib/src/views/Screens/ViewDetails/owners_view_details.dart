@@ -14,6 +14,9 @@ import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/share/share_models.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/services/related_items_service.dart';
 import 'package:broker_wallet/src/widgets/auto_scrolling_related_items_carousel.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
@@ -355,6 +358,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
           decoration: ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _shareOwner,
             padding: EdgeInsets.zero,
           ),
@@ -1411,13 +1415,24 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   }
 
   void _shareOwner() {
-    final loc = AppLocalizations.of(context);
-    // Capture theme color before potential operations
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
-    final text =
-        '${loc.translate('checkOutThisPropertyOwner')}: ${_currentOwner.name}';
-    _showToast('${loc.translate('shareFunctionality')}: $text', primaryColor);
+    // The Owner's private photos and videos, as the gallery above holds them
+    // (the legacy Firebase backend keeps plain stored links). They are attached
+    // as files, fetched through the Owner's authorized media path.
+    final loader = _mediaLoader;
+    final refs = loader != null
+        ? loader.displayItems
+        : <OfferMediaRef>[
+            for (final url in _currentOwner.mediaUrls)
+              OfferMediaRef(mediaObjectId: '', cacheKey: null, signedUrl: url),
+          ];
+    ShareOptionsDialog.show(
+      context,
+      source: OwnerShareSource(
+        _currentOwner,
+        media: ShareMediaItem.fromRefs(refs),
+      ),
+      refreshLink: loader?.refreshSignedUrl,
+    );
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

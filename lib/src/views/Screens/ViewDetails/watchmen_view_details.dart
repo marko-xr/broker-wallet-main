@@ -19,6 +19,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 
 class WatchmenDetailsView extends StatefulWidget {
   final WatchmenModel watchmen;
@@ -279,6 +281,7 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
           decoration: ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _shareWatchmen,
             padding: EdgeInsets.zero,
           ),
@@ -1165,13 +1168,10 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
 
   // Action methods
   void _shareWatchmen() {
-    final loc = AppLocalizations.of(context);
-    // Capture theme color before potential operations
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
-    final text =
-        '${loc.translate('checkOutThisWatchmenContact')}: ${_currentWatchmen.name} ${loc.translate('at')} ${_currentWatchmen.buildingName}';
-    _showToast('${loc.translate('shareFunctionality')}: $text', primaryColor);
+    ShareOptionsDialog.show(
+      context,
+      source: WatchmanShareSource(_currentWatchmen),
+    );
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

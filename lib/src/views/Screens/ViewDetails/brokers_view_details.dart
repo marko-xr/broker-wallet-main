@@ -11,6 +11,8 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/related_items_service.dart';
 import 'package:broker_wallet/src/widgets/auto_scrolling_related_items_carousel.dart';
@@ -267,6 +269,7 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
           decoration: ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _shareBroker,
             padding: EdgeInsets.zero,
           ),
@@ -872,13 +875,10 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
 
   // Action methods
   void _shareBroker() {
-    final loc = AppLocalizations.of(context);
-    final brokerName = _currentBroker.name.isNotEmpty
-        ? _currentBroker.name
-        : loc.translate('brokerNameNotSpecified');
-    final text = '${loc.translate('checkOutThisBroker')}: $brokerName';
-    _showToast('${loc.translate('shareFunctionality')}: $text',
-        Theme.of(context).colorScheme.primary);
+    ShareOptionsDialog.show(
+      context,
+      source: BrokerShareSource(_currentBroker),
+    );
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

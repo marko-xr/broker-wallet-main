@@ -1,6 +1,7 @@
 ﻿import 'dart:ui' as ui;
 
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/request_share_options_dialog.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
@@ -17,7 +18,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:intl/intl.dart';
-import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 class RequestDetailsView extends StatefulWidget {
   final RequestModel request;
@@ -233,6 +233,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
           decoration: _ShareActionDecoration(colors),
           child: IconButton(
             icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
+            tooltip: AppLocalizations.of(context).translate('share'),
             onPressed: _shareRequest,
             padding: EdgeInsets.zero,
           ),
@@ -1371,15 +1372,11 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
 
   // Action methods
   void _shareRequest() {
-    final authVM = Provider.of<AuthViewModel>(context, listen: false);
-    final userPhoneNumber = authVM.currentUser?.phoneNumber ?? '';
-
-    showDialog(
-      context: context,
-      builder: (context) => RequestShareOptionsDialog(
-        request: _currentRequest,
-        userPhoneNumber: userPhoneNumber,
-      ),
+    // Built from the Request as this screen holds it, so sharing works offline
+    // and shares this Request's own phone number (the one shown above).
+    ShareOptionsDialog.show(
+      context,
+      source: PropertyShareSource.request(_currentRequest),
     );
   }
 

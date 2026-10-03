@@ -14,7 +14,7 @@ import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.d
 import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'dart:io';
 import 'package:image/image.dart' as img;
 import 'package:broker_wallet/src/constants/constants.dart';
@@ -373,9 +373,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   // Share a converted document
   Future<void> _shareConvertedDocument(ConvertedPdfDocument document) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(document.filePath)]),
-      );
+      await ShareLive.sendFiles(context, [document.filePath]);
     } catch (e) {
       final localization = AppLocalizations.of(context);
       _showToast(localization.translate('failedToShareDocument'), Colors.red);
@@ -438,9 +436,9 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           .map((index) => _convertedDocuments[index])
           .toList();
 
-      final files = selectedDocs.map((doc) => XFile(doc.filePath)).toList();
-      await SharePlus.instance.share(
-        ShareParams(files: files),
+      await ShareLive.sendFiles(
+        context,
+        [for (final doc in selectedDocs) doc.filePath],
       );
 
       _exitSelectionMode();
@@ -2436,10 +2434,13 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                     onTap: () => _previewConvertedDocument(document),
                     color: const Color(0xFF4CAF50),
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.share,
-                    onTap: () => _shareConvertedDocument(document),
-                    color: Colors.blue,
+                  Tooltip(
+                    message: AppLocalizations.of(context).translate('share'),
+                    child: _buildGridActionButton(
+                      icon: Icons.share,
+                      onTap: () => _shareConvertedDocument(document),
+                      color: Colors.blue,
+                    ),
                   ),
                   _buildGridActionButton(
                     icon: Icons.download,

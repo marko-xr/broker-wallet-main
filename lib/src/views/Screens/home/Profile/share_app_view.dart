@@ -1,7 +1,8 @@
 // lib/src/Views/Profile/share_app_view.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
+import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -406,7 +407,7 @@ class _ShareAppViewState extends State<ShareAppView>
         width: double.infinity,
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: _isSharing ? null : () => _shareViaSystem(loc),
+          onPressed: _isSharing ? null : () => _shareFromButton(loc),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF009982),
             foregroundColor: Colors.white,
@@ -521,10 +522,13 @@ class _ShareAppViewState extends State<ShareAppView>
         _toastSuccess(target.name, loc);
         _trackShareEvent(target.name);
       } else {
-        // Fallback
-        await _shareViaSystem(loc);
-        _toastSuccess(loc.translate('systemShare'), loc);
-        _trackShareEvent('${target.name}_fallback');
+        // Fallback: the system share sheet. Closing it is not a share, so
+        // nothing is reported as shared then.
+        final outcome = await _shareViaSystem(loc);
+        if (outcome != null && outcome != ShareOutcome.dismissed) {
+          _toastSuccess(loc.translate('systemShare'), loc);
+          _trackShareEvent('${target.name}_fallback');
+        }
       }
     } catch (_) {
       _shareError = loc.translate('shareError');
@@ -534,13 +538,26 @@ class _ShareAppViewState extends State<ShareAppView>
     }
   }
 
-  Future<void> _shareViaSystem(AppLocalizations loc) async {
-    final text = _shareMessage(loc);
-    await SharePlus.instance.share(
-      ShareParams(
-        text: text,
-        subject: loc.translate('shareApp'),
-      ),
+  /// The main Share button: opens the system share sheet once. Closing the
+  /// sheet is not an error and shows nothing.
+  Future<void> _shareFromButton(AppLocalizations loc) async {
+    if (_isSharing) return;
+    setState(() => _isSharing = true);
+    try {
+      await _shareViaSystem(loc);
+    } catch (_) {
+      _shareError = loc.translate('shareError');
+      _toastError(loc);
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
+    }
+  }
+
+  Future<ShareOutcome?> _shareViaSystem(AppLocalizations loc) {
+    return ShareLive.sendText(
+      context,
+      _shareMessage(loc),
+      subject: loc.translate('shareApp'),
     );
   }
 

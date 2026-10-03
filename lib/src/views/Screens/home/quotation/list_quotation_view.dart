@@ -6,7 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:broker_wallet/src/services/share/share_sources.dart';
+import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 
 import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
@@ -355,28 +356,26 @@ class _QuotationListViewState extends State<QuotationListView> {
     }
   }
 
-  // Share PDF functionality - shares the same private local copy
+  // Share: the Share Options dialog offers the quotation's summary and its PDF.
+  // The PDF is this device's private copy of the exact media object, or one
+  // download through a fresh short-lived link (never a public URL); it is shared
+  // as a file with a professional name, never as a link.
   Future<void> _sharePdf(
       QuotationModel quotation, QuotationListViewModel vm) async {
     if (!quotation.hasPdf) {
-      _showToast('PDF not available for this quotation', Colors.orange);
+      _showToast(
+        AppLocalizations.of(context).translate('noPdfAvailableToShare'),
+        Colors.orange,
+      );
       return;
     }
-    final loc = AppLocalizations.of(context);
-    try {
-      final file = await vm.resolvePdf(quotation);
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: 'Quotation for ${quotation.propertyTitle}',
-          subject: 'Quotation Document',
-        ),
-      );
-    } catch (_) {
-      if (mounted) {
-        _showToast(loc.translate('quotationPdfUnavailable'), Colors.red);
-      }
-    }
+    await ShareOptionsDialog.show(
+      context,
+      source: QuotationShareSource(
+        quotation,
+        fetchPdf: () => vm.resolvePdfForShare(quotation),
+      ),
+    );
   }
 
   void _showToast(String message, Color bgColor) {

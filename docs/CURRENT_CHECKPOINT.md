@@ -8079,3 +8079,216 @@ of the Search section above, which described the state when that work was first 
 
 Status: **SEARCH = VERIFIED BY THE OWNER (tests, analyzer, Samsung); committed locally on
 `search-production-readiness`; not pushed.**
+
+## SHARE PRODUCTION READINESS — SOURCE COMPLETE, NOT RUN (2026-10-03)
+
+Branch `share-production-readiness`, created locally from `2e89025` (the committed and pushed Search
+milestone, not reopened). **Not committed. Not pushed.** The seven generated Flutter plugin registrant files
+show as modified in `git status`; they are Flutter drift, are not part of this work, and were left alone.
+
+**Scope.** Every active Share path in the app, brought to one production path. Backend, Supabase, RLS, the
+Worker, R2, migrations, `pubspec.yaml` and every package version are untouched.
+
+### Inventory (found in source, not assumed)
+
+| Surface | Trigger | What it did before | Now |
+|---|---|---|---|
+| Request details | AppBar share icon | Options dialog, text only; Request-only copy of the dialog; sent the SIGNED-IN ACCOUNT'S phone, not the Request's own; `saleRequest` missing in Arabic | Shared dialog, text; the Request's own phone |
+| Offer details | AppBar share icon | Options dialog; first photo only, downloaded through the signed URL by plain `http.get`; any failure silently fell back to text only; account phone; `"** dubai not found"` could reach the message; map option enabled with no coordinates | Shared dialog; photos and videos as files; own phone; no fallback |
+| Owner details | AppBar share icon | A toast reading "Share functionality: Check out this property owner: <name>" — nothing was shared | Shared dialog; text, location, map, phone, notes, private photos and videos |
+| Broker details | AppBar share icon | Same toast placeholder | Shared dialog; name, phone, notes |
+| Watchman details | AppBar share icon | Same toast placeholder | Shared dialog; name, building, place, map, phone, notes |
+| Office details | AppBar share icon | Same toast placeholder | Shared dialog; office, manager, place, map, phone, notes |
+| Quotation list card | "Share" button | PDF through the private cache file, so the receiver saw `quotation_<quotation id>_<media id>.pdf`; English text and subject hard-coded; no busy guard | Shared dialog; summary + PDF as `Broker-Wallet-Quotation-<title>.pdf` |
+| PDF viewer | AppBar share icon | If a download failed it shared the LINK as text; failures showed `$e` in a toast; no busy guard | One named file; link never shared; short localized failure |
+| Toolkit: combine, image-to-PDF, scanner, signed documents (single, bulk and the signature screen's multi-select) | per-document button, selection mode | Direct plugin calls; signature multi-select opened one share sheet PER file; scanner's bulk failure said "failed to delete"; two screens showed `** failedToShareDocuments not found` | One launcher; one sheet for a selection; real messages |
+| Share App | Share button, targets | Main button had no busy guard and no error handling; "shared" toast shown even when the sheet was closed | One launcher; a closed sheet reports nothing |
+| Search cards, Favorites cards, list cards | — | No Share control | Unchanged: none added |
+
+### Architecture (`lib/src/services/share/`, `lib/src/views/Widgets/share_options_dialog.dart`)
+
+- **UI — `ShareOptionsDialog`**: ONE dialog for every record. A row per part the record really has, a line
+  saying what is in it, Select All (tri-state), photo/video chips, Share (off while nothing is chosen, "Preparing
+  files…" while fetching, never pressable twice), Cancel, an inline reason + Retry on failure.
+- **State — `ShareFlowController`**: the choices, one share at a time, the status, the failure.
+- **Composer — `ShareSource`** (`PropertyShareSource` for Offer and Request, `OwnerShareSource`,
+  `BrokerShareSource`, `WatchmanShareSource`, `OfficeShareSource`, `QuotationShareSource`): which parts exist, what
+  starts chosen, how each part is written. Built from the record as the screen already holds it, so the message
+  needs no network. `ShareTextBuilder` + `ShareFormat` write it.
+- **Preparation — `SharePreparer`, `ShareMediaFetcher`**: local file → still-valid link → fresh link, streamed to
+  disk; one folder per share; professional names; the extension the bytes prove.
+- **Platform — `ShareLauncher` (+ `SharePlusSink`, `ShareLive`)**: the only code that touches `share_plus`; one
+  sheet open at a time app-wide; an empty request is never opened; the iPad anchor is always passed.
+- Duplicated logic removed: the two near-identical 700-line dialogs (and their private copies of the property-type
+  and city maps); the Request dialog's area map (areas now come from `UaeAreaCatalog`); every direct
+  `SharePlus.instance.share` call (15) outside `share_plus_sink.dart`.
+
+### What is shared, and the defaults chosen (decisions to confirm)
+
+- **Request / Offer** (the broker's own listings): everything the record has starts chosen, as before. **Contact is
+  now the record's OWN phone number** (the one its detail screen shows and dials), no longer the signed-in account's.
+  An Offer's photos start chosen, its videos do not.
+- **Owner / Broker / Watchman / Office** (address-book records): name and place start chosen. An **Owner's** phone,
+  and the private **notes** of all four, start UNchosen; Broker, Watchman and Office phones start chosen (their
+  purpose is to be passed on). One tap changes any of them.
+- **Quotation**: summary and PDF start chosen; the money lines start unchosen (the PDF carries them).
+- A part with no data is **not shown** (it used to be a greyed "No data available" row). Media, a map and a PDF
+  appear only when the record really has them.
+- Rooms and bathrooms are shown only for villa, apartment and studio — the same rule the detail screens use.
+- Prices: `AED 1,000,000 - 1,500,000` (English) / `1,000,000 - 1,500,000 درهم` (Arabic), a quotation in its own
+  currency. Phones: the detail screens' format. Map: the detail screens' valid-coordinate rule and the same public
+  link. No dates are written.
+- In Arabic every label comes from the ARB file; phone numbers, links and amounts are wrapped in Unicode LTR
+  isolates so their digit groups are not reversed; the person's own words are never translated; a stored Owner
+  location written in either language is shown in the message's language.
+
+### Private media and documents
+
+- A private photo or video is addressed by its media id, never by a link: bytes already on the phone are used
+  as they are; otherwise one download through a link that is still valid; otherwise ONE fresh link from the
+  record's own authorized path (`OfferDetailsLoadCoordinator` / `PrivateMediaGalleryLoader.refreshSignedUrl`).
+  The receiving app gets the **file**. A signed link, a media id, an object key or a bucket is never written into a
+  message, a file name or a log (guarded by tests over the source).
+- A video is shared as the original video file, never its poster or a link. Ceiling: 50 MB per photo and 150 MB per
+  video (the app's own upload limits are 10 and 100 MB); downloads time out when stalled.
+- A file keeps the extension its bytes prove (`jpg`, `png`, `webp`, `mp4`, `mov`, `3gp`, `pdf`); bytes that are not an
+  accepted type are refused, not renamed. Names are `Offer-<Place>-01.jpg`, `Owner-Property-01.jpg`,
+  `Broker-Wallet-Quotation-<title>.pdf`, built from letters and digits only. A place is in a file name only when the
+  location is among the chosen parts; an Owner's name or place never is.
+- Files are prepared in `<temporary directory>/broker_wallet_share/<millis>-<n>/`, one folder per share. A folder is
+  removed at once only when nobody received it (the sheet was closed, the share was called off, preparation failed);
+  otherwise folders older than 6 hours are swept before the next share. No storage permission is used or added.
+
+### Failure behaviour
+
+- Any file that cannot be had stops the whole share before the sheet opens — nothing is ever sent incomplete. The
+  dialog stays open with the choices intact and ONE short localized sentence: connection (Retry), a file that is gone
+  (the item is marked "Unavailable" and left out of the choice; sharing again is the person's decision to go on
+  without it), session expired, or generic. No exception, URL, key or provider text is ever shown.
+- Closing the share sheet is not an error: no message, the dialog stays as it was. Choosing an app closes it.
+- Text-only shares need no network. Cached photos share offline. An uncached private file offline gives the
+  connection message, never a spinner that does not end (30 s connect / idle timeouts).
+
+### Files changed
+
+New: `lib/src/services/share/` (`share_labels`, `share_models`, `share_format`, `share_text`, `share_source`,
+`share_sources`, `share_preparer`, `share_media_fetcher`, `share_launcher`, `share_plus_sink`,
+`share_flow_controller`, `share_live`), `lib/src/views/Widgets/share_options_dialog.dart`, `test/share/` (10 files).
+Deleted: `ViewDetails/widgets/share_options_dialog.dart`, `ViewDetails/widgets/request_share_options_dialog.dart`.
+Edited: the six `*_view_details.dart` screens (share handler + tooltip on the Share icon), `list_quotation_view.dart`,
+`list_quotations_viewmodel.dart` (`resolvePdfForShare`), `pdf_viewer_screen.dart`, `combine_pdfs_view.dart`,
+`image_to_pdf_view.dart`, `scanner_view.dart`, `signed_documents_storage.dart`, `signature_view.dart`,
+`share_app_view.dart`, `app_en.arb`, `app_ar.arb` (+15 keys English, +16 Arabic including the missing `saleRequest`).
+
+### Verification
+
+- `git diff --check` clean; new files formatted (`dart format` check, 0 changes); ARB files valid JSON, CRLF kept; no
+  secret, no backend file, no `pubspec.yaml` change.
+- The pure-Dart Share logic was EXECUTED with the plain `dart` VM against small stand-ins for `flutter_test`,
+  `package:flutter` and `cloud_firestore` (it reads the real ARB files and the real UAE catalog): format 35, sources
+  62, preparer 24 (real temp files), fetcher 25 (fake network), controller 43, source guards 35, launcher 5 — all
+  passed. That is **not** `flutter test`. The dialog widget tests, the `share_plus` sink tests and the quotation view-model
+  mapping test were NOT executed (they need Flutter).
+
+Status: **SHARE = SOURCE COMPLETE; Flutter tests NOT RUN; analyzer NOT RUN; device NOT VERIFIED.**
+
+### Known limitations / backlog (not changed)
+
+- Toolkit's own share icons are the filled `Icons.share`; the detail screens' are `Icons.share_outlined`. Both are
+  consistent among themselves; harmonizing is a UI decision for the owner. The detail icons' hit area is 36 dp, like
+  the Back and Delete icons beside them. The Toolkit cards' Preview and Download icons have no label.
+- A receiving app may ignore the message when files are attached (Android and iOS apps decide); the ARB key
+  `shareCompatibilityNote` exists but is not shown.
+- An old record's HEIC photo (the app converts to JPEG now) is not an accepted type and is refused as unavailable.
+- Pre-existing duplicate ARB keys `shareSelected`, `shareError`, `sharePdf` (both languages) were not touched.
+- An Offer or Owner on the legacy Firebase backend shares its stored links' files as images (type from the bytes).
+
+NOW — `flutter test test/share`.
+
+NEXT — only if that passes, the scoped analyzer: `flutter analyze lib/src/services/share
+lib/src/views/Widgets/share_options_dialog.dart lib/src/views/Screens/ViewDetails lib/src/views/Screens/home/quotation
+lib/src/views/Screens/home/Toolkit lib/src/views/Screens/home/Profile/share_app_view.dart test/share`; then a device
+pass (Android, and an iPad or iPhone if available), English and Arabic, light and dark: share text from each of the six
+detail screens; an Offer and an Owner with several photos and a video (airplane mode with cached photos, then with an
+uncached one); a quotation PDF (name, opens in the receiver); close the share sheet; double-tap Share; deselect everything.
+
+### Share — owner's first test run and the correction (2026-10-03)
+
+First `flutter test test/share` run: **244 passed, 35 failed**. All 35 were in `share_options_dialog_test.dart` and
+had one cause, in the test harness only: the app's localization delegates load asynchronously, so `MaterialApp` draws
+nothing until they finish, and `openDialog` tapped its own "open" button (and the last test its "icon" button) before it
+existed ("Found 0 widgets with key <'open'>"). Fixed with a `pumpAndSettle` after `pumpWidget` in both places. No
+production code changed. Every other suite in the run passed, including the `share_plus` sink tests and the quotation
+view-model mapping test. The 35 dialog tests were therefore not yet exercised and need the owner's re-run.
+
+NOW — `flutter test test/share`.
+
+### Share — Options dialog responsive layout fix (2026-10-03)
+
+Second `flutter test test/share` run: **272 passed, 7 failed**, all in `share_options_dialog_test.dart`: a
+`RenderFlex` overflow (40 px with a media error, 68 px with an unavailable PDF, 60 px in the four large-font looks). Real
+defect in `share_options_dialog.dart`: the dialog was a `Column` with a hard 600 dp ceiling in which only the option list
+scrolled; the heading, Select All, the hint, the failure block and the buttons were fixed, so a failure block or a large font
+pushed the fixed parts past the ceiling and the buttons off the dialog.
+
+Fix (layout only; no controller, composer, preparer or share logic touched): heading fixed on top; one scrolling region
+holding Select All, the option rows, the photo/video chips, the hint and the failure; the Cancel/Share row fixed at the
+bottom. The hard 600 dp height is gone — `Dialog` already bounds its child to the screen less the system insets. A failure
+is brought into view once, as it appears, and its Retry now sits under the sentence instead of squeezing it. Tests added for
+a short screen at a 1.6 font (rows scroll, heading and buttons do not; Share and Retry reachable with no scrolling), the
+unavailable PDF, and the buttons' order in English and Arabic; the four large-font looks now also press Cancel unscrolled.
+
+Status: Flutter tests NOT RUN since this change; analyzer NOT RUN; device NOT VERIFIED.
+
+NOW — `flutter test test/share/share_options_dialog_test.dart`. NEXT — `flutter test test/share`.
+
+### Share — Options dialog: the height budget (2026-10-03, supersedes the layout note above)
+
+The first scrolling fix still overflowed by 35 px in five tests. Cause, measured rather than guessed: at a 1.6 font in
+Flutter's test font (every glyph one em wide) the title and subtitle wrap in a 132 px column to about 450 px. That fixed
+heading + two 20 px gaps + the 48 px button row = 539 px against the 504 px the content box has (screen 600 − 2 × 24 dialog
+inset − 2 × 24 padding), so the rows were given 0 px, the scroll region had nothing to scroll in, and the column itself
+still overflowed. Scrolling the rows could not help because the heading was unbounded.
+
+Fix (layout only): one bounded column inside a `LayoutBuilder` that reads the real available height. Budget = buttons
+(48) + two gaps (40) + rows (at least 30% of the height) + heading (the rest, scrolling inside its own space only if a very
+large font or a narrow dialog needs more). The rows scroll in their own region; Cancel/Share stay fixed under it.
+Real-device fonts never reach the heading's cap at normal settings. The tests address the two scroll regions by key
+(`share-header-scroll`, `share-body-scroll`) and now also check that heading, rows and buttons are stacked without overlap.
+
+Status: Flutter tests NOT RUN since this change; analyzer NOT RUN; device NOT VERIFIED.
+
+NOW — `flutter test test/share/share_options_dialog_test.dart`. NEXT — only if all of it passes: `flutter test test/share`.
+
+### Share — owner results and analyzer cleanup (2026-10-03)
+
+`flutter test test/share`: **287 of 287 PASS** (owner-reported). Scoped analyzer: 30 findings = 17 warnings + 13 infos.
+
+- The 17 warnings were all Share-introduced: literal bidi control characters (U+2066 / U+2069) in `share_format.dart`,
+  `share_format_test.dart` and `share_sources_test.dart`. They are now written as `⁦` / `⁩` escapes (and the
+  invisible U+200E likewise); the runtime strings are identical, so Arabic phone numbers, links and amounts keep their
+  left-to-right isolation.
+- Of the 13 infos, ONE was Share-introduced: the `offer_media_cache_identity.dart` import added to
+  `owners_view_details.dart` (`media_gallery_widget.dart` already re-exports `OfferMediaRef`); removed.
+- The other 12 are PRE-EXISTING at `2e89025` and untouched: `add_quotation_view.dart` `Color.red/green/blue` (3),
+  Toolkit `onReorder` in `combine_pdfs_view.dart` and `image_to_pdf_view.dart` (2), `scanner_view.dart` `Radio.groupValue` /
+  `onChanged` on three radios (6), `toolkit_view.dart` `Color.value` (1). Left as they are on purpose.
+
+Status: Share = tests PASS (287/287, owner); analyzer re-run pending; device NOT VERIFIED.
+
+NOW — `flutter test test/share`, then the scoped analyzer.
+
+### Share — Arabic Offer message polish (2026-10-03)
+
+The Arabic Offer message now uses the requested title, natural localized property type,
+clean rent/sale wording, nonduplicated area label, singular/plural UAE area label, and
+Offer-specific footer. User-entered text and existing bidi isolates are unchanged.
+English and other entity messages, share logic, media, and security are unchanged.
+This polish has had source/diff review only; Flutter tests and analyzer were not run
+per owner instruction. Samsung/WhatsApp runtime verification is pending.
+
+NOW — share an Arabic Offer on Samsung to WhatsApp and check the received text,
+including number direction, singular and multiple areas, and unchanged notes.
+
+NEXT — after that succeeds, record the device result and resume the broader Share
+verification from the previous checkpoint.

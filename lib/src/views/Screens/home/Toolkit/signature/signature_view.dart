@@ -890,11 +890,14 @@ class _SignatureScreenState extends State<SignatureScreen> {
                         context, document),
                     color: redLight,
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.share,
-                    onTap: () =>
-                        SignedDocumentsHelper.shareDocument(context, document),
-                    color: Colors.blue,
+                  Tooltip(
+                    message: AppLocalizations.of(context).translate('share'),
+                    child: _buildGridActionButton(
+                      icon: Icons.share,
+                      onTap: () => SignedDocumentsHelper.shareDocument(
+                          context, document),
+                      color: Colors.blue,
+                    ),
                   ),
                   _buildGridActionButton(
                     icon: Icons.download,
@@ -1016,9 +1019,8 @@ class _SignatureScreenState extends State<SignatureScreen> {
                       final selectedDocs = _selectedDocuments
                           .map((index) => _signedDocuments[index])
                           .toList();
-                      for (final doc in selectedDocs) {
-                        await SignedDocumentsHelper.shareDocument(context, doc);
-                      }
+                      await SignedDocumentsHelper.shareDocuments(
+                          context, selectedDocs);
                       _exitSelectionMode();
                     }
                   : null,

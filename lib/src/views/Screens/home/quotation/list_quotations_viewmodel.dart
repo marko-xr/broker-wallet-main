@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart'
+    show QuotationMediaException, QuotationMediaFailure;
+import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'services/quotation_service.dart';
@@ -49,6 +52,37 @@ class QuotationListViewModel extends ChangeNotifier {
   /// Throws when it cannot be had.
   Future<File> resolvePdf(QuotationModel quotation) =>
       _quotationService.resolvePdfFile(quotation);
+
+  /// [resolvePdf] for sharing: the same private local copy, but any failure is
+  /// a [ShareFailure] carrying only a category, so no provider text, link or
+  /// path can reach the Share dialog.
+  Future<File> resolvePdfForShare(QuotationModel quotation) async {
+    try {
+      return await resolvePdf(quotation);
+    } on QuotationMediaException catch (error) {
+      throw ShareFailure(shareFailureKindOf(error.failure));
+    } catch (_) {
+      throw const ShareFailure(ShareFailureKind.generic);
+    }
+  }
+
+  /// What a Quotation media failure means to a person who is sharing its PDF.
+  static ShareFailureKind shareFailureKindOf(QuotationMediaFailure failure) {
+    switch (failure) {
+      case QuotationMediaFailure.notSignedIn:
+      case QuotationMediaFailure.unauthorized:
+        return ShareFailureKind.session;
+      case QuotationMediaFailure.quotationNotFound:
+        return ShareFailureKind.unavailable;
+      case QuotationMediaFailure.interrupted:
+      case QuotationMediaFailure.unavailable:
+      case QuotationMediaFailure.uploadIncomplete:
+      case QuotationMediaFailure.uploadRejected:
+        return ShareFailureKind.network;
+      default:
+        return ShareFailureKind.generic;
+    }
+  }
 
   // Delete a quotation (soft delete: the row is hidden, never destroyed here)
   Future<void> deleteQuotation(String quotationId, BuildContext context) async {

@@ -246,6 +246,29 @@ void main() {
   });
 
   group('Offer', () {
+    test('media keys survive reordering and a refreshed signed URL', () {
+      OfferMediaRef legacy(String name, String signature) => OfferMediaRef(
+            mediaObjectId: '',
+            cacheKey: null,
+            signedUrl: 'https://storage.example/$name.jpg?sig=$signature',
+          );
+      final first = ShareMediaItem.fromRefs(<OfferMediaRef>[
+        legacy('a', 'old'),
+        legacy('b', 'old'),
+      ]);
+      final reordered = ShareMediaItem.fromRefs(<OfferMediaRef>[
+        legacy('b', 'new'),
+        legacy('a', 'new'),
+        legacy('a', 'new'),
+      ]);
+      expect(reordered.map((item) => item.key).toList(),
+          <String>[first[1].key, first[0].key]);
+      expect(first[0].key, isNot(contains('storage.example')));
+      expect(first[0].key, isNot(contains('sig=')));
+      expect(ShareMediaItem.keyFor(mediaRef('queued',
+          phase: OfferMediaUploadPhase.queued)), isNull);
+    });
+
     final home = offer(
       type: 'sell',
       propertyType: 'residential',

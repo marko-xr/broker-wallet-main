@@ -64,6 +64,19 @@ void main() {
   tearDown(() => area.dispose());
 
   group('names and types', () {
+    test('reports bounded sequential progress in source order', () async {
+      final first = area.writeCacheFile('first.jpg', jpegBytes(10));
+      final second = area.writeCacheFile('second.jpg', jpegBytes(20));
+      final updates = <String>[];
+      final bundle = await newPreparer(area).prepare(
+        <ShareAttachment>[fileAttachment(first), fileAttachment(second)],
+        ShareCancelToken(),
+        onProgress: (completed, total) => updates.add('$completed/$total'),
+      );
+      expect(updates, <String>['1/2', '2/2']);
+      expect(bundle.files, hasLength(2));
+    });
+
     test('a cache file is copied under its professional name, not moved',
         () async {
       final cached =

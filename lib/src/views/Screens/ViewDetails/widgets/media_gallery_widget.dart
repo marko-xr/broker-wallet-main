@@ -192,6 +192,9 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
   /// link, for a private video whose link has expired. Null when none.
   final Future<String?> Function(String mediaObjectId)? refreshSignedUrl;
 
+  /// Opens the record's Share Options from the full-screen current item.
+  final void Function(String mediaKey)? onShareMedia;
+
   const OptimizedMediaGalleryWidget({
     super.key,
     this.mediaRefs,
@@ -209,6 +212,7 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
     this.onRetryUpload,
     this.onRemoveUpload,
     this.refreshSignedUrl,
+    this.onShareMedia,
   });
 
   @override
@@ -921,6 +925,7 @@ class _OptimizedMediaGalleryWidgetState
           initialIndex: _currentIndex,
           title: 'Media Gallery',
           refreshSignedUrl: widget.refreshSignedUrl,
+          onShareMedia: widget.onShareMedia,
         ),
       ),
     );

@@ -2801,13 +2801,16 @@
   "shareOffice": "Share Office",
   "shareQuotation": "Share Quotation",
   "shareSelectAtLeastOne": "Select at least one item to share.",
-  "shareMediaPhotoN": "Photo {n}",
-  "shareMediaVideoN": "Video {n}",
   "shareMediaCount": "{selected} of {total} selected",
+  "shareMediaNotSelected": "Not selected",
   "shareItemUnavailable": "Unavailable",
   "shareErrorNetwork": "Couldn't prepare the files. Check your connection and try again.",
   "shareErrorUnavailable": "Some of the selected files are no longer available. They were deselected — tap Share again to continue without them.",
   "shareErrorSession": "Your session has expired. Please sign in again.",
   "shareErrorGeneric": "Couldn't prepare this share. Please try again.",
+  "shareDetailsCopyNote": "When you share several photos or videos, the details are copied. Paste them into the chat once, after the media.",
+  "shareBreakdown": "Photos: {photos} · Videos: {videos}",
+  "shareTwoStepNote": "Photos and videos will be shared in two steps to ensure all selected media are sent.",
+  "shareStepVideosReady": "Photos shared. Videos are ready to share.",
   "failedToShareDocuments": "Failed to share documents"
 }

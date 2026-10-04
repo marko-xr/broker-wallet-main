@@ -11,6 +11,9 @@ import 'package:broker_wallet/src/services/offer_video_poster_service.dart';
 /// — for a ready video with neither — [loading] while one is made from the
 /// video through its signed link ([signedUrl]), then that frame. When no
 /// frame exists or can be made, [placeholder]. Never keyed by the link.
+///
+/// [signedUrl] may also be a path to the video when this device already holds
+/// the original: the frame maker reads either, and neither is stored or logged.
 class OfferVideoPoster extends StatefulWidget {
   const OfferVideoPoster({
     super.key,
@@ -19,6 +22,7 @@ class OfferVideoPoster extends StatefulWidget {
     this.signedUrl,
     this.posterPath,
     this.loading,
+    this.frameOverlay,
     this.fit = BoxFit.cover,
     this.cacheWidth,
   });
@@ -28,6 +32,10 @@ class OfferVideoPoster extends StatefulWidget {
   final String? posterPath;
   final Widget placeholder;
   final Widget? loading;
+
+  /// Drawn over a real still frame only; never over [placeholder], [loading]
+  /// or a frame file that cannot be decoded.
+  final Widget? frameOverlay;
   final BoxFit fit;
   final int? cacheWidth;
 
@@ -91,11 +99,18 @@ class _OfferVideoPosterState extends State<OfferVideoPoster> {
   Widget build(BuildContext context) {
     final path = _path;
     if (path != null) {
+      final overlay = widget.frameOverlay;
       return Image.file(
         File(path),
         fit: widget.fit,
         cacheWidth: widget.cacheWidth,
         gaplessPlayback: true,
+        // `errorBuilder` answers before `frameBuilder`, so a frame that cannot
+        // be decoded shows the placeholder alone, without the overlay.
+        frameBuilder: overlay == null
+            ? null
+            : (context, child, frame, wasSynchronouslyLoaded) =>
+                Stack(fit: StackFit.expand, children: [child, overlay]),
         errorBuilder: (context, error, stackTrace) => widget.placeholder,
       );
     }

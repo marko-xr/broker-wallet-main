@@ -84,6 +84,11 @@ dependencies {
     // Add multidex support for large apps
     implementation 'androidx.multidex:multidex:2.0.1'
 
+    // FileProvider, which the native multi-media share subclasses. Already in
+    // the build through share_plus at this version; named here so the app's own
+    // code never depends on another library happening to expose it.
+    implementation 'androidx.core:core:1.13.1'
+
     // Core library desugaring
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }

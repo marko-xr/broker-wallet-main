@@ -8,6 +8,7 @@ import 'package:share_plus_platform_interface/share_plus_platform_interface.dart
 
 import 'package:broker_wallet/src/services/share/share_launcher.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
+import 'package:broker_wallet/src/services/share/share_payload.dart';
 import 'package:broker_wallet/src/services/share/share_plus_sink.dart';
 
 import 'share_fixtures.dart';
@@ -21,6 +22,16 @@ const PreparedShareFile _video = PreparedShareFile(
   path: '/share/Offer-02.mp4',
   name: 'Offer-02.mp4',
   mimeType: 'video/mp4',
+);
+const PreparedShareFile _photo2 = PreparedShareFile(
+  path: '/share/Offer-02.png',
+  name: 'Offer-02.png',
+  mimeType: 'image/png',
+);
+const PreparedShareFile _video2 = PreparedShareFile(
+  path: '/share/Offer-02.mov',
+  name: 'Offer-02.mov',
+  mimeType: 'video/quicktime',
 );
 const PreparedShareFile _pdf = PreparedShareFile(
   path: '/share/Broker-Wallet-Quotation-1.pdf',
@@ -169,6 +180,36 @@ void main() {
           <String>[_photo.path, _video.path, _pdf.path]);
       expect(params.files!.map((f) => f.mimeType).toList(),
           <String?>['image/jpeg', 'video/mp4', 'application/pdf']);
+    });
+
+    test(
+        'a whole selection goes to the plugin whole, message included, in one '
+        'call, each file with its own proven type', () async {
+      final selection = SharePayload.plan(
+        delivery: ShareDelivery.wholeSelection,
+        files: const <PreparedShareFile>[_photo, _video, _photo2, _video2],
+        text: 'Offer Details\n====\n',
+        subject: 'Offer Details',
+      );
+      expect(selection.kind, SharePayloadKind.filesWithText);
+
+      final outcome = await sink.send(selection.toRequest(null));
+
+      expect(outcome, ShareOutcome.shared);
+      expect(platform.calls, hasLength(1), reason: 'one native request');
+      final params = platform.calls.single;
+      expect(params.text, 'Offer Details\n====\n');
+      expect(params.subject, 'Offer Details');
+      expect(params.uri, isNull);
+      expect(params.files!.map((f) => f.path).toList(),
+          <String>[_photo.path, _video.path, _photo2.path, _video2.path],
+          reason: 'the order they were chosen in');
+      expect(params.files!.map((f) => f.mimeType).toList(), <String?>[
+        'image/jpeg',
+        'video/mp4',
+        'image/png',
+        'video/quicktime',
+      ]);
     });
 
     test('files alone carry no text', () async {

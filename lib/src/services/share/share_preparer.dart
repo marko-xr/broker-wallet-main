@@ -98,8 +98,9 @@ class SharePreparer {
   /// of them together. Throws [ShareCancelled] when [cancel] was called.
   Future<ShareBundle> prepare(
     List<ShareAttachment> attachments,
-    ShareCancelToken cancel,
-  ) async {
+    ShareCancelToken cancel, {
+    void Function(int completed, int total)? onProgress,
+  }) async {
     final root = await _stagingRoot();
     if (!await root.exists()) await root.create(recursive: true);
     await _sweepStale(root);
@@ -126,6 +127,7 @@ class SharePreparer {
           final fetched = await attachment.fetch(directory, cancel);
           _throwIfCancelled(cancel);
           files.add(await _stage(fetched, attachment, directory, usedNames));
+          onProgress?.call(files.length, attachments.length);
         } on ShareCancelled {
           rethrow;
         } on ShareFailure catch (failure) {

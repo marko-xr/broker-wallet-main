@@ -124,6 +124,19 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyCRZjgq_0AxXDWyZ2a44EKnP7wHkFavmtE"/>
 
+        <!-- Narrow provider for the native multi-media share: it serves only the
+             share staging folder of the app's cache (one folder per share), as
+             content:// URIs with a temporary read grant. Not exported. -->
+        <provider
+            android:name=".BrokerWalletShareFileProvider"
+            android:authorities="${applicationId}.brokerwallet.shareprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/brokerwallet_share_paths" />
+        </provider>
+
         <!-- FileProvider for secure file access -->
         <provider
             android:name="androidx.core.content.FileProvider"

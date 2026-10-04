@@ -4,6 +4,7 @@ import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_galler
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,6 +31,9 @@ class FullScreenMediaViewer extends StatefulWidget {
   /// for a private video whose link has expired.
   final Future<String?> Function(String mediaObjectId)? refreshSignedUrl;
 
+  /// The details screen's Share flow, preselected by durable media key.
+  final void Function(String mediaKey)? onShareMedia;
+
   const FullScreenMediaViewer({
     super.key,
     this.mediaRefs,
@@ -37,6 +41,7 @@ class FullScreenMediaViewer extends StatefulWidget {
     this.initialIndex = 0,
     this.title,
     this.refreshSignedUrl,
+    this.onShareMedia,
   });
 
   @override
@@ -354,6 +359,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
 
   Widget _buildTopControls() {
     final isRTL = Directionality.of(context) == TextDirection.rtl;
+    final shareKey = _currentShareKey();
 
     return Container(
       padding: EdgeInsetsDirectional.only(
@@ -382,7 +388,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
               size: 24,
             ),
           ),
-          const SizedBox(width: 90),
+          SizedBox(width: widget.onShareMedia == null ? 90 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,9 +413,36 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
                   color: Colors.white70,
                 ),
           )),
+          if (shareKey != null && widget.onShareMedia != null)
+            IconButton(
+              key: const ValueKey('viewer-share-media'),
+              tooltip: AppLocalizations.of(context).translate('share'),
+              onPressed: () => widget.onShareMedia!(shareKey),
+              icon: const Icon(Icons.share_outlined, color: Colors.white),
+            ),
         ],
       ),
     );
+  }
+
+  String? _currentShareKey() {
+    if (_currentIndex < 0 || _currentIndex >= _mediaItems.length) return null;
+    if (_mediaItems[_currentIndex].type != MediaType.image &&
+        _mediaItems[_currentIndex].type != MediaType.video) {
+      return null;
+    }
+    final refs = widget.mediaRefs;
+    if (refs != null) {
+      return _currentIndex < refs.length
+          ? ShareMediaItem.keyFor(refs[_currentIndex])
+          : null;
+    }
+    if (_currentIndex >= widget.mediaUrls.length) return null;
+    return ShareMediaItem.keyFor(OfferMediaRef(
+      mediaObjectId: '',
+      cacheKey: null,
+      signedUrl: widget.mediaUrls[_currentIndex],
+    ));
   }
 
   Widget _buildBottomControls() {

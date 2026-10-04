@@ -39,13 +39,48 @@ class ShareMediaItem {
     required this.ref,
   });
 
-  /// Stable within one share: the media object id, or a position for an old
-  /// record that never had one.
+  /// The media object id, or a deterministic private legacy identity. Never
+  /// derived from the visible gallery position or a rotating query string.
   final String key;
   final ShareMediaKind kind;
   final OfferMediaRef ref;
 
   bool get isVideo => kind == ShareMediaKind.video;
+
+  /// The same key can be resolved from a viewer's current item and from the
+  /// details screen's fresh media list, even when a signed link has rotated.
+  static String? keyFor(OfferMediaRef ref) {
+    if (ref.isPendingUpload) return null;
+    final id = ref.mediaObjectId.trim();
+    if (id.isNotEmpty) return id;
+    final cacheKey = ref.cacheKey?.trim() ?? '';
+    if (cacheKey.isNotEmpty) return 'cache-${_legacyHash(cacheKey)}';
+    final url = ref.signedUrl?.trim() ?? '';
+    if (url.isNotEmpty) {
+      final uri = Uri.tryParse(url);
+      final stablePath = uri == null
+          ? url.split('?').first
+          : '${uri.scheme}://${uri.host}${uri.path}';
+      if (stablePath.isNotEmpty) return 'legacy-${_legacyHash(stablePath)}';
+    }
+    final path = ref.localFilePath?.trim() ?? '';
+    return path.isEmpty ? null : 'local-${_legacyHash(path)}';
+  }
+
+  // Two independent 32-bit passes keep a legacy path out of UI/state keys
+  // while making collisions among a record's media very unlikely.
+  static String _legacyHash(String value) {
+    String digest(Iterable<int> units) {
+      var hash = 0x811c9dc5;
+      for (final unit in units) {
+        hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+      }
+      return hash.toRadixString(16).padLeft(8, '0');
+    }
+
+    final units = value.codeUnits;
+    return '${digest(units)}${digest(units.reversed)}';
+  }
 
   /// The items of [refs] that can actually be fetched, in the gallery's order
   /// and never twice. An item still in the upload queue is not on the server
@@ -54,14 +89,13 @@ class ShareMediaItem {
   static List<ShareMediaItem> fromRefs(Iterable<OfferMediaRef> refs) {
     final items = <ShareMediaItem>[];
     final used = <String>{};
-    var position = 0;
     for (final ref in refs) {
-      position++;
       if (ref.isPendingUpload) continue;
       final id = ref.mediaObjectId.trim();
       final fetchable = ref.hasLocalBytes || ref.hasSignedUrl || id.isNotEmpty;
       if (!fetchable) continue;
-      final key = id.isNotEmpty ? id : 'item-$position';
+      final key = keyFor(ref);
+      if (key == null) continue;
       if (!used.add(key)) continue;
       items.add(ShareMediaItem._(
         key: key,
@@ -163,6 +197,20 @@ class PreparedShareFile {
   final String path;
   final String name;
   final String mimeType;
+
+  /// The top-level type of [mimeType] (`image`, `video`, `application`…): the
+  /// family a receiving app is told a batch of files belongs to.
+  String get family {
+    final slash = mimeType.indexOf('/');
+    return slash <= 0 ? mimeType : mimeType.substring(0, slash);
+  }
+
+  bool get isImage => family == 'image';
+
+  bool get isVideo => family == 'video';
+
+  /// A photo or a video, as opposed to a document.
+  bool get isMedia => isImage || isVideo;
 }
 
 /// Everything handed to the native share sheet.
@@ -172,6 +220,7 @@ class ShareRequest {
     this.subject,
     this.files = const <PreparedShareFile>[],
     this.origin,
+    this.mediaBatch = false,
   });
 
   /// The message, or null when only files are shared.
@@ -179,6 +228,13 @@ class ShareRequest {
   final String? subject;
   final List<PreparedShareFile> files;
   final ShareOrigin? origin;
+
+  /// Whether [files] are a record's photos and videos, two or more, chosen in
+  /// the Share dialog and shared as one batch with [text]. Set only by the
+  /// payload rule; the Android transport hands such a batch to a native
+  /// `ACTION_SEND_MULTIPLE` request, and everything else takes the system share
+  /// as it always has.
+  final bool mediaBatch;
 
   /// Whether there is anything to send: a message or at least one file. A share
   /// without either is never handed to the share sheet.

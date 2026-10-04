@@ -597,6 +597,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       onRemoveUpload: _removeOfferMediaUpload,
       refreshSignedUrl: (mediaObjectId) =>
           _loadCoordinator.refreshSignedUrl(mediaObjectId),
+      onShareMedia: (key) => _showShareDialog(initialMediaKey: key),
     );
     return _cachedMediaGallery!;
   }
@@ -2159,7 +2160,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   // Action methods
-  void _showShareDialog() {
+  void _showShareDialog({String? initialMediaKey}) {
     // Built from the Offer as this screen holds it, so the text works offline
     // and shares this Offer's own phone number (the one shown above). Photos and
     // videos are attached as files, fetched through this Offer's authorized
@@ -2171,6 +2172,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         media: ShareMediaItem.fromRefs(_loadCoordinator.displayItems),
       ),
       refreshLink: _loadCoordinator.refreshSignedUrl,
+      initialMediaKey: initialMediaKey,
     );
   }
 

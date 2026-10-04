@@ -8292,3 +8292,830 @@ including number direction, singular and multiple areas, and unchanged notes.
 
 NEXT — after that succeeds, record the device result and resume the broader Share
 verification from the previous checkpoint.
+
+### Share media selection — source checkpoint (2026-10-03)
+
+Branch `share-media-selection-readiness` starts at `c9e25d4d8379d1040f3a0dca26a9a05da2970b55`.
+The prior Share flow is committed; this checkpoint is uncommitted and unpushed.
+Source tracing found no one-file truncation in the existing preparer or
+`SharePlusSink`; the Samsung one-file symptom remains to be retested. The
+visible gap was numbered media chips and no current-item Share handoff from
+the full-screen viewer.
+
+- Offer and Owner Share Options now open a separate visual media picker from the
+  Media row. A lazy two/three-column grid uses the gallery's local/cache image
+  path at thumbnail decode size; videos use only a poster already on the device
+  or a video icon. The Share Options dialog shows a selected count and compact
+  preview. The picker drafts changes until Done; Cancel keeps the earlier set.
+- Current private media is selected by `mediaObjectId`, with a stable hashed
+  path fallback for legacy records without IDs. Selection, deduplication and
+  final file ordering do not depend on gallery index or signed URL query.
+  Detail Share retains its photo-first default. The Offer/Owner full-screen
+  viewer now opens the same Share Options flow with its current item selected;
+  the picker can add more.
+- The controller prepares only the confirmed keys, in source order, and reports
+  completed-file progress. The existing sequential fetch path checks local
+  bytes/cache first, then an authorized private download only for selected
+  uncached items. The original files go as one XFile list in one platform call.
+  A failed selected file still blocks the entire share; unavailable items are
+  deselected and cannot be reselected; existing cancellation and temp cleanup
+  remain in use. No backend or security changes were made.
+- Targeted test source was updated for picker selection, Cancel/Done, detail
+  and viewer defaults, thumbnails/posters/placeholders, short Arabic layout,
+  stable keys, progress, and selected multi-file behavior. Flutter tests NOT
+  RUN; analyzer NOT RUN; device NOT VERIFIED. Source parsing and diff review
+  only, including ARB JSON validation and `git diff --check`. Generated Flutter
+  registrant drift remains unrelated and untouched.
+
+NOW — `flutter test test/share`.
+
+NEXT — only if that passes, run `flutter analyze lib/src/services/share lib/src/views/Widgets/share_options_dialog.dart lib/src/views/Widgets/share_media_picker.dart lib/src/views/Screens/ViewDetails/offers_view_details.dart lib/src/views/Screens/ViewDetails/owners_view_details.dart lib/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart lib/src/views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart test/share`, then verify on Samsung with several photos and a video.
+
+### Share media selection — owner test correction (2026-10-03)
+
+The owner ran `flutter test test/share` and reported 291 PASS, 2 FAIL. No Flutter
+command was run during this correction. The status test expected one listener
+notification per status, but preparation now also notifies for its file count;
+the test checks collapsed status transitions and monotonic 0/3 through 3/3
+progress while preserving production notifications. The short Arabic picker
+test now scrolls the keyed Share Options body until Media is hittable, checks
+that the body can scroll and fixed actions are reachable, and exercises picker
+Cancel and Done. No production layout change was needed from source review.
+
+Normal visual picker tests now use the project's decodable JPEG asset rather
+than magic-prefix-only bytes. One explicit broken-poster test keeps image-load
+fallback coverage. Multi-file tests explicitly assert one native request with
+all selected files, source order, stable-ID deduplication, and that an
+unselected remote image is never fetched. This correction changed test source
+only; generated registrant drift remains untouched. `git diff --check` PASS;
+Flutter tests NOT RUN here, analyzer NOT RUN, device NOT VERIFIED.
+
+NOW — `flutter test test/share`.
+
+NEXT — after the owner reports a passing full Share suite, run the scoped
+analyzer for the media Share source and tests, then verify on Samsung.
+
+### Share media picker — final widget test hardening (2026-10-03)
+
+The owner's next `flutter test test/share` run again reported about 293 PASS and
+2 FAIL: the short Arabic test still could not hit Media, and the broken-poster
+test could not find its exact icon. Flutter's `scrollUntilVisible` skips its
+drag loop for an eagerly built row and then aligns its leading edge; that did
+not establish a tappable center in the short viewport. The actual Share
+Options body is the keyed `share-body-scroll`
+`SingleChildScrollView`, inside the fixed heading/footer column. A shared
+test helper now centers every tapped option in that body's own Scrollable,
+checks its viewport/target rectangles and footer clearance, then taps it.
+Picker tiles use the same geometry check with the keyed lazy grid scroll view.
+The short Arabic test checks pre-scroll geometry and the fixed actions remain
+reachable; the helper checks the Media center inside the body after scrolling.
+
+The picker now gives its existing photo/video placeholders and video indicator
+stable keys; no visual layout or multi-file logic changed. Tests assert those
+keys and selected semantics instead of icon internals. A deliberately missing
+video poster exercises the immediate fallback deterministically; normal
+thumbnail tests still use a validated decodable project JPEG. The viewer swipe
+uses its measured page width. Every option-row tap and picker-tile tap in the
+Share Options widget test now goes through the same scoped helper. Source-only
+parse/diff review and `git diff --check` PASS; Flutter tests NOT RUN here,
+analyzer NOT RUN, device NOT VERIFIED. Unrelated generated registrant drift
+remains untouched; no commit or push.
+
+NOW — `flutter test test/share`.
+
+NEXT — after the owner reports a passing full Share suite, run the scoped
+analyzer for the media Share source and tests, then verify on Samsung.
+
+### Share multi-media message and video previews — source checkpoint (2026-10-03)
+
+> Superseded for two or more files by the next section (2026-10-04): the
+> clipboard lifecycle and the dialog note below describe the earlier contract,
+> where the message also travelled with several files. The video-preview
+> paragraphs stand unchanged.
+
+
+Two real-device defects from the Samsung run, both source-only here: some
+videos in Select Media had no recognizable frame, and the multi-file message
+lifecycle was described inconsistently. This section replaces the earlier
+"multi-media message" note, which described a SnackBar that has been removed.
+
+**Video preview root cause.** The gallery's video tile, the full-screen viewer's
+thumbnail strip and the form media grid all draw a video through
+`OfferVideoPoster`. It resolves the record's own frame (`posterPath`), then the
+frame this device keeps under the video's stable identity
+(`offerMediaPosterKey(cacheKey)`), then — for a ready video with neither — makes
+one on demand through `OfferVideoPosterService.ensure` (the existing
+`video_thumbnail` dependency, Android `MediaMetadataRetriever`, which reads only
+the index and first frame of the signed link, never the whole video; verified in
+`video_thumbnail 0.5.6`'s `VideoThumbnailPlugin.java`) and keeps it. The server
+stores no poster, so a frame exists on a device only after some tile of that
+video was drawn there (the gallery is a lazy `PageView`; a video the person never
+swiped to, or any video after a reinstall, has none). `ShareMediaPreview` stopped
+after step two on purpose ("never fetch a video for a preview") and skipped the
+on-demand step, and being a stateless widget it also never noticed a frame made
+a moment later. Result: exactly those videos fell to the placeholder, plus a
+second generic play badge on top of it. Not a model problem: `ShareMediaItem`
+keeps the whole `OfferMediaRef`, including `posterPath`, `cacheKey` and the link.
+
+**Video preview fix.** `ShareMediaPreview` (the one widget behind both the
+picker's tiles and the compact summary in Share Options) now draws a video with
+`OfferVideoPoster`, the gallery's own widget, so the two cannot disagree and a
+frame made by either is found by the other:
+
+1. the frame the record carries; 2. the frame this device keeps; 3. one frame
+made once, from the original when this device already holds it (no network),
+else from the link the record already holds, then kept; 4. one plain video
+placeholder. No link is refreshed for a preview and no video is downloaded: the
+picker holds no `refreshLink` and no fetcher, and frames are made lazily, one at
+a time, only for tiles that are built. The play badge is now drawn only over a
+real frame (new optional `OfferVideoPoster.frameOverlay`, built through
+`Image.frameBuilder` so an undecodable frame shows the placeholder alone); the
+placeholder carries a single video icon.
+
+**Legacy and data-shape limits (stated, not hidden).** A video gets no frame
+when: it has no stable identity (`cacheKey == null`: an old record or a Firebase
+Owner that only has a stored link, `mediaObjectId == ''`), because a frame is
+kept under, and owned through, the account-scoped media id; it has no link and no
+kept frame (the Offer media resolution did not run or its link expired) because
+previews do not refresh links; the platform cannot read its first frame; or a
+recent attempt failed (retried after two minutes). These show the placeholder,
+which is a fallback and not equivalent to a thumbnail. Observed, not changed:
+Offer refs built by `_refsFromOffer()` carry no `isVideo`, and `ShareMediaItem`
+classifies by `isVideo` only while the gallery also classifies by URL extension.
+No dependency was added or needed.
+
+**Clipboard lifecycle (corrected contract, implemented and tested).**
+- Preparation fails, or the share is called off before it is handed over:
+  clipboard untouched, sheet not opened.
+- A sheet is already open (the app-wide launcher): `busy`, clipboard untouched.
+  This check now runs before the copy.
+- Two or more photos or videos prepared, with a message: the message is copied
+  once, then the native share is called once with all files and the same text.
+  From the copy on the share is committed: nothing can call it off between the
+  copy and the native call, so the clipboard is never written for a share that
+  is then cancelled.
+- The sheet closed unused after it opened is not an error and the copy stays; a
+  sheet that cannot be opened leaves the copy where it is. The earlier clipboard
+  is never read, restored or cleared.
+- One photo or video, or no message: no copy, unchanged behavior. A clipboard
+  that fails or throws never holds the share back; the text still goes to the
+  platform.
+
+**Notice.** The previous 8-second SnackBar was removed (it would sit under the
+native sheet on Android and, on Android 14+, is raised only after the app was
+already in the background). The Share Options dialog now shows a short note
+under the Media row, before Share is pressed, only while a share really would
+copy: "Details are copied when you share several photos or videos. If the app
+doesn't attach the text, paste it in the chat." (key `shareDetailsCopyNote`,
+Arabic included). It follows the selection, stays after a closed sheet, and
+disappears if the clipboard ever refuses. No confirmation step. It is present
+tense because it is read before the copy happens.
+
+Tests (source only, NOT RUN): new `test/share/share_media_preview_test.dart`
+(carried frame, kept frame, frame made once from the link, from the original,
+picker and compact summary sharing one read, failure, missing frame file, no
+identity, no link); controller tests for every lifecycle rule above; dialog tests
+for the note (shown before sharing, Arabic, absent for one photo, follows the
+choice, stays after a closed sheet, withdrawn after a failed copy) and for the
+tile contract (frame + badge, placeholder alone); source guards for the shared
+widget, no refresh/download in the picker, the badge, one copy moment in order,
+and no SnackBar. `dart format --output=none --set-exit-if-changed` passes for the
+new and rewritten files and every touched file apart from deviations that were
+already in two test files; `git diff --check` PASS. Flutter tests NOT RUN,
+analyzer NOT RUN, device NOT VERIFIED. No backend, Supabase, RLS, Worker or
+upload change. Generated registrant drift untouched; no commit or push.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`.
+
+NEXT — after it passes, the scoped analyzer from the previous checkpoint with
+`share_clipboard.dart` and `offer_video_poster.dart` added, then on the Samsung
+phone: open Select Media on an Offer with several videos you never opened in the
+gallery (frames should appear one at a time and match the gallery afterwards);
+note any video that stays a placeholder (legacy/no link); share three photos to
+WhatsApp and confirm the note was visible before pressing Share and that pasting
+the details works if the caption is empty.
+
+### Share media batch architecture — Samsung / WhatsApp evidence and correction (2026-10-04)
+
+> Superseded by the next section (2026-10-04, native Android transport): the
+> product owner rejected the photo/video split and the files-only rule. Nothing
+> below the evidence list describes the current behavior; only the evidence and
+> the `share_plus 11.1.0` inspection still stand.
+
+
+Owner verification before this change: `flutter test test/share` = 333 PASS;
+scoped analyzer clean before the latest runtime-specific source work; the media
+picker accepted visually on the device; the video-poster work implemented and its
+tests passing. None of that is reopened here.
+
+**Real Samsung / WhatsApp results (owner device evidence, authoritative).**
+- One image + the Offer details: PASS (WhatsApp receives the image and the full
+  text).
+- One video + the Offer details: PASS (the video and the full text).
+- Several images (5 tried): every image arrives, but WhatsApp attaches the same
+  Offer text to every image, so each image carries a repeated caption.
+- More than one media item that includes video (several videos, an image and a
+  video, images and videos): the batch is not reliably delivered. Observed:
+  media does not arrive, sometimes only the text arrives.
+
+**Source inspection of the locked `share_plus 11.1.0` (pub cache, Android).**
+- Dart (`MethodChannelShare._toPlatformMap`): one `paths` list and one
+  `mimeTypes` list, in the order of the `XFile`s; each type is
+  `XFile.mimeType ?? lookupMimeType(path)`. `cross_file`'s `XFile` returns the
+  explicit type it was given and never infers one, so the types the preparer
+  proved from the bytes are what the plugin sees. A files-only request is valid.
+- Android (`Share.kt`): no file is `ACTION_SEND` `text/plain` with `EXTRA_TEXT`.
+  Each file is copied into `cacheDir/share_plus/<file.name>` and addressed by a
+  `FileProvider` content URI (a name collision overwrites, ours never collide;
+  the folder is emptied at the start of every share). One file is `ACTION_SEND`
+  with that file's type; two or more are `ACTION_SEND_MULTIPLE` with
+  `EXTRA_STREAM` as the URI list and `type = reduceMimeTypes(...)`: the exact
+  type when all are identical, `family/*` when only the family is shared (for
+  example `video/mp4` + `video/quicktime` → `video/*`), `*/*` as soon as the
+  families differ. `EXTRA_TEXT`, subject and title are added to the single and
+  to the multiple intent alike, when not blank. `FLAG_GRANT_READ_URI_PERMISSION`
+  is set on the inner intent; the plugin also grants read and write on every URI
+  to the packages that resolve the chooser intent (the system chooser), and the
+  framework moves the grant and the `ClipData` it builds from `EXTRA_STREAM` to
+  the app the person picks. Everything is wrapped in one `Intent.createChooser`
+  started once.
+- Conclusion: for a single-family batch the plugin emits the correct, ordinary
+  Android payload, so it is retained. A mixed photo/video batch is expressed by
+  the plugin as `*/*`, which is exactly what real WhatsApp does not take
+  reliably. The plugin cannot make a receiver use `EXTRA_TEXT` the way Broker
+  Wallet wants.
+
+**What was ours and what is the receiver's.**
+- Ours: we sent the composed message as `EXTRA_TEXT` with every multi-file
+  request (the cause of the per-image caption: the receiver chose to attach it to
+  each image), and we launched a photo/video mix as one generic `*/*` request.
+  Preparation itself held up under inspection: every selected video is fetched
+  through the authorized path, written with the extension its own bytes prove,
+  typed from those bytes, uniquely named and passed as one explicitly typed
+  `XFile`; all-or-nothing preparation, existence and size are checked before the
+  sheet opens. No text-only request replaces an attachment request.
+- The receiver's (not an app bug, and not something the app can change): whether
+  WhatsApp shows, repeats or drops a message that comes with several files, and
+  whether it accepts a `*/*` batch. The multi-video failure observed with the
+  message attached cannot be traced to our files from source; the corrected
+  payload removes everything optional from it. If a video-only batch with no
+  message still fails on the device, the next suspects are the plugin's
+  synchronous per-file copy of large videos on the platform thread and WhatsApp's
+  own limits; only then would a narrow native adapter be justified. None is
+  written: it is not proven necessary.
+
+**The contract (one place: `SharePayload.plan`, fed by `MediaSharePlan`).**
+- 0 files: the message alone. 1 file: the file with its message, clipboard
+  untouched (image and video, as accepted).
+- 2+ files of one family: the files ONLY in the native request (no text, no
+  subject), types explicit and proven; the whole message copied to the clipboard
+  once, immediately before the sheet opens; one native call; the gallery's order.
+- A choice that mixes photos and videos is never launched as one batch. Share
+  asks once ("For reliable sharing, photos and videos are shared separately."):
+  Share photos (n) / Share videos (n) / Back. Only the chosen batch is fetched,
+  prepared and shared; the other is neither downloaded nor touched. After a batch
+  is handed over the dialog stays open, the shared items leave the selection, a
+  note says what is still chosen ("Photos shared. Videos still selected: 1. Tap
+  Share to send them."), and the next Share sends it directly, with no second
+  sheet opened by itself. A closed sheet leaves the selection as it was. The
+  picker still lets photos and videos be chosen together; Share Options shows
+  the real breakdown ("Photos: 3 · Videos: 2").
+- After preparation the files' own proven types are checked again: a batch that
+  turns out to mix families (a record that misdescribed one of them) is never
+  launched; it fails safely with the generic message and nothing is copied.
+- Clipboard moment unchanged: preparation done and nothing left to cancel it,
+  no sheet already open, copy, then the single native call; a closed sheet or a
+  sheet that cannot open leaves the copy, the earlier clipboard is never
+  restored. Decision the owner may reverse: if the clipboard refuses (or the
+  engine has none) the details travel with the files after all, because nothing
+  else would carry them; this is the only way text reaches a multi-file request.
+- The dialog note is read before Share is pressed and says what will happen: "The
+  details are copied when you share several photos or videos. After sending the
+  media, paste them into the chat." It appears only when some batch holds several
+  files and a copy is possible.
+- Policy versus transport: the rule above applies on Android, where one intent
+  carries the files and the receiver decides. On iOS and the other platforms
+  (`ShareTransport.systemSheet`, chosen once in `ShareLive.engine()`) the share is
+  exactly as before: every file and the message in one system sheet, no question,
+  no copy. The widgets hold no MIME, platform or payload logic.
+- Offer and Owner use the one media path, so both get it; text stays
+  entity-specific. The quotation PDF is one file with its message and is
+  untouched. Nothing private is exposed: files are fetched through the existing
+  authorized path into the app's temporary folder, links are never written
+  anywhere, and the clipboard holds only the accepted human-readable message.
+  No backend, Supabase, RLS, Worker or upload change.
+
+Files: new `share_media_plan.dart`, `share_payload.dart`,
+`views/Widgets/share_batch_choice.dart`; changed `share_flow_controller.dart`,
+`share_models.dart` (file family), `share_live.dart` (transport),
+`share_options_dialog.dart`, both ARBs (`shareDetailsCopyNote` reworded; new
+`shareBatchExplain`, `shareBatchPhotos`, `shareBatchVideos`, `shareBreakdown`,
+`shareBatchRemainingVideos`, `shareBatchRemainingPhotos`).
+
+Test source (not run): new `share_media_plan_test.dart` (classification and the
+payload rule); `share_flow_controller_test.dart` (0 media, 1 image, 1 video, 3
+images, 3 videos with type/extension/bytes/order, mixed question without side
+effects, photos batch, video batch, the next Share, failure, repeated tap,
+clipboard lifecycle, system sheet, misdescribed file); `share_options_dialog_test.dart`
+(breakdown, question, Back, Arabic, double tap, photos batch, video batch, notes);
+`share_launcher_test.dart` (the plugin receives files only, one call, typed);
+`share_source_guards_test.dart` (one place for the request, decision order, pinned
+`share_plus`, no widget policy, strings in both languages).
+
+Verification: `dart format --output=none --set-exit-if-changed` passes for every
+new file and every touched file apart from deviations already in two test files;
+ARB JSON parses; `git diff --check` PASS. Flutter tests NOT RUN, analyzer NOT
+RUN, device NOT VERIFIED. Generated registrant drift untouched; no commit, no
+push.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`.
+
+NEXT — if it passes, the scoped analyzer (add `share_media_plan.dart`,
+`share_payload.dart`, `share_clipboard.dart`, `share_batch_choice.dart`,
+`offer_video_poster.dart`), then on the Samsung phone with WhatsApp: 1 image and
+1 video (unchanged); 3 images (arrive as one batch with no repeated caption, then
+paste the details once); 3 videos (one batch of three); photos + videos (the
+question, photos first, then Share again for the videos, no second sheet by
+itself). Report any batch that still does not arrive; that evidence decides
+whether a narrow native adapter is needed.
+
+### Share native Android multi-media transport — correction (2026-10-04)
+
+> Superseded by "Share final reliable media flow" below (2026-10-04): the
+> single native batch for photos and videos together, the family-wildcard and
+> message-extra experiments, and the message travelling with several files no
+> longer describe the behavior. Only the evidence stands.
+
+Owner verification before this change: `flutter test test/share
+test/offers/offer_video_poster_test.dart` = 392 PASS; scoped analyzer no issues;
+video previews working. Not reopened.
+
+**Latest real Samsung / WhatsApp observations (owner device evidence).**
+- One image + the Offer text: works. One video + the Offer text: works.
+- A scalar `EXTRA_TEXT` with several images (the original `share_plus` payload):
+  every image arrives, but WhatsApp repeated the same Offer text on every image.
+- Generic mixed photo/video batches (`*/*` through `share_plus`): unreliable.
+- Several images as files only (the previous correction, text omitted by design):
+  the images arrive but no Offer text arrives automatically.
+- The split-media compatibility dialog ("photos and videos are shared
+  separately", Share photos / Share videos / Back): rejected by the product owner.
+  The media picker is the only place the person chooses which media goes.
+
+**What was removed.** The photo/video choice (`share_batch_choice.dart`, its
+dialog flow, `ShareFlowResult.chooseBatch`/`batchShared`, the remaining-batch
+note, the deselect-after-sharing rule), the media-plan classification
+(`share_media_plan.dart` and its test), the Android/iOS `ShareTransport` split,
+the "several files carry no message" rule and its clipboard-refusal exception,
+the mixed-family refusal, and the strings `shareBatchExplain`, `shareBatchPhotos`,
+`shareBatchVideos`, `shareBatchRemainingVideos`, `shareBatchRemainingPhotos`. The
+two earlier 2026-10-04 and 2026-10-03 notes about those rules are superseded.
+
+**The contract (one place: `SharePayload.plan`).**
+- No file: the message alone, system share. One file: the file with its message,
+  system share (`share_plus`), clipboard untouched. Both exactly as accepted.
+- Two or more photos and videos (a media batch), in any mix: ONE request carrying
+  EVERY chosen file in the order chosen, with the message supplied to the
+  platform, and the same message copied to the clipboard once, immediately before
+  the sheet opens, as a secondary fallback that never replaces sending the text.
+  One Share press, one share sheet, nothing asked in between. The media family
+  never changes which files go; it only decides the declared MIME type.
+- Preparation failure, a share called off, or a sheet already open: nothing is
+  copied and nothing is launched. A closed sheet leaves the copy; the earlier
+  clipboard is never restored. Share Options still shows the count, thumbnails and
+  an informational "Photos: n · Videos: n" line when both kinds are chosen, and a
+  note, read before Share is pressed, that the details are copied for several
+  media.
+
+**Platform boundary (Android only; the decision is in `ShareLive` alone).**
+`ShareLive.launcher` wraps the system share in `AndroidMediaBatchSink` on Android;
+elsewhere it is the system share as before (iOS unchanged). The sink hands only a
+request marked `mediaBatch` with two or more files to the native adapter over the
+MethodChannel `com.example.broker_wallet/multi_media_share`, method
+`shareMultipleMedia`, arguments `paths` (local files, in order), `mimeTypes` (the
+type each file's bytes proved) and `text`. Anything else, including the Toolkit's
+own files, takes the system share. A started chooser reports nothing back, so the
+outcome is "unknown", which the flow treats as done. A native refusal or a
+missing adapter is a `ShareFailure`, never a silent fall back to the old path.
+
+**Native side (`MultiMediaSharePlugin.kt`, registered in `MainActivity` the way
+`FileSaverPlugin` is; no second engine).** It receives local prepared files only,
+never a link, id or key, and decides nothing about what is shared.
+- URIs: each path must lie inside `cacheDir/broker_wallet_share` (the folder the
+  share staging already uses, one subfolder per share) and be a readable file; it
+  is turned into a `content://` URI by `BrokerWalletShareFileProvider`, a
+  `FileProvider` subclass of its own with authority
+  `${applicationId}.brokerwallet.shareprovider`, not exported, `grantUriPermissions`,
+  whose paths file exposes that one cache folder and nothing else. No copy is made
+  (so a large video is not duplicated), names stay unique with their real
+  extensions, no `file://` is ever used, and the existing broad provider is left
+  alone. The staging sweep still removes old folders.
+- Intent: `ACTION_SEND_MULTIPLE`; `EXTRA_STREAM` is the `ArrayList<Uri>` of every
+  file in the given order; `FLAG_GRANT_READ_URI_PERMISSION`; one `ClipData` with
+  one item per file, in order, and a `ClipDescription` listing the distinct real
+  types; started once through `Intent.createChooser`, which (Android 34 source,
+  `Intent.createChooser`) copies the target's `ClipData` and permission flags onto
+  the chooser so the receiving app is granted every URI.
+- Type (`MultiMediaShareFormat.commonMimeType`): all identical → that exact type;
+  different image formats only → `image/*`; different video formats only →
+  `video/*`; photos mixed with videos (or anything not shaped like type/subtype)
+  → `*/*`. Types are never changed to suit a receiver.
+- Message: `EXTRA_TEXT` as an `ArrayList<CharSequence>` aligned with the
+  attachments (`MultiMediaShareFormat.buildCaptionList`): the whole message first,
+  an empty caption for every other file; never also a scalar under that key. This
+  is the aligned form Android's own `Intent.migrateExtraStreamToClipData` reads
+  (it requires the list to be as long as `EXTRA_STREAM`, and builds one
+  `ClipData` item per attachment holding that attachment's text and URI), so each
+  clip item here carries its caption as that code would. The one gradle change is
+  the explicit `androidx.core:core:1.13.1` line the `FileProvider` subclass needs,
+  already in the build through `share_plus`; no third-party dependency, no
+  Gradle test dependency. Kotlin unit tests were not added for that reason; the
+  two helpers are pure Kotlin and pinned by source guards.
+- Errors reach Dart as fixed words only: no path, name or message.
+
+**What is not guaranteed.** What WhatsApp (or any receiver) does with the
+per-attachment text list, with `*/*`, and with several videos is the receiver's
+choice and has NOT been verified: it may show the message once, repeat it, ignore
+it, or not read the list form at all. The clipboard copy is the fallback for that.
+Receiver behavior needs Samsung / WhatsApp verification; nothing here claims it.
+
+**Security.** Private media stays: authenticated app retrieval, local prepared
+file in the cache, `content://` URI with a temporary read grant, the share sheet.
+No signed URL, R2 key, media id, service-role data or Worker endpoint is passed to
+native code or into a message; the clipboard holds only the accepted
+human-readable message. No backend, Supabase, RLS, Worker or upload change.
+
+Test source (not run): `share_payload_test.dart` (0 / 1 / 2+, mixed order, no
+family rule, documents), `share_android_sink_test.dart` (routing, exact channel
+arguments, order, MIME list, text, local paths only, native refusal, missing
+adapter, one sheet), `share_flow_controller_test.dart` (0 media, 1 image, 1 video,
+3 images, 3 videos, interleaved photos and videos in one request in the order
+chosen, failure, repeated tap, clipboard lifecycle), `share_options_dialog_test.dart`
+(no question, one request for a mixed choice, breakdown, wait, notes),
+`share_launcher_test.dart` (the plugin boundary for a batch), and
+`share_source_guards_test.dart` (the request is built in one place, no widget
+policy, the retired architecture is gone, Kotlin/manifest/paths/Dart constants
+agree, `ACTION_SEND_MULTIPLE` + `ClipData` + list `EXTRA_TEXT` + read grant, no
+scalar text, no `file://`, one narrow provider path). Format, ARB JSON and
+`git diff --check` pass; Flutter tests, analyzer and the Android build were NOT
+RUN; device NOT VERIFIED. No commit, no push.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`.
+
+NEXT — if it passes, the scoped analyzer (add `share_android_sink.dart`,
+`share_payload.dart`, `share_clipboard.dart`, `offer_video_poster.dart`); then a
+full Android rebuild and install (Kotlin, manifest, a new XML resource and a
+Gradle line changed, so a hot restart is not enough); then on the Samsung with
+WhatsApp: 1 image and 1 video (unchanged); 3 images; 3 videos; 2 photos + 2
+videos (one chooser, all four, in order); and note for each whether the Offer
+text arrived, once or repeated, and whether pasting the copied details works.
+That evidence decides the next step; no further transport change before it.
+
+### Share native transport — double-tap test correction (2026-10-04)
+
+Owner run of `flutter test test/share test/offers/offer_video_poster_test.dart`
+after the native Android routing: 390 PASS, 1 FAIL — "a double tap on Share
+opens one share sheet" (`realUntil` timed out waiting for a request to reach the
+sink).
+
+Root cause: a test-harness defect, not a production bug and not the routing. The
+test chose the video (two photos and a video, a batch of three) but never served
+the video's download, so `FakeNet` answered 200 with an empty body, the fetcher
+rejected it as unavailable (`received == 0`), preparation failed, and nothing was
+ever handed to the sink to be waited for. The fake sink was already the sink the
+controller launches through, nothing was routed elsewhere, no wait depended on a
+retired counter, and the controller's busy lock was correct throughout: it is
+taken inside `share()` before its first await, so a second tap cannot enter the
+pipeline.
+
+Correction (tests only): the test now serves the video, holds its download open
+with a gate and keeps the share sheet open with the fake sink's existing `hold`,
+so every phase is observable without a clock. It checks the lock after two taps
+with no frame between them, again while preparation is held at the download, and
+again while the sheet is open: one download, no copy before the hand-over, one
+copy, one request to the Android multi-media transport and none to the system
+share, then the share completes. `FakeShareSink` gained `nativeRequests` and
+`systemRequests`, derived from the production routing predicate
+(`AndroidMediaBatchSink.takes`) over the one `requests` list. The related tests
+(controller repeated tap, a new held-batch variant, the dialog's mixed share, the
+wait test, the two-photo note test, and the single-file and message-only double
+taps) assert the 0 / 1 / 2+ routing. No production file changed.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`. NEXT is
+unchanged: scoped analyzer, full Android rebuild, then Samsung / WhatsApp.
+
+### Share native transport — WhatsApp all-types finding and correction (2026-10-04)
+
+> Superseded by "Share final reliable media flow" below (2026-10-04): the
+> single native batch for photos and videos together, the family-wildcard and
+> message-extra experiments, and the message travelling with several files no
+> longer describe the behavior. Only the evidence stands.
+
+Owner device result with the native Android transport: photos and videos chosen
+together, Share, the chooser lists the apps with the media shown; choosing
+WhatsApp answers "can't send empty message".
+
+Root cause: the batch was declared as the all-types wildcard. WhatsApp reads an
+`ACTION_SEND_MULTIPLE` declared as all types as a TEXT-ONLY share and ignores
+every file in it. That matches every mixed-media observation on this device: with
+a scalar message WhatsApp sent the message alone ("sometimes only text arrives");
+with no scalar message (the per-attachment text list) there was nothing to send
+and WhatsApp reported an empty message. An independent report describes the same
+behavior in another plugin ("sharing several images with text to WhatsApp only
+sends the text (intent type forced to all types)": WhatsApp treats it as a
+text-only share and drops the images; a `ClipData` over all the URIs was not
+enough, the MIME type was the deciding factor). The all-types declaration for a
+photo/video mix was the written spec, so this was a wrong assumption of ours, not
+a random receiver fault.
+
+Correction (Kotlin and its guards only; the Dart flow, routing, picker and
+clipboard are unchanged):
+- Declared type (`MultiMediaShareFormat.commonMimeType`): identical types give
+  that exact type; several formats of one family give its wildcard; photos mixed
+  with videos give the wildcard of the family most of the files belong to (a tie
+  goes to the family seen first), never the all-types wildcard. The all-types
+  type remains only for an empty or malformed type list. The files themselves are
+  not relabelled: each keeps its own extension and proven type, the provider
+  answers each URI with its own type, and the `ClipDescription` lists every
+  distinct real type. Only the batch-level wildcard is chosen so that WhatsApp
+  reads the files. Whether WhatsApp then takes the videos of a mixed batch
+  declared as the image family (or the images of one declared as the video family)
+  is NOT verified.
+- Message: the ordinary `EXTRA_TEXT` string, once. The per-attachment list with
+  empty captions is removed (`buildCaptionList`, `putCharSequenceArrayListExtra`,
+  the text in the clip items): it was never confirmed to be read by any receiver,
+  and the one form WhatsApp is known to read beside a batch is the string. The
+  clip items hold only their URI again.
+- Known and accepted trade-off, to be judged on the device: WhatsApp shows the
+  message string as the caption of every item of a batch (observed earlier with
+  images). The clipboard copy (once, before the sheet) stays as the fallback and
+  as the way to paste the details a single time. If a once-only caption matters
+  more than delivery, the per-attachment list can be tried again later as its own
+  experiment, with the type fixed.
+- Guards now pin: the string message and no list, URI-only clip items, the family
+  wildcard rule, and that the all-types type is returned only for no types or a
+  malformed type.
+
+Not changed: the media picker, posters, the 0 / 1 / 2+ rule, the MethodChannel,
+the FileProvider, the clipboard behavior, the share text, backend. Flutter tests
+NOT RUN, analyzer NOT RUN, Android build NOT RUN, device NOT VERIFIED.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`, then a
+full Android rebuild and install (Kotlin changed; a hot restart is not enough).
+
+NEXT — on the Samsung with WhatsApp: 2 photos + 2 videos (the failing case), 3
+images, 3 videos, 1 image, 1 video. For each: do all the files arrive, does the
+message arrive and on how many items, and does pasting the copied details work.
+That is the evidence for any further change.
+
+### Share final reliable media flow — one choice, homogeneous batches (2026-10-04)
+
+Owner verification before this change: `flutter test test/share
+test/offers/offer_video_poster_test.dart` passing before the transport
+experiments; scoped analyzer clean; video previews accepted. Not reopened.
+
+**Real Samsung / WhatsApp evidence (owner device, authoritative).**
+- One image + the Offer text: PASS. One video + the Offer text: PASS.
+- Several images with the message as a scalar text: all arrive, WhatsApp repeats
+  the same text on every image.
+- Several images with no platform text: they arrive, no automatic caption.
+- Photos mixed with videos declared as all types: WhatsApp does not deliver the
+  media reliably (it reads such a share as text only and drops the files; an
+  independent report of another plugin describes the same).
+- The per-attachment list form of the text extra: WhatsApp answered "can't send
+  empty message".
+- The majority-family workaround (a mix declared as the family most files belong
+  to): REJECTED by the product owner, because it misrepresents the payload. It,
+  the list extra, and the family-choice dialog are removed.
+
+**Contract.** The person chooses once, in the media picker. That choice (the
+master selection) is kept as chosen, by the stable identity of each item, and is
+never changed by sharing.
+- No media: the message alone, system share. One image or one video: the file
+  with its message, system share, clipboard untouched. Both exactly as accepted.
+- Several photos only, or several videos only: ONE homogeneous batch of exactly
+  those files in the order chosen, declared as the type its files proved (the
+  common type, or the wildcard of their one family), with NO message in the
+  request. The complete details are copied to the clipboard ONCE before the sheet
+  opens, and the dialog says so beforehand. Receiver captions are not relied on:
+  a scalar message is repeated on every image by WhatsApp, and without one no
+  caption arrives, so the deterministic behavior is the clipboard.
+- Photos and videos chosen together: derived internally into the photos and the
+  videos (each in its relative order), shared photos first, then videos, in two
+  steps, with no question and no second media selection. Nothing mixed is ever
+  handed to a receiver in one batch and nothing is relabelled. The dialog shows
+  one informational line beforehand ("Photos and videos will be shared in two
+  steps to ensure all selected media are sent."). Share launches the photo step;
+  the dialog stays open and says "Photos shared. Videos are ready to share.";
+  the same button, now Continue, launches the video step when the person is back.
+  There is no timer and no second sheet while the first receiving app may be
+  open. A family of one file goes with its message like any single file; the
+  details are copied once, at the first step, only if some family has several
+  files, and never again for the second step.
+- Failure: a step that cannot be prepared or opened launches nothing and copies
+  nothing; steps already handed over are never sent again; the retry (Retry or
+  Continue) sends only the remaining step. A closed sheet leaves the choice and
+  the progress as they were (a closed first sheet starts the share over). Changing
+  the media choice starts over.
+- Double tap: the controller takes its busy lock before its first await, so one
+  preparation, one copy and one external share per step, and one more for the
+  continuation, however fast the taps.
+- State: the owner's idle / preparing / ready-to-share-images / images launched /
+  waiting for return / ready-to-share-videos / videos launched / complete are:
+  `ShareFlowStatus` idle, preparing, sharing; the set of completed families
+  (`MediaFamily`), never the selection; `hasPendingStep` / `pendingFamily`
+  (ready to share videos, shown by the open dialog); and the share ending in
+  `ShareFlowResult.shared`. Each step prepares only its own files, so the videos
+  are not downloaded for the photo step and a video failure after the photos left
+  is the "second step failed" case, retried alone.
+- Platform: the rule above is applied where files are handed over in batches
+  (Android, `ShareDelivery.familyBatches`); on iOS and the rest
+  (`ShareDelivery.wholeSelection`, chosen in `ShareLive` alone) the whole choice
+  and its message stay in one system share as before, until verified separately.
+
+**Transport.** A homogeneous batch of two or more goes through the small native
+Android adapter kept from before (MethodChannel
+`com.example.broker_wallet/multi_media_share`): files only, as content URIs from
+the narrow FileProvider over the share staging folder, one `ACTION_SEND_MULTIPLE`
+with every URI also in the `ClipData`, a read grant, the proven type or the
+wildcard of one family, and no message. A mix reaching it is refused. It is kept
+(rather than `share_plus`) because it copies nothing again and does not clear
+earlier files: `share_plus 11.1.0` empties its cache folder at the start of every
+share, which would delete the first step's files while a receiving app may still
+be reading them. One file and no file still use `share_plus`.
+
+**Removed.** The majority-family type, the list text extra and its caption
+helper, the all-types fallback in the native adapter, the message parameter of the
+channel, the clipboard-refusal text fallback, the `ShareTransport` split, the
+family-choice dialog and its states and strings, and the plan classes. A guard
+now fails if majority logic, timers sequencing a share, or a relabelled mix
+returns.
+
+**Security.** Private media stays: authenticated retrieval, local prepared file in
+the cache, content URI with a temporary read grant, the share sheet. No signed
+URL, key, media id or Worker endpoint reaches native code, a message or the
+clipboard, which holds only the accepted human-readable details. No backend,
+Supabase, RLS, Worker or upload change.
+
+**Known limits, stated plainly.**
+- The native adapter has not yet run a homogeneous batch on the device (it ran
+  only with a mix); whether WhatsApp takes a files-only batch of photos or of
+  videos through it is NOT verified. Images-only files-only through
+  `share_plus` did arrive.
+- Two steps need two taps; the second is the person's, never automatic.
+- If the clipboard ever refuses (not seen on Android) the batch has no details
+  anywhere and the dialog stops promising a copy.
+- Owner media, which uses the same shared media path, gets the same behavior;
+  quotation PDF sharing and the Offer text are untouched.
+
+Tests (source only, not run): `share_media_batches_test.dart` (master selection,
+derived batches, fixed order, no majority), `share_payload_test.dart` (0 / 1 /
+a family / a mix refused / whole selection), `share_android_sink_test.dart`
+(routing, exact channel arguments, no message), `share_flow_controller_test.dart`
+(single image and video, three photos, three videos, the mixed master selection
+step by step, no timer, retry of the second step only, failures before and after
+the first launch, change of choice, double taps, whole selection, clipboard once),
+`share_options_dialog_test.dart` (the two-step note, the open dialog and
+Continue, a failed second step, a double tap held at a download, Cancel, offline,
+a file that is gone, the notes), and `share_source_guards_test.dart` (no majority
+logic, no timer, no relabelled mix, no widget policy, master selection by stable
+identity, clipboard private, Kotlin pinned). Format, ARB JSON and
+`git diff --check` pass. Flutter tests, analyzer and the Android build were NOT
+RUN; device NOT VERIFIED. No commit, no push.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`, then a
+full Android rebuild and install (Kotlin and the manifest changed).
+
+NEXT — on the Samsung with WhatsApp: 1 image, 1 video (unchanged); 3 images and 3
+videos (does the batch arrive, paste the details once); photos + videos: Share,
+confirm the photos arrive and the dialog stays with "Photos shared. Videos are
+ready to share.", press Continue, confirm the videos arrive. Report any batch that
+does not arrive; that evidence decides the next step.
+
+### Share final reliable media flow — source-guard realignment (2026-10-04)
+
+Owner run of `flutter test test/share test/offers/offer_video_poster_test.dart`:
+417 passed, 3 failed, all three in `test/share/share_source_guards_test.dart`. Each
+was judged against the final architecture; none was a production defect, and no
+production code changed.
+
+| Failure | Verdict | Cause | Realignment |
+|---|---|---|---|
+| Family-comparison count | Guard wrong | The regex had been corrupted by an edit script (a backspace character where `\b` was meant), so it counted zero matches. | The homogeneous-batch invariant is now asserted where it is enforced: the one code line that reads a file's family is the check refusing a mix, placed after the non-batch cases and before the only way to a media batch; a refused mix carries no message; `isLaunchable` excludes it; the flow ends the step as a failure before the busy check, the copy and the launch; in Kotlin `commonMimeType` requires one family and the intent is built (so a mix refused) before the sheet starts. The native defensive check already existed. |
+| `Handler(` in Kotlin | Guard too broad | It matched `setMethodCallHandler(` and `MethodChannel.MethodCallHandler`, which wait for nothing. | The guard refuses real timing APIs only (`Future.delayed`, `Timer(`/`Timer.periodic`, `CountDownTimer`, `postDelayed`, `postAtTime`, `sendMessageDelayed`, `scheduleAtFixedRate`, `Thread.sleep`, `sleep(`, `delay(`), with a self-check that these are caught and that plain handlers are not. |
+| Localization keys | Guard stale | A hand-kept key list expected `share` as a literal, which now appears only as one branch of a conditional. | The keys are now read from the source: every quoted key inside each `translate(` call (balanced parentheses, so either branch of a conditional counts), the note keys, and the keys held in values, read from `ShareSection`, `ShareFailureKind.messageKey`, `titleKey` and `sectionTitleKey`. Each must exist, non-empty, in both ARBs with matching placeholders. A guard lists the only four value-held arguments, so a new one cannot reach the screen unchecked. |
+
+Also: the keys added for Share must each be named by code that shows them (no
+dead strings), and no source may declare a batch as all types. Obsolete
+assumptions were dropped (the expectations on `shareMediaPhotoN` and
+`shareMediaVideoN`). Retired-architecture guards (no majority type, no choice
+dialog, no `ShareTransport`/plan classes, no timer, no relabelled mix) stay as
+"must not return" checks.
+
+Dead strings removed: `shareMediaPhotoN` and `shareMediaVideoN` from both ARBs.
+The earlier dialog was their only user and nothing references them. No string was
+added. Other unreferenced `share*` keys in the ARBs predate this work and were not
+touched.
+
+Verification (source only): `dart format` clean on the guard file, Dart parse, ARB
+JSON valid, `git diff --check` clean, and the rewritten guards were emulated
+against the real sources and ARBs with the same logic. Flutter tests, analyzer
+and builds were NOT RUN by the agent. No commit, no push.
+
+NOW — `flutter test test/share test/offers/offer_video_poster_test.dart`.
+
+### Share UI / loading polish — one loading indicator, notes at the reading edge (2026-10-04)
+
+Small polish on the accepted final media flow. The Share architecture, the
+picker, the master selection, the batching, the clipboard contract, the native
+Android transport, FileProvider, MIME policy, the Offer text, the posters, the
+backend and the quotation share are untouched.
+
+**Notes alignment (Arabic and English).**
+- Root cause: each Media row is a `Column` with the default centered cross axis.
+  A note narrower than the row shrank to its words and sat centered ("Photos
+  shared. Videos are ready to share."), while the long details note filled the row
+  and so began at the reading edge. Nothing in the text itself was centered.
+- Fix, in `_buildNote` only: each note is a full-width `SizedBox` with
+  `TextAlign.start`. The one `Directionality` then decides the edge: left in
+  English, right in Arabic. No `TextAlign.right/left/center` anywhere in the dialog.
+- Arabic details note, now exactly: `عند مشاركة عدة صور أو مقاطع فيديو، يتم نسخ التفاصيل. الصقها في المحادثة مرة واحدة بعد إرسال الوسائط.`
+  English (already natural, unchanged): "When you share several photos or videos,
+  the details are copied. Paste them into the chat once, after the media." The
+  status line and the accepted Offer message text are unchanged.
+
+**Loading: what happens between the tap and the sheet (traced, not assumed).**
+tap → one busy lock (before the first await) → status `preparing` → staging folder
+lookup and stale sweep → per file: held-on-phone lookup (path, then the cache by
+stable key) else one download → type proven from the file's own header → copy
+(cache hit) or move (download) into the share's folder → payload planned → status
+`sharing` → clipboard once → one native call → status `idle`.
+- Duplicate work found: NO. No file is looked up, downloaded, typed, copied or
+  staged twice, inside a step or across the two steps; Continue prepares only the
+  pending family and never touches the first folder. The only repeated check is
+  `exists`/`length` in the fetcher and again in the preparer, kept on purpose as
+  validation (microseconds). A cache hit is copied once because the FileProvider
+  serves only the share folder, which is not changed here.
+- What made the first loading feel poor was the presentation, not hidden work:
+  (1) the button showed a spinner AND "Preparing files…", (2) a separate
+  "x of y files prepared" line appeared under the media and moved the rows below
+  it, rebuilding the whole dialog for each file, (3) the moment the sheet was
+  launching or open the button switched again to a spinner with "Sharing…" (for
+  `share_plus` that lasts as long as the sheet is open, behind it), and (4) the
+  spinner was white on the button's grey disabled colour.
+  Videos are not held on the phone, so a Continue for them is a real download,
+  which is why the second wait is the one that is understandable.
+
+**Correction.** One presentation for every state, driven only by
+`ShareFlowController.status` (the one source of truth):
+- The label is always Share (or Continue). The one loading indicator takes the
+  place of the icon, the same 18 px box, and only while the status is
+  `preparing`. Nothing changes width or colour: while busy the button keeps its
+  primary colour but cannot be pressed. A screen reader is told "Preparing
+  files…" through the spinner's semantics.
+- Removed: the "Preparing files…"/"Sharing…" labels, the count line, its string
+  `sharePreparingCount` (both ARBs), and the per-file notifications
+  (`preparedFiles`, `filesToPrepare`, the controller's `onProgress`). The dialog is
+  told once per phase: preparing, sharing, idle. A share with nothing to prepare
+  (a message alone) goes from `preparing` to `sharing` in the same turn, so no frame
+  ever draws a spinner for it. Nothing is timed: no `Future.delayed`, no `Timer`,
+  no minimum loading time.
+- Lifecycle: nothing is added. The native batch call returns as soon as the
+  chooser starts, and `share_plus` returns when the chooser closes (before the
+  app resumes), so the button is back to Share/Continue, enabled, whenever the
+  person returns; no spinner is left behind.
+
+| State | Button |
+|---|---|
+| Idle, first | Share, enabled |
+| Preparing a step | Share (Continue for a later step), locked, one spinner for the icon |
+| Sheet launching / open | same label, locked, no spinner |
+| First mixed step done | Continue, enabled, "Photos shared. Videos are ready to share." |
+| Preparing the rest | Continue, locked, one spinner |
+| Failure | back to Share/Continue, enabled, the reason and Retry |
+
+**Not changed, stated plainly.** Downloads are still one after another (kept: an
+all-or-nothing, cancellable, ordered preparation). A cache hit is still copied
+once into the share's folder. Nothing is downloaded ahead of the tap. Whether a
+batch is quicker on the phone is for the owner's device to say.
+
+Tests (source): dialog — one spinner for each preparation of a mixed share, none
+while the sheet is open or after, same button size throughout, a double tap sends
+once, no spinner after a failure or a closed sheet, the locked button keeps its
+colour, and in English and Arabic the status line and the details note begin at
+the same edge (checked on the laid-out text, with a status line shorter than its
+row); controller — what is held on the phone is looked up once and never
+downloaded, Continue looks up only the pending family and leaves the first folder
+as it was, a download is moved (no partial or second copy), one notification per
+phase, a message alone never reaches a visible `preparing`; guards — one
+`CircularProgressIndicator`, gated on `isPreparing`, no `'sharing'` state, no
+progress plumbing, `TextAlign.start` and full width for notes, the exact Arabic
+string, and the timing guard over the dialog and the share folder.
+
+Verification: formatter clean on every touched file, ARB JSON valid, `git diff
+--check` clean. The share logic and the source guards were executed in the plain
+Dart VM with stand-ins for Flutter (controller 85, preparer 25, payload 14,
+sources 63, guards 64 passed); that is not `flutter test`. The dialog widget tests
+were NOT run. Flutter tests, analyzer and the Android build were NOT RUN; device
+NOT VERIFIED. No commit, no push.
+
+NOW — `flutter test test/share`.

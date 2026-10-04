@@ -7,11 +7,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offer_media_url_cache.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/share/share_android_sink.dart';
+import 'package:broker_wallet/src/services/share/share_clipboard.dart';
 import 'package:broker_wallet/src/services/share/share_flow_controller.dart';
 import 'package:broker_wallet/src/services/share/share_labels.dart';
 import 'package:broker_wallet/src/services/share/share_launcher.dart';
 import 'package:broker_wallet/src/services/share/share_media_fetcher.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
+import 'package:broker_wallet/src/services/share/share_payload.dart';
 import 'package:broker_wallet/src/services/share/share_plus_sink.dart';
 import 'package:broker_wallet/src/services/share/share_preparer.dart';
 
@@ -23,7 +26,16 @@ import 'package:broker_wallet/src/services/share/share_preparer.dart';
 abstract final class ShareLive {
   /// The one place a share leaves the app. App-wide, so no screen can open a
   /// second share sheet over the first.
-  static final ShareLauncher launcher = ShareLauncher(const SharePlusSink());
+  static final ShareLauncher launcher = ShareLauncher(_transport());
+
+  /// The platform's way of opening the share sheet. The system share (the
+  /// `share_plus` plugin) takes everything on every platform; on Android a batch
+  /// of two or more photos and videos goes to the app's own native adapter
+  /// instead (see [AndroidMediaBatchSink]). This is the only place the platform
+  /// is asked.
+  static ShareSink _transport() => Platform.isAndroid
+      ? AndroidMediaBatchSink(system: const SharePlusSink())
+      : const SharePlusSink();
 
   /// Files prepared for sharing live here, one folder per share, in the
   /// system's temporary directory (never a public or media-store location, so
@@ -52,6 +64,12 @@ abstract final class ShareLive {
         preparer: _preparer,
         fetcher: _fetcher,
         launcher: launcher,
+        clipboard: const SystemShareClipboard(),
+        // Android hands media over in homogeneous batches; the other platforms
+        // keep the whole choice and its message in one system share.
+        delivery: Platform.isAndroid
+            ? ShareDelivery.familyBatches
+            : ShareDelivery.wholeSelection,
       );
 
   /// The words of a message in the language the app is showing.

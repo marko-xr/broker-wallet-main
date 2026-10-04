@@ -9,7 +9,7 @@ import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:broker_wallet/src/services/share/share_media_fetcher.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/services/share/share_source.dart';
-import 'package:broker_wallet/src/views/Widgets/selectable_chip.dart';
+import 'package:broker_wallet/src/views/Widgets/share_media_picker.dart';
 
 /// The space above and below the scrolling region of the dialog.
 const double _regionGap = 20;
@@ -28,11 +28,12 @@ const double _minRowsShare = 0.3;
 ///
 /// It answers "what am I about to share?": a row for each part the record
 /// really has — never an empty one — with a short line saying what is in it, a
-/// Select All box, and, for a record with photos and videos, a chip for each so
-/// they can be chosen one by one. The Share button is off while nothing is
-/// chosen, shows "Preparing files…" while photos and videos are fetched, and
-/// cannot be pressed twice. If a file cannot be had, the dialog stays open with
-/// the reason and the choices intact.
+/// Select All box, and a compact media summary that opens a visual picker.
+/// The Share button is off while nothing is
+/// chosen and cannot be pressed twice. While files are really being prepared it
+/// shows one spinner in place of its icon, and nothing spins once the share sheet
+/// is open. If a file cannot be had, the dialog stays open with the reason and
+/// the choices intact.
 ///
 /// Closing the share sheet without choosing an app is not an error: the dialog
 /// stays as it was. Choosing an app closes the dialog.
@@ -42,6 +43,7 @@ class ShareOptionsDialog extends StatefulWidget {
     required this.source,
     this.refreshLink,
     this.engine,
+    this.initialMediaKey,
   });
 
   /// What the record offers for sharing.
@@ -54,6 +56,9 @@ class ShareOptionsDialog extends StatefulWidget {
   /// The share machinery. Tests pass a fake; the app uses [ShareLive.engine].
   final ShareEngine? engine;
 
+  /// The current viewer item, when Share was opened from a gallery page.
+  final String? initialMediaKey;
+
   static bool _isOpen = false;
 
   /// Opens the dialog, unless one is already open (a double tap on a Share icon).
@@ -61,6 +66,7 @@ class ShareOptionsDialog extends StatefulWidget {
     BuildContext context, {
     required ShareSource source,
     LinkRefresher? refreshLink,
+    String? initialMediaKey,
   }) async {
     if (_isOpen) return;
     _isOpen = true;
@@ -70,6 +76,7 @@ class ShareOptionsDialog extends StatefulWidget {
         builder: (_) => ShareOptionsDialog(
           source: source,
           refreshLink: refreshLink,
+          initialMediaKey: initialMediaKey,
         ),
       );
     } finally {
@@ -99,6 +106,7 @@ class _ShareOptionsDialogState extends State<ShareOptionsDialog> {
       labels: ShareLive.labelsFor(AppLocalizations.of(context)),
       engine: widget.engine ?? ShareLive.engine(),
       refreshLink: widget.refreshLink,
+      initialMediaKey: widget.initialMediaKey,
     );
   }
 
@@ -134,6 +142,20 @@ class _ShareOptionsDialogState extends State<ShareOptionsDialog> {
   void _close() {
     _controller?.cancel();
     Navigator.of(context).pop();
+  }
+
+  Future<void> _openMediaPicker(ShareFlowController controller) async {
+    if (controller.isBusy) return;
+    final result = await ShareMediaPicker.show(
+      context,
+      items: controller.source.media,
+      initialKeys: controller.selectedMediaKeys,
+      unavailableKeys: <String>{
+        for (final item in controller.source.media)
+          if (controller.isMediaUnavailable(item.key)) item.key,
+      },
+    );
+    if (mounted && result != null) controller.replaceMediaSelection(result);
   }
 
   @override
@@ -249,7 +271,7 @@ class _ShareOptionsDialogState extends State<ShareOptionsDialog> {
           ),
         ),
         const SizedBox(height: _regionGap),
-        // Everything that can grow — the rows, the photo and video chips, the
+        // Everything that can grow — the rows, the compact media summary, the
         // hint and a failure — scrolls here, so a long list, a large font or a
         // short screen can never push the buttons off the dialog. Only the
         // heading above and the buttons below stay put.
@@ -327,48 +349,52 @@ class _ShareOptionsDialogState extends State<ShareOptionsDialog> {
                       padding: EdgeInsets.zero,
                       backgroundColor: colors.primary,
                       foregroundColor: colors.onPrimary,
+                      // While a share is under way the button cannot be pressed
+                      // but keeps its look, so the spinner is drawn on the
+                      // button's own colour and a share that is ready at once
+                      // goes from Share to the sheet with no flash of grey.
+                      disabledBackgroundColor: busy ? colors.primary : null,
+                      disabledForegroundColor: busy ? colors.onPrimary : null,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: busy
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.onPrimary,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  loc.translate(controller.isPreparing
-                                      ? 'preparingFiles'
-                                      : 'sharing'),
-                                  style: texts.bodyLarge,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.share_rounded, size: 18),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  loc.translate('share'),
-                                  style: texts.bodyLarge,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
+                    // One presentation for every state: the label is always
+                    // Share (or Continue), and the one loading indicator takes
+                    // the place of the icon, the same size, only while files are
+                    // really being prepared. Nothing changes width, and nothing
+                    // spins once the share sheet is open.
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: controller.isPreparing
+                              ? Semantics(
+                                  liveRegion: true,
+                                  child: CircularProgressIndicator(
+                                    key: const ValueKey('share-preparing'),
+                                    strokeWidth: 2,
+                                    color: colors.onPrimary,
+                                    semanticsLabel:
+                                        loc.translate('preparingFiles'),
+                                  ),
+                                )
+                              : const Icon(Icons.share_rounded, size: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            loc.translate(controller.hasPendingStep
+                                ? 'continueLabel'
+                                : 'share'),
+                            style: texts.bodyLarge,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -467,78 +493,119 @@ class _ShareOptionsDialogState extends State<ShareOptionsDialog> {
           detail: detail,
           selected: controller.isSelected(section),
           enabled: !controller.isBusy && !unavailable,
-          onTap: () => controller.toggleSection(section),
+          showChevron: section == ShareSection.media,
+          onTap: section == ShareSection.media
+              ? () => _openMediaPicker(controller)
+              : () => controller.toggleSection(section),
         ),
         if (section == ShareSection.media)
-          _buildMediaChips(context, controller),
+          _buildMediaSummary(context, controller),
+        if (section == ShareSection.media && controller.hasPendingStep)
+          _buildNote(context, 'shareStepVideosReady', 'share-step-status',
+              live: true)
+        else if (section == ShareSection.media && controller.twoStepShare)
+          _buildNote(context, 'shareTwoStepNote', 'share-two-step-note'),
+        if (section == ShareSection.media && controller.copiesDetails)
+          _buildNote(context, 'shareDetailsCopyNote', 'share-details-note'),
       ],
     );
   }
 
-  Widget _buildMediaChips(
+  /// A short line under the Media row, in the dialog the person is already
+  /// reading. Said before anything is shared, because the native sheet covers
+  /// the screen the moment Share is pressed, so nothing shown after that can be
+  /// counted on to be seen. Informational only: none of these lines asks
+  /// anything or changes what is shared.
+  ///
+  /// The details note appears only while a share really would copy the message
+  /// and goes if the clipboard ever refuses it; the two-step note appears when
+  /// photos and videos are both chosen; the status appears once the photos were
+  /// handed over and the videos are ready.
+  Widget _buildNote(
+    BuildContext context,
+    String textKey,
+    String valueKey, {
+    bool live = false,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final texts = Theme.of(context).textTheme;
+    final text = Text(
+      AppLocalizations.of(context).translate(textKey),
+      key: ValueKey(valueKey),
+      textAlign: TextAlign.start,
+      style: texts.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+    );
+    // The row this sits in centers whatever is narrower than itself, so a short
+    // line would shrink to its words and look centered while a long one, which
+    // fills the row, begins at the reading edge. Taking the whole width makes
+    // every note begin at the same edge: the left in English, the right in
+    // Arabic, from the one Directionality.
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 12, bottom: 8),
+        child: live ? Semantics(liveRegion: true, child: text) : text,
+      ),
+    );
+  }
+
+  Widget _buildMediaSummary(
       BuildContext context, ShareFlowController controller) {
     final loc = AppLocalizations.of(context);
-    final busy = controller.isBusy;
-    var photos = 0;
-    var videos = 0;
-
-    final chips = <Widget>[];
-    for (final item in controller.source.media) {
-      final n = item.isVideo ? ++videos : ++photos;
-      final base = loc
-          .translate(item.isVideo ? 'shareMediaVideoN' : 'shareMediaPhotoN')
-          .replaceAll('{n}', '$n');
-      final unavailable = controller.isMediaUnavailable(item.key);
-      final label = unavailable
-          ? '$base · ${loc.translate('shareItemUnavailable')}'
-          : base;
-      final selected = controller.isMediaSelected(item.key);
-      chips.add(Semantics(
-        container: true,
-        button: true,
-        selected: selected,
-        enabled: !busy && !unavailable,
-        label: label,
-        excludeSemantics: true,
-        onTap:
-            busy || unavailable ? null : () => controller.toggleMedia(item.key),
-        child: SelectableChip(
-          key: ValueKey('share-media-${item.key}'),
-          label: label,
-          isSelected: selected && !unavailable,
-          isEnabled: !busy && !unavailable,
-          onTap: () => controller.toggleMedia(item.key),
-        ),
-      ));
-    }
-
+    final selected = <ShareMediaItem>[
+      for (final item in controller.source.media)
+        if (controller.isMediaSelected(item.key) &&
+            !controller.isMediaUnavailable(item.key))
+          item,
+    ];
+    if (selected.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsetsDirectional.only(bottom: 8, start: 4, end: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: AppControlSizes.chipSpacing,
-            runSpacing: AppControlSizes.chipSpacing,
-            children: chips,
-          ),
-          if (controller.totalMediaCount > 1)
-            TextButton(
-              key: const ValueKey('share-media-all'),
-              onPressed: busy
-                  ? null
-                  : (controller.selectedMediaCount == controller.totalMediaCount
-                      ? controller.clearMedia
-                      : controller.selectAllMedia),
-              child: Text(
-                loc.translate(
-                  controller.selectedMediaCount == controller.totalMediaCount
-                      ? 'clear'
-                      : 'selectAll',
+      padding: const EdgeInsetsDirectional.only(start: 12, bottom: 8),
+      child: InkWell(
+        key: const ValueKey('share-media-summary'),
+        onTap: controller.isBusy ? null : () => _openMediaPicker(controller),
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (final item in selected.take(3))
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 6),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: ShareMediaPreview(item: item, cacheWidth: 126),
+                      ),
+                    ),
+                  ),
+                if (selected.length > 3) Text('+${selected.length - 3}'),
+              ],
+            ),
+            // Informational only: what the choice is made of. It never asks
+            // anything and never changes what is shared.
+            if (controller.selectedPhotoCount > 0 &&
+                controller.selectedVideoCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  loc
+                      .translate('shareBreakdown')
+                      .replaceAll(
+                          '{photos}', '${controller.selectedPhotoCount}')
+                      .replaceAll(
+                          '{videos}', '${controller.selectedVideoCount}'),
+                  key: const ValueKey('share-media-breakdown'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -643,6 +710,7 @@ class _OptionTile extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     this.detail,
+    this.showChevron = false,
   });
 
   final IconData icon;
@@ -651,6 +719,7 @@ class _OptionTile extends StatelessWidget {
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
+  final bool showChevron;
 
   @override
   Widget build(BuildContext context) {
@@ -731,16 +800,20 @@ class _OptionTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Transform.scale(
-                    scale: 0.9,
-                    child: Checkbox(
-                      value: selected,
-                      onChanged: enabled ? (_) => onTap() : null,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
+                  if (showChevron)
+                    Icon(Icons.chevron_right_rounded,
+                        color: colors.onSurfaceVariant)
+                  else
+                    Transform.scale(
+                      scale: 0.9,
+                      child: Checkbox(
+                        value: selected,
+                        onChanged: enabled ? (_) => onTap() : null,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

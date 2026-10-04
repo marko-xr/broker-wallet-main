@@ -15,11 +15,14 @@ import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/share/share_android_sink.dart';
+import 'package:broker_wallet/src/services/share/share_clipboard.dart';
 import 'package:broker_wallet/src/services/share/share_flow_controller.dart';
 import 'package:broker_wallet/src/services/share/share_labels.dart';
 import 'package:broker_wallet/src/services/share/share_launcher.dart';
 import 'package:broker_wallet/src/services/share/share_media_fetcher.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
+import 'package:broker_wallet/src/services/share/share_payload.dart';
 import 'package:broker_wallet/src/services/share/share_preparer.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -286,7 +289,12 @@ OfferMediaRef mediaRef(
 List<ShareMediaItem> mediaItems(List<OfferMediaRef> refs) =>
     ShareMediaItem.fromRefs(refs);
 
-// ---------- Real bytes ----------
+// ---------- Media bytes ----------
+
+/// A decodable project image for widget tests that actually paint thumbnails.
+/// The short magic-prefix fixtures below test file sniffing, not image decoding.
+Uint8List renderableJpegBytes() =>
+    File('assets/images/avatar-placeholder.jpg').readAsBytesSync();
 
 Uint8List jpegBytes([int length = 300]) => Uint8List.fromList(<int>[
       0xFF, 0xD8, 0xFF, 0xE0, //
@@ -360,7 +368,24 @@ class FakeShareSink implements ShareSink {
   /// Completes the open sheet by hand when set; otherwise [send] answers at once.
   Completer<ShareOutcome>? hold;
 
+  /// Every request, in order, whichever way the Android transport would route
+  /// it.
   final List<ShareRequest> requests = <ShareRequest>[];
+
+  /// The requests the Android transport hands to the native multi-media adapter:
+  /// a media batch of two or more files. Decided by the production routing
+  /// ([AndroidMediaBatchSink.takes]), never by a copy of it.
+  List<ShareRequest> get nativeRequests => <ShareRequest>[
+        for (final request in requests)
+          if (AndroidMediaBatchSink.takes(request)) request,
+      ];
+
+  /// The requests that take the system share: no file, one file, or anything
+  /// that is not a media batch.
+  List<ShareRequest> get systemRequests => <ShareRequest>[
+        for (final request in requests)
+          if (!AndroidMediaBatchSink.takes(request)) request,
+      ];
 
   /// The files the sheet could still read at the moment it was opened.
   final List<List<bool>> filesExistedAtSend = <List<bool>>[];
@@ -376,6 +401,37 @@ class FakeShareSink implements ShareSink {
     final pending = hold;
     if (pending != null) return pending.future;
     return outcome;
+  }
+}
+
+/// Records what was copied to the clipboard, and can be made to fail.
+class FakeShareClipboard implements ShareClipboard {
+  FakeShareClipboard({this.succeeds = true, this.onCopy});
+
+  /// Whether a copy really lands on the clipboard.
+  bool succeeds;
+
+  /// Thrown by [copy] when set, as a platform error would be.
+  Object? error;
+
+  /// Called at the moment of every copy attempt, before it is answered.
+  final void Function(String text)? onCopy;
+
+  /// Every text that really landed on the clipboard, in order.
+  final List<String> copied = <String>[];
+
+  /// Every attempt, including those that failed.
+  int attempts = 0;
+
+  @override
+  Future<bool> copy(String text) async {
+    attempts++;
+    onCopy?.call(text);
+    final failure = error;
+    if (failure != null) throw failure;
+    if (!succeeds) return false;
+    copied.add(text);
+    return true;
   }
 }
 
@@ -400,8 +456,21 @@ class TempArea {
   }
 }
 
-SharePreparer newPreparer(TempArea area, {DateTime Function()? now}) =>
-    SharePreparer(stagingRoot: () async => area.staging, now: now);
+/// A preparer over the test's staging folder. [hold] keeps every preparation
+/// waiting, before it does any file work, until it completes: a way to look at a
+/// share while it is really being prepared, with no clock and no network.
+SharePreparer newPreparer(
+  TempArea area, {
+  DateTime Function()? now,
+  Future<void>? hold,
+}) =>
+    SharePreparer(
+      stagingRoot: () async {
+        if (hold != null) await hold;
+        return area.staging;
+      },
+      now: now,
+    );
 
 /// A fetcher whose local lookup, cached links and HTTP client are all fakes.
 ShareMediaFetcher newFetcher({
@@ -428,13 +497,18 @@ ShareEngine newEngine(
   Future<String?> Function(String key)? localPath,
   String? Function(String key)? cachedLink,
   DateTime Function()? now,
+  ShareClipboard? clipboard,
+  ShareDelivery delivery = ShareDelivery.familyBatches,
+  Future<void>? hold,
 }) =>
     ShareEngine(
-      preparer: newPreparer(area, now: now),
+      preparer: newPreparer(area, now: now, hold: hold),
       fetcher: newFetcher(
         client: client,
         localPath: localPath,
         cachedLink: cachedLink,
       ),
       launcher: ShareLauncher(sink),
+      clipboard: clipboard,
+      delivery: delivery,
     );

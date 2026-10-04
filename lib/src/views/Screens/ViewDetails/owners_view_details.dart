@@ -403,6 +403,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       onRemoveUpload: (mediaObjectId) =>
           unawaited(_ownerService.cancelUpload(mediaObjectId)),
       refreshSignedUrl: loader.refreshSignedUrl,
+      onShareMedia: (key) => _shareOwner(initialMediaKey: key),
     );
     return _cachedMediaGallery!;
   }
@@ -453,6 +454,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       showControls: true,
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/profile-person.svg',
+      onShareMedia: (key) => _shareOwner(initialMediaKey: key),
     );
     return _cachedMediaGallery!;
   }
@@ -1414,7 +1416,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     }
   }
 
-  void _shareOwner() {
+  void _shareOwner({String? initialMediaKey}) {
     // The Owner's private photos and videos, as the gallery above holds them
     // (the legacy Firebase backend keeps plain stored links). They are attached
     // as files, fetched through the Owner's authorized media path.
@@ -1423,7 +1425,12 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         ? loader.displayItems
         : <OfferMediaRef>[
             for (final url in _currentOwner.mediaUrls)
-              OfferMediaRef(mediaObjectId: '', cacheKey: null, signedUrl: url),
+              OfferMediaRef(
+                mediaObjectId: '',
+                cacheKey: null,
+                signedUrl: url,
+                isVideo: MediaItem.getMediaTypeFromUrl(url) == MediaType.video,
+              ),
           ];
     ShareOptionsDialog.show(
       context,
@@ -1432,6 +1439,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         media: ShareMediaItem.fromRefs(refs),
       ),
       refreshLink: loader?.refreshSignedUrl,
+      initialMediaKey: initialMediaKey,
     );
   }
 

@@ -2730,13 +2730,16 @@
   "shareOffice": "مشاركة المكتب",
   "shareQuotation": "مشاركة عرض السعر",
   "shareSelectAtLeastOne": "اختر عنصرًا واحدًا على الأقل للمشاركة.",
-  "shareMediaPhotoN": "صورة {n}",
-  "shareMediaVideoN": "فيديو {n}",
   "shareMediaCount": "تم تحديد {selected} من {total}",
+  "shareMediaNotSelected": "غير محدد",
   "shareItemUnavailable": "غير متاح",
   "shareErrorNetwork": "تعذّر تجهيز الملفات. تحقق من اتصالك ثم حاول مرة أخرى.",
   "shareErrorUnavailable": "بعض الملفات المحددة لم تعد متاحة. تم إلغاء تحديدها — اضغط مشاركة مرة أخرى للمتابعة بدونها.",
   "shareErrorSession": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
   "shareErrorGeneric": "تعذّر تجهيز هذه المشاركة. يرجى المحاولة مرة أخرى.",
+  "shareDetailsCopyNote": "عند مشاركة عدة صور أو مقاطع فيديو، يتم نسخ التفاصيل. الصقها في المحادثة مرة واحدة بعد إرسال الوسائط.",
+  "shareBreakdown": "الصور: {photos} · الفيديوهات: {videos}",
+  "shareTwoStepNote": "سيتم إرسال الصور ومقاطع الفيديو على خطوتين لضمان مشاركة جميع الوسائط.",
+  "shareStepVideosReady": "تمت مشاركة الصور. مقاطع الفيديو جاهزة للمشاركة.",
   "failedToShareDocuments": "فشل في مشاركة المستندات"
 }

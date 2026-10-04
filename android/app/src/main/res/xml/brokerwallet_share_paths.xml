@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only the share staging folder inside the app's cache, where each share
+         prepares its files in a folder of its own (see ShareLive and
+         MultiMediaSharePlugin.STAGING_FOLDER). Nothing else is exposed. -->
+    <cache-path name="brokerwallet_share" path="broker_wallet_share/" />
+</paths>

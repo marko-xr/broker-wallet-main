@@ -1566,6 +1566,10 @@
   "recentlyAdded": "مضاف حديثاً",
   "lessPrice": "أقل سعر",
   "thisWeek": "هذا الأسبوع",
+  "highestPrice": "أعلى سعر",
+  "recentlyUpdated": "محدّث حديثاً",
+  "homeFilterComingSoonTitle": "قريبًا",
+  "homeFilterComingSoonDesc": "سيتوفر هذا الفلتر قريبًا.",
   
 
   "quotation": "عرض سعر",

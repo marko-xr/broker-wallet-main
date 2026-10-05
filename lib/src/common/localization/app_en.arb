@@ -1639,6 +1639,10 @@
   "recentlyAdded": "Recently Added",
   "lessPrice": "Less Price",
   "thisWeek": "This Week",
+  "highestPrice": "Highest Price",
+  "recentlyUpdated": "Recently Updated",
+  "homeFilterComingSoonTitle": "Coming soon",
+  "homeFilterComingSoonDesc": "This filter will be available soon.",
 
   "quotation": "Quotation",
   "generalInformation": "General Information",

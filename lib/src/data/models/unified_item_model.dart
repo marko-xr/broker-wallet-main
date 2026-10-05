@@ -7,8 +7,17 @@ class UnifiedItemModel {
   final String title;
   final String subtitle;
   final ItemType type;
+
+  /// When the record was created. Only the record's own time while
+  /// [hasCreatedAt] is true; otherwise a stand-in so something can be drawn.
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Whether [createdAt] is the record's own creation time. It is false when the
+  /// record carried none and [createdAt] is only today's date for display; that
+  /// says nothing about the record's age, so a filter by age never counts the
+  /// record as recent.
+  final bool hasCreatedAt;
   final String? price; // For offers and requests
   final double? minPrice; // For filtering by price
   final double? maxPrice; // For filtering by price
@@ -21,6 +30,7 @@ class UnifiedItemModel {
     required this.type,
     required this.createdAt,
     required this.updatedAt,
+    this.hasCreatedAt = true,
     this.price,
     this.minPrice,
     this.maxPrice,
@@ -29,10 +39,8 @@ class UnifiedItemModel {
 
   // Factory methods to create from different models
   factory UnifiedItemModel.fromRequest(dynamic request) {
-    final minPrice =
-        request.minPrice.isNotEmpty ? double.tryParse(request.minPrice) : null;
-    final maxPrice =
-        request.maxPrice.isNotEmpty ? double.tryParse(request.maxPrice) : null;
+    final minPrice = _parsePrice(request.minPrice);
+    final maxPrice = _parsePrice(request.maxPrice);
 
     return UnifiedItemModel(
       id: request.id ?? '',
@@ -50,10 +58,8 @@ class UnifiedItemModel {
   }
 
   factory UnifiedItemModel.fromOffer(dynamic offer) {
-    final minPrice =
-        offer.minPrice.isNotEmpty ? double.tryParse(offer.minPrice) : null;
-    final maxPrice =
-        offer.maxPrice.isNotEmpty ? double.tryParse(offer.maxPrice) : null;
+    final minPrice = _parsePrice(offer.minPrice);
+    final maxPrice = _parsePrice(offer.maxPrice);
 
     return UnifiedItemModel(
       id: offer.id ?? '',
@@ -78,6 +84,7 @@ class UnifiedItemModel {
       type: ItemType.broker,
       createdAt: broker.createdAt ?? DateTime.now(),
       updatedAt: broker.updatedAt ?? DateTime.now(),
+      hasCreatedAt: broker.createdAt != null,
       originalModel: broker,
     );
   }
@@ -102,6 +109,7 @@ class UnifiedItemModel {
       type: ItemType.office,
       createdAt: office.createdAt ?? DateTime.now(),
       updatedAt: office.updatedAt ?? DateTime.now(),
+      hasCreatedAt: office.createdAt != null,
       originalModel: office,
     );
   }
@@ -114,8 +122,21 @@ class UnifiedItemModel {
       type: ItemType.watchmen,
       createdAt: watchmen.createdAt ?? DateTime.now(),
       updatedAt: watchmen.updatedAt ?? DateTime.now(),
+      hasCreatedAt: watchmen.createdAt != null,
       originalModel: watchmen,
     );
+  }
+
+  /// A price as the forms store it: digits, possibly with thousands separators
+  /// (the same normalization the Supabase payload builder applies on write).
+  /// Text that is not a finite, non-negative number is no price at all, so a
+  /// record carrying it is never ranked by it.
+  static double? _parsePrice(String? text) {
+    final normalized = text?.replaceAll(',', '').trim() ?? '';
+    if (normalized.isEmpty) return null;
+    final value = double.tryParse(normalized);
+    if (value == null || !value.isFinite || value < 0) return null;
+    return value;
   }
 
   // Helper method to format price range
@@ -142,17 +163,7 @@ class UnifiedItemModel {
     return null;
   }
 
-  // Check if item was created in the last 12 hours
-  bool get isRecentlyAdded {
-    final now = DateTime.now();
-    final difference = now.difference(createdAt);
-    return difference.inHours <= 12;
-  }
-
-  // Check if item was created in the last week
-  bool get isThisWeek {
-    final now = DateTime.now();
-    final difference = now.difference(createdAt);
-    return difference.inDays <= 7;
-  }
+  // What "recently added" and "this week" mean lives in one place,
+  // HomeFilterRules, so a record cannot be recent by one definition and not by
+  // another.
 }

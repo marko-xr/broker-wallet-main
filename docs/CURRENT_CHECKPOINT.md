@@ -9119,3 +9119,185 @@ were NOT run. Flutter tests, analyzer and the Android build were NOT RUN; device
 NOT VERIFIED. No commit, no push.
 
 NOW — `flutter test test/share`.
+
+## HOME FILTER CHIPS — SUPABASE READINESS + COMPACT CHIPS — SOURCE COMPLETE, NOT RUN (2026-10-04)
+
+Branch `share-media-selection-readiness` at `0a6f7e3` (the Share checkpoint is committed there; the seven generated
+plugin registrant files are Flutter drift and were left alone). **Not committed. Not pushed.** Scope: the Home filter
+chips and the filtered list only. No backend, schema, RLS, Worker, Auth, navigation, Search, Favorites, Share, Home
+grid or Home header change.
+
+### The blocker, verified in current source
+
+- `HomeViewModel.toggleFilter` returned at once when `SupabaseConfig.useSupabaseAuth` was true ("Home-domain data is
+  still backed by Firebase"), so in the default (Supabase) build a chip tap did nothing. The comment was migration-era:
+  all six entity services already send their reads to `SupabaseCoreEntitiesService` in Supabase mode.
+- Removing that line alone would not have been enough. The old path listened to the six service streams independently,
+  from empty lists, and cleared the loading flag on the FIRST stream to answer: a filter showed a part of the answer and
+  then changed as the other streams arrived. The listeners had no `onError`, so a failed first read of a Supabase stream
+  was an unhandled async error and, if every read failed, a spinner that never ended. Six live subscriptions were opened
+  per tap.
+- Also found: sign-out left the chip selected; a Broker/Office/Watchman with no creation time was given
+  `DateTime.now()` and so counted as newly added; two unused getters (`isRecentlyAdded`, `isThisWeek`) defined "recent"
+  with other boundaries than the filter; prices went through `double.tryParse`, so "1,500,000" was no price and a
+  negative end could still rank; a pull to refresh dropped the chosen filter; `FilteredItemsView` had no failure state
+  and threw `UnimplementedError` for a Quotation.
+
+### Architecture now (`lib/src/viewmodels/home_filter_*.dart`)
+
+- Tap → `HomeViewModel.toggleFilter` → `HomeFilterController.toggle` (chip chosen at once, one loading state, no backend
+  or mode switch) → `SnapshotHomeFilterDataSource.load(types)` → `HomeFilterRules.apply` (pure) → `items` →
+  `FilteredItemsView`.
+- The data source is handed the view model's own `getUserRequests / Offers / Brokers / Owners / Offices / Watchmen`, so
+  the services choose the backend and, in Supabase mode, read as the signed-in user with RLS as the boundary. It takes
+  the FIRST answer of each stream (one snapshot, nothing stays subscribed, no polling) and waits for all of them
+  (`Future.wait(eagerError: true)`): the answer is whole or it is a failure. Recently Added and This Week read the six
+  kinds; Less Price reads only Offers and Requests. Quotations are never read, the rules drop one if handed in, and the
+  list has no unsupported-tile crash.
+- Rules. Recently Added = created in the last 12 hours, This Week = the last 7 x 24 hours: elapsed time before "now",
+  not calendar days or weeks, strictly after the window start (exactly on it is out), compared as instants (UTC or local
+  makes no difference, no UAE offset). A record with no creation time of its own (`UnifiedItemModel.hasCreatedAt`
+  false) is never recent. Both list by kind in Home's order (Requested, Offers, Brokers, Owners, Offices, Watchmen),
+  newest first inside a kind, then id. Less Price = the 6 lowest average prices of Offers and Requests (average of min
+  and max, or the one given; a finite number above zero; thousands separators read like the write path), cheapest
+  first, ties newest first, then kind, then id. Same input, same list, in any input order.
+- Async. Every read carries a generation; choosing another chip, clearing, refreshing, a data change, sign-out or
+  dispose makes an earlier read stale and a late one changes nothing. A read that never answers ends after 30 s as a
+  connection problem. A failure shows one localized sentence from strings the app already has (`authNetworkFailed`,
+  `userSessionExpired`, `errorOccurred`, Search's classifier) and Try Again; never a spinner without end, an empty list,
+  a raw error or a Firebase fallback.
+- Pull to refresh (`HomeView`) calls `refreshCounts(keepFilter: true)`: the chosen filter stays chosen and is read again
+  with the counts, what is on screen stays until the new answer arrives, a failed refresh is shown. The filtered list is
+  always scrollable so a short list can be pulled. Other callers (`app_routes`: tapping Home again, switching tabs) keep
+  the old default and drop the filter, as before. Leaving the Home tab still clears it.
+- A create, edit or delete of the user's own records (the existing `CoreEntityMutationNotifier` subscription the view
+  model already holds) re-reads a chosen filter quietly; if that read fails the answer on screen is kept. No new
+  subscription, no timer.
+- The canonical counts and their cache are never touched by a filter. Single choice is unchanged: one chip at a time,
+  tapping the chosen chip clears it.
+- Legacy Firebase build (`USE_SUPABASE_AUTH=false`): the same services answer, so a filter is now one snapshot per tap or
+  refresh instead of a live combiner. The old combiner is gone.
+
+### Chip visual contract
+
+(Superseded on 2026-10-05, see "Update 2026-10-05" at the end of this section: Home now draws its own chips, with the
+same sizes, so that choosing a chip does not make the row jump.)
+
+Home reuses Search's accepted chip row (`FilterChips`, through `HomeFilterChips` with the same API), so Home cannot drift
+from it: visible height `AppControlSizes.compactChipHeight` 36, padding 16 x 8, border 1, 14 sp label on a 1.2 line
+box, check 16 with a 6 gap, pill (`chipRadius`), a 48 dp touch target around each chip, `chipSpacing` 10 between chips
+as `EdgeInsetsDirectional` (mirrors in Arabic, the row starts at the reading edge), theme colours (light and dark).
+The owner's suggested numbers (12 x 7, 13 sp, 14 check, 8 gap) were not used: the accepted Search contract outranks them,
+and its 36 dp height is inside the suggested 34-36 range. The old Home chip: padding 16 x 10, a 14 sp label with the
+font's own line box (about 38 dp for Latin by derivation, taller in Arabic; not measured), radius 20,
+`EdgeInsets.only(right: 12)` (not direction-aware), deprecated `.red/.green/.blue`. Favorites' chips still have that old
+style and were not touched. Consequence for the owner to judge: the row now reserves the 48 dp touch target like Search,
+and the two 24 dp spacers in `home_view.dart` were left as they are, so in English the chip block is about 10 dp taller
+than before by derivation (Arabic: not measured); dropping both spacers to 18 would restore the old visible gaps.
+
+### Files
+
+Edited: `lib/src/viewmodels/home_viewmodel.dart` (the combiner and the Supabase early return are gone; the controller is
+wired in), `lib/src/views/Widgets/home_filter_chips.dart`, `lib/src/views/Widgets/filtered_items_view.dart` (failure
+state, no `UnimplementedError`, always-scrollable list), `lib/src/views/Screens/home_view.dart` (pull keeps the filter),
+`lib/src/data/models/unified_item_model.dart` (`hasCreatedAt`, price parsing, the two dead getters removed).
+New: `home_filter_rules.dart`, `home_filter_controller.dart`, `home_filter_data_source.dart`, `home_filter_errors.dart`
+(`lib/src/viewmodels/`) and `test/home/` (six files). No ARB change: every string already existed in both languages.
+
+### Verification
+
+`test/home` holds 149 cases: rules 36, model 11, snapshot source 9, controller 45, chips widgets 23, failure sorting and
+words 6, source guards 19. The 120 that need no Flutter (rules, model, source, controller, guards) were EXECUTED by the
+agent under the plain Dart VM against the real production sources, with small stand-ins for `flutter_test`,
+`package:flutter/foundation.dart` and `cloud_firestore` and the real `matcher` package. That is **not** `flutter test`.
+Eight deliberate regressions (no generation guard, a quiet failure replacing the list, clear not invalidating reads, an
+inclusive window start, an unknown time counted as recent, Less Price admitting unpriced kinds, reads one after another,
+a Broker reported as having a time) were each caught by those tests; the files were restored byte for byte. The 29 cases
+that need Flutter (chips widgets 23, failure sorting and words 6) were reviewed against the real `FilterChips` and
+NOT run. `dart format` clean on every new file and unchanged on the edited ones (`filtered_items_view.dart` keeps its one
+pre-existing deviation), ARB files valid and untouched, `git diff --check` clean. Flutter tests, analyzer and device:
+**NOT RUN**. Status: **HOME FILTERS = SOURCE COMPLETE; owner test and device acceptance pending.**
+
+### Not changed, found on the way (backlog)
+
+- Less Price still ranks Offers and Requests together, so rent amounts and sale prices share one list and the six lowest
+  will mostly be rent. Kept as the accepted behaviour; scoping it by rent/sell is a product decision.
+- "This Week" means the last 7 days, not the calendar week; Recently Added is 12 hours. Kept.
+- The Requests list's Sale card filters on `'sale'` while requests are stored as `'sell'` (`requests_list_view.dart`,
+  `list_requests_viewmodel.dart`, `core_entity_payload_builder.dart`): it appears to match nothing. Not touched, not
+  checked on a device.
+- `SupabaseCoreEntitiesService._date` falls back to `DateTime.now()` for a missing or unparseable timestamp. All six
+  tables have `created_at`/`updated_at` `NOT NULL`, so it should be unreachable; the shared mapping was left alone.
+- Each `getUser...()` call of five entity services builds a new `SupabaseCoreEntitiesService`; harmless, pre-existing.
+
+NOW — `flutter test test/home`.
+
+NEXT — only if that passes, the scoped analyzer: `flutter analyze lib/src/viewmodels lib/src/views/Widgets/home_filter_chips.dart lib/src/views/Widgets/filtered_items_view.dart lib/src/views/Screens/home_view.dart lib/src/data/models/unified_item_model.dart test/home`;
+then a device pass (English and Arabic, light and dark): tap each chip with the app signed in on Supabase (the chip is
+chosen at once, one spinner, then the whole list or "No Filtered Items"); switch chips quickly; tap the chosen chip to
+clear and see the normal counts; pull to refresh with a filter chosen (it stays); open a filtered record, delete it,
+come back (it is gone); airplane mode, tap a chip (connection message and Try Again); log out and in (no chip chosen);
+compare the Home chips with Search's (same height, spacing, mirrored in Arabic).
+
+### Update 2026-10-05 — chips that no longer jump, and two UI-only chips (supersedes "Chip visual contract" above)
+
+The owner reported that the filter chips do not look smooth: tapping to choose or clear one makes the others look
+affected. Source only; not seen on a device. Branch, scope and the "not committed, not pushed" state are unchanged.
+
+**What the chip row did in the frame a chip was tapped (read from the code and the SDK, not observed).** Search's
+`FilterChips`, which Home reused, adds the check mark and its 6 dp gap to the chip's `Row` in a single frame, so a chosen
+chip is 22 dp wider at once and every chip after it jumps sideways; it also changes the label from weight 500 to 600,
+which on a device with static fonts changes the label's width (and, with an animating weight, can do it frame after
+frame). Moving the choice from one chip to another does both, so the chips between them jump in opposite directions. A
+wrapper such as `AnimatedSize` does not cure the second part: it follows a child whose size changes on consecutive
+frames exactly, which is a jump again. With five chips the row scrolls, so a change of its width also moves its scroll
+extent.
+
+**Fix (Home only; Search's file is untouched).** `HomeFilterChips` now draws its own chips instead of forwarding to
+`FilterChips`, with the same numbers (36 dp height, 48 dp touch target, padding 16 x 8, border 1, 14 sp label, pill,
+10 dp directional gap, same shadows) read from `AppControlSizes` and Search's public sizes, and two differences:
+- The room for the check mark is `checkRoom` (22 dp) times how far a 200 ms `easeInOut` animation has got
+  (`TweenAnimationBuilder` + `Align(widthFactor)` + `ClipRect` + fade), so a chip's width, and with it where its
+  neighbours are, glides in both directions. It starts from where the chip is when it is tapped again mid-flight, so
+  reversing does not jump. Settled and not chosen, the check is not in the tree and takes no room.
+- The label keeps weight 500 in both states, so its width never changes. (Search's selected label is 600; on a device
+  Home's chosen chip is therefore a few dp narrower than Search's.) The colours, shadow and label colour animate with the
+  same duration and curve; the label and check use the theme's `onPrimary` (white in both themes), the shadow
+  `ColorScheme.shadow`.
+- Moving the choice from chip A to chip B: A gives up exactly what B takes at every frame, so the chips outside the two
+  never move at all; only those between them glide.
+
+**Two new chips, UI only (owner request): Highest Price, Recently Updated** (appended after This Week; the row now has five
+and scrolls on a phone). `HomeFilterKind` gained `highestPrice` and `recentlyUpdated` with `isImplemented: false`. Choosing
+one selects the chip and shows a localized "Coming soon / This filter will be available soon." state in the list area; it
+reads nothing, shows no spinner, no error and no "No Filtered Items" (which would claim a filter ran). Tapping it again
+clears it; switching to another chip works as before and a read still in flight for the previous chip is dropped. A pull,
+a data change and Retry do nothing for it. The rules refuse to answer for such a chip (`UnsupportedError`), so nothing can
+mistake it for an empty result. Four ARB keys were added to both languages: `highestPrice` ("Highest Price" / "أعلى سعر"),
+`recentlyUpdated` ("Recently Updated" / "محدّث حديثاً"), `homeFilterComingSoonTitle` and `homeFilterComingSoonDesc`. The
+Arabic wording is the agent's and should be read by the owner. Building either filter later means: set `isImplemented`
+true, give it a case in `HomeFilterRules.typesFor` and `apply`, and add tests; Recently Updated would use `updated_at`
+(set by the `bump_sync_version` trigger on all six tables, no backend change), Highest Price the same price fields as Less
+Price.
+
+**Tests.** `test/home` now holds 181 cases. The 135 that need no Flutter (rules 40, model 11, snapshot source 9, controller
+54, source guards 21) were executed by the agent under a plain Dart VM with the stand-ins described above, and twelve
+deliberate regressions (the earlier eight plus: a chip with no filter reading anyway, such a chip not staling an earlier
+read, a pull reading it, the rules answering with an empty list for it) were each caught. The 46 that need Flutter (chips
+widgets 40, failure sorting and words 6) were NOT run (the chips file's pure source assertions were checked against the real
+file by a script): the chip tests prove, with frames pumped 60 ms apart, that nothing
+moves in the frame a chip is chosen, that the chips after it advance by exactly the growth of its check room, that a
+chosen-to-chosen move leaves the chips outside the two untouched at every frame, and that a tap half way reverses from
+where it is, in English and Arabic. `dart format`: new files formatted, `home_filter_chips.dart` clean, ARB files valid
+JSON with CRLF kept, `git diff --check` clean.
+
+**Not done, for the owner to decide.** Search's chips have the same jump; Home's row could be shared with Search
+(one-line change there) once the owner has seen it on a device. A chip that is partly off-screen is not scrolled into view
+when tapped. The area below the chips still swaps (grid, spinner, list) without a fade.
+
+NOW — `flutter test test/home`.
+
+NEXT — only if that passes, the scoped analyzer (as above), then the device
+pass: tap each of the five chips in English and Arabic and watch that the chips beside the one you tap glide rather than
+jump, including moving the choice between chips and tapping twice quickly; scroll the row and choose Highest Price and
+Recently Updated (the "Coming soon" state, then clear it).

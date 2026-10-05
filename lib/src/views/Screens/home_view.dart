@@ -25,7 +25,9 @@ class HomeView extends StatelessWidget {
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
-                await vm.refreshCounts();
+                // A pull refreshes what the screen shows, so a chosen filter
+                // stays chosen and is read again with the counts.
+                await vm.refreshCounts(keepFilter: true);
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/unified_item_model.dart';
 import 'package:broker_wallet/src/data/models/filter_model.dart';
+import 'package:broker_wallet/src/viewmodels/home_filter_controller.dart';
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/filtered_tiles.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
@@ -26,6 +27,20 @@ class FilteredItemsView extends StatelessWidget {
         // Show loading indicator ONLY when explicitly loading
         if (vm.isFilterLoading) {
           return _buildLoadingState(context, theme);
+        }
+
+        // A chip whose filter is not built yet says so; it is never shown as
+        // "no items", which would claim the filter ran.
+        if (vm.isFilterUnavailable) {
+          return _buildComingSoonState(context, localization, theme);
+        }
+
+        // A filter that could not be answered says so and offers a retry; it is
+        // never shown as "no items".
+        final errorKind = vm.filterErrorKind;
+        if (errorKind != null) {
+          return _buildErrorState(
+              context, localization, theme, errorKind, vm.retryFilter);
         }
 
         // Show empty state if no filter selected OR if filter is selected but no items found
@@ -60,6 +75,73 @@ class FilteredItemsView extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// What to tell the person about a filter that could not be answered, from
+  /// strings the app already has. The technical error is never shown.
+  static String errorMessage(AppLocalizations loc, HomeFilterErrorKind kind) {
+    switch (kind) {
+      case HomeFilterErrorKind.network:
+        return loc.translate('authNetworkFailed');
+      case HomeFilterErrorKind.session:
+        return loc.translate('userSessionExpired');
+      case HomeFilterErrorKind.generic:
+        return loc.translate('errorOccurred');
+    }
+  }
+
+  Widget _buildErrorState(
+    BuildContext context,
+    AppLocalizations loc,
+    ThemeData theme,
+    HomeFilterErrorKind kind,
+    VoidCallback onRetry,
+  ) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(errorMessage(loc, kind),
+                style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: onRetry,
+              child: Text(loc.translate('tryAgain')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComingSoonState(
+      BuildContext context, AppLocalizations loc, ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.hourglass_top_rounded,
+                size: 64, color: theme.colorScheme.outline),
+            const SizedBox(height: 16),
+            Text(loc.translate('homeFilterComingSoonTitle'),
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(color: theme.colorScheme.outline),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            Text(loc.translate('homeFilterComingSoonDesc'),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.outline),
+                textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -104,6 +186,8 @@ class FilteredItemsView extends StatelessWidget {
       children: [
         Expanded(
           child: ListView.builder(
+            // Pulling to refresh must work however few records the filter found.
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 2),
             itemCount: vm.filteredItems.length,
             itemBuilder: (context, index) {
@@ -170,8 +254,10 @@ class FilteredItemsView extends StatelessWidget {
           createdAt: item.createdAt,
         );
       case ItemType.quotation:
-        // TODO: Handle this case.
-        throw UnimplementedError();
+        // Quotations are not part of the Home filters (HomeFilterRules drops
+        // them), and there is no tile for them here. Draw nothing rather than
+        // crash if one ever arrives.
+        return const SizedBox.shrink();
     }
   }
 }

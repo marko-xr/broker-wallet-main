@@ -9301,3 +9301,117 @@ NEXT — only if that passes, the scoped analyzer (as above), then the device
 pass: tap each of the five chips in English and Arabic and watch that the chips beside the one you tap glide rather than
 jump, including moving the choice between chips and tapping twice quickly; scroll the row and choose Highest Price and
 Recently Updated (the "Coming soon" state, then clear it).
+
+## FAVORITES SCREEN — APP UI PATTERN (UI ONLY) — SOURCE COMPLETE, NOT RUN (2026-10-05)
+
+Owner request: update the Favorites screen to match the app's pattern — the filter chips and their size, the screen itself,
+the top bar, everything Search has — "ui updates nothing else". Source only; not seen on a device. The work is on the local
+branch `home-filter-supabase-readiness` (HEAD `ffe3679`), uncommitted and not pushed.
+
+### What Favorites had, against Search (read from the code)
+
+- A gradient hero card (28 dp radius, 22 dp padding) with a 56 dp rounded-square avatar, the greeting, a title, the refresh
+  hint and two info chips, where Search and Home have a plain row: a round 48 dp avatar, the greeting with one line under it,
+  the bell.
+- A gradient page and, behind the chips, a rounded 24 dp panel with a shadow; Search's chips float on the page's own colour.
+- Its own chips: 20 dp radius and 10 dp vertical padding (roughly 40 dp tall against Search's 36), a 12 dp gap fixed to the
+  physical right (it did not mirror in Arabic), no 48 dp touch target, a check mark that took its room in one frame.
+- A grid of 18 dp by 16 dp gaps at a fixed 0.8 shape (Search: 12 dp gaps, 3 : 4, never shorter than the card's text needs).
+  The card is laid out like Search's result card (three one-line fields in a fixed band), so a fixed shape is likely to clip
+  the third field on a narrow phone or at a large font (derived from the layout, not seen).
+- The view model's raw error text on screen when loading failed, and no way to clear a filter that hides everything.
+
+### What it is now (`lib/src/views/Screens/home/favorites/`)
+
+- **Header** — Search's: the round 48 dp avatar (opens Edit Profile), the greeting that cross-fades when the name changes,
+  "overview" under it, the bell. It listens to the profile itself, so a profile update does not rebuild the list.
+- **Filters** — a pinned, flat bar on the page's own colour (no panel, no shadow, no tint), Search's `SliverAppBar` recipe,
+  tall enough for the chips at large fonts (`FilterChips.rowHeightOf`). `FavoriteFilterChips` draws nothing of its own any
+  more: it forwards to Home's `HomeFilterChips` (Search's sizes and colours, 36 dp chips in a 48 dp touch target, spacing
+  that mirrors in Arabic, and the glide when a chip is chosen or cleared), so the three screens cannot drift apart.
+- **Status** — what the hero card's chips said is kept, as pills in the style of Search's result count: how many are saved,
+  how many the chosen filter shows and, while there is something to sync, syncing or synced. The pills wrap onto a second
+  line instead of overflowing (`FavoritesStatusRow`, public so it can be tested). The refresh hint moved from the top card to
+  the foot of the list, with 56 dp below it (as the loading text has) so the docked add button, which rises about 28 dp into
+  the page, does not cover it.
+- **Grid** — two columns, 12 dp gaps, padding 16 / 8 / 16 / 20 and a card 3 : 4, never shorter than
+  `SearchResultCard.minHeightForText` (Search's own formula). The loading skeleton uses the same grid.
+- **States** — loading: the skeleton and the two lines as before; no favorites: as before; a filter that hides everything:
+  the same empty state plus Search's "Clear Filter" button, which calls the existing `toggleFilter`; a failure with nothing
+  cached: Search's error screen (error icon, the localized title, a "Retry loading" button), and the technical error is no longer shown.
+- **Scroll** — `SafeArea`, pull to refresh in the primary colour, bouncing always-scrollable physics and a 1200 px cache as
+  before (now through `scrollCacheExtent`, as Search does). The grid's behaviour (image prefetching, one key per favorite, no
+  keep-alive per card) is unchanged.
+
+Nothing but the UI changed: `FavoritesViewModel`, `FavoriteCard`, routing and every ARB string are as they were (all the keys
+already existed in both languages, `clearFilter` among them).
+
+### Files
+
+Edited: `favorites_view.dart` (layout and states), `favorites_filter_chips.dart` (now a forwarder). New:
+`test/favorites/favorites_screen_ui_test.dart` (22 cases).
+
+### Verification
+
+The 22 cases are 12 source guards and 10 widget tests. The widget tests (the chips are Home's chips with the same rectangles
+in English and Arabic; the row is as tall as Search's at normal and at double text size; a tap reports the chip's own index;
+the status row in English and Arabic, syncing and synced, in Search's pill style in light and dark, and wrapping at 320 dp
+with 1.6 times text) need Flutter and were NOT run. The 12 source guards were EXECUTED by the agent under a plain Dart VM
+against the real sources (the stand-ins described above; **not** `flutter test`): the grid's columns, gaps, padding and
+minimum height against Search's own constants, the header and the flat pinned bar against Search's, no raw error, Clear
+Filter, every screen string present in both ARB files, the foot of the list clearing the docked add button, and the chips
+being the shared ones. Twenty deliberate regressions (grid gap or padding drifting from Search, the text minimum height
+dropped, a fixed shape again, the skeleton and cards no longer sharing one grid, a 56 dp avatar, the gradient back, a
+shadow under the bar, the bar unpinned or tinted, pull to refresh gone, the raw error shown, Clear Filter gone, a screen
+string or a translation missing, the chips drawing their own box or no longer forwarding to Home, the cards' grid
+keep-alive changed, the refresh hint no longer clearing the add button) were each caught; they ran on scratch copies, so
+no production file was touched. One regression got past the first version of a guard (the keep-alive flag also appears in the
+skeleton); the guard was narrowed to the cards' class and the check re-run. `dart format`: the new test and the chips file
+clean, `favorites_view.dart` formatted, `git diff --check` clean. Flutter tests, analyzer and device: **NOT RUN**. Status:
+**FAVORITES UI = SOURCE COMPLETE; owner test and device acceptance pending.**
+
+### Not changed, found on the way (backlog)
+
+- Home draws its page on `colorScheme.surface` (`#F6F6F8` light, `#22292F` dark) where Search, Profile and now Favorites use
+  the scaffold colour (`#FAFAFA`, `#141918`). Home's unselected chips (also filled with `surface`) therefore blend into
+  their page more than Search's do. The Home tab was not part of this task and was left alone; changing it is one line.
+- The avatar, greeting and bell header now exists as three near-copies (Home, Search, Favorites). One shared widget would
+  remove the drift risk; not done, because it touches the two screens this task did not name.
+- Search's own chips still jump when one is chosen (see the Home update above); Favorites and Home no longer do.
+- `CurrentUserAvatar.borderRadius` has no caller left (Favorites' rounded square was its only user). Left in place.
+- Favorites' view model still holds raw, English error strings. They are no longer shown, so nothing user-visible is wrong,
+  but a localized message would belong in the view model, not the view.
+- A `FavoriteCard` whose layout changes without `SearchResultCard` changing with it would make the shared minimum height
+  wrong; there is no test that renders both cards and compares them.
+
+NOW — `flutter test test/favorites/favorites_screen_ui_test.dart`.
+
+NEXT — only if that passes, the scoped analyzer: `flutter analyze lib/src/views/Screens/home/favorites test/favorites/favorites_screen_ui_test.dart`;
+then a device pass, English and Arabic, light and dark, with Search open beside it: the header (avatar, greeting, bell) in
+the same place and size; the chips the same height and gap, pinned under the header while the cards scroll beneath, and
+gliding when one is chosen or cleared; the two status pills (and the sync pill) wrapping, not overflowing, on a narrow
+phone and with a large system font; every card's three fields fully visible; the five states: loading, no favorites, a
+filter that hides everything (and Clear Filter), a failure with nothing cached (airplane mode on a fresh install, then
+"Retry loading"), and the list with a pull to refresh.
+
+### Favorites UI — owner's test runs and the corrections (2026-10-05)
+
+Run 1: the file failed to compile ("Member not found: 'rtl'" at `TextDirection.rtl`). Cause: the test imported
+`package:intl/intl.dart` whole, and `intl` has a `TextDirection` class of its own (with `LTR` / `RTL`) that hid
+Flutter's. Fix: `import 'package:intl/intl.dart' show NumberFormat;`. The production files compiled in that run (the
+compiler type-checks the whole import graph), so only the test was wrong. The mistake was the agent's: `dart format`
+and the plain-Dart replay of the source guards do not resolve names, so neither could have caught it.
+
+Run 2: 20 of 22 cases passed (the 12 source guards and 8 of the 10 widget tests). The two that failed, "says how many are
+saved and how many are shown" in English and in Arabic, failed on their last line only: they compared where the two
+pills' labels sit, but in the test font (every letter a full em wide, plus the theme's letter spacing for Latin text)
+the two pills need about 426 dp, so at the 412 dp test width the `Wrap` put them on two lines and both labels started at
+the same edge (the same left edge in English, the same right edge in Arabic). The screen was right: the pills are meant to
+wrap rather than overflow, and in a real font they are far narrower (an estimate, not measured). The test's width was
+wrong. Fix: that test now runs on a 700 dp surface, first asserts that the two labels share a line, then asserts the
+reading order (left to right in English, right to left in Arabic). The pill widths were recomputed from the ARB strings
+and the test font's metrics and reproduce the owner's failure output to a tenth of a dp (English first pill 215.7 dp,
+Arabic 246.0 dp); at 700 dp the two fit with more than 240 dp to spare. Only the test changed.
+
+NOW — `flutter test test/favorites/favorites_screen_ui_test.dart` again. NEXT is unchanged (the scoped analyzer, then the
+device pass listed above).

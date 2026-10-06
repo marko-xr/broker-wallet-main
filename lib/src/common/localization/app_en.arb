@@ -1,4 +1,6 @@
 { 
+  "sessionSignedInElsewhere": "Your account was signed in on another device. You’ve been signed out here.",
+  "appSessionCheckFailed": "Could not verify this sign-in. Check your connection and try again.",
   "appName": "Broker Wallet",
   "appTagline": "Manage Your Property",
   "appVersion": "Version 1.0.0",

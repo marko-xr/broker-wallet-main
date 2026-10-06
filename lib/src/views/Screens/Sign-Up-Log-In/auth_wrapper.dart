@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/splash_screen.dart';
 
@@ -17,5 +21,33 @@ class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
   @override
-  Widget build(BuildContext context) => const SplashScreen();
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthViewModel>();
+    if (!auth.isSessionCheckUnavailable) return const SplashScreen();
+    final loc = AppLocalizations.of(context);
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off, color: Theme.of(context).colorScheme.onSurface),
+              const SizedBox(height: 16),
+              Text(
+                loc.translate('appSessionCheckFailed'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: auth.retryAppSessionValidation,
+                child: Text(loc.translate('retry')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

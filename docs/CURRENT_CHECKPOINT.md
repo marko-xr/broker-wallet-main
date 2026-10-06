@@ -9415,3 +9415,94 @@ Arabic 246.0 dp); at 700 dp the two fit with more than 240 dp to spare. Only the
 
 NOW — `flutter test test/favorites/favorites_screen_ui_test.dart` again. NEXT is unchanged (the scoped analyzer, then the
 device pass listed above).
+
+### Single active Broker Wallet session — source readiness (2026-10-05)
+
+Branch `single-active-device-readiness`, based on `9040cc7142ff53aa2f409114330384da153f2160`.
+Source is **UNVERIFIED**. No commit or push. Migration
+`20261005175500_single_active_app_session.sql` is **NOT APPLIED**. Worker source
+is changed but **NOT DEPLOYED**. Flutter tests, analyzer, build, Worker tests,
+database validation, and device testing were **NOT RUN** by the agent under the
+owner execution policy. This is not a production PASS or a runtime checkpoint.
+
+The migration gives each `auth.users.id` one `user_active_sessions` row and a
+permanent, user-cascading `app_session_claims` record for each Supabase
+`session_id`. A fresh JWT session can claim once; a currently active claimant
+can retry idempotently; a displaced claimant cannot reclaim. Claims lock the
+canonical `auth.users` row, so concurrent new claims serialize and the last
+successful new claim wins. The check and claim verify `auth.sessions` membership.
+No user/session ID, token, password, or service credential is accepted from
+Flutter as authority. Both session tables are RLS-enabled. The active row has
+an ownership-only SELECT policy for Realtime detection; neither table grants
+client DML. User deletion cascades both tables.
+
+A restrictive authenticated session policy is added to each currently
+client-accessible public app-data table (profiles, subscription/quota reads,
+core entities and child/area rows, quotation rows, private-media metadata and
+links, favorites, feedback, notifications, app versions, and the other listed
+tables in the migration). Existing permissive business policies remain.
+`save_quotation`, the sole client-callable SECURITY DEFINER business RPC,
+is wrapped in the same gate; media-confirm RPCs remain service-role only.
+`account_deletion_jobs`, webhook/audit server tables, the internal claim ledger,
+and the active-state observation row are explicit exceptions. The Worker checks
+the caller's JWT through `is_current_app_session` after Auth verification on
+every media route and on account deletion, returning fixed
+`session_superseded` on rejection. Server-owned cron/finalizer work is unchanged.
+
+Flutter waits for claim after normal sign-in, or validation of a restored
+session, before publishing app identity to the router. Recovery remains
+quarantined and never claims. A user-scoped Realtime row stream detects a
+replacement; app resume validates with a five-second
+throttle. A fresh sign-in claim takes precedence over an in-flight check of
+the same session, so the check cannot reject the new claimant. Both converge
+on one explicit `SignOutScope.local` path and a localized English/Arabic
+message. Worker/RPC error reports are correlated with the request's token so
+a late error from a previous account cannot log out a new one. Normal logout
+releases only the current active row, then signs out locally. Existing
+account-scoped cache/listener cleanup remains in the AuthViewModel's null
+identity path; Toolkit PDFs are untouched.
+If an offline cold start cannot check a cached session, bootstrap stays
+closed to Home and shows a localized Retry action without discarding that
+session. Resume retries automatically. The Worker returns a separate
+`session_check_unavailable` failure for a database outage; it does not call
+that outage a displacement.
+
+The built-in Supabase single-session setting is Pro+ and is not used. Pinned
+`gotrue 2.27.2` supports `SignOutScope.others`, but the source intentionally
+does not invoke it: a newer login can claim between the database claim and
+that Auth API call, allowing an already-displaced caller to revoke the true
+winner's refresh token. Database, RPC, and Worker gates are the immediate
+authority. An old access JWT can still reach the raw Auth API until `exp`;
+`supabase/config.toml` records a **local** 3600-second JWT expiry and no hosted
+Auth setting was changed. A shorter owner-controlled expiry, if chosen, must
+respect Supabase's guidance not to go below five minutes. An entirely offline
+old device cannot receive displacement until reconnect/resume; its online
+backend access is denied already. Existing development sessions without an
+active row must sign in once after rollout. Premium access in the future must
+require both entitlement and this active-session gate.
+
+Source validation added:
+`supabase/validation/single_active_app_session_validation.sql` (rollback-only
+on a disposable migrated database),
+`cloudflare/workers/r2-profile-upload/test/active_session.test.mjs` and the
+updated Worker fakes, and `test/auth/single_active_session_source_test.dart`.
+The owner ran the original three Flutter source tests on 2026-10-05 and they
+passed (`00:11 +3: All tests passed!`). That test did not import
+`AuthViewModel`, so it could not compile the integration site where the editor
+reported `sessionCheckUnavailableEvents` against `AuthRepository`. The
+optional `AppSessionEvents` reference is now explicitly typed, and the test
+imports `AuthViewModel` as a compile smoke check. This revised source has not
+been rerun; Worker tests, database validation, analyzer, build, and device
+testing remain unrun. The SQL script covers ownership, direct DML,
+first/idempotent/replacement claims, blocked reclaim/release, RLS, publication,
+and deletion cascade; a separate concurrent multi-connection database run and
+real-device A→B→C exercise are still required.
+
+NOW — owner reruns `flutter test test/auth/single_active_session_source_test.dart`.
+
+NEXT — only after that passes, owner runs a scoped analyzer, then Worker tests,
+then the disposable-database rollback validation (including concurrent
+claims). Hosted migration and Worker deployment require separate explicit owner
+action; only afterward run the A→B→C, recovery, logout, offline/reconnect,
+private-media, and account-deletion device acceptance. Do not mark this
+VERIFIED_RUNTIME before that pass.

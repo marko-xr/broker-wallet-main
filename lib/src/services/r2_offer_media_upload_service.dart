@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'app_session_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -406,7 +407,7 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
               .replace(queryParameters: {parent.idField: offerId}),
           headers: {'Authorization': 'Bearer ${auth.accessToken}'},
         ).timeout(_metadataRequestTimeout));
-    _ensureSuccess(response);
+    _ensureSuccess(response, auth.accessToken);
 
     final payload = _decodeObject(response.body);
     final rawMedia = payload['media'];
@@ -466,7 +467,7 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return _decodeObject(response.body);
     }
-    final code = _workerCode(response);
+    final code = _workerCode(response, accessToken);
     final rejection = _refusalStatuses.contains(response.statusCode)
         ? OfferMediaRejection.fromWorkerCode(code)
         : null;
@@ -480,11 +481,16 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
   }
 
   /// The Worker's stable `code` field. Its free-text message is never read.
-  String? _workerCode(http.Response response) {
+  String? _workerCode(http.Response response, String accessToken) {
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
         final code = decoded['code'];
+        if (code == 'session_superseded') {
+          AppSessionCoordinator.reportBackendError(
+            'session_superseded', accessToken: accessToken,
+          );
+        }
         return code is String && code.isNotEmpty ? code : null;
       }
     } catch (_) {}
@@ -507,11 +513,11 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     }
   }
 
-  void _ensureSuccess(http.Response response) {
+  void _ensureSuccess(http.Response response, String accessToken) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw R2OfferMediaHttpException(
         response.statusCode,
-        code: _workerCode(response),
+        code: _workerCode(response, accessToken),
       );
     }
   }

@@ -34,6 +34,7 @@ enum AuthFailureCode {
 
   /// The session that started the operation is gone or no longer valid.
   sessionExpired,
+  appSessionUnavailable,
   sameEmail,
   accountChanged,
   noPendingEmailChange,

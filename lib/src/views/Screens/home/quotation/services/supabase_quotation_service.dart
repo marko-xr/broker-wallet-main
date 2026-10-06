@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Why a Quotation operation failed. A fixed category: never SQL, provider
@@ -131,6 +132,7 @@ class SupabaseQuotationService implements QuotationRemote {
     int? expectedVersion,
   }) async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     // May throw QuotationValidationException before any request is made.
     final payload = QuotationSupabaseMapper.toSavePayload(
       quotation,
@@ -156,6 +158,9 @@ class SupabaseQuotationService implements QuotationRemote {
     } on QuotationException {
       rethrow;
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }
@@ -163,6 +168,7 @@ class SupabaseQuotationService implements QuotationRemote {
   @override
   Future<QuotationModel?> getQuotation(String quotationId) async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     try {
       final row = await _client
           .from('quotations')
@@ -173,6 +179,9 @@ class SupabaseQuotationService implements QuotationRemote {
       if (row == null) return null;
       return QuotationSupabaseMapper.aggregateFromRow(row);
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }
@@ -180,6 +189,7 @@ class SupabaseQuotationService implements QuotationRemote {
   @override
   Future<QuotationMediaState?> getMediaState(String quotationId) async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     try {
       final row = await _client
           .from('quotations')
@@ -196,6 +206,9 @@ class SupabaseQuotationService implements QuotationRemote {
         pdfMediaId: row['pdf_media_id']?.toString(),
       );
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }
@@ -203,6 +216,7 @@ class SupabaseQuotationService implements QuotationRemote {
   @override
   Future<String?> getMediaFileName(String mediaId) async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     try {
       final row = await _client
           .from('media_objects')
@@ -212,6 +226,9 @@ class SupabaseQuotationService implements QuotationRemote {
       final name = row?['original_file_name']?.toString();
       return name == null || name.isEmpty ? null : name;
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }
@@ -219,6 +236,7 @@ class SupabaseQuotationService implements QuotationRemote {
   @override
   Future<List<QuotationModel>> listQuotations() async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     try {
       final rows = await _client
           .from('quotations')
@@ -230,6 +248,9 @@ class SupabaseQuotationService implements QuotationRemote {
               QuotationSupabaseMapper.headerFromRow(Map<String, dynamic>.from(row)))
           .toList(growable: false);
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }
@@ -292,6 +313,7 @@ class SupabaseQuotationService implements QuotationRemote {
   @override
   Future<void> softDelete(String quotationId) async {
     _requireSession();
+    final accessToken = _client.auth.currentSession?.accessToken;
     try {
       // The only column a client may change; the row's own live-row policy
       // decides whether this account may. Already deleted is a success.
@@ -302,6 +324,9 @@ class SupabaseQuotationService implements QuotationRemote {
           .isFilter('deleted_at', null)
           .select('id');
     } catch (error) {
+      if (accessToken != null) {
+        AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
+      }
       throw _translate(error);
     }
   }

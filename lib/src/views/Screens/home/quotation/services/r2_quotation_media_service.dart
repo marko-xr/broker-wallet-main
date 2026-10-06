@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
+import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -366,7 +367,7 @@ class R2QuotationMediaService implements QuotationMediaTransport {
               .replace(queryParameters: {'quotationId': quotationId}),
           headers: {'Authorization': 'Bearer $token'},
         ).timeout(_metadataTimeout));
-    _ensureSuccess(response);
+    _ensureSuccess(response, token);
 
     final payload = _decodeObject(response.body);
     final lifetimeSeconds = _int(payload, 'expiresInSeconds');
@@ -430,7 +431,7 @@ class R2QuotationMediaService implements QuotationMediaTransport {
           body: jsonEncode(body),
         )
         .timeout(_metadataTimeout));
-    _ensureSuccess(response);
+    _ensureSuccess(response, token);
     return _decodeObject(response.body);
   }
 
@@ -446,9 +447,12 @@ class R2QuotationMediaService implements QuotationMediaTransport {
     }
   }
 
-  void _ensureSuccess(http.Response response) {
+  void _ensureSuccess(http.Response response, String accessToken) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     final code = _workerCode(response);
+    if (code == 'session_superseded') {
+      AppSessionCoordinator.reportBackendError(code!, accessToken: accessToken);
+    }
     throw QuotationMediaException(
       failureFor(response.statusCode, code),
       statusCode: response.statusCode,

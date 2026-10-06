@@ -248,3 +248,10 @@ abstract class AuthRepository {
   /// Get user profile
   Future<UserModel?> getUserProfile(String uid);
 }
+
+/// Optional application-session displacement signal in Supabase mode.
+abstract class AppSessionEvents {
+  Stream<bool> get sessionSupersededEvents;
+  Stream<bool> get sessionCheckUnavailableEvents;
+  Future<void> retryAppSessionValidation();
+}

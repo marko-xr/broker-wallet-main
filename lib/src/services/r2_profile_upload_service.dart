@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'app_session_coordinator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -222,7 +223,7 @@ class R2ProfileUploadService {
           headers: {'Authorization': 'Bearer ${auth.accessToken}'},
         )
         .timeout(_metadataRequestTimeout));
-    _ensureSuccess(response, '/profile-image-url');
+    _ensureSuccess(response, '/profile-image-url', auth.accessToken);
 
     final payload = _decodeObject(response.body);
     return R2ProfileImage(
@@ -267,7 +268,7 @@ class R2ProfileUploadService {
           body: jsonEncode(body),
         )
         .timeout(_metadataRequestTimeout));
-    _ensureSuccess(response, path);
+    _ensureSuccess(response, path, accessToken);
     return _decodeObject(response.body);
   }
 
@@ -283,8 +284,16 @@ class R2ProfileUploadService {
     }
   }
 
-  void _ensureSuccess(http.Response response, String path) {
+  void _ensureSuccess(http.Response response, String path, String accessToken) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['code'] == 'session_superseded') {
+          AppSessionCoordinator.reportBackendError(
+            'session_superseded', accessToken: accessToken,
+          );
+        }
+      } catch (_) {}
       throw R2UploadException('Profile image service request failed (${response.statusCode}).');
     }
   }

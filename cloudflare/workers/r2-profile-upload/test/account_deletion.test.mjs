@@ -141,6 +141,7 @@ class FakeSupabase {
       ['bob@example.test', { password: 'Bob-Password-1', userId: BOB }],
     ]);
     this.validTokens = new Set();
+    this.activeSessionAllowed = true;
     this.media = [];
     this.jobs = [];
     this.calls = [];
@@ -220,6 +221,10 @@ class FakeSupabase {
       const user = this.users.get(sub);
       if (!user) return json({ error_code: 'user_not_found' }, 403);
       return json(user);
+    }
+
+    if (parsed.pathname === '/rest/v1/rpc/is_current_app_session') {
+      return json(this.activeSessionAllowed);
     }
 
     if (parsed.pathname === '/auth/v1/token') {
@@ -443,6 +448,18 @@ test('an invalid token is refused and creates nothing', async () => {
   const result = await callDelete(ctx, { authorization: `Bearer ${token(ALICE)}` });
   assert.equal(result.status, 401);
   assert.equal(ctx.supabase.jobs.length, 0);
+  assert.equal(ctx.bucket.deleteCalls.length, 0);
+});
+
+test('a displaced but Auth-valid session cannot delete the account', async () => {
+  const ctx = setup({ bucketKeys: [`profiles/${ALICE}/a1.jpg`] });
+  const bearer = `Bearer ${ctx.supabase.issue(ALICE)}`;
+  ctx.supabase.activeSessionAllowed = false;
+  const result = await callDelete(ctx, { authorization: bearer });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'session_superseded' });
+  assert.equal(ctx.supabase.jobs.length, 0);
+  assert.equal(ctx.bucket.listCalls, 0);
   assert.equal(ctx.bucket.deleteCalls.length, 0);
 });
 

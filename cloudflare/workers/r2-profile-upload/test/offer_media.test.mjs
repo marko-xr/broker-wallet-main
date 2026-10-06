@@ -131,6 +131,7 @@ class FakeSupabase {
       [BOB, { id: BOB }],
     ]);
     this.validTokens = new Set([token(ALICE), token(BOB)]);
+    this.activeSessionAllowed = true;
     this.offers = [
       { id: OFFER_A, owner_id: ALICE, deleted_at: null },
       { id: OFFER_A2, owner_id: ALICE, deleted_at: null },
@@ -156,6 +157,11 @@ class FakeSupabase {
       const sub = JSON.parse(Buffer.from(bearer.split('.')[1], 'base64url').toString()).sub;
       const user = this.users.get(sub);
       return user ? json(user) : json({ error_code: 'user_not_found' }, 403);
+    }
+
+    if (parsed.pathname === '/rest/v1/rpc/is_current_app_session') {
+      assert.equal(headers.apikey, PUBLISHABLE);
+      return json(this.activeSessionAllowed);
     }
 
     assert.equal(headers.apikey, SECRET, `service-role calls must use the secret key (${parsed.pathname})`);
@@ -423,6 +429,21 @@ test('a non-owner is denied by authorize, confirm and list, even through a valid
   // The staging gate matched on every one of the three requests above (a
   // wrong/missing key would itself produce 403, not 404) — the denials are
   // therefore coming from ownership checks, not the gate.
+});
+
+test('an Auth-valid displaced session is refused before protected media work', async () => {
+  ctx.supabase.activeSessionAllowed = false;
+  const result = await call(ctx, '/offer-media/authorize', {
+    method: 'POST',
+    authorization: `Bearer ${token(ALICE)}`,
+    body: { offerId: OFFER_A, contentType: 'image/jpeg', contentLength: 100 },
+  });
+  assert.equal(result.status, 403);
+  assert.equal(result.body.code, 'session_superseded');
+  assert.equal(ctx.supabase.mediaObjects.length, 0);
+  assert.deepEqual(ctx.supabase.calls.map(({ path }) => path), [
+    '/auth/v1/user', '/rest/v1/rpc/is_current_app_session',
+  ]);
 });
 
 // ===========================================================================

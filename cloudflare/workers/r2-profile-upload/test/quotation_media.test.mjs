@@ -74,6 +74,7 @@ class FakeSupabase {
       return token === 'Bearer token-a' ? json({ id: ALICE })
         : token === 'Bearer token-b' ? json({ id: BOB }) : json({}, 401);
     }
+    if (parsed.pathname === '/rest/v1/rpc/is_current_app_session') return json(true);
     assert.equal(init.headers?.apikey, SECRET);
     const { pathname, searchParams: search } = parsed;
     const method = init.method ?? 'GET';

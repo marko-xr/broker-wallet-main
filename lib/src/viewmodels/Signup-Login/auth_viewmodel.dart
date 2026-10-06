@@ -162,6 +162,10 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   ProfileHydrationStatus _profileHydration = ProfileHydrationStatus.unresolved;
 
   StreamSubscription<UserModel?>? _authSubscription;
+  StreamSubscription<bool>? _sessionSupersededSubscription;
+  StreamSubscription<bool>? _sessionCheckUnavailableSubscription;
+  bool _sessionSupersededNotice = false;
+  bool _sessionCheckUnavailable = false;
   StreamSubscription<UserModel?>? _userStreamSubscription;
 
   String _resolvedDisplayName = '';
@@ -223,6 +227,25 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
         _profileMediaAdopter = profileMediaAdopter,
         _deletedAccountCleaner = deletedAccountCleaner {
     if (autoInitialize) {
+      final repository = _authRepository;
+      if (repository is AppSessionEvents) {
+        final AppSessionEvents sessionEvents = repository as AppSessionEvents;
+        _sessionSupersededSubscription = sessionEvents.sessionSupersededEvents.listen((_) {
+          _sessionSupersededNotice = true;
+          // Close the router and protected subscriptions before the local
+          // Auth API sign-out finishes its network work.
+          if (_status == AuthStatus.unauthenticated && _currentUser == null) {
+            notifyListeners();
+          } else {
+            _handleSessionIdentity(null);
+          }
+        });
+        _sessionCheckUnavailableSubscription =
+            sessionEvents.sessionCheckUnavailableEvents.listen((unavailable) {
+          _sessionCheckUnavailable = unavailable;
+          notifyListeners();
+        });
+      }
       _initializeAuth();
     }
   }
@@ -287,6 +310,25 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   /// Three-state session/bootstrap status consumed by the router and
   /// AuthWrapper.
   AuthStatus get status => _status;
+
+  /// A single localized notice is shown after the router has left Home.
+  bool get hasSessionSupersededNotice => _sessionSupersededNotice;
+  bool get isSessionCheckUnavailable => _sessionCheckUnavailable;
+  Future<void> retryAppSessionValidation() async {
+    final repository = _authRepository;
+    if (repository is! AppSessionEvents) return;
+    final AppSessionEvents sessionEvents = repository as AppSessionEvents;
+    try {
+      await sessionEvents.retryAppSessionValidation();
+    } catch (_) {
+      // The gateway has already published the retry state; Home stays closed.
+    }
+  }
+  bool takeSessionSupersededNotice() {
+    if (!_sessionSupersededNotice || _status != AuthStatus.unauthenticated) return false;
+    _sessionSupersededNotice = false;
+    return true;
+  }
 
   /// Recomputes [AuthStatus] from the current user's verification state.
   ///
@@ -1062,6 +1104,8 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
     final previousUid = _currentUser?.uid;
 
     if (sessionUser == null) {
+      if (_status == AuthStatus.unauthenticated && previousUid == null) return;
+      _sessionCheckUnavailable = false;
       _hydrationToken++;
       _currentUser = null;
       _status = AuthStatus.unauthenticated;
@@ -1577,6 +1621,8 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   @override
   void dispose() {
     _disposed = true;
+    _sessionSupersededSubscription?.cancel();
+    _sessionCheckUnavailableSubscription?.cancel();
     _authSubscription?.cancel();
     _userStreamSubscription?.cancel();
     super.dispose();

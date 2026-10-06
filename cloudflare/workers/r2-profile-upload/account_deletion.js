@@ -1,3 +1,5 @@
+import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.js';
+
 /**
  * Permanent deletion of a Broker Wallet account, and the server-owned work that
  * must outlive it.
@@ -114,6 +116,7 @@ export const JobStatus = Object.freeze({
 /** Fixed error codes returned to the app. The app maps each one to UI copy. */
 export const DeletionErrorCode = Object.freeze({
   sessionExpired: 'session_expired',
+  sessionSuperseded: 'session_superseded',
   accountMismatch: 'account_mismatch',
   recoverySession: 'recovery_session',
   invalidRequest: 'invalid_request',
@@ -168,6 +171,18 @@ async function deleteCallingAccount(request, env, fetchImpl, now) {
 
   const identity = await loadVerifiedIdentity(authorization, env, fetchImpl);
   const userId = identity.id;
+  let current;
+  try {
+    current = await isCurrentAppSession(authorization, env, fetchImpl);
+  } catch (error) {
+    if (error instanceof ActiveSessionUnavailable) {
+      throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+    }
+    throw error;
+  }
+  if (!current) {
+    throw new AccountDeletionError(DeletionErrorCode.sessionSuperseded, 403);
+  }
 
   const body = await readDeletionBody(request);
   for (const field of CLIENT_USER_ID_FIELDS) {

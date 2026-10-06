@@ -438,3 +438,17 @@
   themselves. Lists are deliberately not cached across visits: a retained
   list would be account-scoped data that sign-out and Delete Account's cache
   inventory would have to clear, which is a separate owner decision.
+
+- Single active Broker Wallet session source decision (2026-10-05, unverified):
+  `auth.users.id` stays the only identity; a one-row active pointer plus a
+  once-per-Supabase-`session_id` claim ledger selects the account's sole app
+  session. Restrictive RLS, the client-callable quotation RPC wrapper, and a
+  shared Worker gate refuse displaced JWTs. The active row remains readable
+  by its owner for Realtime observation. Flutter validates restored sessions
+  before publishing app identity, and signs displaced sessions out with
+  explicit local scope. The built-in paid Auth setting and hardware binding
+  are not used. `SignOutScope.others` is supported by the pinned SDK but is
+  not invoked after a claim because another new claimant may win between the
+  claim and the Auth API call. Premium authorization must require both paid
+  entitlement and an active Broker Wallet session. Source and migration are
+  not deployed or runtime verified; see `docs/CURRENT_CHECKPOINT.md`.

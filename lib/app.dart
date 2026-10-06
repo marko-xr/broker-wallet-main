@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/auth_wrapper.dart';
 import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/signup_view.dart';
@@ -105,14 +106,39 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   late final GoRouter _router;
+  late final AuthViewModel _authViewModel;
 
   @override
   void initState() {
     super.initState();
     final authVM = Provider.of<AuthViewModel>(context, listen: false);
+    _authViewModel = authVM;
+    _authViewModel.addListener(_showSessionSupersededNotice);
     final recoveryVM =
         Provider.of<PasswordRecoveryViewModel>(context, listen: false);
     _router = _createRouter(authVM, recoveryVM);
+  }
+
+  void _showSessionSupersededNotice() {
+    if (!_authViewModel.hasSessionSupersededNotice ||
+        _authViewModel.status != AuthStatus.unauthenticated) return;
+    if (!_authViewModel.takeSessionSupersededNotice()) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final language = Provider.of<LocaleViewModel>(context, listen: false)
+          .locale.languageCode;
+      final message = AppLocalizations.translateFor(
+        language, 'sessionSignedInElsewhere',
+      );
+      if (message != null) Fluttertoast.showToast(msg: message);
+    });
+  }
+
+  @override
+  void dispose() {
+    _authViewModel.removeListener(_showSessionSupersededNotice);
+    _router.dispose();
+    super.dispose();
   }
 
   @override

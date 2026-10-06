@@ -187,6 +187,11 @@ class FakeSupabase {
       return user ? json(user) : json({ error_code: 'user_not_found' }, 403);
     }
 
+    if (parsed.pathname === '/rest/v1/rpc/is_current_app_session') {
+      assert.equal(headers.apikey, PUBLISHABLE);
+      return json(true);
+    }
+
     assert.equal(headers.apikey, SECRET, `service-role calls must use the secret key (${parsed.pathname})`);
 
     if (parsed.pathname === '/rest/v1/rpc/confirm_owner_media_upload') {

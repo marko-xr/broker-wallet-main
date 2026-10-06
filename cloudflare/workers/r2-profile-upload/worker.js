@@ -10,6 +10,7 @@ import {
   runDeletionFinalizer,
 } from './account_deletion.js';
 import { stagingRequestAllowed } from './staging_gate.js';
+import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.js';
 
 /**
  * Private profile-image and offer-media lifecycle worker.
@@ -1581,6 +1582,18 @@ async function verifySupabaseTokenAndGetUserId(request, env) {
   const userId = (await userRes.json())?.id;
   if (!userId || typeof userId !== 'string') {
     throw new WorkerError('Supabase token validation returned no user id', 401);
+  }
+  let current;
+  try {
+    current = await isCurrentAppSession(authorization, env);
+  } catch (error) {
+    if (error instanceof ActiveSessionUnavailable) {
+      throw new WorkerError('Session check unavailable', 503, 'session_check_unavailable');
+    }
+    throw error;
+  }
+  if (!current) {
+    throw new WorkerError('Session superseded', 403, 'session_superseded');
   }
   return userId;
 }

@@ -277,7 +277,17 @@ class SignInViewModel extends ChangeNotifier {
           );
         }
       } else {
-        _showToast(e.message, Colors.red);
+        final key = switch (e.code) {
+          AuthFailureCode.appSessionUnavailable => 'appSessionCheckFailed',
+          AuthFailureCode.sessionExpired => 'sessionSignedInElsewhere',
+          _ => null,
+        };
+        if (context.mounted) {
+          _showToast(
+            key == null ? e.message : AppLocalizations.of(context).translate(key),
+            Colors.red,
+          );
+        }
       }
     } catch (e) {
       final message = e.toString();

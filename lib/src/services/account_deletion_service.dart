@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'app_session_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
@@ -233,13 +234,15 @@ class WorkerAccountDeletionGateway implements AccountDeletionGateway {
       throw const AccountDeletionFailure(AccountDeletionFailureCode.network);
     }
 
-    interpretAccountDeletionResponse(response.statusCode, response.body);
+    interpretAccountDeletionResponse(
+      response.statusCode, response.body, accessToken: token,
+    );
   }
 }
 
 /// Accepts only the exact success response; anything else becomes a fixed
 /// failure read from the `error` code alone.
-void interpretAccountDeletionResponse(int statusCode, String body) {
+void interpretAccountDeletionResponse(int statusCode, String body, {String? accessToken}) {
   String? status;
   String? error;
   try {
@@ -253,6 +256,11 @@ void interpretAccountDeletionResponse(int statusCode, String body) {
   } catch (_) {}
 
   if (statusCode == 200 && status == 'deleted') return;
+  if (error == 'session_superseded' && accessToken != null) {
+    AppSessionCoordinator.reportBackendError(
+      'session_superseded', accessToken: accessToken,
+    );
+  }
   throw AccountDeletionFailure(_failureCodeFor(statusCode, error));
 }
 

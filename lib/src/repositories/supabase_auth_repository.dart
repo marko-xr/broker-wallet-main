@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/services/account_deletion_service.dart'
     show AccountExistence, AccountExistenceProbe;
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
+import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -21,7 +22,8 @@ class SupabaseAuthRepository
         PhoneVerificationCapability,
         EmailChangeCapability,
         PasswordCapability,
-        AccountExistenceProbe {
+        AccountExistenceProbe,
+        AppSessionEvents {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -29,6 +31,31 @@ class SupabaseAuthRepository
         _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  late final AppSessionCoordinator _appSession = AppSessionCoordinator(
+    _client,
+    onSuperseded: () => unawaited(_endSupersededSession()),
+    onResumeWhileUnverified: () {
+      unawaited(retryAppSessionValidation().then<void>(
+        (_) {}, onError: (Object _) {},
+      ));
+    },
+  );
+  final StreamController<bool> _supersededController = StreamController<bool>.broadcast();
+  final StreamController<bool> _sessionCheckUnavailableController =
+      StreamController<bool>.broadcast();
+  @override
+  Stream<bool> get sessionSupersededEvents => _supersededController.stream;
+  @override
+  Stream<bool> get sessionCheckUnavailableEvents =>
+      _sessionCheckUnavailableController.stream;
+  bool _endingSuperseded = false;
+
+  @override
+  Future<void> retryAppSessionValidation() async {
+    final session = _client.auth.currentSession;
+    if (session == null || isPasswordRecoveryActive || _appSession.isAuthorized(session)) return;
+    await _authorizeAndPublish(session, claim: false);
+  }
   final UserRepository _userRepository;
   String? _pendingVerificationEmail;
 
@@ -161,7 +188,16 @@ class SupabaseAuthRepository
 
     // The restored session is available synchronously once Supabase has been
     // initialized, so bootstrap no longer waits on any network round trip.
-    _publishIdentity(_client.auth.currentUser);
+    final restored = _client.auth.currentSession;
+    if (restored == null) {
+      _publishIdentity(null);
+    } else if (isPasswordRecoveryActive) {
+      _publishIdentity(restored.user);
+    } else {
+      unawaited(_authorizeAndPublish(restored, claim: false).then<void>(
+        (_) {}, onError: (Object _) {},
+      ));
+    }
 
     _supabaseAuthSubscription = _client.auth.onAuthStateChange.listen(
       _handleAuthState,
@@ -208,10 +244,94 @@ class SupabaseAuthRepository
         break;
     }
 
-    _publishIdentity(user);
+    final session = state.session;
+    if (session == null) {
+      _appSession.clear();
+      _publishIdentity(null);
+    } else if (started != null || isPasswordRecoveryActive) {
+      _appSession.clear();
+      _publishIdentity(user);
+    } else if (state.event == AuthChangeEvent.signedIn) {
+      if (!_appSession.isAuthorized(session)) _publishIdentity(null);
+      unawaited(_authorizeAndPublish(session, claim: true).then<void>(
+        (_) {}, onError: (Object _) {},
+      ));
+    } else if (_appSession.isAuthorized(session)) {
+      _publishIdentity(user);
+      if (state.event == AuthChangeEvent.tokenRefreshed) {
+        unawaited(_appSession.validateNow().then<void>(
+          (_) {}, onError: (Object _) {},
+        ));
+      }
+    } else {
+      unawaited(_authorizeAndPublish(session, claim: false).then<void>(
+        (_) {}, onError: (Object _) {},
+      ));
+    }
 
     if (started != null && !_passwordRecoveryController.isClosed) {
       _passwordRecoveryController.add(started);
+    }
+  }
+
+  Future<bool> _authorizeAndPublish(Session session, {required bool claim}) async {
+    try {
+      final allowed = await _appSession.authorize(session, claim: claim);
+      if (allowed && _appSession.isAuthorized(session)) {
+        _sessionCheckUnavailableController.add(false);
+        _publishIdentity(session.user);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      final displaced = error.toString().contains('session_superseded');
+      if (displaced) _appSession.supersede();
+      if (!claim && !displaced) {
+        // A restored session with no network remains cached for a retry, but
+        // its app identity is never published until the server confirms it.
+        _sessionCheckUnavailableController.add(true);
+        throw AuthFailure(
+          code: AuthFailureCode.appSessionUnavailable,
+          message: 'Application session verification is unavailable.',
+          originalException: error,
+        );
+      }
+      // A check that could not complete cannot authorize Home. End this local
+      // session; the sign-in caller also receives the authoritative failure.
+      if (!displaced &&
+          AppSessionCoordinator.sessionId(_client.auth.currentSession) ==
+          AppSessionCoordinator.sessionId(session)) {
+        try {
+          await _client.auth.signOut(scope: SignOutScope.local);
+        } catch (signOutError) {
+          _identityController.addError(signOutError);
+        }
+      }
+      _identityController.addError(error);
+      throw AuthFailure(
+        code: displaced
+            ? AuthFailureCode.sessionExpired
+            : AuthFailureCode.appSessionUnavailable,
+        message: displaced
+            ? 'This sign-in session was replaced.'
+            : 'Application session verification is unavailable.',
+        originalException: error,
+      );
+    }
+  }
+
+  Future<void> _endSupersededSession() async {
+    if (_endingSuperseded) return;
+    _endingSuperseded = true;
+    _supersededController.add(true);
+    try {
+      await _client.auth.signOut(scope: SignOutScope.local);
+    } catch (error) {
+      _identityController.addError(error);
+    } finally {
+      _appSession.clear();
+      _publishIdentity(null);
+      _endingSuperseded = false;
     }
   }
 
@@ -244,6 +364,9 @@ class SupabaseAuthRepository
   /// the repository is a process-lifetime singleton in production and this
   /// exists so tests can tear the pipeline down deterministically.
   Future<void> dispose() async {
+    await _appSession.dispose();
+    await _supersededController.close();
+    await _sessionCheckUnavailableController.close();
     await _supabaseAuthSubscription?.cancel();
     _supabaseAuthSubscription = null;
     _pipelineStarted = false;
@@ -308,6 +431,12 @@ class SupabaseAuthRepository
       // With hosted email confirmation enabled there is normally no session yet,
       // so RLS does not allow reading public.profiles until confirmation.
       if (response.session != null) {
+        if (!(await _authorizeAndPublish(response.session!, claim: true))) {
+          throw const AuthFailure(
+            code: AuthFailureCode.sessionExpired,
+            message: 'This sign-up session is no longer active.',
+          );
+        }
         final profile = await _userRepository.getUserById(user.id);
         if (profile != null) return profile;
       }
@@ -356,6 +485,15 @@ class SupabaseAuthRepository
         throw const AuthFailure(
           code: AuthFailureCode.unknown,
           message: 'Supabase sign in did not return a user.',
+        );
+      }
+
+      final session = response.session;
+      if (session == null ||
+          !(await _authorizeAndPublish(session, claim: true))) {
+        throw const AuthFailure(
+          code: AuthFailureCode.sessionExpired,
+          message: 'This sign-in session is no longer active.',
         );
       }
 
@@ -561,7 +699,7 @@ class SupabaseAuthRepository
     _clearPasswordRecovery();
     if (_client.auth.currentSession == null) return;
     try {
-      await _client.auth.signOut();
+      await _client.auth.signOut(scope: SignOutScope.local);
     } catch (_) {
       // The recovery marker is already gone, so the gate is released either
       // way. A sign-out that cannot reach the server must not strand the user
@@ -576,7 +714,20 @@ class SupabaseAuthRepository
     }
 
     try {
-      await _client.auth.signOut();
+      Object? releaseFailure;
+      try {
+        await _appSession.release();
+      } catch (error) {
+        releaseFailure = error;
+      }
+      await _client.auth.signOut(scope: SignOutScope.local);
+      if (releaseFailure != null) {
+        throw AuthFailure(
+          code: AuthFailureCode.appSessionUnavailable,
+          message: 'Signed out locally, but session release could not be confirmed.',
+          originalException: releaseFailure,
+        );
+      }
     } on AuthException catch (e) {
       throw AuthFailure.fromSupabase(e);
     } catch (e) {

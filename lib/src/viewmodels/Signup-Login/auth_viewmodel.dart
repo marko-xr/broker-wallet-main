@@ -162,9 +162,11 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   ProfileHydrationStatus _profileHydration = ProfileHydrationStatus.unresolved;
 
   StreamSubscription<UserModel?>? _authSubscription;
-  StreamSubscription<bool>? _sessionSupersededSubscription;
+  StreamSubscription<AppSessionSupersededPhase>? _sessionSupersededSubscription;
   StreamSubscription<bool>? _sessionCheckUnavailableSubscription;
   bool _sessionSupersededNotice = false;
+  bool _sessionSupersededSignOutCompleted = false;
+  bool _sessionSupersededHandledForCurrentSession = false;
   bool _sessionCheckUnavailable = false;
   StreamSubscription<UserModel?>? _userStreamSubscription;
 
@@ -230,14 +232,20 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
       final repository = _authRepository;
       if (repository is AppSessionEvents) {
         final AppSessionEvents sessionEvents = repository as AppSessionEvents;
-        _sessionSupersededSubscription = sessionEvents.sessionSupersededEvents.listen((_) {
-          _sessionSupersededNotice = true;
-          // Close the router and protected subscriptions before the local
-          // Auth API sign-out finishes its network work.
-          if (_status == AuthStatus.unauthenticated && _currentUser == null) {
-            notifyListeners();
-          } else {
+        _sessionSupersededSubscription =
+            sessionEvents.sessionSupersededEvents.listen((phase) {
+          if (phase == AppSessionSupersededPhase.accessRevoked) {
+            if (_sessionSupersededHandledForCurrentSession) return;
+            _sessionSupersededHandledForCurrentSession = true;
+            _sessionSupersededNotice = true;
+            _sessionSupersededSignOutCompleted = false;
+            // Close protected routes and account subscriptions before the
+            // repository begins its explicit local Auth sign-out.
             _handleSessionIdentity(null);
+          } else if (_sessionSupersededNotice) {
+            _sessionSupersededSignOutCompleted = true;
+            _status = AuthStatus.unauthenticated;
+            notifyListeners();
           }
         });
         _sessionCheckUnavailableSubscription =
@@ -311,8 +319,14 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   /// AuthWrapper.
   AuthStatus get status => _status;
 
-  /// A single localized notice is shown after the router has left Home.
-  bool get hasSessionSupersededNotice => _sessionSupersededNotice;
+  /// Only the rendered logged-out route may consume this process-local notice.
+  bool get hasSessionSupersededNotice =>
+      _sessionSupersededNotice &&
+      _sessionSupersededSignOutCompleted &&
+      _status == AuthStatus.unauthenticated &&
+      currentUserId == null;
+  bool get wasCurrentSignInSuperseded =>
+      _sessionSupersededHandledForCurrentSession;
   bool get isSessionCheckUnavailable => _sessionCheckUnavailable;
   Future<void> retryAppSessionValidation() async {
     final repository = _authRepository;
@@ -325,7 +339,7 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
     }
   }
   bool takeSessionSupersededNotice() {
-    if (!_sessionSupersededNotice || _status != AuthStatus.unauthenticated) return false;
+    if (!hasSessionSupersededNotice) return false;
     _sessionSupersededNotice = false;
     return true;
   }
@@ -546,6 +560,7 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
 
   Future<UserModel?> signInWithEmail(String email, String password) async {
     try {
+      _sessionSupersededHandledForCurrentSession = false;
       _beginOperation(AuthOperation.signingIn);
 
       final userModel = await _authRepository.signInWithEmailAndPassword(
@@ -570,6 +585,7 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
 
   Future<UserModel?> signInWithGoogle() async {
     try {
+      _sessionSupersededHandledForCurrentSession = false;
       _beginOperation(AuthOperation.signingIn);
 
       final userModel = await _authRepository.signInWithGoogle();
@@ -1104,11 +1120,24 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
     final previousUid = _currentUser?.uid;
 
     if (sessionUser == null) {
-      if (_status == AuthStatus.unauthenticated && previousUid == null) return;
+      // Keep the router on its closed splash gate until the explicit local
+      // sign-out completes. A Supabase signedOut stream event may arrive while
+      // that Future is still in flight and must not expose Welcome early.
+      final holdAtGate =
+          _sessionSupersededNotice && !_sessionSupersededSignOutCompleted;
+      final nextStatus =
+          holdAtGate ? AuthStatus.unknown : AuthStatus.unauthenticated;
+      if (_status == nextStatus && previousUid == null) {
+        if (holdAtGate && _sessionCheckUnavailable) {
+          _sessionCheckUnavailable = false;
+          notifyListeners();
+        }
+        return;
+      }
       _sessionCheckUnavailable = false;
       _hydrationToken++;
       _currentUser = null;
-      _status = AuthStatus.unauthenticated;
+      _status = nextStatus;
       _passwordRecoveryActive = false;
       _accountDeletionQuarantineUid = null;
       _profileHydration = ProfileHydrationStatus.unresolved;
@@ -1129,13 +1158,17 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
       // them resident. Their keys are account-scoped, so the next session
       // could never address them; this is about not retaining them.
       MediaCacheManager.invalidateForAccountChange();
-      notifyListeners();
-
       if (previousUid != null) {
         _subscribeToUserUpdates(null);
       }
+      notifyListeners();
       return;
     }
+
+    // A new authenticated session starts a new possible displacement episode.
+    _sessionSupersededHandledForCurrentSession = false;
+    _sessionSupersededNotice = false;
+    _sessionSupersededSignOutCompleted = false;
 
     final isSameUser = previousUid == sessionUser.uid;
 

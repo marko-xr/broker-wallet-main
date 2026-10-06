@@ -277,9 +277,16 @@ class SignInViewModel extends ChangeNotifier {
           );
         }
       } else {
+        // The app-lifetime Welcome dialog owns a genuine displacement notice.
+        // Other expired sessions retain an ordinary, localized sign-in error.
+        if (e.code == AuthFailureCode.sessionExpired &&
+            context.mounted &&
+            context.read<AuthViewModel>().wasCurrentSignInSuperseded) {
+          return;
+        }
         final key = switch (e.code) {
           AuthFailureCode.appSessionUnavailable => 'appSessionCheckFailed',
-          AuthFailureCode.sessionExpired => 'sessionSignedInElsewhere',
+          AuthFailureCode.sessionExpired => 'authSessionExpired',
           _ => null,
         };
         if (context.mounted) {

@@ -1,5 +1,8 @@
 {
   "sessionSignedInElsewhere": "تم تسجيل الدخول إلى حسابك من جهاز آخر. تم تسجيل خروجك من هذا الجهاز.",
+  "sessionSupersededDialogTitle": "تم تسجيل خروجك",
+  "sessionSupersededDialogBody": "تم تسجيل الدخول إلى حسابك من جهاز آخر. لحماية حسابك، تم تسجيل خروج هذا الجهاز.",
+  "sessionSupersededDialogOk": "حسنًا",
   "appSessionCheckFailed": "تعذّر التحقق من تسجيل الدخول. تحقّق من اتصالك وحاول مرة أخرى.",
   "appName": "محفظة الوسيط",
   "appTagline": "إدارة ممتلكاتك",

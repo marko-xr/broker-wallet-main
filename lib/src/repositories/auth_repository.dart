@@ -249,9 +249,12 @@ abstract class AuthRepository {
   Future<UserModel?> getUserProfile(String uid);
 }
 
+/// The two ordered stages of an authoritative app-session displacement.
+enum AppSessionSupersededPhase { accessRevoked, localSignOutCompleted }
+
 /// Optional application-session displacement signal in Supabase mode.
 abstract class AppSessionEvents {
-  Stream<bool> get sessionSupersededEvents;
+  Stream<AppSessionSupersededPhase> get sessionSupersededEvents;
   Stream<bool> get sessionCheckUnavailableEvents;
   Future<void> retryAppSessionValidation();
 }

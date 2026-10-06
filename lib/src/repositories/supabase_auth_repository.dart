@@ -40,11 +40,15 @@ class SupabaseAuthRepository
       ));
     },
   );
-  final StreamController<bool> _supersededController = StreamController<bool>.broadcast();
+  // Deliver accessRevoked synchronously so the view model closes protected
+  // state before the local Auth sign-out begins.
+  final StreamController<AppSessionSupersededPhase> _supersededController =
+      StreamController<AppSessionSupersededPhase>.broadcast(sync: true);
   final StreamController<bool> _sessionCheckUnavailableController =
       StreamController<bool>.broadcast();
   @override
-  Stream<bool> get sessionSupersededEvents => _supersededController.stream;
+  Stream<AppSessionSupersededPhase> get sessionSupersededEvents =>
+      _supersededController.stream;
   @override
   Stream<bool> get sessionCheckUnavailableEvents =>
       _sessionCheckUnavailableController.stream;
@@ -323,7 +327,7 @@ class SupabaseAuthRepository
   Future<void> _endSupersededSession() async {
     if (_endingSuperseded) return;
     _endingSuperseded = true;
-    _supersededController.add(true);
+    _supersededController.add(AppSessionSupersededPhase.accessRevoked);
     try {
       await _client.auth.signOut(scope: SignOutScope.local);
     } catch (error) {
@@ -331,6 +335,7 @@ class SupabaseAuthRepository
     } finally {
       _appSession.clear();
       _publishIdentity(null);
+      _supersededController.add(AppSessionSupersededPhase.localSignOutCompleted);
       _endingSuperseded = false;
     }
   }

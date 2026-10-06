@@ -9506,3 +9506,36 @@ claims). Hosted migration and Worker deployment require separate explicit owner
 action; only afterward run the A→B→C, recovery, logout, offline/reconnect,
 private-media, and account-deletion device acceptance. Do not mark this
 VERIFIED_RUNTIME before that pass.
+
+### Single active device — hosted rollout and logout dialog (2026-10-06)
+
+Owner-reported hosted state supersedes the earlier source-readiness paragraph:
+`20261005175500_single_active_app_session.sql` was applied and registered.
+Hosted read-back confirmed both session tables, all session RPCs, the gated
+quotation wrapper and internal function, 32 restrictive policies, Realtime
+publication membership, RLS, grants, and cascading auth-user foreign keys.
+The owner observed a cached session lose app access and sign out on a device.
+The Worker deployment and the full A→B→C/device acceptance remain unverified
+here; no production-wide PASS is claimed.
+
+The transient displacement toast was too fast to read. Source now holds a
+one-shot notice in the app-lifetime `AuthViewModel`. A synchronous displacement
+phase closes protected app state and routes to the splash gate before explicit
+`SignOutScope.local`; a completion phase then allows the unauthenticated
+Welcome route to render a barrier/back-protected, single-action Material
+dialog in English or Arabic. No dialog is produced by validation unavailable,
+ordinary logout, normal cold start, or another auth-stream failure. A genuine
+displacement in a sign-in flow is owned by this dialog; an unrelated expired
+session keeps its separate localized sign-in error. No database, Worker, or
+hosted setting changed for this UX checkpoint. Source/widget tests were added
+but not run by the agent under the owner's Flutter execution policy. This UX
+remains **SOURCE READY / DEVICE UNVERIFIED**.
+
+NOW — owner runs `flutter test test/auth/session_superseded_dialog_test.dart`
+and reports the output.
+
+NEXT — if that passes, owner runs a scoped analyzer for the changed Dart files,
+then checks displacement on two real devices in English/Arabic and light/dark:
+protected UI closes before local sign-out, Welcome appears, exactly one dialog
+stays until OK, and the old device remains signed out. Also verify Retry,
+ordinary logout, and a normal cold start show no displacement dialog.

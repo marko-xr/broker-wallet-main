@@ -11,30 +11,36 @@ import 'package:intl/intl.dart';
 
 class PdfGenerationService {
   // Font cache to avoid loading fonts multiple times
-  static late final pw.Font _arabicFont;
-  static late final pw.Font _arabicBoldFont;
-  static late final pw.Font _latinFont;
-  static late final pw.Font _latinBoldFont;
+  static late pw.Font _arabicFont;
+  static late pw.Font _arabicBoldFont;
+  static late pw.Font _latinFont;
+  static late pw.Font _latinBoldFont;
+  static Future<void>? _fontsFuture;
 
   // Load fonts from assets
   static Future<void> _loadFonts() async {
-    // Load static Arabic fonts (more reliable for PDF than variable fonts)
-    final arabicFontData = await rootBundle.load(
-        'assets/fonts/Noto_Naskh_Arabic/static/NotoNaskhArabic-Regular.ttf');
-    _arabicFont = pw.Font.ttf(arabicFontData);
+    final pending = _fontsFuture ??= _readFonts();
+    try {
+      await pending;
+    } catch (_) {
+      if (identical(_fontsFuture, pending)) _fontsFuture = null;
+      rethrow;
+    }
+  }
 
-    final arabicBoldFontData = await rootBundle
-        .load('assets/fonts/Noto_Naskh_Arabic/static/NotoNaskhArabic-Bold.ttf');
-    _arabicBoldFont = pw.Font.ttf(arabicBoldFontData);
-
-    // Load static Latin fonts for fallback
-    final latinFontData = await rootBundle
-        .load('assets/fonts/Noto_Sans/static/NotoSans-Regular.ttf');
-    _latinFont = pw.Font.ttf(latinFontData);
-
-    final latinBoldFontData = await rootBundle
-        .load('assets/fonts/Noto_Sans/static/NotoSans-Bold.ttf');
-    _latinBoldFont = pw.Font.ttf(latinBoldFontData);
+  static Future<void> _readFonts() async {
+    final fonts = await Future.wait([
+      rootBundle.load(
+          'assets/fonts/Noto_Naskh_Arabic/static/NotoNaskhArabic-Regular.ttf'),
+      rootBundle.load(
+          'assets/fonts/Noto_Naskh_Arabic/static/NotoNaskhArabic-Bold.ttf'),
+      rootBundle.load('assets/fonts/Noto_Sans/static/NotoSans-Regular.ttf'),
+      rootBundle.load('assets/fonts/Noto_Sans/static/NotoSans-Bold.ttf'),
+    ]);
+    _arabicFont = pw.Font.ttf(fonts[0]);
+    _arabicBoldFont = pw.Font.ttf(fonts[1]);
+    _latinFont = pw.Font.ttf(fonts[2]);
+    _latinBoldFont = pw.Font.ttf(fonts[3]);
   }
 
   // Get appropriate font based on locale and style
@@ -239,7 +245,17 @@ class PdfGenerationService {
     final fileName =
         'quotation_${quotation.id ?? DateTime.now().millisecondsSinceEpoch}.pdf';
     final file = File('${output.path}/$fileName');
-    await file.writeAsBytes(await pdf.save());
+    final bytes = await pdf.save();
+    try {
+      await file.writeAsBytes(bytes);
+    } catch (_) {
+      // A half-written PDF is private user data that nobody holds a path to
+      // (the caller only learns the path of a PDF that was written).
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+      rethrow;
+    }
 
     return file.path;
   }
@@ -379,8 +395,26 @@ class PdfGenerationService {
     );
   }
 
+  // The decoded strings of each language, read once per process.
+  static final Map<String, Future<Map<String, String>>> _stringsByLanguage = {};
+
   // Load localized strings for PDF generation
   static Future<Map<String, String>> _loadLocalizedStrings(
+      Locale locale) async {
+    final language = locale.languageCode;
+    final pending =
+        _stringsByLanguage[language] ??= _readLocalizedStrings(locale);
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_stringsByLanguage[language], pending)) {
+        _stringsByLanguage.remove(language);
+      }
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, String>> _readLocalizedStrings(
       Locale locale) async {
     try {
       String jsonString = await rootBundle.loadString(
@@ -780,28 +814,29 @@ class PdfGenerationService {
           decoration: const pw.BoxDecoration(color: PdfColors.grey100),
           children: [
             _tableCell(localizedStrings['paymentMethod'] ?? 'Payment Method',
-                isHeader: true, isRtl: isRtl),
+                isHeader: true, isRtl: isRtl, align: pw.TextAlign.center),
             _tableCell(localizedStrings['number'] ?? 'No.',
                 isHeader: true, isRtl: isRtl, align: pw.TextAlign.center),
             _tableCell(localizedStrings['date'] ?? 'Date',
-                isHeader: true, isRtl: isRtl),
+                isHeader: true, isRtl: isRtl, align: pw.TextAlign.center),
             _tableCell(localizedStrings['amount'] ?? 'Amount',
-                isHeader: true, isRtl: isRtl, align: pw.TextAlign.right),
+                isHeader: true, isRtl: isRtl, align: pw.TextAlign.center),
           ],
         ),
         ...quotation.downpayments.map((row) => pw.TableRow(children: [
               _tableCell(_formatPaymentMethod(row.method, localizedStrings),
-                  isRtl: isRtl),
+                  isRtl: isRtl, align: pw.TextAlign.center),
               _tableCell(_formatNumber(row.number),
                   isRtl: isRtl, align: pw.TextAlign.center),
               _tableCell(
                   row.date?.toString().split(' ').first ??
                       (localizedStrings['tbd'] ?? 'TBD'),
-                  isRtl: isRtl),
+                  isRtl: isRtl,
+                  align: pw.TextAlign.center),
               _tableCell(
                   '${quotation.currencyCode ?? 'AED'} ${_formatNumber(row.amount)}',
                   isRtl: isRtl,
-                  align: pw.TextAlign.right),
+                  align: pw.TextAlign.center),
             ])),
       ],
     );

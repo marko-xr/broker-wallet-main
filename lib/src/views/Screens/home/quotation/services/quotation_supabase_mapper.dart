@@ -82,19 +82,31 @@ abstract final class QuotationSupabaseMapper {
   // Write side
   // ---------------------------------------------------------------------
 
+  /// Throws [QuotationValidationException] for a form the hosted schema would
+  /// refuse for a reason the user can fix. [toSavePayload] applies it first;
+  /// callers use it to refuse a form before starting any other work.
+  static void validate(QuotationModel quotation) {
+    if (quotation.propertyTitle.trim().isEmpty) {
+      throw const QuotationValidationException(
+          QuotationValidationReason.titleRequired);
+    }
+    for (final fee in quotation.administrativeFees.fees) {
+      if (fee.title.trim().isEmpty && fee.amount != 0) {
+        throw const QuotationValidationException(
+            QuotationValidationReason.administrativeFeeTitleRequired);
+      }
+    }
+  }
+
   /// Builds the `save_quotation` arguments from [quotation].
   ///
-  /// Throws [QuotationValidationException] for a form the hosted schema would
-  /// refuse for a reason the user can fix.
+  /// Throws [QuotationValidationException] as [validate] does.
   static QuotationSavePayload toSavePayload(
     QuotationModel quotation, {
     required String quotationId,
     int? expectedVersion,
   }) {
-    if (quotation.propertyTitle.trim().isEmpty) {
-      throw const QuotationValidationException(
-          QuotationValidationReason.titleRequired);
-    }
+    validate(quotation);
 
     final header = <String, dynamic>{
       'property_title': quotation.propertyTitle,
@@ -142,12 +154,9 @@ abstract final class QuotationSupabaseMapper {
 
     final administrativeFees = <Map<String, dynamic>>[];
     for (final fee in quotation.administrativeFees.fees) {
-      final blankTitle = fee.title.trim().isEmpty;
-      if (blankTitle && fee.amount == 0) continue; // a row the user left empty
-      if (blankTitle) {
-        throw const QuotationValidationException(
-            QuotationValidationReason.administrativeFeeTitleRequired);
-      }
+      // A blank title here is a row the user left empty: [validate] refused
+      // one that has an amount.
+      if (fee.title.trim().isEmpty) continue;
       administrativeFees.add(<String, dynamic>{
         'ordinal': administrativeFees.length,
         'title': fee.title,

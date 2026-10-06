@@ -730,6 +730,36 @@ void main() {
     });
 
     testWidgets(
+        'showProgress: false keeps Save\'s label with no spinner, both still inert',
+        (tester) async {
+      await _pump(
+        tester,
+        body: (_) => _screen(Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: SaveCancelButtons(
+            isLoading: true,
+            showProgress: false,
+            isEnabled: true,
+            isEditMode: false,
+            onSave: () {},
+            onCancel: () {},
+          ),
+        )),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text(en['save'] as String), findsOneWidget);
+      expect(
+          tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
+          isNull);
+      expect(
+          tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+          isNull);
+    });
+
+    testWidgets(
         '"nothing to save yet" only dims Save: it still reports the tap',
         (tester) async {
       var saved = 0;

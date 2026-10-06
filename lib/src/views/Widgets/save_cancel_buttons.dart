@@ -29,8 +29,14 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 /// screens do. The buttons assume the page is painted with the theme's
 /// `colorScheme.surface`, which every form screen uses for its `Scaffold`.
 class SaveCancelButtons extends StatelessWidget {
-  /// Whether the save operation is currently in progress
+  /// Whether the save operation is currently in progress. Both buttons are
+  /// disabled while it is.
   final bool isLoading;
+
+  /// Whether Save shows its spinner while [isLoading]. A screen that shows its
+  /// own progress indicator elsewhere turns this off so only one is visible;
+  /// Save then stays disabled with its label.
+  final bool showProgress;
 
   /// Whether the save button should be enabled (has content)
   final bool isEnabled;
@@ -53,6 +59,7 @@ class SaveCancelButtons extends StatelessWidget {
   const SaveCancelButtons({
     super.key,
     required this.isLoading,
+    this.showProgress = true,
     required this.isEnabled,
     required this.isEditMode,
     required this.onSave,
@@ -148,7 +155,7 @@ class SaveCancelButtons extends StatelessWidget {
                     ),
                     padding: EdgeInsets.zero,
                   ),
-                  child: isLoading
+                  child: isLoading && showProgress
                       ? const SizedBox(
                           height: _progressSize,
                           width: _progressSize,

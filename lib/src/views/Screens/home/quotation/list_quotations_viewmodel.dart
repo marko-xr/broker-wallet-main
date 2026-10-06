@@ -91,7 +91,7 @@ class QuotationListViewModel extends ChangeNotifier {
       await _quotationService.deleteQuotation(quotationId);
 
       if (context.mounted) {
-        _toast('Quotation deleted successfully', Colors.green);
+        _toast(loc.translate('quotationDeletedSuccessfully'), Colors.green);
       }
     } catch (_) {
       if (context.mounted) {

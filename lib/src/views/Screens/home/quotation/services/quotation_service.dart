@@ -57,6 +57,36 @@ class QuotationService {
 
   static const Duration _downloadTimeout = Duration(seconds: 60);
 
+  int _mutationBatchDepth = 0;
+  bool _mutationSignalPending = false;
+
+  /// Tells the lists and counts to refresh. Inside [batchMutations] the signal
+  /// is held back so one save sends one refresh instead of one per step.
+  void _signalMutation() {
+    if (_mutationBatchDepth > 0) {
+      _mutationSignalPending = true;
+    } else {
+      CoreEntityMutationNotifier.notify();
+    }
+  }
+
+  /// Runs [action], then sends a single refresh signal if any mutation inside
+  /// it succeeded (including when [action] ends in an error). A Quotation save
+  /// is up to three mutations (aggregate, logo, PDF); each signal makes every
+  /// open list, Home and Search re-read from the backend.
+  Future<T> batchMutations<T>(Future<T> Function() action) async {
+    _mutationBatchDepth++;
+    try {
+      return await action();
+    } finally {
+      _mutationBatchDepth--;
+      if (_mutationBatchDepth == 0 && _mutationSignalPending) {
+        _mutationSignalPending = false;
+        CoreEntityMutationNotifier.notify();
+      }
+    }
+  }
+
   /// A new Quotation id. The client chooses it, so a create that is retried
   /// after a lost answer replays the same Quotation instead of making another.
   String generateNewQuotationId() => _uuid.v4();
@@ -78,7 +108,7 @@ class QuotationService {
       quotationId: quotationId,
       expectedVersion: expectedVersion,
     );
-    CoreEntityMutationNotifier.notify();
+    _signalMutation();
     return result;
   }
 
@@ -105,7 +135,7 @@ class QuotationService {
   Future<void> deleteQuotation(String quotationId) async {
     await _remote.softDelete(quotationId);
     await _pdfCache.purge(quotationId);
-    CoreEntityMutationNotifier.notify();
+    _signalMutation();
   }
 
   // -------------------------------------------------------------------------
@@ -128,7 +158,7 @@ class QuotationService {
       mediaObjectId: mediaObjectId,
       originalFileName: originalFileName,
     );
-    CoreEntityMutationNotifier.notify();
+    _signalMutation();
     return binding;
   }
 
@@ -141,7 +171,7 @@ class QuotationService {
       quotationId: quotationId,
       expectedMediaId: expectedMediaId,
     );
-    CoreEntityMutationNotifier.notify();
+    _signalMutation();
     return removal;
   }
 
@@ -168,7 +198,7 @@ class QuotationService {
         if (await pdf.exists()) await pdf.delete();
       } catch (_) {}
     }
-    CoreEntityMutationNotifier.notify();
+    _signalMutation();
     return binding;
   }
 

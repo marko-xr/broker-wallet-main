@@ -1,5 +1,7 @@
 // lib/src/viewmodels/AddScreens/add_quotation_viewmodel.dart
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_background_removal_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_optimization_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_workflow.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/pdf_generation_service.dart';
@@ -8,7 +10,7 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quota
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +24,7 @@ import 'dart:io';
 /// Renders a Quotation to a local PDF file and returns its path.
 typedef QuotationPdfGenerator = Future<String> Function(
     QuotationModel quotation, {Locale? locale});
+typedef QuotationCreationGate = Future<bool> Function(BuildContext context);
 
 /// How one save attempt ended.
 enum QuotationSaveKind {
@@ -55,6 +58,20 @@ enum QuotationLogoPick {
 
   /// The picker itself failed.
   failed,
+}
+
+/// What the editor shows while a save runs. One save is one operation to the
+/// user, so there is never more than one progress indicator.
+enum QuotationSaveProgress {
+  /// Not saving: no indicator.
+  idle,
+
+  /// Saving: the Save button shows its own spinner.
+  saving,
+
+  /// Saving for [AddQuotationViewModel.defaultLongSaveThreshold] or more: one
+  /// centered indicator replaces the button's spinner.
+  longSaving,
 }
 
 /// The result of [AddQuotationViewModel.performSave]: what happened, and the
@@ -148,8 +165,16 @@ class AddQuotationViewModel extends ChangeNotifier {
   final AuthRepository _authRepository;
   final QuotationPdfGenerator _generatePdf;
   final Future<File?> Function() _pickLogoFile;
+  final LogoBackgroundRemovalService _logoBackgroundRemovalService;
+  final LogoOptimizationService _logoOptimizationService;
+  final QuotationCreationGate _canCreate;
   final void Function(String message, Color color) _toast;
   final Uuid _uuid;
+  final Duration _longSaveThreshold;
+
+  /// How long a save may run before its progress moves from the button to one
+  /// centered indicator. A save that finishes sooner never shows it.
+  static const defaultLongSaveThreshold = Duration(seconds: 2);
 
   /// The Quotation being edited, or null when creating a new one.
   final String? editQuotationId;
@@ -160,13 +185,27 @@ class AddQuotationViewModel extends ChangeNotifier {
     this.editQuotationId,
     QuotationPdfGenerator? pdfGenerator,
     Future<File?> Function()? logoPicker,
+    LogoBackgroundRemovalService? logoBackgroundRemovalService,
+    LogoOptimizationService? logoOptimizationService,
+    QuotationCreationGate? creationGate,
     void Function(String message, Color color)? toast,
     Uuid? uuid,
+    Duration longSaveThreshold = defaultLongSaveThreshold,
   })  : _quotationService = quotationService ?? QuotationService(),
         _authRepository =
             authRepository ?? RepositoryProvider.instance.authRepository,
         _generatePdf = pdfGenerator ?? PdfGenerationService.generateQuotationPdf,
         _pickLogoFile = logoPicker ?? _pickLogoFromDevice,
+        _logoBackgroundRemovalService =
+            logoBackgroundRemovalService ?? const LogoBackgroundRemovalService(),
+        _logoOptimizationService =
+            logoOptimizationService ?? const LogoOptimizationService(),
+        _longSaveThreshold = longSaveThreshold,
+        _canCreate = creationGate ??
+            ((context) => CoreEntityQuotaBridge.canCreate(
+                  context: context,
+                  section: 'quotations',
+                )),
         _toast = toast ?? _showPlatformToast,
         _uuid = uuid ?? const Uuid();
 
@@ -194,6 +233,36 @@ class AddQuotationViewModel extends ChangeNotifier {
 
   /// The last logo file uploaded in this session, kept to draw the PDF.
   File? _uploadedLogoFile;
+
+  /// A temporary PNG created locally when the user opts into background
+  /// removal. The original picked image is never modified.
+  File? _processedLogoFile;
+
+  /// A temporary downsized copy of the picked logo, made in the background as
+  /// soon as it is picked so Save only reuses it. Null when the picked file
+  /// already fits (or could not be decoded) and is used as it is.
+  File? _optimizedLogoFile;
+  Future<File?>? _logoOptimization;
+
+  /// A private signed URL used only to preview a logo already bound on the
+  /// server. It is never persisted.
+  String? _boundLogoPreviewUrl;
+  DateTime? _boundLogoPreviewExpiry;
+
+  bool _removeLogoBackground = false;
+  bool _isProcessingLogoBackground = false;
+  bool _saveEntryActive = false;
+  QuotationSaveProgress _saveProgress = QuotationSaveProgress.idle;
+  Timer? _longSaveTimer;
+  bool _mediaVersionNeedsRefresh = false;
+
+  /// The renderer of a PDF whose database save failed, still finishing. The
+  /// next save waits for it so it can never delete that attempt's new file.
+  Future<void>? _pdfDiscard;
+
+  /// Removals of temporary files (dispose, cleared logo, reloaded form), run
+  /// one after another so they can be waited for.
+  Future<void> _tempCleanup = Future<void>.value();
 
   // ===== Existing-quotation loading =====
   bool _isLoadingExisting = false;
@@ -265,8 +334,22 @@ class AddQuotationViewModel extends ChangeNotifier {
   // ===== Loading states =====
   bool _isLoading = false;
 
-  bool get isLoading => _isLoading;
+  bool get isLoading => _isLoading || _saveEntryActive;
+  QuotationSaveProgress get saveProgress => _saveProgress;
   File? get selectedLogoFile => _selectedLogoFile;
+  bool get removeLogoBackground => _removeLogoBackground;
+  bool get isProcessingLogoBackground => _isProcessingLogoBackground;
+  bool get canRemoveLogoBackground => _selectedLogoFile != null;
+  String? get officeLogoPreviewUrl => _boundLogoPreviewUrl;
+
+  /// The file currently shown in the logo preview. A processed transparent
+  /// PNG wins while background removal is enabled.
+  File? get officeLogoPreviewFile {
+    if (_removeLogoBackground && _processedLogoFile != null) {
+      return _processedLogoFile;
+    }
+    return _selectedLogoFile ?? _uploadedLogoFile;
+  }
 
   // Check if a logo is selected (a new file, or one bound on the server)
   bool get hasLogoSelected =>
@@ -324,7 +407,11 @@ class AddQuotationViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
+    _longSaveTimer?.cancel();
+    _deleteInBackground(_processedLogoFile);
+    _deleteInBackground(_optimizedLogoFile);
     super.dispose();
   }
 
@@ -717,12 +804,20 @@ class AddQuotationViewModel extends ChangeNotifier {
         return QuotationLogoPick.rejected;
       }
 
+      await _deleteQuietly(_processedLogoFile);
+      await _deleteQuietly(_optimizedLogoFile);
+      _processedLogoFile = null;
+      _optimizedLogoFile = null;
+      _removeLogoBackground = false;
+      _boundLogoPreviewUrl = null;
+      _boundLogoPreviewExpiry = null;
       _selectedLogoFile = file;
       officeLogoFileName = _fileName(file.path);
       // A new selection is a new upload identity, and cancels a pending
       // removal: the replacement itself supersedes the bound logo.
       _pendingLogoMediaId = null;
       _logoRemovalRequested = false;
+      _logoOptimization = _optimizeLogo(file);
 
       // Don't upload immediately - will be handled during save
       // Just update UI to show file is selected
@@ -734,8 +829,100 @@ class AddQuotationViewModel extends ChangeNotifier {
     }
   }
 
+  Future<void> setRemoveLogoBackground(
+    BuildContext context,
+    bool value,
+  ) async {
+    if (_isProcessingLogoBackground || _disposed) return;
+
+    if (!value) {
+      if (_removeLogoBackground) _pendingLogoMediaId = null;
+      _removeLogoBackground = false;
+      if (!_disposed) notifyListeners();
+      return;
+    }
+
+    final source = _selectedLogoFile;
+    if (source == null) return;
+
+    final cached = _processedLogoFile;
+    final cachedExists = cached != null && await cached.exists();
+    if (_disposed || !identical(source, _selectedLogoFile)) return;
+    if (cachedExists) {
+      _pendingLogoMediaId = null;
+      _removeLogoBackground = true;
+      if (!_disposed) notifyListeners();
+      return;
+    }
+    _processedLogoFile = null;
+
+    final loc = AppLocalizations.of(context);
+    _isProcessingLogoBackground = true;
+    notifyListeners();
+    try {
+      final processed =
+          await _logoBackgroundRemovalService.removeBackground(source);
+      try {
+        await QuotationMediaWorkflow.checkLogo(processed);
+      } on QuotationMediaException {
+        await _deleteQuietly(processed);
+        rethrow;
+      }
+
+      if (_disposed || !identical(source, _selectedLogoFile)) {
+        await _deleteQuietly(processed);
+        return;
+      }
+      await _deleteQuietly(_processedLogoFile);
+      _processedLogoFile = processed;
+      _pendingLogoMediaId = null;
+      _removeLogoBackground = true;
+    } catch (_) {
+      if (_disposed || !identical(source, _selectedLogoFile)) return;
+      _removeLogoBackground = false;
+      await _deleteQuietly(_processedLogoFile);
+      _processedLogoFile = null;
+      _toast(
+        loc.translate('quotationLogoBackgroundRemovalFailed'),
+        Colors.red,
+      );
+    } finally {
+      _isProcessingLogoBackground = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  /// Makes the downsized copy of a just-picked logo in the background, so Save
+  /// only reuses it. It never fails the pick: any problem leaves the picked
+  /// file in use as it is.
+  Future<File?> _optimizeLogo(File source) async {
+    File? optimized;
+    try {
+      optimized = await _logoOptimizationService.optimize(source);
+      if (optimized != null) await QuotationMediaWorkflow.checkLogo(optimized);
+    } catch (_) {
+      await _deleteQuietly(optimized);
+      return null;
+    }
+    if (_disposed || !identical(source, _selectedLogoFile)) {
+      await _deleteQuietly(optimized);
+      return null;
+    }
+    _optimizedLogoFile = optimized;
+    return optimized;
+  }
+
   void clearLogo() {
+    _deleteInBackground(_processedLogoFile);
+    _deleteInBackground(_optimizedLogoFile);
     _selectedLogoFile = null;
+    _uploadedLogoFile = null;
+    _processedLogoFile = null;
+    _optimizedLogoFile = null;
+    _logoOptimization = null;
+    _removeLogoBackground = false;
+    _boundLogoPreviewUrl = null;
+    _boundLogoPreviewExpiry = null;
     _pendingLogoMediaId = null;
     officeLogoFileName = '';
     // A logo bound on the server is removed on save; until then it stays.
@@ -749,6 +936,12 @@ class AddQuotationViewModel extends ChangeNotifier {
   static String _fileName(String path) {
     final normalized = path.replaceAll('\\', '/');
     return normalized.contains('/') ? normalized.split('/').last : normalized;
+  }
+
+  static String _transparentLogoFileName(String original) {
+    final dot = original.lastIndexOf('.');
+    final base = dot > 0 ? original.substring(0, dot) : original;
+    return '${base}_transparent.png';
   }
 
   // // ===== Validation =====
@@ -849,27 +1042,38 @@ class AddQuotationViewModel extends ChangeNotifier {
   /// how it went. Creating a Quotation needs free-plan quota; updating one
   /// does not.
   Future<void> save(BuildContext context) async {
-    if (_disposed || _isLoading) return;
-
-    final currentUserId = _authRepository.currentUserId;
-    if (currentUserId == null) {
-      _showToast('User must be logged in to create quotations', Colors.red);
-      return;
-    }
-
-    if (_version == null) {
-      final canAdd = await CoreEntityQuotaBridge.canCreate(
-        context: context,
-        section: 'quotations',
-      );
-      if (!canAdd) return; // User hit quota limit
-      if (_disposed || !context.mounted) return;
-    }
-
-    final loc = AppLocalizations.of(context);
-    final locale = Localizations.localeOf(context);
+    if (_disposed || isLoading || _isProcessingLogoBackground) return;
+    _saveEntryActive = true;
+    _beginSaveProgress();
+    final clock = _SaveTimeline();
+    final endUi = clock.begin('UI total');
+    late QuotationSaveOutcome outcome;
+    late AppLocalizations loc;
+    late Locale locale;
     final wasEditing = isEditMode;
-    final outcome = await performSave(locale: locale);
+    try {
+      final currentUserId = _authRepository.currentUserId;
+      if (currentUserId == null) {
+        _showToast('User must be logged in to create quotations', Colors.red);
+        return;
+      }
+
+      if (_version == null) {
+        final endQuota = clock.begin('quota preflight');
+        final canAdd = await _canCreate(context);
+        endQuota();
+        if (!canAdd || _disposed || !context.mounted) return;
+      }
+
+      loc = AppLocalizations.of(context);
+      locale = Localizations.localeOf(context);
+      outcome =
+          await _performSave(locale: locale, fromSave: true, clock: clock);
+    } finally {
+      _saveEntryActive = false;
+      endUi();
+      _finishSaveProgress();
+    }
     if (_disposed ||
         !context.mounted ||
         outcome.kind == QuotationSaveKind.busy) {
@@ -910,8 +1114,24 @@ class AddQuotationViewModel extends ChangeNotifier {
   /// one only after the server confirms it. A media failure leaves the saved
   /// Quotation intact (and the previously bound media in place) and is
   /// reported in the outcome; saving again retries it as an update.
-  Future<QuotationSaveOutcome> performSave({Locale? locale}) async {
-    if (_disposed || _isLoading) return const QuotationSaveOutcome.busy();
+  ///
+  /// The PDF is not part of "after": it is drawn only from the form, so it is
+  /// prepared while the database saves. Publishing it still waits for the save
+  /// and for the logo, and a PDF whose save failed is discarded.
+  Future<QuotationSaveOutcome> performSave({Locale? locale}) =>
+      _performSave(locale: locale);
+
+  Future<QuotationSaveOutcome> _performSave({
+    Locale? locale,
+    bool fromSave = false,
+    _SaveTimeline? clock,
+  }) async {
+    if (_disposed ||
+        _isLoading ||
+        _isProcessingLogoBackground ||
+        (_saveEntryActive && !fromSave)) {
+      return const QuotationSaveOutcome.busy();
+    }
 
     final userId = _authRepository.currentUserId;
     if (userId == null) {
@@ -921,47 +1141,103 @@ class AddQuotationViewModel extends ChangeNotifier {
       );
     }
 
-    _computeDerivedTotals();
     _isLoading = true;
-    if (!_disposed) notifyListeners();
+    _beginSaveProgress();
+    final timeline = clock ?? _SaveTimeline();
+    final endTotal = timeline.begin('total');
 
     try {
+      // A failed attempt's PDF renderer may still be finishing; it must end
+      // before this attempt writes the same file.
+      await _pdfDiscard;
+      if (_disposed) return const QuotationSaveOutcome.busy();
+
+      final endPreparation = timeline.begin('local preparation');
+      _computeDerivedTotals();
       final wasUpdate = _version != null;
       final id = _quotationId ??=
           editQuotationId ?? _quotationService.generateNewQuotationId();
       final model = _buildModel(userId);
+      try {
+        // A form that can never be saved starts no work at all.
+        QuotationSupabaseMapper.validate(model);
+      } on QuotationValidationException catch (error) {
+        return QuotationSaveOutcome._(
+          QuotationSaveKind.invalid,
+          validation: error.reason,
+        );
+      }
+      final logo = _pickedLogoForSave();
+      endPreparation();
 
+      // The save's media steps and the database save each tell the lists to
+      // refresh; one refresh at the end is enough.
+      return await _quotationService.batchMutations(() => _saveAndPublish(
+            id: id,
+            model: model,
+            wasUpdate: wasUpdate,
+            logo: logo,
+            locale: locale,
+            timeline: timeline,
+          ));
+    } finally {
+      _isLoading = false;
+      endTotal();
+      if (!_saveEntryActive) _finishSaveProgress();
+    }
+  }
+
+  Future<QuotationSaveOutcome> _saveAndPublish({
+    required String id,
+    required QuotationModel model,
+    required bool wasUpdate,
+    required _PickedLogo? logo,
+    required Locale? locale,
+    required _SaveTimeline timeline,
+  }) async {
+    // The PDF carries nothing the server assigns, so it is prepared while the
+    // database saves, not after. Both start here, in the same turn.
+    final preparedPdf = _preparePdf(id, model, locale, logo, timeline);
+
+    // This save owns the prepared PDF until [_publishPdf] takes it over, which
+    // then publishes it or deletes it. On every other way out (a failed save,
+    // or anything unexpected) the PDF is discarded here. It is a local only:
+    // no later save can ever pick this result up.
+    var pdfHandedOver = false;
+    try {
       final QuotationSaveResult saved;
+      final endDatabase = timeline.begin('database save');
       try {
         saved = await _quotationService.saveQuotation(
           model,
           quotationId: id,
           expectedVersion: _version,
         );
-      } on QuotationValidationException catch (error) {
-        return QuotationSaveOutcome._(
-          QuotationSaveKind.invalid,
-          validation: error.reason,
-        );
-      } on QuotationException catch (error) {
-        return QuotationSaveOutcome._(
-          QuotationSaveKind.failed,
-          failure: error.failure,
-        );
-      } catch (_) {
-        return const QuotationSaveOutcome._(
-          QuotationSaveKind.failed,
-          failure: QuotationFailure.unknown,
-        );
+      } catch (error) {
+        return _saveFailure(error);
+      } finally {
+        endDatabase();
       }
       _version = saved.version;
       if (!wasUpdate && saved.outcome == 'created') {
         unawaited(CoreEntityQuotaBridge.recordCreated(section: 'quotations'));
       }
 
-      final logoFailure = await _syncLogo(id);
-      final pdfFailure = await _publishPdf(id, model, locale);
-      await _refreshServerState(id);
+      // Media changes bump the server version one after another, each against
+      // the slot it replaces, so they stay in this order.
+      _mediaVersionNeedsRefresh = false;
+      final endLogo = timeline.begin('logo sync');
+      final logoFailure = await _syncLogo(id, logo);
+      endLogo();
+      final endPublish = timeline.begin('PDF publication');
+      pdfHandedOver = true;
+      final pdfFailure = await _publishPdf(id, preparedPdf);
+      endPublish();
+      if (_mediaVersionNeedsRefresh) {
+        final endRefresh = timeline.begin('media state refresh (fallback)');
+        await _refreshServerState(id);
+        endRefresh();
+      }
 
       return QuotationSaveOutcome._(
         logoFailure == null && pdfFailure == null
@@ -972,33 +1248,101 @@ class AddQuotationViewModel extends ChangeNotifier {
         wasUpdate: wasUpdate,
       );
     } finally {
-      _isLoading = false;
-      if (!_disposed) notifyListeners();
+      if (!pdfHandedOver) _discardPreparedPdf(preparedPdf);
     }
   }
+
+  static QuotationSaveOutcome _saveFailure(Object error) {
+    if (error is QuotationValidationException) {
+      return QuotationSaveOutcome._(
+        QuotationSaveKind.invalid,
+        validation: error.reason,
+      );
+    }
+    return QuotationSaveOutcome._(
+      QuotationSaveKind.failed,
+      failure: error is QuotationException
+          ? error.failure
+          : QuotationFailure.unknown,
+    );
+  }
+
+  /// The save is saving (the button spins), and becomes a long save (one
+  /// centered indicator instead) if it is still running at the threshold.
+  void _beginSaveProgress() {
+    if (_saveProgress != QuotationSaveProgress.idle) return;
+    _saveProgress = QuotationSaveProgress.saving;
+    _longSaveTimer = Timer(_longSaveThreshold, () {
+      if (_disposed || _saveProgress != QuotationSaveProgress.saving) return;
+      _saveProgress = QuotationSaveProgress.longSaving;
+      notifyListeners();
+    });
+    if (!_disposed) notifyListeners();
+  }
+
+  void _finishSaveProgress() {
+    _longSaveTimer?.cancel();
+    _longSaveTimer = null;
+    _saveProgress = QuotationSaveProgress.idle;
+    if (!_disposed) notifyListeners();
+  }
+
+  /// The logo this save uploads and draws, decided before the save starts so
+  /// the PDF and the upload agree on it. Null when no new logo was picked.
+  _PickedLogo? _pickedLogoForSave() {
+    final selected = _selectedLogoFile;
+    if (selected == null) return null;
+    final processed = _processedLogoFile;
+    if (_removeLogoBackground && processed != null) {
+      return _PickedLogo(Future.value(processed), backgroundRemoved: true);
+    }
+    return _PickedLogo(
+      _optimizedOrPicked(selected, _logoOptimization),
+      backgroundRemoved: false,
+    );
+  }
+
+  /// The downsized copy made when the logo was picked (Save waits for it only
+  /// if it is still being made), or the picked file when there is none.
+  Future<File> _optimizedOrPicked(
+    File picked,
+    Future<File?>? optimization,
+  ) async =>
+      (await optimization) ?? picked;
 
   /// Binds a newly picked logo, or removes a cleared one, against the logo the
   /// server last confirmed. The bound logo changes only when the server says
   /// so; on any failure it is left exactly as it was.
-  Future<QuotationMediaFailure?> _syncLogo(String quotationId) async {
+  Future<QuotationMediaFailure?> _syncLogo(
+    String quotationId,
+    _PickedLogo? picked,
+  ) async {
     try {
-      final selected = _selectedLogoFile;
-      if (selected != null) {
+      if (picked != null) {
+        final uploadFile = await picked.file;
         final pendingId = _pendingLogoMediaId ??= _uuid.v4();
         final binding = await _quotationService.uploadOfficeLogo(
           quotationId: quotationId,
-          file: selected,
+          file: uploadFile,
           expectedMediaId: _boundLogoMediaId,
           mediaObjectId: pendingId,
-          originalFileName: officeLogoFileName,
+          originalFileName: picked.backgroundRemoved
+              ? _transparentLogoFileName(officeLogoFileName)
+              : officeLogoFileName,
         );
         _boundLogoMediaId = binding.mediaObjectId;
-        _uploadedLogoFile = selected;
+        _uploadedLogoFile = uploadFile;
         _selectedLogoFile = null;
+        _logoOptimization = null;
+        _boundLogoPreviewUrl = null;
+        _boundLogoPreviewExpiry = null;
+        _removeLogoBackground = false;
         _pendingLogoMediaId = null;
         _logoRemovalRequested = false;
         if (binding.resultingVersion != null) {
           _version = binding.resultingVersion;
+        } else {
+          _mediaVersionNeedsRefresh = true;
         }
       } else if (_logoRemovalRequested) {
         if (_boundLogoMediaId != null) {
@@ -1008,6 +1352,8 @@ class AddQuotationViewModel extends ChangeNotifier {
           );
           if (removal.resultingVersion != null) {
             _version = removal.resultingVersion;
+          } else {
+            _mediaVersionNeedsRefresh = true;
           }
         }
         _boundLogoMediaId = null;
@@ -1016,54 +1362,137 @@ class AddQuotationViewModel extends ChangeNotifier {
       }
       return null;
     } on QuotationMediaException catch (error) {
+      _mediaVersionNeedsRefresh = true;
       return error.failure;
     } catch (_) {
+      _mediaVersionNeedsRefresh = true;
       return QuotationMediaFailure.unknown;
     }
   }
 
-  /// Generates the PDF for the Quotation as just saved and binds it, replacing
-  /// the previous one only after the server confirms.
-  Future<QuotationMediaFailure?> _publishPdf(
+  /// Renders the one PDF of this save. It runs while the database saves and
+  /// the logo uploads; a failed renderer is reported as incomplete media,
+  /// never as a saved PDF.
+  Future<File?> _preparePdf(
     String quotationId,
     QuotationModel model,
     Locale? locale,
+    _PickedLogo? picked,
+    _SaveTimeline timeline,
   ) async {
-    File? generated;
+    final endPreparation = timeline.begin('PDF preparation');
     try {
-      final logoSource = await _logoSourceForPdf(quotationId);
+      // Everything about the logo is read here, before the first await, so the
+      // answer does not depend on how far the save has progressed.
+      final logoSource = await _logoSourceForPdf(
+        quotationId,
+        picked: picked,
+        uploaded: _uploadedLogoFile,
+        removed: _logoRemovalRequested,
+        boundLogoId: _boundLogoMediaId,
+        previewUrl: _boundLogoPreviewUrl,
+        previewExpiry: _boundLogoPreviewExpiry,
+      );
       final forPdf = model.copyWith(id: quotationId, officeLogoUrl: logoSource);
-      generated = File(await _generatePdf(forPdf, locale: locale));
+      return File(await _generatePdf(forPdf, locale: locale));
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Quotation PDF preparation failed: ${error.runtimeType}');
+      }
+      return null;
+    } finally {
+      endPreparation();
+    }
+  }
+
+  /// The PDF prepared beside a save that did not publish it. A running render
+  /// cannot be cancelled, so it is left to finish: its file (private user
+  /// data) is deleted the moment it exists, nothing waits for it before the
+  /// user hears about the failure, and the next save waits for it so the two
+  /// can never touch the same file.
+  void _discardPreparedPdf(Future<File?> prepared) {
+    _pdfDiscard = prepared.then(_deleteQuietly);
+  }
+
+  /// Completes when everything this view-model started in the background has
+  /// finished and removed its own files: a discarded PDF render, a logo copy
+  /// still being made, and temporary files deleted by [dispose], a cleared logo
+  /// or a reloaded form. Tests wait on it before removing their temporary
+  /// directory.
+  @visibleForTesting
+  Future<void> backgroundWorkSettled() async {
+    await _pdfDiscard;
+    await _logoOptimization;
+    await _tempCleanup;
+  }
+
+  /// Removes a temporary file this view-model owns, in order with its other
+  /// removals, without making the caller wait.
+  void _deleteInBackground(File? file) {
+    if (file == null) return;
+    _tempCleanup = _tempCleanup.then((_) => _deleteQuietly(file));
+  }
+
+  /// Publishes only after logo sync; success still requires private PDF confirm.
+  Future<QuotationMediaFailure?> _publishPdf(
+    String quotationId,
+    Future<File?> preparedPdf,
+  ) async {
+    final generated = await preparedPdf;
+    if (generated == null) return QuotationMediaFailure.unknown;
+    try {
       final binding = await _quotationService.publishPdf(
         quotationId: quotationId,
         pdf: generated,
         expectedMediaId: _boundPdfMediaId,
       );
       _boundPdfMediaId = binding.mediaObjectId;
-      if (binding.resultingVersion != null) _version = binding.resultingVersion;
+      if (binding.resultingVersion != null) {
+        _version = binding.resultingVersion;
+      } else {
+        _mediaVersionNeedsRefresh = true;
+      }
       return null;
     } on QuotationMediaException catch (error) {
+      _mediaVersionNeedsRefresh = true;
       await _deleteQuietly(generated);
       return error.failure;
     } catch (_) {
+      _mediaVersionNeedsRefresh = true;
       await _deleteQuietly(generated);
       return QuotationMediaFailure.unknown;
     }
   }
 
-  /// Where the PDF draws the office logo from: the file just picked, the file
-  /// just uploaded, or a short-lived signed URL for the bound logo. Never
+  /// Where the PDF draws the office logo from: the logo being picked now (the
+  /// prepared one), the file uploaded earlier in this session, or a short-lived
+  /// signed URL for the bound logo, reused while it is still valid. Never
   /// stored; null when the Quotation has no logo.
-  Future<String?> _logoSourceForPdf(String quotationId) async {
-    final selected = _selectedLogoFile;
-    if (selected != null) return Uri.file(selected.path).toString();
-    if (_logoRemovalRequested || _boundLogoMediaId == null) return null;
-    final uploaded = _uploadedLogoFile;
-    if (uploaded != null && await uploaded.exists()) {
-      return Uri.file(uploaded.path).toString();
+  Future<String?> _logoSourceForPdf(
+    String quotationId, {
+    required _PickedLogo? picked,
+    required File? uploaded,
+    required bool removed,
+    required String? boundLogoId,
+    required String? previewUrl,
+    required DateTime? previewExpiry,
+  }) async {
+    final local = picked != null ? await picked.file : uploaded;
+    if (local != null && await local.exists()) {
+      return Uri.file(local.path).toString();
+    }
+    if (removed || boundLogoId == null) return null;
+    if (previewUrl != null &&
+        previewExpiry != null &&
+        previewExpiry
+            .isAfter(DateTime.now().add(const Duration(seconds: 30)))) {
+      return previewUrl;
     }
     try {
-      return (await _quotationService.signedOfficeLogo(quotationId))?.url;
+      final signed = await _quotationService.signedOfficeLogo(quotationId);
+      _boundLogoPreviewUrl = signed?.url;
+      _boundLogoPreviewExpiry = signed?.expiresAt;
+      return signed?.url;
     } catch (_) {
       return null;
     }
@@ -1076,6 +1505,10 @@ class AddQuotationViewModel extends ChangeNotifier {
       final state = await _quotationService.getMediaState(quotationId);
       if (state == null) return;
       _version = state.version;
+      if (_boundLogoMediaId != state.officeLogoMediaId) {
+        _boundLogoPreviewUrl = null;
+        _boundLogoPreviewExpiry = null;
+      }
       _boundLogoMediaId = state.officeLogoMediaId;
       _boundPdfMediaId = state.pdfMediaId;
     } catch (_) {
@@ -1159,7 +1592,7 @@ class AddQuotationViewModel extends ChangeNotifier {
       } else {
         _quotationId = id;
         _applyModel(quotation);
-        await _loadLogoName();
+        await _loadLogoPresentation();
       }
     } catch (_) {
       _loadFailed = true;
@@ -1169,14 +1602,25 @@ class AddQuotationViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadLogoName() async {
+  Future<void> _loadLogoPresentation() async {
     final logoId = _boundLogoMediaId;
-    if (logoId == null) return;
+    final quotationId = _quotationId ?? editQuotationId;
+    if (logoId == null || quotationId == null) return;
+
     String? name;
     try {
       name = await _quotationService.getMediaFileName(logoId);
     } catch (_) {}
     officeLogoFileName = name ?? 'logo';
+
+    try {
+      final signed = await _quotationService.signedOfficeLogo(quotationId);
+      _boundLogoPreviewUrl = signed?.url;
+      _boundLogoPreviewExpiry = signed?.expiresAt;
+    } catch (_) {
+      _boundLogoPreviewUrl = null;
+      _boundLogoPreviewExpiry = null;
+    }
   }
 
   /// Fills the form from a loaded Quotation. A value the user did not type is
@@ -1247,7 +1691,17 @@ class AddQuotationViewModel extends ChangeNotifier {
     _version = q.version;
     _boundLogoMediaId = q.officeLogoMediaId;
     _boundPdfMediaId = q.pdfMediaId;
+    _deleteInBackground(_processedLogoFile);
+    _deleteInBackground(_optimizedLogoFile);
+    _uploadedLogoFile = null;
     _selectedLogoFile = null;
+    _processedLogoFile = null;
+    _optimizedLogoFile = null;
+    _logoOptimization = null;
+    _boundLogoPreviewUrl = null;
+    _boundLogoPreviewExpiry = null;
+    _removeLogoBackground = false;
+    _isProcessingLogoBackground = false;
     _pendingLogoMediaId = null;
     _logoRemovalRequested = false;
     officeLogoFileName = '';
@@ -1394,7 +1848,17 @@ class AddQuotationViewModel extends ChangeNotifier {
     admTotal = '';
     officeName = '';
     officeLogoFileName = '';
+    _deleteInBackground(_processedLogoFile);
+    _deleteInBackground(_optimizedLogoFile);
     _selectedLogoFile = null;
+    _uploadedLogoFile = null;
+    _processedLogoFile = null;
+    _optimizedLogoFile = null;
+    _logoOptimization = null;
+    _boundLogoPreviewUrl = null;
+    _boundLogoPreviewExpiry = null;
+    _removeLogoBackground = false;
+    _isProcessingLogoBackground = false;
     _pendingLogoMediaId = null;
     _logoRemovalRequested = false;
     _govTotalManual = false;
@@ -1403,4 +1867,37 @@ class AddQuotationViewModel extends ChangeNotifier {
     _endDateManuallyOverridden = false; // Reset end date override flag
     if (!_disposed) notifyListeners();
   }
+}
+
+/// Developer-only timing of one save (debug builds only). Stages are stamped
+/// against one clock, so work that overlaps (the PDF is prepared while the
+/// database saves) reads as overlapping ranges. It records no user data, URL or
+/// token, and nothing here is ever shown to the user.
+class _SaveTimeline {
+  _SaveTimeline() : _clock = kDebugMode ? (Stopwatch()..start()) : null;
+
+  final Stopwatch? _clock;
+
+  /// Starts [stage]; call the returned function when it ends.
+  void Function() begin(String stage) {
+    final clock = _clock;
+    if (clock == null) return _ignore;
+    final startedAt = clock.elapsedMilliseconds;
+    return () => debugPrint(
+          'Quotation save timing: $stage +${startedAt}ms..+${clock.elapsedMilliseconds}ms',
+        );
+  }
+
+  static void _ignore() {}
+}
+
+/// The logo a save uploads and draws, decided before the save starts: [file]
+/// resolves to the transparent PNG when background removal is on, otherwise to
+/// the downsized copy (Save waits for it only if it is still being made) or the
+/// picked file itself.
+class _PickedLogo {
+  const _PickedLogo(this.file, {required this.backgroundRemoved});
+
+  final Future<File> file;
+  final bool backgroundRemoved;
 }

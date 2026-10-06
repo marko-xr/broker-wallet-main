@@ -2559,6 +2559,9 @@
   "quotationSavedMediaFailure": "The quotation was saved, but its logo or PDF could not be uploaded. Try saving again.",
   "quotationLoadFailed": "Couldn't load this quotation. Please try again.",
   "quotationLogoUnsupported": "The office logo must be a JPG, PNG or WebP image of up to 10 MB.",
+  "removeLogoBackground": "Remove logo background",
+  "removeLogoBackgroundHint": "Best for logos on a plain background. Your original image is kept.",
+  "quotationLogoBackgroundRemovalFailed": "The background could not be removed cleanly. The original logo is unchanged.",
   "quotationPdfUnavailable": "The PDF couldn't be opened right now. Please try again.",
   "quotationDeleteFailed": "Couldn't delete the quotation. Please try again.",
   "quotationListLoadFailed": "Couldn't load your quotations. Please try again.",
@@ -2821,5 +2824,11 @@
   "shareBreakdown": "Photos: {photos} · Videos: {videos}",
   "shareTwoStepNote": "Photos and videos will be shared in two steps to ensure all selected media are sent.",
   "shareStepVideosReady": "Photos shared. Videos are ready to share.",
-  "failedToShareDocuments": "Failed to share documents"
+  "failedToShareDocuments": "Failed to share documents",
+  "quotationSaving": "Saving quotation...",
+  "unknownProperty": "Unknown Property",
+  "deleteQuotation": "Delete Quotation",
+  "deleteQuotationConfirm": "Are you sure you want to delete this quotation?",
+  "quotationPdfNotAvailable": "PDF not available for this quotation",
+  "quotationDeletedSuccessfully": "Quotation deleted successfully"
 }

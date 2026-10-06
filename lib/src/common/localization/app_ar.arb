@@ -2488,6 +2488,9 @@
   "quotationSavedMediaFailure": "تم حفظ عرض السعر، لكن تعذر رفع الشعار أو ملف PDF. حاول الحفظ مرة أخرى.",
   "quotationLoadFailed": "تعذر تحميل عرض السعر هذا. يرجى المحاولة مرة أخرى.",
   "quotationLogoUnsupported": "يجب أن يكون شعار المكتب صورة بصيغة JPG أو PNG أو WebP وبحجم لا يتجاوز 10 ميغابايت.",
+  "removeLogoBackground": "إزالة خلفية الشعار",
+  "removeLogoBackgroundHint": "يعمل بشكل أفضل مع الشعارات ذات الخلفية البسيطة. ستبقى الصورة الأصلية محفوظة.",
+  "quotationLogoBackgroundRemovalFailed": "تعذر إزالة الخلفية بشكل نظيف. بقي الشعار الأصلي دون تغيير.",
   "quotationPdfUnavailable": "تعذر فتح ملف PDF حاليًا. يرجى المحاولة مرة أخرى.",
   "quotationDeleteFailed": "تعذر حذف عرض السعر. يرجى المحاولة مرة أخرى.",
   "quotationListLoadFailed": "تعذر تحميل عروض الأسعار. يرجى المحاولة مرة أخرى.",
@@ -2750,5 +2753,11 @@
   "shareBreakdown": "الصور: {photos} · الفيديوهات: {videos}",
   "shareTwoStepNote": "سيتم إرسال الصور ومقاطع الفيديو على خطوتين لضمان مشاركة جميع الوسائط.",
   "shareStepVideosReady": "تمت مشاركة الصور. مقاطع الفيديو جاهزة للمشاركة.",
-  "failedToShareDocuments": "فشل في مشاركة المستندات"
+  "failedToShareDocuments": "فشل في مشاركة المستندات",
+  "quotationSaving": "جارٍ حفظ عرض السعر...",
+  "unknownProperty": "عقار غير معروف",
+  "deleteQuotation": "حذف عرض السعر",
+  "deleteQuotationConfirm": "هل أنت متأكد من حذف عرض السعر هذا؟",
+  "quotationPdfNotAvailable": "ملف PDF غير متاح لعرض السعر هذا",
+  "quotationDeletedSuccessfully": "تم حذف عرض السعر بنجاح"
 }

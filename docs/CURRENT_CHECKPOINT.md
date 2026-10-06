@@ -9563,3 +9563,270 @@ Verification status:
 - Flutter tests: NOT RUN (owner-only execution policy).
 - Flutter analyze: NOT RUN (owner-only execution policy).
 - Real-device Light/Dark + English/Arabic/RTL verification: PENDING OWNER.
+
+QUOTATION PDF / OFFICE LOGO POLISH — SOURCE PREPARED, NOT RUNTIME VERIFIED
+
+Source changes prepared for owner verification:
+
+- Downpayment PDF table headers and row values are centered in every column.
+- Office Logo now shows an image preview instead of only the file name.
+- A localized, opt-in "Remove logo background" control appears under the
+  Office Logo picker for a newly selected image.
+- Background removal runs locally on-device, keeps the picked source image
+  untouched, produces a temporary transparent PNG, trims transparent margin,
+  and uses the processed PNG for upload/PDF only when the option is enabled.
+- Existing bound private logos use a short-lived signed URL only for preview;
+  no signed URL is persisted.
+- No Supabase schema/RLS/Worker/media architecture change was made.
+
+Verification status:
+
+- Flutter tests: NOT RUN (owner-only execution policy).
+- Analyzer: NOT RUN (owner-only execution policy).
+- Build/device: NOT RUN.
+- Hosted backend changes: NONE.
+- Commit/push: NO.
+
+## QUOTATION SAVE PERFORMANCE — SOURCE PREPARED, NOT RUNTIME VERIFIED (2026-10-06)
+
+The existing quotation PDF/logo polish above remains uncommitted and protected.
+This checkpoint changes only the quotation editor/save path, its English/Arabic
+progress strings, PDF font loading and targeted quotation tests. No backend,
+Worker, migration, package, auth or other screen was changed.
+
+Before: Save checked identity/quota, then `performSave` built the aggregate and
+awaited `save_quotation`; logo upload/remove ran next; PDF source lookup,
+generation and private upload/confirmation followed; a media-state read ran on
+every successful database save before reporting success or incomplete media.
+Newly selected logo background removal was already performed on toggle, but
+turning it off deleted the result and turning it back on recomputed it.
+
+After: Save locks immediately, keeps the button spinner, and shows a localized
+blocking overlay only after 1.25 seconds. The form and back navigation remain
+blocked during Save. The RPC still runs first with the same identity, id and
+expected version. One PDF preparation starts after the database result and may
+overlap logo transfer; PDF publication still waits for logo sync and its own
+private confirmation before success. A final media-state read is now reserved
+for media failure or a confirmation without a resulting version. A processed
+logo remains cached for the same selected source across toggle off/on and is
+reused for preview, upload and PDF; changing the selected media bytes clears
+the pending upload identity. An unchanged bound logo reuses its still-valid
+preview link for PDF rendering; expired links are fetched again. The original
+source file is untouched.
+
+The PDF service now loads its four font assets once per process, sharing the
+in-flight load and retrying after a load error. Previously `_loadFonts` ran on
+every generation despite writing to `late final` font fields, so subsequent
+generations could fail on reassignment. Debug-only logs time quota preflight,
+local preparation, database save, logo sync, PDF generation/publication,
+conditional refresh and total; they contain no tokens, URLs or quotation data.
+
+Targeted tests were added to `test/quotation/add_quotation_viewmodel_test.dart`
+for duplicate taps before quota completes, fast and slow feedback, overlay
+cleanup on conflict, processed-logo reuse, unchanged-logo upload avoidance,
+signed-link reuse/expiry, one PDF generation, logo/PDF ordering and no redundant
+success refresh. Existing version-conflict and media retry tests remain.
+Flutter tests/analyzer/build and real-device timings are **NOT RUN** under the
+owner's execution policy. Source
+is **CODE PREPARED**, not `VERIFIED_RUNTIME`.
+
+NOW — owner runs `flutter test test/quotation/add_quotation_viewmodel_test.dart`
+and the scoped quotation analyzer, then reports failures and debug timing lines.
+NEXT — after those pass, owner verifies create/edit, processed and unchanged
+logos, PDF availability, failure retry, English/Arabic/RTL and Light/Dark on a
+real device before marking this checkpoint runtime verified.
+
+### Quotation save performance — two widget test fixture corrections (2026-10-06)
+
+The owner ran `flutter test test/quotation/add_quotation_viewmodel_test.dart`:
+33 passed, 2 failed. The editor spinner assertion found no descendant, and the
+processed-logo test dereferenced a null test `BuildContext` before background
+removal began. Source inspection confirms the shared Save button still renders
+its `CircularProgressIndicator` when `isLoading`, the quotation editor passes
+the view model loading state to it, and the processed-logo cache is retained
+across toggle off/on for the selected source. The localized widget fixtures had
+not preloaded their asynchronous ARB assets before pumping the app; the logo
+fixture also relied on a nullable context assigned by a `Builder` that had not
+built. The test file now serves and preloads the real ARBs, asserts the Save
+button exists and locks while retaining the spinner assertion, and obtains the
+logo context from a mounted keyed widget. The logo test still asserts one
+background removal call through toggle off/on and Save, and verifies that Save
+uploads the prepared file. Production source and
+the 1.25-second overlay timer were not changed in this correction.
+
+Status: TEST FIXES PREPARED; owner Flutter tests/analyzer and real-device
+verification NOT RUN after these corrections. No commit, push, backend or
+migration action.
+
+NOW — owner reruns `flutter test test/quotation/add_quotation_viewmodel_test.dart`
+and reports the exact result.
+NEXT — after the targeted suite passes, owner runs the scoped analyzer and then
+verifies create/edit, background-removal reuse, overlay timing and PDF/media
+availability on a real device.
+
+## QUOTATION SAVE — PERFORMANCE CORRECTION — SOURCE PREPARED, NOT RUNTIME VERIFIED (2026-10-06)
+
+This supersedes the loading UX and the save ordering described in the two
+"Quotation save performance" sections above. Branch `bottom-nav-bar-update`,
+uncommitted. No backend, Worker, migration, package, auth or other-screen change.
+
+Owner's Samsung result for the previous checkpoint (not accepted): Save felt
+slower, a blocking centre overlay changed its text between "Uploading logo..."
+and "Preparing quotation...", and the Save button showed its own spinner at the
+same time. One save looked like several slow operations.
+
+Source-backed causes:
+
+- Two progress indicators at once: `SaveCancelButtons` spun while `isLoading`,
+  and `_QuotationSaveOverlay` (shown after 1.25 s) spun as well.
+- The PDF was prepared only after `save_quotation` answered, although the PDF
+  reads nothing the server assigns (only form fields and the client-chosen id).
+- Each save fired `CoreEntityMutationNotifier.notify()` up to three times
+  (aggregate, logo confirm, PDF confirm). Every signal makes Home re-run its
+  seven count queries and every open list, the quotation list and Search
+  re-read, competing with the uploads.
+- A picked logo was uploaded and embedded at camera resolution (up to the 10 MB
+  limit); a background-removed logo was kept at up to 2048 px, which the `pdf`
+  package decodes and re-deflates on the UI isolate.
+- The PDF service decoded the whole localized ARB JSON on every generation.
+
+Changes:
+
+- Loading UX: `QuotationSaveProgress { idle, saving, longSaving }` replaces the
+  stage enum. Tap locks Save at once and the button spins. After 2 seconds
+  (`AddQuotationViewModel.defaultLongSaveThreshold`) one centred indicator
+  replaces the button spinner (`SaveCancelButtons.showProgress` is false; Save
+  stays disabled with its label). A save that ends sooner never shows it and
+  it closes the moment the save ends. Text: "Saving quotation..." /
+  "جارٍ حفظ عرض السعر...". The ARB keys `quotationUploadingLogo` and
+  `quotationPreparing` were removed. No stage text is user-facing.
+- Order: validate (`QuotationSupabaseMapper.validate`, so an invalid form starts
+  no work) -> PDF preparation and `save_quotation` start together -> logo sync
+  -> PDF publication -> a media-state read only if a confirmation lacked its
+  version. A failed save discards the prepared PDF (its file is deleted; the
+  next save waits for that renderer so it cannot delete its own file) and
+  publishes nothing. Media confirms stay serialized and compare-and-swap.
+- `QuotationService.batchMutations` makes one save send one refresh signal.
+- Logo: `LogoOptimizationService` shrinks a picked logo to at most 768 px on
+  its long edge when it is picked (never during Save); the picked file is never
+  modified; a JPEG stays a JPEG, other formats become PNG with alpha; EXIF is
+  not carried over. Save waits only for a copy still being made. Background
+  removal still runs only on the toggle, now at the same 768 px size (it was
+  2048 px). An unchanged bound logo does no upload, no confirm and, while its
+  preview link is valid, no new signed-link request.
+- PDF: fonts stay cached; localized strings are now cached per language; one
+  PDF per save. Generation still runs on the UI isolate (unchanged).
+  Publication still blocks completion: View and Share need `hasPdf`, and there is
+  no durable retry for Quotation media, so a background publish could be lost.
+
+Plain-Dart scratch measurement of the real optimizer (synthetic images, desktop
+VM, not `flutter test`, not a device): 4000x3000 JPEG 4489 KB -> 768x576 92 KB
+(3.7% of the pixels), the PDF embedding it 4490 KB -> 93 KB; a 3000x2000
+transparent PNG 33 KB -> 768x512 8.7 KB with alpha intact; the 2048 px
+transparent-style PNG a PDF had to decode (39 KB, 456 ms to build) -> 768 px
+(8 KB, 31 ms). `test/quotation/logo_optimization_service_test.dart` ran under
+a plain-Dart stand-in: 5/5 passed.
+
+Tests changed (source only, NOT RUN): `add_quotation_viewmodel_test.dart`,
+`quotation_service_test.dart`, `save_cancel_buttons_test.dart`, new
+`logo_optimization_service_test.dart`. Flutter tests, analyzer, build and
+real-device timing: NOT RUN (owner-only execution policy). Commit/push: NO.
+
+NOW - owner runs `flutter test test/quotation/add_quotation_viewmodel_test.dart
+test/quotation/quotation_service_test.dart test/quotation/logo_optimization_service_test.dart
+test/forms/save_cancel_buttons_test.dart` and the scoped analyzer, and reports
+exact failures.
+NEXT - on a real device, with a 12 MP camera photo as the logo and with the
+background toggle on and off: confirm one spinner at a time, no stage text,
+the 2 s centre indicator only on a slow connection, English/Arabic/RTL and
+Light/Dark, PDF opens with the logo, and read the debug lines
+`Quotation save timing: ... +Nms..+Nms` (PDF preparation overlaps database save).
+
+### Quotation save — concurrent PDF cleanup race (2026-10-06)
+
+Owner run: `add_quotation_viewmodel_test.dart` 42 passed / 4 failed (version
+conflict, deleted quotation, failure-message matrix, unexpected error), each with
+`PathAccessException` deleting `quotation_vm_test_*`; the other suites passed
+(logo optimizer 5/5, quotation service 17/17, save buttons 80/80).
+
+Cause: a TEST-FIXTURE defect, not a production one. When `save_quotation` fails,
+`_performSave` returns at once by design (the user hears about the failure
+without waiting for the renderer) while the PDF rendered beside the RPC is still
+writing `quotation_<id>.pdf`; the view-model already tracks that render
+(`_pdfDiscard`) and deletes its file when it finishes, and the next save waits
+for it. `_env` registered `dir.delete(recursive: true)` and `vm.dispose` as
+independent teardowns that did not wait for it, so Windows refused to delete a
+directory holding an open handle.
+
+Source tightening (no change to the success path; the PDF still overlaps the
+RPC): `_saveAndPublish` now owns the prepared PDF with a single `finally` that
+discards it on every exit except the hand-over to `_publishPdf` (so an
+unexpected error between the RPC and the publish cannot orphan it);
+`_performSave` does not start a save that waited for a discarded renderer after
+the view-model was disposed; temporary-file removals on dispose, cleared logo
+and reload are now a tracked chain; `backgroundWorkSettled()` (visible for
+testing) completes when a discarded render, a logo copy in progress and those
+removals are finished; `PdfGenerationService` deletes a half-written PDF when
+the write fails.
+
+Tests (source only, NOT RUN): `_env` has one teardown that waits on
+`backgroundWorkSettled()` before disposing and deleting the directory (a
+renderer parked on a test's own gate has touched no file and is not waited for);
+the four business tests are unchanged. New cases: no generated PDF remains
+after a failed save once its renderer finishes; a retry with changed data
+publishes only its own PDF; a save waiting for a discarded renderer does not
+start after dispose. Earlier sleep-based waits for logo copies were replaced by
+`backgroundWorkSettled()` / `pumpEventQueue()`.
+
+NOW - owner reruns `flutter test test/quotation/add_quotation_viewmodel_test.dart`
+and reports the exact result.
+NEXT - then the scoped analyzer and the real-device pass listed in the section above.
+
+### List screens — shimmer loading removed (2026-10-06)
+
+Owner request: remove the loading shimmer from the list screens. The Offers,
+Requests, Owners, Offices, Brokers, Watchmen and Quotation lists each carried
+their own `_ShimmerContainer` skeleton; all seven now show the shared
+`ListLoadingIndicator` (one centered `CircularProgressIndicator`) until the
+first list arrives. A refresh or a delete still never takes the list off screen.
+The duplicated shimmer widgets and builders were deleted. Not changed: the
+Favorites skeleton, the Home analytics card placeholder and the media
+placeholder in the detail screens (not list screens). Source only; the owners
+list test now expects the indicator. Flutter tests/analyzer/device: NOT RUN.
+
+Follow-up: the indicator itself flashed on a fast first read, so
+`ListLoadingIndicator` now waits 400 ms (`defaultDelay`) before showing and then
+fades in over 250 ms; a list that arrives sooner shows no indicator at all. The
+debug line `[EntityList] <list>: first list after N ms` shows the real first-read
+time if the delay needs tuning.
+
+NOW - owner runs `flutter test test/lists/owners_list_view_test.dart` and checks
+the first-load state of each list screen on the device.
+
+### Favorites — shimmer removed, cached items paint at once (2026-10-06)
+
+Owner request: remove the Favorites loading shimmer and show the items
+immediately. The skeleton (`FavoriteCardSkeleton`) and its builder are deleted.
+Cause of the slow open: every Favorites screen builds its own `FavoriteService`,
+and the on-disk cache box was only readable on the instance that had opened it,
+so `getCachedFavoritesSync()` returned nothing at build time and each visit did
+a full network load behind the skeleton.
+
+Changes: `FavoriteService.getCachedFavoritesSync()` adopts the signed-in
+account's already-open box (the name is built from the live canonical uid, so
+it can only reach that account's own box); the view-model re-reads the cache
+once its box opens while the first load is still running (never after that load
+has answered, so an empty answer is not overwritten by old items); the loading
+text (`favoritesLoadingPrimary/Secondary`, unchanged) is shown through
+`DelayedReveal`, i.e. only if the first load takes over 400 ms.
+`ListLoadingIndicator` now uses the same `DelayedReveal`.
+
+Known behaviour: the cache is only as fresh as the last Favorites visit; a
+favorite added or removed on another screen shows on the next open after the
+background refresh (about a second), as the original design intended. The
+`shimmer` package is no longer imported by app code (still in `pubspec.yaml`).
+Tests (source only, NOT RUN): two view-model cases and one service case added.
+
+NOW - owner runs `flutter test test/favorites` and opens Favorites on a device
+(second open in a session, and after a restart) to confirm the items appear in
+the first frame.

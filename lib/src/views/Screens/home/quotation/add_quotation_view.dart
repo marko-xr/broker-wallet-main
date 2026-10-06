@@ -1,6 +1,8 @@
 // lib/src/Views/Screens/home/quotation/add_quotation_view.dart
 // ignore_for_file: unused_element_parameter
 
+import 'dart:io';
+
 import 'package:broker_wallet/src/Views/Screens/home/quotation/add_quotation_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
@@ -13,10 +15,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 class AddQuotationView extends StatelessWidget {
-  const AddQuotationView({super.key, this.quotationId});
+  const AddQuotationView({super.key, this.quotationId, this.viewModel});
 
   /// The Quotation to reopen and edit; null creates a new one.
   final String? quotationId;
+  final AddQuotationViewModel? viewModel;
 
   @override
   Widget build(BuildContext context) {
@@ -24,8 +27,8 @@ class AddQuotationView extends StatelessWidget {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return ChangeNotifierProvider(
-      create: (_) => AddQuotationViewModel(editQuotationId: quotationId)
-        ..loadForEdit(),
+      create: (_) => viewModel ??
+          (AddQuotationViewModel(editQuotationId: quotationId)..loadForEdit()),
       child: Consumer<AddQuotationViewModel>(
         builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;
@@ -33,14 +36,19 @@ class AddQuotationView extends StatelessWidget {
           return Scaffold(
             backgroundColor: colors.surface,
             appBar: AppBar(
-              leading: const BackArrowButton(),
+              leading: IgnorePointer(
+                ignoring: vm.isLoading,
+                child: const BackArrowButton(),
+              ),
               title: Text(loc.translate('quotation'),
                   style: AppTextStyles.appBarTitle),
               centerTitle: true,
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: vm.isLoadingExisting
+            body: PopScope(
+              canPop: !vm.isLoading,
+              child: vm.isLoadingExisting
                 ? const Center(child: CircularProgressIndicator())
                 : vm.loadFailed
                     ? _LoadFailedBody(onRetry: vm.loadForEdit, loc: loc)
@@ -48,7 +56,9 @@ class AddQuotationView extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 // Scrollable content
-                SingleChildScrollView(
+                AbsorbPointer(
+                  absorbing: vm.isLoading,
+                  child: SingleChildScrollView(
                   padding: EdgeInsets.only(
                     left: 16,
                     right: 16,
@@ -506,16 +516,30 @@ class AddQuotationView extends StatelessWidget {
                               _Label(loc.translate('officeLogo')),
                               _LogoUploadBox(
                                 uploadedFileName: vm.officeLogoFileName,
+                                previewFile: vm.officeLogoPreviewFile,
+                                previewUrl: vm.officeLogoPreviewUrl,
                                 onTap: () => vm.selectLogo(context),
                                 onClear: () => vm.clearLogo(),
                                 localization: loc,
-                                showImagePreview: true,
+                              ),
+                              const SizedBox(height: 12),
+                              _LogoBackgroundToggle(
+                                value: vm.removeLogoBackground,
+                                enabled: vm.canRemoveLogoBackground &&
+                                    !vm.isProcessingLogoBackground,
+                                isProcessing: vm.isProcessingLogoBackground,
+                                title: loc.translate('removeLogoBackground'),
+                                subtitle:
+                                    loc.translate('removeLogoBackgroundHint'),
+                                onChanged: (value) => vm
+                                    .setRemoveLogoBackground(context, value),
                               ),
                             ],
                           ),
                         ),
                       ),
                     ],
+                  ),
                   ),
                 ),
                 // Floating actions: nothing behind them, hidden while the keyboard is open
@@ -526,13 +550,26 @@ class AddQuotationView extends StatelessWidget {
                     right: 0,
                     child: SaveCancelButtons(
                       isLoading: vm.isLoading,
-                      isEnabled: vm.hasAnyContent,
+                      // Saving shows the one centered indicator, not a spinner
+                      // inside the button.
+                      showProgress: false,
+                      isEnabled:
+                          vm.hasAnyContent && !vm.isProcessingLogoBackground,
                       isEditMode: vm.isEditMode,
-                      onSave: () => vm.save(context),
+                      onSave: vm.isProcessingLogoBackground
+                          ? null
+                          : () => vm.save(context),
                       onCancel: () => vm.cancel(context),
                     ),
                   ),
+                if (vm.isLoading)
+                  Positioned.fill(
+                    child: _QuotationSaveOverlay(
+                      message: loc.translate('quotationSaving'),
+                    ),
+                  ),
               ],
+            ),
             ),
           );
         },
@@ -1374,79 +1411,238 @@ class _NotesBoxState extends State<_NotesBox> {
 
 class _LogoUploadBox extends StatelessWidget {
   final String uploadedFileName;
+  final File? previewFile;
+  final String? previewUrl;
   final VoidCallback onTap;
   final VoidCallback? onClear;
   final AppLocalizations localization;
-  final bool showImagePreview;
 
   const _LogoUploadBox({
     required this.uploadedFileName,
+    required this.previewFile,
+    required this.previewUrl,
     required this.onTap,
     this.onClear,
     required this.localization,
-    this.showImagePreview = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final hasFile = uploadedFileName.isNotEmpty;
+    final hasPreview = previewFile != null ||
+        (previewUrl != null && previewUrl!.trim().isNotEmpty);
 
     return Container(
-      height: 54,
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
       ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          if (hasFile && hasPreview)
+            Container(
+              width: double.infinity,
+              height: 132,
+              padding: const EdgeInsets.all(12),
+              color: colors.onSurface.withOpacity(0.04),
+              child: _buildPreview(colors),
+            ),
+          SizedBox(
+            height: 54,
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                const Icon(
+                  Icons.attach_file,
+                  size: 22,
+                  color: Color(0xFF8B959A),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    hasFile
+                        ? uploadedFileName
+                        : localization.translate('uploadOfficeLogo'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.hintText,
+                  ),
+                ),
+                if (hasFile && onClear != null) ...[
+                  GestureDetector(
+                    onTap: onClear,
+                    child: Container(
+                      margin: const EdgeInsets.all(7),
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade400,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.clear,
+                        color: Colors.white,
+                        size: 25,
+                      ),
+                    ),
+                  ),
+                ],
+                GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    margin: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: colors.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/icons/upload-media.svg',
+                      width: 25,
+                      height: 25,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreview(ColorScheme colors) {
+    final file = previewFile;
+    if (file != null) {
+      return Image.file(
+        file,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) =>
+            Icon(Icons.image_outlined, color: colors.onSurface.withOpacity(0.55)),
+      );
+    }
+
+    return Image.network(
+      previewUrl!,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) =>
+          Icon(Icons.image_outlined, color: colors.onSurface.withOpacity(0.55)),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      },
+    );
+  }
+}
+
+class _QuotationSaveOverlay extends StatelessWidget {
+  const _QuotationSaveOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ModalBarrier(
+          dismissible: false,
+          color: colors.scrim.withOpacity(0.24),
+        ),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Material(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 14),
+                    Flexible(
+                      child: Text(
+                        message,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LogoBackgroundToggle extends StatelessWidget {
+  final bool value;
+  final bool enabled;
+  final bool isProcessing;
+  final String title;
+  final String subtitle;
+  final ValueChanged<bool> onChanged;
+
+  const _LogoBackgroundToggle({
+    required this.value,
+    required this.enabled,
+    required this.isProcessing,
+    required this.title,
+    required this.subtitle,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
         children: [
-          const SizedBox(width: 16),
-          const Icon(Icons.attach_file, size: 22, color: Color(0xFF8B959A)),
-          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              hasFile
-                  ? uploadedFileName
-                  : localization.translate('uploadOfficeLogo'),
-              style: AppTextStyles.hintText,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppTextStyles.bodyText),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.hintText.copyWith(fontSize: 12),
+                ),
+              ],
             ),
           ),
-          // Clear button - only show when file is selected
-          if (hasFile && onClear != null) ...[
-            GestureDetector(
-              onTap: onClear,
-              child: Container(
-                margin: const EdgeInsets.all(7),
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade400,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.clear,
-                  color: Colors.white,
-                  size: 25,
-                ),
-              ),
+          const SizedBox(width: 12),
+          if (isProcessing)
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Switch(
+              value: value,
+              onChanged: enabled ? onChanged : null,
             ),
-          ],
-          // Upload button
-          GestureDetector(
-            onTap: onTap,
-            child: Container(
-              margin: const EdgeInsets.all(7),
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: colors.primary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SvgPicture.asset(
-                'assets/icons/upload-media.svg',
-                width: 25,
-                height: 25,
-              ),
-            ),
-          ),
         ],
       ),
     );

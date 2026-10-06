@@ -4,6 +4,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
@@ -55,7 +56,7 @@ class _QuotationListViewState extends State<QuotationListView> {
                     stream: vm.quotationsStream,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
-                        return _buildShimmerLoading();
+                        return const ListLoadingIndicator();
                       }
 
                       if (snapshot.hasError) {
@@ -76,24 +77,6 @@ class _QuotationListViewState extends State<QuotationListView> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildShimmerLoading() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: List.generate(
-          5,
-          (index) => Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: _ShimmerContainer(
-              height: 120,
-              width: double.infinity,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -332,7 +315,10 @@ class _QuotationListViewState extends State<QuotationListView> {
   Future<void> _viewPdf(
       QuotationModel quotation, QuotationListViewModel vm) async {
     if (!quotation.hasPdf) {
-      _showToast('PDF not available for this quotation', Colors.orange);
+      _showToast(
+        AppLocalizations.of(context).translate('quotationPdfNotAvailable'),
+        Colors.orange,
+      );
       return;
     }
     final loc = AppLocalizations.of(context);
@@ -412,7 +398,7 @@ class _QuotationListViewState extends State<QuotationListView> {
               ),
               const SizedBox(width: 12),
               Text(
-                'Delete Quotation',
+                loc.translate('deleteQuotation'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -424,7 +410,7 @@ class _QuotationListViewState extends State<QuotationListView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Are you sure you want to delete this quotation?',
+                loc.translate('deleteQuotationConfirm'),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.onSurface.withValues(alpha: 0.8),
                     ),
@@ -452,7 +438,7 @@ class _QuotationListViewState extends State<QuotationListView> {
                       child: Text(
                         quotation.propertyTitle.isNotEmpty
                             ? quotation.propertyTitle
-                            : 'Unknown Property',
+                            : loc.translate('unknownProperty'),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFFC81E1E),
@@ -689,7 +675,8 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
-                padding: const EdgeInsets.all(16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -697,8 +684,8 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                     Row(
                       children: [
                         Container(
-                          width: 48,
-                          height: 48,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: colors.primary.withValues(alpha: 0.1),
@@ -706,7 +693,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           child: Icon(
                             Icons.description_outlined,
                             color: colors.primary,
-                            size: 24,
+                            size: 20,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -717,18 +704,18 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               Text(
                                 widget.quotation.propertyTitle.isNotEmpty
                                     ? widget.quotation.propertyTitle
-                                    : 'Unknown Property',
+                                    : widget.loc.translate('unknownProperty'),
                                 style: texts.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: colors.onSurface,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 2),
                               Text(
                                 widget.quotation.officeName.isNotEmpty
                                     ? widget.quotation.officeName
-                                    : 'Unknown Office',
+                                    : widget.loc.translate('unknownOffice'),
                                 style: texts.bodySmall?.copyWith(
                                   color:
                                       colors.onSurface.withValues(alpha: 0.6),
@@ -776,37 +763,29 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                       ],
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Details Row
+                    // Details: two compact rows, each item is an icon beside
+                    // its label and value.
                     Row(
                       children: [
                         Expanded(
                           child: _buildDetailItemWithCustomIcon(
-                            customIcon: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/images/UAE_Dirham.png',
-                                  width: 16,
-                                  height: 16,
-                                  color: colors.primary,
-                                ),
-                              ],
+                            customIcon: Image.asset(
+                              'assets/images/UAE_Dirham.png',
+                              width: 16,
+                              height: 16,
+                              color: colors.primary,
                             ),
                             label: widget.loc.translate('totalAmount'),
                             value: widget.quotation.totalAmount != null
-                                ? 'AED ${widget.quotation.totalAmount!.toStringAsFixed(2)}'
+                                ? '${widget.loc.translate('aed')} ${widget.quotation.totalAmount!.toStringAsFixed(2)}'
                                 : widget.loc.translate('notSpecified'),
                             colors: colors,
                             texts: texts,
                           ),
                         ),
-                        Container(
-                          width: 1,
-                          height: 40,
-                          color: colors.outline.withValues(alpha: 0.2),
-                        ),
+                        _detailDivider(colors),
                         Expanded(
                           child: _buildDetailItem(
                             icon: Icons.schedule_outlined,
@@ -822,9 +801,8 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                       ],
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
-// Date and Property Type Row
                     Row(
                       children: [
                         Expanded(
@@ -838,11 +816,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                             texts: texts,
                           ),
                         ),
-                        Container(
-                          width: 1,
-                          height: 40,
-                          color: colors.outline.withValues(alpha: 0.2),
-                        ),
+                        _detailDivider(colors),
                         Expanded(
                           child: _buildDetailItem(
                             icon: Icons.home_outlined,
@@ -858,7 +832,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                       ],
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
 
                     // Action Buttons Row
                     Row(
@@ -866,7 +840,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                         // View PDF Button (always shows, but disabled if no PDF)
                         Expanded(
                           child: Container(
-                            height: 44,
+                            height: 40,
                             decoration: BoxDecoration(
                               color: widget.quotation.hasPdf
                                   ? const Color(0xFFE3F2FD) // Blue for View PDF
@@ -918,7 +892,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                         // Share Button (only active if PDF exists)
                         Expanded(
                           child: Container(
-                            height: 44,
+                            height: 40,
                             decoration: BoxDecoration(
                               color: widget.quotation.hasPdf
                                   ? const Color(0xFFFFF3E0) // Orange for share
@@ -972,6 +946,12 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
     );
   }
 
+  Widget _detailDivider(ColorScheme colors) => Container(
+        width: 1,
+        height: 30,
+        color: colors.outline.withValues(alpha: 0.2),
+      );
+
   Widget _buildDetailItem({
     required IconData icon,
     required String label,
@@ -979,37 +959,12 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
     required ColorScheme colors,
     required TextTheme texts,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: colors.primary,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: texts.bodySmall?.copyWith(
-              color: colors.onSurface.withValues(alpha: 0.6),
-              fontSize: 11,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: texts.bodySmall?.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
+    return _buildDetailItemWithCustomIcon(
+      customIcon: Icon(icon, size: 18, color: colors.primary),
+      label: label,
+      value: value,
+      colors: colors,
+      texts: texts,
     );
   }
 
@@ -1022,101 +977,46 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
+            width: 18,
             height: 18,
-            child: customIcon,
+            child: Center(child: customIcon),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: texts.bodySmall?.copyWith(
-              color: colors.onSurface.withValues(alpha: 0.6),
-              fontSize: 11,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: texts.bodySmall?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.6),
+                    fontSize: 11,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  value,
+                  style: texts.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: texts.bodySmall?.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ShimmerContainer extends StatefulWidget {
-  final double height;
-  final double width;
-
-  const _ShimmerContainer({
-    required this.height,
-    required this.width,
-  });
-
-  @override
-  State<_ShimmerContainer> createState() => _ShimmerContainerState();
-}
-
-class _ShimmerContainerState extends State<_ShimmerContainer>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
-      vsync: this,
-    )..repeat();
-    _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Container(
-          height: widget.height,
-          width: widget.width,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              // Tinted with onSurface: the page itself is `surface`, so a
-              // surface-coloured shimmer would not be visible on it.
-              colors: [
-                colors.onSurface.withValues(alpha: 0.06),
-                colors.onSurface.withValues(alpha: 0.12),
-                colors.onSurface.withValues(alpha: 0.06),
-              ],
-              stops: const [0.0, 0.5, 1.0],
-              begin: Alignment(-1.0 + _animation.value, 0.0),
-              end: Alignment(1.0 + _animation.value, 0.0),
-            ),
-          ),
-        );
-      },
     );
   }
 }

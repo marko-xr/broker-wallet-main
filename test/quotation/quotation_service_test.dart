@@ -224,6 +224,52 @@ void main() {
       expect(signals.count, 0);
     });
 
+    test('batched mutations send one refresh after the last one', () async {
+      final h = await _harness();
+      final signals = _Signals();
+      addTearDown(signals.close);
+      final pdf = await h.generatedPdf();
+
+      await h.service.batchMutations(() async {
+        await h.service.saveQuotation(_model(), quotationId: _q);
+        expect(signals.count, 0, reason: 'held back until the batch ends');
+        await h.service.publishPdf(
+            quotationId: _q, pdf: pdf, expectedMediaId: null);
+        expect(signals.count, 0);
+      });
+
+      expect(signals.count, 1);
+    });
+
+    test('a batch that changed nothing sends no refresh, and an error still ends it',
+        () async {
+      final h = await _harness();
+      final signals = _Signals();
+      addTearDown(signals.close);
+
+      h.remote.saveError =
+          const QuotationException(QuotationFailure.versionConflict);
+      await expectLater(
+        h.service.batchMutations(() =>
+            h.service.saveQuotation(_model(), quotationId: _q)),
+        throwsA(isA<QuotationException>()),
+      );
+      expect(signals.count, 0);
+
+      h.remote.saveError = null;
+      await expectLater(
+        h.service.batchMutations(() async {
+          await h.service.saveQuotation(_model(), quotationId: _q);
+          throw StateError('later step failed');
+        }),
+        throwsA(isA<StateError>()),
+      );
+      expect(signals.count, 1, reason: 'the saved aggregate is still announced');
+
+      await h.service.saveQuotation(_model(), quotationId: _q);
+      expect(signals.count, 2, reason: 'outside a batch every mutation signals');
+    });
+
     test('the list is the backend stream (Supabase mode)', () async {
       final h = await _harness();
       final first = h.service.getUserQuotations().first;

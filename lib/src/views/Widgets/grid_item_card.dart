@@ -71,7 +71,7 @@ class GridItemCard extends StatelessWidget {
       crossAxisSpacing: 8,
       mainAxisSpacing: 12,
       childAspectRatio: 0.8,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 96),
       children: items
           .map((item) => GridItemCard(
                 item: item,

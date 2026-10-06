@@ -9539,3 +9539,27 @@ then checks displacement on two real devices in English/Arabic and light/dark:
 protected UI closes before local sign-out, Welcome appears, exactly one dialog
 stays until OK, and the old device remains signed out. Also verify Retry,
 ordinary logout, and a normal cold start show no displacement dialog.
+
+BOTTOM NAV BAR UPDATE — SOURCE READY / RUNTIME VERIFICATION PENDING
+
+Scope:
+
+- The main four-tab shell now uses the proven INTLAQ Hub liquid-notch geometry
+  and stable tab presentation while preserving Broker Wallet's own colors,
+  PNG navigation icons, localized labels, GoRouter branch order, and center
+  action behavior.
+- The shell uses `extendBody: true` so the notch remains physically transparent.
+- The main center FAB is aligned to the liquid notch with the same 64 px / +8 px
+  geometry used by the reference implementation, while retaining Broker
+  Wallet's existing green FAB styling and action bottom sheet.
+- The former per-tab fade reset and nav-item scale/text animations were removed;
+  branch state and Home refresh/filter behavior are unchanged.
+- No backend, auth, Supabase, Worker, route destination, package, or unrelated UI
+  change is part of this checkpoint.
+
+Verification status:
+
+- Source inspection: completed.
+- Flutter tests: NOT RUN (owner-only execution policy).
+- Flutter analyze: NOT RUN (owner-only execution policy).
+- Real-device Light/Dark + English/Arabic/RTL verification: PENDING OWNER.

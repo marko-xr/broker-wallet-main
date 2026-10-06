@@ -188,7 +188,7 @@ class FilteredItemsView extends StatelessWidget {
           child: ListView.builder(
             // Pulling to refresh must work however few records the filter found.
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 96),
             itemCount: vm.filteredItems.length,
             itemBuilder: (context, index) {
               final item = vm.filteredItems[index];

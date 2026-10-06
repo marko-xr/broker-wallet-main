@@ -23,6 +23,7 @@ class HomeView extends StatelessWidget {
         return Scaffold(
           backgroundColor: theme.colorScheme.surface,
           body: SafeArea(
+            bottom: false,
             child: RefreshIndicator(
               onRefresh: () async {
                 // A pull refreshes what the screen shows, so a chosen filter

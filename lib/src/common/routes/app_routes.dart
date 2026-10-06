@@ -20,35 +20,8 @@ class MainScaffold extends StatefulWidget {
   State<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold>
-    with TickerProviderStateMixin {
+class _MainScaffoldState extends State<MainScaffold> {
   DateTime? _lastBackPressed;
-  late AnimationController _tabTransitionController;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize animation controller for smooth tab transitions
-    _tabTransitionController = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _tabTransitionController,
-      curve: Curves.easeInOut,
-    ));
-    _tabTransitionController.forward();
-  }
-
-  @override
-  void dispose() {
-    _tabTransitionController.dispose();
-    super.dispose();
-  }
 
   void _onItemTapped(int index) async {
     final currentIndex = widget.navigationShell.currentIndex;
@@ -68,25 +41,18 @@ class _MainScaffoldState extends State<MainScaffold>
       homeVM.clearAllFilters();
     }
 
-    // Animate transition for smoother visual feedback
-    _tabTransitionController.reset();
-
     // Navigate to the selected branch with StatefulNavigationShell
     widget.navigationShell.goBranch(
       index,
-      // Use true to maintain state when switching tabs
-      initialLocation: index == widget.navigationShell.currentIndex,
+      // Keep each branch at its last location when switching tabs.
+      initialLocation: false,
     );
 
-    // Home fades in at once with the counts it already holds; the refresh
-    // updates them in place. Awaiting it here kept the whole tab at opacity 0
-    // for the length of the network round trip.
+    // Show Home immediately with its current counts; refresh them in place
+    // without delaying the branch switch on a network round trip.
     if (index == 0) {
       _refreshHomeCounts();
     }
-
-    // Complete the animation
-    _tabTransitionController.forward();
   }
 
   void _refreshHomeCounts() {
@@ -167,23 +133,24 @@ class _MainScaffoldState extends State<MainScaffold>
         }
       },
       child: Scaffold(
+        // Let tab content continue behind the physically transparent liquid
+        // notch. This is what keeps the curved center treatment visually clean
+        // instead of painting a rectangular surface behind the FAB.
+        extendBody: true,
         resizeToAvoidBottomInset: false,
-        body: AnimatedBuilder(
-          animation: _fadeAnimation,
-          builder: (context, child) {
-            return FadeTransition(
-              opacity: _fadeAnimation,
-              child: widget.navigationShell,
-            );
-          },
-        ),
+        body: widget.navigationShell,
         bottomNavigationBar: BottomNavBar(
           selectedIndex: widget.navigationShell.currentIndex,
           onSelect: _onItemTapped,
         ),
-        floatingActionButton: GlowingFab(
-          heroTag: 'mainFab',
-          onPressed: _showActionBottomSheet,
+        floatingActionButton: Transform.translate(
+          offset: const Offset(0, 8),
+          child: GlowingFab(
+            heroTag: 'mainFab',
+            size: 75,
+            iconSize: 26,
+            onPressed: _showActionBottomSheet,
+          ),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       ),

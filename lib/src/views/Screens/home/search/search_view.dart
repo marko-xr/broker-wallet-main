@@ -38,6 +38,7 @@ class SearchView extends StatelessWidget {
         child: Consumer<SearchViewModel>(
           builder: (context, vm, _) {
             return SafeArea(
+              bottom: false,
               child: CustomScrollView(
                 // Dragging the results dismisses the keyboard; the results
                 // themselves stay.
@@ -194,7 +195,7 @@ class SearchView extends StatelessWidget {
       ),
       // Grid
       SliverPadding(
-        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 20),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 96),
         sliver: SliverLayoutBuilder(
           builder: (context, constraints) {
             final cardWidth =

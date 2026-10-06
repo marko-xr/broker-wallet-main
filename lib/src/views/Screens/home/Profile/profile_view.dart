@@ -71,6 +71,7 @@ class ProfileView extends StatelessWidget {
               ),
             ),
             body: SafeArea(
+              bottom: false,
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
@@ -357,7 +358,7 @@ class ProfileView extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 96),
                       ]),
                     ),
                   ),

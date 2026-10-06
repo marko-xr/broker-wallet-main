@@ -27,7 +27,7 @@ const int _gridColumns = 2;
 const double _gridSpacing = 12;
 const double _gridCardAspectRatio = 0.75;
 const EdgeInsetsDirectional _gridPadding =
-    EdgeInsetsDirectional.fromSTEB(16, 8, 16, 20);
+    EdgeInsetsDirectional.fromSTEB(16, 8, 16, 96);
 
 /// The cards' grid. The shape stays 3 : 4 unless the text needs more room: a
 /// favorite card is laid out exactly like a Search result card (its three
@@ -104,6 +104,7 @@ class FavoritesView extends StatelessWidget {
           ];
 
           return SafeArea(
+            bottom: false,
             child: RefreshIndicator(
               onRefresh: vm.refresh,
               color: Theme.of(context).colorScheme.primary,

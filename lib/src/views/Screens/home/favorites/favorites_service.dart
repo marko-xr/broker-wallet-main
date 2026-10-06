@@ -232,8 +232,30 @@ class FavoriteService {
         box.isOpen;
   }
 
+  // A screen builds a new FavoriteService whose own box is not open yet, but
+  // this account's box is usually already open in Hive, opened by an earlier
+  // instance. Adopting it lets the screen paint the cached list in its first
+  // frame instead of waiting for [initializeCache]. The box name is built from
+  // the live canonical uid, so this can only ever reach the signed-in account's
+  // own box, never another account's.
+  void _adoptOpenCacheBox() {
+    final uid = _safeActiveUserId;
+    if (uid == null || uid.isEmpty) return;
+    final name = boxNameForUid(uid);
+    if (!Hive.isBoxOpen(name)) return;
+    try {
+      _cacheBox = Hive.box<CachedFavoriteItem>(name);
+      _cacheBoxUid = uid;
+    } catch (_) {
+      // Not usable as a cache: [initializeCache] opens it the normal way.
+    }
+  }
+
   // Get cached favorites instantly (synchronous)
   List<FavoriteItem> getCachedFavoritesSync() {
+    if (!_hasValidCacheBoxForCurrentUser) {
+      _adoptOpenCacheBox();
+    }
     if (!_hasValidCacheBoxForCurrentUser) {
       return [];
     }

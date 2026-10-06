@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/services/ScreenServices/owner_service.dart';
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_owners_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/owners_list_view.dart';
+import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -15,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// The Owners list screen, as the on-screen representative of the six entity
 /// lists (they share the list state and the delete progress): its loading
-/// placeholder can be seen, and deleting an Owner never blanks the screen.
+/// indicator can be seen, and deleting an Owner never blanks the screen.
 
 class _Owners extends OwnerService {
   final StreamController<List<OwnerModel>> controller =
@@ -67,8 +68,7 @@ Widget _app(Widget child) => MaterialApp(
       home: child,
     );
 
-final Finder _placeholder = find.byWidgetPredicate(
-    (widget) => widget.runtimeType.toString() == '_ShimmerContainer');
+final Finder _placeholder = find.byType(ListLoadingIndicator);
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -116,27 +116,34 @@ void main() {
   BuildContext screenContext(WidgetTester tester) =>
       tester.element(find.byType(OwnersListView));
 
-  testWidgets('before the first list: a visible placeholder, never "no owners"',
+  testWidgets(
+      'a slow first list: no flash at first, then one centered indicator, never "no owners"',
       (tester) async {
     await openScreen(tester);
 
-    expect(_placeholder, findsWidgets);
+    expect(_placeholder, findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing,
+        reason: 'a quick load must not flash a spinner');
     expect(find.text(en['noOwnersYet'] as String), findsNothing);
 
-    // The placeholder is drawn in colours that differ from the page behind
-    // it; the old surface-on-surface shimmer rendered as a blank page.
-    final page = AppTheme.lightTheme.colorScheme.surface;
-    final boxes = tester.widgetList<Container>(
-        find.descendant(of: _placeholder, matching: find.byType(Container)));
-    final colors = [
-      for (final box in boxes)
-        if (box.decoration case BoxDecoration(:final LinearGradient gradient))
-          ...gradient.colors,
-    ];
-    expect(colors, isNotEmpty);
-    for (final color in colors) {
-      expect(Color.alphaBlend(color, page), isNot(page));
-    }
+    await tester.pump(ListLoadingIndicator.defaultDelay);
+    expect(
+      find.descendant(
+          of: _placeholder, matching: find.byType(CircularProgressIndicator)),
+      findsOneWidget,
+    );
+    expect(find.text(en['noOwnersYet'] as String), findsNothing);
+  });
+
+  testWidgets('a list that arrives quickly never shows an indicator',
+      (tester) async {
+    await openScreen(tester);
+    await showOwners(tester, [_owner('a', 'Alice')]);
+
+    expect(_placeholder, findsNothing);
+    await tester.pump(ListLoadingIndicator.defaultDelay * 2);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Alice'), findsOneWidget);
   });
 
   testWidgets('an empty result shows the empty state', (tester) async {

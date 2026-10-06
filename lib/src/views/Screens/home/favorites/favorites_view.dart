@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
+import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart'
+    show DelayedReveal;
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -151,10 +153,7 @@ class FavoritesView extends StatelessWidget {
   List<Widget> _buildBodySlivers(BuildContext context, FavoritesViewModel vm,
       AppLocalizations localization) {
     if (vm.isLoading && vm.cachedFavorites.isEmpty) {
-      return [
-        _buildSkeletonSliver(context),
-        _buildLoadingInfoSliver(context, localization),
-      ];
+      return [_buildLoadingInfoSliver(context, localization)];
     }
 
     if (vm.error != null && vm.cachedFavorites.isEmpty) {
@@ -197,51 +196,36 @@ class FavoritesView extends StatelessWidget {
     );
   }
 
-  Widget _buildSkeletonSliver(BuildContext context) {
-    return SliverPadding(
-      padding: _gridPadding,
-      sliver: SliverLayoutBuilder(
-        builder: (context, constraints) => SliverGrid(
-          gridDelegate:
-              _favoritesGridDelegate(context, constraints.crossAxisExtent),
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => const FavoriteCardSkeleton(),
-            childCount: 6,
-            addAutomaticKeepAlives: false,
-            addRepaintBoundaries: true,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildLoadingInfoSliver(
       BuildContext context, AppLocalizations localization) {
     final textTheme = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
 
     return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 56),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              localization.translate('favoritesLoadingPrimary'),
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
+      // Shown only if the first load is slow; a quick one never flashes it.
+      child: DelayedReveal(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 56),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                localization.translate('favoritesLoadingPrimary'),
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              localization.translate('favoritesLoadingSecondary'),
-              style: textTheme.bodyMedium?.copyWith(
-                color: colors.onSurface.withValues(alpha: 0.65),
+              const SizedBox(height: 8),
+              Text(
+                localization.translate('favoritesLoadingSecondary'),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurface.withValues(alpha: 0.65),
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

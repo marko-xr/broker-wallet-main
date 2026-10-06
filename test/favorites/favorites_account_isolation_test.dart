@@ -145,6 +145,29 @@ void main() {
     });
 
     test(
+        'a brand-new instance reads its own account\'s already-open box at '
+        'once, without initializeCache; another account\'s instance never '
+        'sees it', () async {
+      final writer = FavoriteService()..debugActiveUserIdOverride = _uidA;
+      await writer.initializeCache(uidOverride: _uidA);
+      await writer.cacheFavorites(
+        [_item('warm-broker')],
+        expectedGeneration: FavoriteService.currentAccountGeneration,
+      );
+
+      // A new screen builds a new instance; nothing has opened ITS box yet.
+      final sameAccount = FavoriteService()..debugActiveUserIdOverride = _uidA;
+      expect(sameAccount.getCachedFavoritesSync().map((i) => i.id),
+          ['warm-broker'],
+          reason: 'the account\'s open box is adopted, so the first frame '
+              'can paint the cached list');
+
+      // Adoption is by the live uid: B resolves to B's own box name only.
+      final otherAccount = FavoriteService()..debugActiveUserIdOverride = _uidB;
+      expect(otherAccount.getCachedFavoritesSync(), isEmpty);
+    });
+
+    test(
         'a service never initialized for any uid (e.g. read attempted '
         'before initializeCache resolves) reports no cache rather than an '
         'error', () {

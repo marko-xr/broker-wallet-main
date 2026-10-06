@@ -320,6 +320,12 @@ class FavoritesViewModel extends ChangeNotifier {
         await _initializeCache();
       }
 
+      // The box is open now. A screen that found no cache when it was built
+      // (the box was not open yet) shows what this account cached on its last
+      // visit while the first load is still running, instead of waiting for
+      // the network. Once that load has answered, its answer is the truth.
+      if (_isLoading && _cachedFavorites.isEmpty) _loadCachedFavoritesSync();
+
       // Always load fresh data to ensure we have the latest
       // If we have cached data, this will happen in background
       // If we don't have cached data, this will show the loading state

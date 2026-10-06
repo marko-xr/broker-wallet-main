@@ -5,6 +5,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:broker_wallet/src/views/Widgets/entity_delete_progress.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -70,7 +71,7 @@ class _OwnersListViewState extends State<OwnersListView> {
   Widget _buildBody(OwnersListViewModel vm, AppLocalizations loc,
       ColorScheme colors, TextTheme texts) {
     if (vm.isInitialLoading) {
-      return _buildShimmerLoading();
+      return const ListLoadingIndicator();
     }
 
     if (vm.hasLoadError) {
@@ -83,27 +84,6 @@ class _OwnersListViewState extends State<OwnersListView> {
     }
 
     return _buildOwnersListWithDateSeparators(owners, vm, loc, colors, texts);
-  }
-
-  Widget _buildShimmerLoading() {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.8,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: List.generate(
-            5,
-            (index) => Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              child: const _ShimmerContainer(
-                height: 120,
-                width: double.infinity,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildErrorWidget(OwnersListViewModel vm, ColorScheme colors,
@@ -1104,72 +1084,5 @@ class _EnhancedOwnerTile extends StatelessWidget {
 
   String _getFormattedDate(DateTime date) {
     return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
-  }
-}
-
-class _ShimmerContainer extends StatefulWidget {
-  final double height;
-  final double width;
-
-  const _ShimmerContainer({
-    required this.height,
-    required this.width,
-  });
-
-  @override
-  State<_ShimmerContainer> createState() => _ShimmerContainerState();
-}
-
-class _ShimmerContainerState extends State<_ShimmerContainer>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
-      vsync: this,
-    )..repeat();
-    _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Container(
-          height: widget.height,
-          width: widget.width,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              // Tinted with onSurface: the page itself is `surface`, so a
-              // surface-coloured shimmer would not be visible on it.
-              colors: [
-                colors.onSurface.withValues(alpha: 0.06),
-                colors.onSurface.withValues(alpha: 0.12),
-                colors.onSurface.withValues(alpha: 0.06),
-              ],
-              stops: const [0.0, 0.5, 1.0],
-              begin: Alignment(-1.0 + _animation.value, 0.0),
-              end: Alignment(1.0 + _animation.value, 0.0),
-            ),
-          ),
-        );
-      },
-    );
   }
 }

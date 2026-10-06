@@ -61,6 +61,31 @@ class FakeFavoriteService extends FavoriteService {
   }
 }
 
+/// A service whose cache box is not open when the screen is built: it has
+/// nothing to read until [initializeCache] completes (held back by [openGate]).
+class LateCacheFavoriteService extends FakeFavoriteService {
+  LateCacheFavoriteService({
+    required this.cacheAfterOpen,
+    this.openGate,
+    super.metadataLoader,
+  });
+
+  final List<FavoriteItem> cacheAfterOpen;
+  final Completer<void>? openGate;
+  bool _open = false;
+
+  @override
+  Future<void> initializeCache({String? uidOverride}) async {
+    await super.initializeCache(uidOverride: uidOverride);
+    if (openGate != null) await openGate!.future;
+    _open = true;
+  }
+
+  @override
+  List<FavoriteItem> getCachedFavoritesSync() =>
+      _open ? List<FavoriteItem>.from(cacheAfterOpen) : <FavoriteItem>[];
+}
+
 class FakeOfferService extends OfferService {
   FakeOfferService(this.offers);
 
@@ -179,6 +204,65 @@ void main() {
 
       metadataCompleter.complete({});
       await flushAsync();
+      viewModel.dispose();
+    });
+
+    test(
+        'a cache that opens after the screen was built paints while the first '
+        'load is still running', () async {
+      final metadataCompleter = Completer<MetadataMap>();
+      final favoriteService = LateCacheFavoriteService(
+        cacheAfterOpen: [
+          cachedItem(
+              id: 'cached-offer',
+              type: 'offers',
+              addedAt: DateTime(2026, 1, 1)),
+        ],
+        metadataLoader: (_) => metadataCompleter.future,
+      );
+      final viewModel = FavoritesViewModel(
+        favoriteService: favoriteService,
+        offerService: FakeOfferService(const {}),
+      );
+      expect(viewModel.cachedFavorites, isEmpty,
+          reason: 'nothing could be read when the screen was built');
+
+      await waitUntil(() => viewModel.cachedFavorites.isNotEmpty);
+
+      expect(viewModel.isLoading, isTrue, reason: 'the first load still runs');
+      expect(
+          viewModel.displayFavorites.map((item) => item.id), ['cached-offer']);
+
+      metadataCompleter.complete({});
+      await flushAsync();
+      viewModel.dispose();
+    });
+
+    test(
+        'once the first load has answered, a cache that opens late does not '
+        'bring old items back', () async {
+      final openGate = Completer<void>();
+      final favoriteService = LateCacheFavoriteService(
+        cacheAfterOpen: [
+          cachedItem(
+              id: 'old-offer', type: 'offers', addedAt: DateTime(2026, 1, 1)),
+        ],
+        openGate: openGate,
+        metadataLoader: (_) async => <String, List<FavoriteMetadata>>{},
+      );
+      final viewModel = FavoritesViewModel(
+        favoriteService: favoriteService,
+        offerService: FakeOfferService(const {}),
+      );
+
+      await waitUntil(
+          () => favoriteService.metadataLoadCount == 1 && !viewModel.isLoading);
+      openGate.complete();
+      await flushAsync();
+
+      expect(viewModel.cachedFavorites, isEmpty,
+          reason: 'the load said there are none; that answer is the truth');
+      expect(viewModel.displayFavorites, isEmpty);
       viewModel.dispose();
     });
 

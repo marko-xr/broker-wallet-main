@@ -17,7 +17,7 @@ enum HomeFilterKind {
   /// Records changed, after they were created, in the last 12 hours.
   recentlyUpdated('recentlyUpdated', 'Recently Updated');
 
-  const HomeFilterKind(this.labelKey, this.label, {this.isImplemented = true});
+  const HomeFilterKind(this.labelKey, this.label) : isImplemented = true;
 
   /// The localization key of the chip's label.
   final String labelKey;

@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, PostgrestException;
 
+import 'search_card_media.dart';
+import 'search_card_media_source.dart';
 import 'search_data_source.dart';
 import 'search_engine.dart';
 import 'search_result.dart';
@@ -80,9 +82,12 @@ class SearchViewModel extends ChangeNotifier {
     this.cacheValidFor = defaultCacheValidFor,
     Stream<void>? dataChanges,
     DateTime Function()? clock,
+    SearchCardMediaResolver? cardMedia,
   })  : _dataSource = dataSource ?? DefaultSearchDataSource(),
         _engine = engine ?? SearchEngine(),
-        _clock = clock ?? DateTime.now {
+        _clock = clock ?? DateTime.now,
+        cardMedia = cardMedia ??
+            SearchCardMediaResolver(source: DefaultSearchCardMediaSource()) {
     _dataChanges = (dataChanges ?? CoreEntityMutationNotifier.changes)
         .listen((_) => _dataVersion++);
   }
@@ -95,6 +100,11 @@ class SearchViewModel extends ChangeNotifier {
 
   final Duration debounce;
   final Duration cacheValidFor;
+
+  /// Chooses the photo or video frame each Offer and Owner card shows. The list
+  /// read carries no media links, so a card asks for its own when it is on
+  /// screen; what was asked is forgotten whenever the records are read again.
+  final SearchCardMediaResolver cardMedia;
 
   final SearchDataSource _dataSource;
   final SearchEngine _engine;
@@ -359,6 +369,7 @@ class SearchViewModel extends ChangeNotifier {
     final data = await _dataSource.load();
     if (_disposed) return;
     _corpus = _engine.index(data);
+    cardMedia.invalidate();
     _corpusLoadedAt = _clock();
     _corpusUserId = userId;
     // If the user's data changed while this was loading, these records are

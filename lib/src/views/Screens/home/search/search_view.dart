@@ -218,6 +218,7 @@ class SearchView extends StatelessWidget {
                   return SearchResultCard(
                     key: ValueKey<String>(result.stableKey),
                     result: result,
+                    mediaResolver: vm.cardMedia,
                     onTap: () => _navigateToDetails(context, result),
                   );
                 },

@@ -14,6 +14,9 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/private_card_media.dart';
+import 'package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart';
+import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
 
 // Models (same as FavoriteCard uses)
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
@@ -34,10 +37,15 @@ class SearchResultCard extends StatefulWidget {
   final SearchResult result;
   final VoidCallback onTap;
 
+  /// Chooses the photo (or video frame) of an Offer's or an Owner's card. Null
+  /// draws only what the result itself carries, as before.
+  final SearchCardMediaResolver? mediaResolver;
+
   const SearchResultCard({
     super.key,
     required this.result,
     required this.onTap,
+    this.mediaResolver,
   });
 
   // The card's layout: an image area over a content area, 5 : 4, inside a
@@ -80,11 +88,19 @@ class _SearchResultCardState extends State<SearchResultCard>
         TickerProviderStateMixin {
   late final OptimisticFavoritesService _favoritesService;
 
+  /// The card's private photo or video frame, once there is one to draw.
+  FavoriteCardMedia? _media;
+
+  /// Identifies the result the media was asked for, so a late answer for a
+  /// card that now shows another result is ignored.
+  int _mediaRequest = 0;
+
   @override
   void initState() {
     super.initState();
     _favoritesService =
         Provider.of<OptimisticFavoritesService>(context, listen: false);
+    _bindMedia();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _favoritesService.initializeFavoriteStatus(
@@ -104,6 +120,59 @@ class _SearchResultCardState extends State<SearchResultCard>
         widget.result.favoriteTypeKey,
       );
     }
+    if (oldWidget.result.id != widget.result.id ||
+        oldWidget.result.type != widget.result.type ||
+        oldWidget.mediaResolver != widget.mediaResolver) {
+      _bindMedia();
+    }
+  }
+
+  /// Only Offers and Owners have private photos and videos.
+  CardMediaKind? get _mediaKind {
+    switch (widget.result.type) {
+      case SearchResultType.offer:
+        return CardMediaKind.offer;
+      case SearchResultType.owner:
+        return CardMediaKind.owner;
+      case SearchResultType.request:
+      case SearchResultType.office:
+      case SearchResultType.broker:
+      case SearchResultType.watchmen:
+        return null;
+    }
+  }
+
+  /// Draws what is known at once (an earlier answer, or what this device
+  /// holds), then asks for the rest while the card is on screen.
+  void _bindMedia() {
+    final request = ++_mediaRequest;
+    final resolver = widget.mediaResolver;
+    final kind = _mediaKind;
+    if (resolver == null || kind == null) {
+      _media = null;
+      return;
+    }
+    final id = widget.result.id;
+    _media = resolver.current(kind, id);
+    unawaited(resolver
+        .resolve(
+      kind,
+      id,
+      isWanted: () => mounted && request == _mediaRequest,
+    )
+        .then((media) {
+      if (!mounted || request != _mediaRequest) return;
+      if (_sameMedia(_media, media)) return;
+      setState(() => _media = media);
+    }));
+  }
+
+  static bool _sameMedia(FavoriteCardMedia? a, FavoriteCardMedia? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.cacheKey == b.cacheKey &&
+        a.isVideo == b.isVideo &&
+        a.signedUrl == b.signedUrl &&
+        a.posterPath == b.posterPath;
   }
 
   Future<void> _handleToggleFavorite(OptimisticFavoritesService service) async {
@@ -196,6 +265,7 @@ class _SearchResultCardState extends State<SearchResultCard>
                           ),
                           child: _ImageOrFallback(
                             imageUrl: widget.result.imageUrl,
+                            media: _media,
                             type: typeString,
                             typeIcon: typeIcon,
                           ),
@@ -935,12 +1005,17 @@ String _typeIconForResultType(SearchResultType type) {
 
 class _ImageOrFallback extends StatefulWidget {
   final String? imageUrl;
+
+  /// The private photo, or a video's still frame, of an Offer or Owner. It is
+  /// drawn by its stable identity and wins over [imageUrl].
+  final FavoriteCardMedia? media;
   final String
       type; // 'offers' | 'requests' | 'owners' | 'offices' | 'brokers' | 'watchmen'
   final String typeIcon; // asset path for the SVG icon
 
   const _ImageOrFallback({
     required this.imageUrl,
+    this.media,
     required this.type,
     required this.typeIcon,
   });
@@ -956,7 +1031,7 @@ class _ImageOrFallbackState extends State<_ImageOrFallback> {
   @override
   void initState() {
     super.initState();
-    _checkImageCache();
+    if (widget.media == null) _checkImageCache();
   }
 
   bool _isValidNetworkUrl(String url) {
@@ -1012,6 +1087,18 @@ class _ImageOrFallbackState extends State<_ImageOrFallback> {
 
   @override
   Widget build(BuildContext context) {
+    // The private photo or video frame, drawn by the widget Favorites shares.
+    final media = widget.media;
+    if (media != null) {
+      return PrivateCardMedia(
+        cacheKey: media.cacheKey,
+        isVideo: media.isVideo,
+        signedUrl: media.signedUrl,
+        posterPath: media.posterPath,
+        fallback: _GradientIcon(type: widget.type, typeIcon: widget.typeIcon),
+      );
+    }
+
     final hasImage =
         widget.imageUrl != null && widget.imageUrl!.trim().isNotEmpty;
 

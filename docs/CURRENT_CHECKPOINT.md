@@ -10040,3 +10040,71 @@ owner's. Flutter tests, analyzer, device: NOT RUN.
 NOW - owner runs `flutter test test/favorites test/home` and looks at Favorites
 on the device (EN and AR, light and dark): the chips should sit under the header
 and the cards start right under them, with no gap or pill in between.
+
+### Search: Offer and Owner photos / video frames on the result cards (2026-10-07)
+
+Owner report: Search result cards do not show their media; fix it the way
+Favorites was fixed (first photo; a video first never hides a photo; only
+videos: the first video's still frame).
+
+Cause (source-read), different from Favorites: Search reads its records with
+the bulk list reads (`getOffers()`, `getOwners()`), which deliberately return
+NO media links (signing a whole list would be one Worker request per record), so
+`SearchResult.imageUrl` was always null for Offers and Owners and every card drew
+its icon. (Requests, Offices, Brokers and Watchmen have no media and are
+unchanged.)
+
+Change: `SearchCardMediaResolver` (new, plain Dart) works out each card's media
+when the card is on screen, with the same rule as Favorites (`FavoriteCardMedia`).
+It answers at once from memory and from what the device already holds
+(`current`), so a card seen before draws its picture on its first frame; a
+photo the device holds is never asked about; otherwise it asks the server for
+that one record: at most 3 at a time, one request shared by cards asking about
+the same record, a card that scrolled away before its turn costs no request,
+the answer kept for 5 minutes (a failure for 30 s, keeping what the device
+holds). `SearchViewModel` owns it and forgets it whenever the records are read
+again (a data change, 5 minutes, another account); a request running across a
+re-read is shown but not kept, and another account's answer is dropped.
+`DefaultSearchCardMediaSource` is the thin wiring to `OfferService` /
+`OwnerService` (created on first use). Firebase-backend records keep their plain
+URL path unchanged.
+
+The drawing is now one widget, `PrivateCardMedia` (`lib/src/views/Widgets/
+private_card_media.dart`): moved out of the Favorites card unchanged in behaviour
+(photo by stable identity with held bytes first and kept on the device; a video's
+still frame with a play mark) and used by both cards. It takes plain values
+(`cacheKey`, `isVideo`, `signedUrl`, `posterPath`), never `FavoriteCardMedia`:
+see the compile error below.
+
+Compile error found by the owner (analyzer): "The argument type
+'FavoriteCardMedia (defined in ...\views\...)' can't be assigned to 'FavoriteCardMedia
+(defined in ...\Views\...)'" at the Favorites card. Cause: `Views` and `views` are
+two libraries to Dart, and the analyzer reads each file under its spelling on
+disk (`views`), so the Favorites card's relative import of the type was the
+lowercase one, while my first version of the shared widget imported it as
+`src/Views/...`. (The running app reaches the Favorites files as `Views`, which
+is why only the analyzer saw it; either spelling in the shared widget would
+have failed in the other context.) Fix: the shared widget no longer names the
+type or imports anything from a screen, so no spelling can disagree; a source
+guard pins that, and the Search card names the type and its resolver with one
+spelling. Nothing else crosses a boundary with mixed spellings: the resolver,
+view model, source and card were walked through for both the analyzer's and the
+app's view.
+
+Cost to know: a card's first appearance downloads its photo once, at original
+size, through the shared cache under its stable key (the same single download the
+image widget uses); later opens read it from the device.
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`):
+`search_card_media_test` 33/33 (media choice, device-held first, request
+sharing, memory and expiry, re-read and account change, failure, concurrency and
+skipped cards, wiring and casing guards); thirty-five deliberate regressions were
+each caught, including the shared widget taking the media type again in either
+spelling. Needs Flutter and was not run: widget rendering, `SearchViewModel`
+with the new default resolver (`search_viewmodel_test`), the analyzer, a device.
+
+NOW - owner runs `flutter test test/search test/favorites` and, on the device,
+searches for an Offer whose first file is a video and has a photo, an Offer and
+an Owner with only videos, and an Owner with photos: the cards should show the
+photo or the video frame (with the play mark), Favorites should look as before,
+and scrolling a long result list should stay smooth.

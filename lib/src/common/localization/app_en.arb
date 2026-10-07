@@ -1358,10 +1358,8 @@
   "resultsForAlt": "Results for",
   "noFavoritesYet": "No favorites yet",
   "tapHeartToSaveAlt": "Tap the heart on a property to save it here",
-  "favoritesOverviewTitle": "Your saved picks",
+  "favoritesOverviewTitle": "Your favorites",
   "favoritesOverviewCaption": "Keep track of everything you love in one place.",
-  "favoritesVisibleCountLabel": "Visible now",
-  "favoritesTotalCountLabel": "Total saved",
   "favoritesRefreshHint": "Pull down anytime to refresh and sync.",
   "favoritesFilterEmptyTitlePrefix": "No favorites found for",
   "favoritesFilterEmptyFallback": "this filter",
@@ -1370,8 +1368,6 @@
   "favoritesErrorAction": "Retry loading",
   "favoritesLoadingPrimary": "Preparing your favorites...",
   "favoritesLoadingSecondary": "Media previews are being cached for a smoother experience.",
-  "favoritesSyncedChip": "Synced",
-  "favoritesSyncingChip": "Syncing...",
   "favoritesGuestUser": "Guest",
   "favoritesPriceRange": "{min} - {max}",
   "@favoritesPriceRange": {
@@ -2830,5 +2826,6 @@
   "deleteQuotation": "Delete Quotation",
   "deleteQuotationConfirm": "Are you sure you want to delete this quotation?",
   "quotationPdfNotAvailable": "PDF not available for this quotation",
-  "quotationDeletedSuccessfully": "Quotation deleted successfully"
+  "quotationDeletedSuccessfully": "Quotation deleted successfully",
+  "searchHeaderSubtitle": "Search all your items"
 }

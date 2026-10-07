@@ -956,10 +956,8 @@
   "success": "نجاح",
   "subtitle": "العنوان الفرعي",
   "tapHeartToSave": "اضغط على القلب لحفظ العقار هنا",
-  "favoritesOverviewTitle": "عناصرك المحفوظة",
+  "favoritesOverviewTitle": "عناصرك المفضلة",
   "favoritesOverviewCaption": "تابع كل ما تفضله في مكان واحد.",
-  "favoritesVisibleCountLabel": "ظاهر الآن",
-  "favoritesTotalCountLabel": "إجمالي المحفوظ",
   "favoritesRefreshHint": "اسحب للأسفل في أي وقت للتحديث والمزامنة.",
   "favoritesFilterEmptyTitlePrefix": "لا توجد مفضلات لـ",
   "favoritesFilterEmptyFallback": "هذا الفلتر",
@@ -968,8 +966,6 @@
   "favoritesErrorAction": "إعادة تحميل",
   "favoritesLoadingPrimary": "جاري تجهيز المفضلات...",
   "favoritesLoadingSecondary": "يتم تخزين معاينات الوسائط مؤقتًا لتجربة أكثر سلاسة.",
-  "favoritesSyncedChip": "متزامنة",
-  "favoritesSyncingChip": "جاري المزامنة...",
   "favoritesGuestUser": "زائر",
   "favoritesPriceRange": "{min} - {max}",
   "@favoritesPriceRange": {
@@ -2759,5 +2755,6 @@
   "deleteQuotation": "حذف عرض السعر",
   "deleteQuotationConfirm": "هل أنت متأكد من حذف عرض السعر هذا؟",
   "quotationPdfNotAvailable": "ملف PDF غير متاح لعرض السعر هذا",
-  "quotationDeletedSuccessfully": "تم حذف عرض السعر بنجاح"
+  "quotationDeletedSuccessfully": "تم حذف عرض السعر بنجاح",
+  "searchHeaderSubtitle": "ابحث في كل عناصرك"
 }

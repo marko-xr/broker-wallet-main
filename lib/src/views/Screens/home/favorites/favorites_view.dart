@@ -3,24 +3,20 @@ import 'dart:math' as math;
 import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart'
     show DelayedReveal;
-import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
+import 'package:broker_wallet/src/views/Widgets/user_screen_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
-import '../../../../viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_filter_chips.dart';
-import 'package:broker_wallet/src/Views/Widgets/notification_icon.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_card.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_item_model.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/image_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_result_card.dart'
     show SearchResultCard;
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:intl/intl.dart';
 
 // The page is laid out the way Search's results are: the same header, flat
 // pinned filter chips on the page's own colour, the same two-column grid with
@@ -53,16 +49,6 @@ SliverGridDelegate _favoritesGridDelegate(
   );
 }
 
-String _formatCount(int value, AppLocalizations localization) {
-  final locale = localization.locale;
-  final localeCode =
-      (locale.countryCode != null && locale.countryCode!.isNotEmpty)
-          ? '${locale.languageCode}_${locale.countryCode}'
-          : locale.languageCode;
-
-  return NumberFormat.compact(locale: localeCode).format(value);
-}
-
 class FavoritesView extends StatelessWidget {
   const FavoritesView({super.key});
 
@@ -82,26 +68,15 @@ class FavoritesView extends StatelessWidget {
           final slivers = <Widget>[
             // Header. It listens to the profile itself, so a profile update
             // does not rebuild the list.
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsetsDirectional.fromSTEB(16, 16, 16, 12),
-                child: _Header(),
-              ),
-            ),
-            _buildFilterBar(context, vm),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
-                child: FavoritesStatusRow(
-                  total: vm.cachedFavorites.length,
-                  visible: vm.displayFavorites.length,
-                  showSync: vm.hasUnfilteredData ||
-                      vm.cachedFavorites.isNotEmpty ||
-                      vm.isLoading,
-                  isRefreshing: vm.isRefreshing,
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 12),
+                child: UserScreenHeader(
+                  subtitle: localization.translate('favoritesOverviewTitle'),
                 ),
               ),
             ),
+            _buildFilterBar(context, vm),
             ..._buildBodySlivers(context, vm, localization),
           ];
 
@@ -317,233 +292,6 @@ class FavoritesView extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The top of the screen, as Search and Home have it: the person's avatar, a
-/// greeting with a line under it, and the notification bell.
-class _Header extends StatelessWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context) {
-    // listens: true (default). The tabs are kept alive side by side, so this
-    // must subscribe to AuthViewModel like Home and Search do; otherwise a name
-    // or photo change would not show here until a full rebuild.
-    final authVM = Provider.of<AuthViewModel>(context);
-    final localization = AppLocalizations.of(context);
-    final textTheme = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
-    final resolvedName = authVM.displayName.trim();
-    final userName = resolvedName.isNotEmpty
-        ? resolvedName
-        : localization.translate('favoritesGuestUser');
-
-    return Row(
-      children: [
-        CurrentUserAvatar(
-          size: 48,
-          onTap: () => context.push('/edit-profile'),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: GestureDetector(
-            onTap: () => context.push('/edit-profile'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: Text(
-                    '${localization.translate('hiGreeting')} $userName',
-                    key: ValueKey(userName),
-                    style: textTheme.headlineSmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  localization.translate('favoritesOverviewTitle'),
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurface.withValues(alpha: 0.6),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const NotificationIcon(),
-      ],
-    );
-  }
-}
-
-/// What the list is made of, and whether it is up to date, in the pill style of
-/// the result count on Search: how many favorites are saved, how many the
-/// chosen filter shows and, while there is something to sync, whether it is
-/// syncing or synced. The pills wrap onto a second line rather than overflow.
-class FavoritesStatusRow extends StatelessWidget {
-  const FavoritesStatusRow({
-    super.key,
-    required this.total,
-    required this.visible,
-    required this.showSync,
-    required this.isRefreshing,
-  });
-
-  final int total;
-  final int visible;
-  final bool showSync;
-  final bool isRefreshing;
-
-  @override
-  Widget build(BuildContext context) {
-    final localization = AppLocalizations.of(context);
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        _StatPill(
-          icon: Icons.layers_rounded,
-          label: localization.translate('favoritesTotalCountLabel'),
-          value: _formatCount(total, localization),
-        ),
-        _StatPill(
-          icon: Icons.visibility_rounded,
-          label: localization.translate('favoritesVisibleCountLabel'),
-          value: _formatCount(visible, localization),
-        ),
-        if (showSync) _SyncPill(isRefreshing: isRefreshing),
-      ],
-    );
-  }
-}
-
-/// The pill every status item sits in: Search's result-count chip.
-class _Pill extends StatelessWidget {
-  const _Pill({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
-      ),
-      child: child,
-    );
-  }
-}
-
-class _StatPill extends StatelessWidget {
-  const _StatPill({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return _Pill(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: colors.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              style: textTheme.labelMedium?.copyWith(
-                color: colors.onSurface.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 6),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, animation) =>
-                FadeTransition(opacity: animation, child: child),
-            child: Text(
-              value,
-              key: ValueKey<String>(value),
-              style: textTheme.labelLarge?.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SyncPill extends StatelessWidget {
-  const _SyncPill({required this.isRefreshing});
-
-  final bool isRefreshing;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final localization = AppLocalizations.of(context);
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 260),
-      child: _Pill(
-        key: ValueKey<bool>(isRefreshing),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            isRefreshing
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(colors.primary),
-                    ),
-                  )
-                : Icon(
-                    Icons.check_circle_rounded,
-                    color: colors.primary,
-                    size: 16,
-                  ),
-            const SizedBox(width: 6),
-            Text(
-              localization.translate(
-                isRefreshing ? 'favoritesSyncingChip' : 'favoritesSyncedChip',
-              ),
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ],
         ),
       ),
     );

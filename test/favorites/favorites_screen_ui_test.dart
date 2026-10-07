@@ -1,30 +1,25 @@
 // The Favorites screen's look: laid out the way Search is — an avatar header,
 // flat pinned filter chips, a two-column grid with the same spacing and card
-// shape — with its own information (how many are saved, how many a filter shows,
-// whether it is synced) kept, in the same pill style as Search's result count.
+// shape — and nothing between the chips and the cards: no counts and no sync
+// pills.
 //
-// Source guards read the files; the widget tests build the two reusable pieces,
-// the chips and the status row, with the real ARB text and Flutter's test font.
-// They prove the layout rules, not how a device renders.
+// Source guards read the files; the widget tests build the reusable piece, the
+// chips, with the real ARB text and Flutter's test font. They prove the layout
+// rules, not how a device renders.
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 import 'package:broker_wallet/src/data/models/filter_model.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_filter_chips.dart';
-import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/search/widgets/search_filter_chips.dart';
 import 'package:broker_wallet/src/views/Widgets/home_filter_chips.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-// Only the number formatter: `intl` has a `TextDirection` of its own, which
-// would hide Flutter's.
-import 'package:intl/intl.dart' show NumberFormat;
 
 const List<String> _filterKeys = [
   'recentlyAdded',
@@ -45,25 +40,18 @@ List<FilterModel> _filters({int? selected}) => [
         ),
     ];
 
-/// Builds [child] on a screen of [width] in [locale]. With [settle] false it
-/// pumps a few fixed frames instead of waiting for the animations to end: a sync
-/// spinner never ends, so `pumpAndSettle` would never return.
+/// Builds [child] on a 412 dp wide screen in [locale].
 Future<void> _pump(
   WidgetTester tester,
   Widget child, {
   Locale locale = const Locale('en'),
-  double width = 412,
-  double textScale = 1,
-  ThemeData? theme,
-  bool settle = true,
 }) async {
-  tester.view.physicalSize = Size(width, 800);
+  tester.view.physicalSize = const Size(412, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(
     MaterialApp(
-      theme: theme,
       locale: locale,
       supportedLocales: const [Locale('en'), Locale('ar')],
       localizationsDelegates: const [
@@ -72,16 +60,10 @@ Future<void> _pump(
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      builder: (context, page) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(textScale),
-        ),
-        child: Directionality(
-          textDirection: locale.languageCode == 'ar'
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: page!,
-        ),
+      builder: (context, page) => Directionality(
+        textDirection:
+            locale.languageCode == 'ar' ? TextDirection.rtl : TextDirection.ltr,
+        child: page!,
       ),
       home: Scaffold(
         body: Align(
@@ -96,13 +78,7 @@ Future<void> _pump(
   );
   // The localization delegates load asynchronously; nothing is drawn until they
   // finish.
-  if (settle) {
-    await tester.pumpAndSettle();
-  } else {
-    for (var frame = 0; frame < 5; frame++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-  }
+  await tester.pumpAndSettle();
 }
 
 String _t(String languageCode, String key) =>
@@ -226,147 +202,6 @@ void main() {
     });
   });
 
-  group('the status row', () {
-    for (final entry in {
-      'English': const Locale('en'),
-      'Arabic (RTL)': const Locale('ar'),
-    }.entries) {
-      final code = entry.value.languageCode;
-      final rtl = code == 'ar';
-
-      testWidgets(
-          'says how many are saved and how many are shown, '
-          '${entry.key}', (tester) async {
-        await _pump(
-          tester,
-          const FavoritesStatusRow(
-            total: 12,
-            visible: 5,
-            showSync: false,
-            isRefreshing: false,
-          ),
-          locale: entry.value,
-          // Wide enough for both pills to share a line even in the test font,
-          // whose letters are a full em wide (the two need about 426 dp there;
-          // on a phone, in a real font, they are far narrower). At 412 dp they
-          // would wrap, which says nothing about the order they are read in.
-          width: 700,
-        );
-        expect(find.text(_t(code, 'favoritesTotalCountLabel')), findsOneWidget);
-        expect(
-            find.text(_t(code, 'favoritesVisibleCountLabel')), findsOneWidget);
-        expect(find.text(NumberFormat.compact(locale: code).format(12)),
-            findsOneWidget);
-        expect(find.text(NumberFormat.compact(locale: code).format(5)),
-            findsOneWidget);
-        // Nothing to sync: no sync pill.
-        expect(find.text(_t(code, 'favoritesSyncedChip')), findsNothing);
-        expect(find.text(_t(code, 'favoritesSyncingChip')), findsNothing);
-
-        // They are read in order, the first at the reading edge: on the left in
-        // English, on the right in Arabic.
-        final total =
-            tester.getRect(find.text(_t(code, 'favoritesTotalCountLabel')));
-        final visible =
-            tester.getRect(find.text(_t(code, 'favoritesVisibleCountLabel')));
-        expect((total.top - visible.top).abs(), lessThan(1),
-            reason: 'at this width both pills sit on one line');
-        if (rtl) {
-          expect(total.right, greaterThan(visible.right));
-        } else {
-          expect(total.left, lessThan(visible.left));
-        }
-      });
-    }
-
-    testWidgets('says whether it is syncing or synced', (tester) async {
-      await _pump(
-        tester,
-        const FavoritesStatusRow(
-          total: 3,
-          visible: 3,
-          showSync: true,
-          isRefreshing: true,
-        ),
-        settle: false,
-      );
-      expect(find.text(_t('en', 'favoritesSyncingChip')), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.text(_t('en', 'favoritesSyncedChip')), findsNothing);
-
-      await _pump(
-        tester,
-        const FavoritesStatusRow(
-          total: 3,
-          visible: 3,
-          showSync: true,
-          isRefreshing: false,
-        ),
-      );
-      expect(find.text(_t('en', 'favoritesSyncedChip')), findsOneWidget);
-      expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.text(_t('en', 'favoritesSyncingChip')), findsNothing);
-    });
-
-    for (final mode in ['light', 'dark']) {
-      testWidgets('the pills are Search\'s result-count pill, $mode',
-          (tester) async {
-        final theme =
-            mode == 'light' ? AppTheme.lightTheme : AppTheme.darkTheme;
-        await _pump(
-          tester,
-          const FavoritesStatusRow(
-            total: 12,
-            visible: 5,
-            showSync: true,
-            isRefreshing: false,
-          ),
-          theme: theme,
-        );
-        final pills = tester
-            .widgetList<Container>(find.descendant(
-              of: find.byType(FavoritesStatusRow),
-              matching: find.byWidgetPredicate((widget) =>
-                  widget is Container &&
-                  widget.decoration is BoxDecoration &&
-                  (widget.decoration! as BoxDecoration).borderRadius ==
-                      BorderRadius.circular(999)),
-            ))
-            .toList();
-        expect(pills, hasLength(3), reason: 'saved, shown and synced');
-        for (final pill in pills) {
-          final decoration = pill.decoration! as BoxDecoration;
-          expect(decoration.color,
-              theme.colorScheme.primary.withValues(alpha: 0.08));
-          expect((decoration.border! as Border).top.color,
-              theme.colorScheme.primary.withValues(alpha: 0.15));
-          expect(pill.padding,
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 6));
-        }
-      });
-    }
-
-    testWidgets('wraps onto a second line instead of overflowing',
-        (tester) async {
-      await _pump(
-        tester,
-        const FavoritesStatusRow(
-          total: 1200,
-          visible: 30,
-          showSync: true,
-          isRefreshing: true,
-        ),
-        width: 320,
-        textScale: 1.6,
-        settle: false,
-      );
-      expect(tester.takeException(), isNull);
-      expect(tester.getSize(find.byType(FavoritesStatusRow)).width,
-          lessThanOrEqualTo(320 - 32));
-    });
-  });
-
   // --- source guards (read files only) -------------------------------------
   group('the page is laid out the way Search is', () {
     final favorites =
@@ -391,15 +226,23 @@ void main() {
               favorites, r'const double _gridCardAspectRatio = ([\d.]+);'),
           numberAfter(
               search, r'static const double _cardAspectRatio = ([\d.]+);'));
+      // The padding is whatever Search's grid has (it clears the bottom bar),
+      // so a change to one that misses the other fails here.
+      final favoritesPadding = RegExp(
+        r'const EdgeInsetsDirectional _gridPadding = EdgeInsetsDirectional\.fromSTEB\(([\d., ]+)\);',
+      ).firstMatch(favoritesSquashed);
+      final searchPadding = RegExp(
+        r'SliverPadding\( padding: const EdgeInsetsDirectional\.fromSTEB\(([\d., ]+)\), sliver: SliverLayoutBuilder',
+      ).firstMatch(_squash(search));
+      expect(favoritesPadding, isNotNull, reason: 'Favorites\' grid padding');
+      expect(searchPadding, isNotNull, reason: 'Search\'s grid padding');
+      expect(favoritesPadding!.group(1), searchPadding!.group(1),
+          reason: 'the two grids are padded the same');
       expect(
-          favoritesSquashed.contains(
-              'const EdgeInsetsDirectional _gridPadding = EdgeInsetsDirectional.fromSTEB(16, 8, 16, 20);'),
-          isTrue);
-      expect(
-          _squash(search).contains(
-              'padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 20)'),
+          favoritesSquashed
+              .contains('padding: _gridPadding, sliver: SliverLayoutBuilder('),
           isTrue,
-          reason: 'Search\'s own grid padding, which this must equal');
+          reason: 'the cards use that padding');
     });
 
     test('and its minimum height, so no card cuts a field off', () {
@@ -414,19 +257,61 @@ void main() {
           reason: 'the old fixed shape');
     });
 
-    test('the skeleton and the cards use the one grid', () {
-      expect(
-          RegExp(r'_favoritesGridDelegate\(').allMatches(favorites).length, 3,
-          reason: 'its definition, the skeleton and the cards');
-      expect(RegExp('SliverLayoutBuilder').allMatches(favorites).length, 2,
-          reason: 'the skeleton and the cards each get the real width');
-    });
-
-    test('the header is the avatar, greeting and bell Search and Home have',
-        () {
+    test('nothing sits between the chips and the cards', () {
+      // No "total saved" / "visible now" counts and no "synced" pill: the same
+      // number twice when no filter is chosen, and a status nobody needs.
+      for (final gone in [
+        'FavoritesStatusRow',
+        'NumberFormat',
+        'showSync',
+        'CircularProgressIndicator',
+      ]) {
+        expect(favorites.contains(gone), isFalse, reason: gone);
+      }
       expect(
           favoritesSquashed.contains(
-              "CurrentUserAvatar( size: 48, onTap: () => context.push('/edit-profile'), )"),
+              '_buildFilterBar(context, vm), ..._buildBodySlivers(context, vm, localization),'),
+          isTrue,
+          reason: 'the cards follow the chips directly');
+      for (final code in ['en', 'ar']) {
+        final table = json.decode(
+          File('lib/src/common/localization/app_$code.arb').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        for (final key in [
+          'favoritesTotalCountLabel',
+          'favoritesVisibleCountLabel',
+          'favoritesSyncedChip',
+          'favoritesSyncingChip',
+        ]) {
+          expect(table.containsKey(key), isFalse,
+              reason: '$code keeps no string for the removed pills: $key');
+        }
+      }
+    });
+
+    test('the cards use the one grid, at the real width, with no skeleton', () {
+      expect(
+          RegExp(r'_favoritesGridDelegate\(').allMatches(favorites).length, 2,
+          reason: 'its definition and the cards');
+      expect(RegExp('SliverLayoutBuilder').allMatches(favorites).length, 1,
+          reason: 'the cards get the real width');
+      // The shimmer placeholders were replaced by the delayed loader.
+      expect(favorites.contains('Skeleton'), isFalse);
+      expect(favorites.contains('Shimmer'), isFalse);
+    });
+
+    test('the header is the one Home, Search and Favorites share', () {
+      final header =
+          _squash(_source('lib/src/views/Widgets/user_screen_header.dart'));
+      expect(
+          header.contains(
+              "CurrentUserAvatar( size: avatarSize, onTap: () => context.push('/edit-profile'), )"),
+          isTrue);
+      expect(favorites.contains('class _Header'), isFalse,
+          reason: 'its own copy is gone');
+      expect(
+          favoritesSquashed.contains(
+              "UserScreenHeader( subtitle: localization.translate('favoritesOverviewTitle'), )"),
           isTrue);
       // The rounded-square 56 dp avatar and the hero card are gone.
       expect(favorites.contains('BorderRadius.circular(18)'), isFalse);
@@ -439,19 +324,16 @@ void main() {
       for (final same in [
         'AnimatedSwitcher( duration: const Duration(milliseconds: 300)',
         'style: textTheme.headlineSmall',
-        '.onSurface.withValues(alpha: 0.6)',
+        '.onSurface.withValues(alpha: subtitleOpacity)',
         'const NotificationIcon()',
         'Provider.of<AuthViewModel>(context)',
       ]) {
-        expect(favoritesSquashed.contains(same), isTrue, reason: same);
+        expect(header.contains(same), isTrue, reason: same);
       }
-      // ...with the same pieces in Search's header.
-      final searchSquashed = _squash(search);
-      expect(searchSquashed.contains('size: 48'), isTrue);
-      expect(searchSquashed.contains('const NotificationIcon()'), isTrue);
+      // ...and Search draws the same widget, with its own line.
       expect(
-          searchSquashed.contains(
-              'AnimatedSwitcher( duration: const Duration(milliseconds: 300)'),
+          _squash(search).contains(
+              "UserScreenHeader( subtitle: l.translate('searchHeaderSubtitle'), )"),
           isTrue);
     });
 
@@ -499,8 +381,7 @@ void main() {
         expect(favoritesSquashed.contains(kept), isTrue, reason: kept);
       }
       // The cards' own grid: image prefetching, one key per favorite, no
-      // keep-alive per card. (The skeleton has the same two flags, so look in
-      // the cards' class only.)
+      // keep-alive per card (looked for in the cards' class only).
       final cards = favoritesSquashed.substring(
         favoritesSquashed.indexOf('class _OptimizedFavoritesGridState'),
       );
@@ -561,10 +442,6 @@ void main() {
         'hiGreeting',
         'favoritesGuestUser',
         'favoritesOverviewTitle',
-        'favoritesTotalCountLabel',
-        'favoritesVisibleCountLabel',
-        'favoritesSyncingChip',
-        'favoritesSyncedChip',
         'favoritesRefreshHint',
         'favoritesLoadingPrimary',
         'favoritesLoadingSecondary',
@@ -577,8 +454,10 @@ void main() {
         'favoritesFilterEmptySubtitle',
         'clearFilter',
       ];
+      // The greeting and the guest name are drawn by the shared header.
+      final header = _source('lib/src/views/Widgets/user_screen_header.dart');
       for (final key in keys) {
-        expect(favorites.contains("'$key'"), isTrue,
+        expect('$favorites\n$header'.contains("'$key'"), isTrue,
             reason: '$key is shown by the screen');
         expect((english[key] as String?)?.trim(), isNotEmpty,
             reason: 'en $key');

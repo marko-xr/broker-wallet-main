@@ -1,14 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
+import 'package:broker_wallet/src/views/Widgets/user_screen_header.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'package:broker_wallet/src/Views/Widgets/notification_icon.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import '../../../../viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_bar.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_filter_chips.dart';
 import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
@@ -49,10 +47,13 @@ class SearchView extends StatelessWidget {
                 slivers: [
                   // Header. It listens to the profile itself, so a profile
                   // update does not rebuild the results.
-                  const SliverToBoxAdapter(
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
-                      child: _Header(),
+                      padding:
+                          const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
+                      child: UserScreenHeader(
+                        subtitle: l.translate('searchHeaderSubtitle'),
+                      ),
                     ),
                   ),
                   // Search bar
@@ -318,68 +319,6 @@ class _RefreshWhenShownState extends State<_RefreshWhenShown> {
 
   @override
   Widget build(BuildContext context) => widget.child;
-}
-
-class _Header extends StatelessWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context) {
-    // listen: true (default) — Search is kept alive in the bottom-nav
-    // IndexedStack, so it must subscribe to AuthViewModel like
-    // Home/Favorites already do; a one-time listen:false read here was
-    // why Search kept showing the old name/image until a full
-    // rebuild (e.g. logout/login) instead of updating immediately
-    // after a profile save.
-    final authVM = Provider.of<AuthViewModel>(context);
-    final localizations = AppLocalizations.of(context);
-    final t = Theme.of(context).textTheme;
-    final resolvedName = authVM.displayName.trim();
-    final userName = resolvedName.isNotEmpty
-        ? resolvedName
-        : localizations.translate('favoritesGuestUser');
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Row(
-      children: [
-        CurrentUserAvatar(
-          size: 48,
-          onTap: () => context.push('/edit-profile'),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: GestureDetector(
-            onTap: () => context.push('/edit-profile'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: Text(
-                    '${localizations.translate('hiGreeting')} $userName',
-                    key: ValueKey(userName),
-                    style: t.headlineSmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  localizations.translate('welcomeMessage'),
-                  style: t.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const NotificationIcon(),
-      ],
-    );
-  }
 }
 
 class _ErrorState extends StatelessWidget {

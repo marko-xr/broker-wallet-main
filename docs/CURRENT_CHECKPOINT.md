@@ -9953,3 +9953,90 @@ Flutter. Flutter tests, analyzer, device: NOT RUN.
 NOW - owner runs `flutter test test/home test/favorites` and, on the device,
 taps the five chips in turn (the second and later should answer at once), edits
 a record and returns to Home, and signs out and in as another account.
+
+### One header for Home, Search and Favorites (2026-10-07)
+
+Owner report: the three tabs did not look like one app. Each had its own copy of
+the avatar + name + bell header, so the subtitle colour and size, the gap under
+the name and the wording had drifted; Search "welcomed" the user like Home, and
+Favorites said "saved picks" instead of favorites.
+
+Change: one widget, `UserScreenHeader` (`lib/src/views/Widgets/
+user_screen_header.dart`), draws the header for all three. It owns the avatar
+(48, opens edit-profile), the greeting + name (`headlineSmall`, animated on a
+name change, one line), a 2 px gap, the subtitle (`bodyMedium` in the theme's
+`onSurface` at 60%, one line) and the bell. The screen passes only its subtitle.
+Home's old subtitle was a fixed grey at 16; it now matches the other two. The
+private copies in Search and Favorites and Home's `_buildHeader` are gone, along
+with the imports only they used.
+
+Subtitles, each proper for its screen: Home keeps `welcomeMessage` (welcome);
+Search uses the new `searchHeaderSubtitle` — "Search all your items" /
+"ابحث في كل عناصرك"; Favorites `favoritesOverviewTitle` is now "Your favorites" /
+"عناصرك المفضلة" (was "Your saved picks" / "عناصرك المحفوظة").
+
+Found, not changed: `app_ar.arb` declares `welcomeMessage` twice. The later
+one wins ("مرحباً بك في محفظة الوسيط"); the shadowed first one ("عما تبحث
+اليوم؟", "what are you looking for today?") reads like a search prompt and is a
+candidate for Search if the owner prefers it. Removing the duplicate is the
+owner's call.
+
+Tests (source and string guards; run under the plain-Dart stand-in, not
+`flutter test`): new `test/home/screen_header_unity_test.dart` 13/13 — each
+screen uses the one widget and carries no header of its own, the sizes/gap/
+colour/overflow are set once in the widget, the three subtitles exist and differ
+in both languages, Favorites says favorites, Search does not welcome. Sixteen
+deliberate regressions (gap, size, opacity, hard-coded colour or font size, a
+wrapping subtitle, a private header or avatar or bell coming back, a wrong
+subtitle key, the old wording returning) were each caught.
+`favorites_screen_ui_test` was updated to read the shared widget.
+
+Owner's `flutter test test/home test/favorites`: 333 passed, 2 failed, both in
+`favorites_screen_ui_test` and neither about the header — stale grid guards,
+identical on `HEAD`. The grid's bottom padding became 96 in `36f1347`
+(bottom nav bar) and the Favorites skeleton was removed in `cd56303`, but the
+guards still expected 20 and three grid uses. Fixed: Favorites' grid padding
+must equal Search's (both read from source, no number baked in), and the cards
+are the only user of the grid (2 delegate uses, 1 `SliverLayoutBuilder`, no
+skeleton or shimmer). Checked against the real sources by script with six
+deliberate regressions, all caught; the re-run is the owner's. Analyzer,
+device: NOT RUN.
+
+NOW - owner re-runs `flutter test test/home test/favorites` and, on the device,
+looks at Home, Search and Favorites in both languages and both themes: the name,
+gap and subtitle should be identical on all three, and a long name should end
+in "..." on one line.
+
+### Favorites: no counts, no sync pill (2026-10-07)
+
+Owner question: are "Total saved", "Visible now" and the "Synced" pill needed
+on Favorites? Decision (owner delegated it): no, removed.
+
+Why: with no filter chosen the two counts are the same number twice; with a
+filter chosen the grid and its empty state already show what is shown. "Synced"
+says nothing in the normal case and the background refresh needs no badge: the
+cached list is shown at once, a pull to refresh has its own indicator, and a
+failed load has its error state. Search keeps its result count because it
+answers a question the user asked; Favorites has no such question. Home and
+Search never had these pills.
+
+Change: `FavoritesStatusRow`, its three pills and the number formatter are gone
+from `favorites_view.dart`, so the cards now follow the filter chips directly
+(the chips' bar and the grid's own 8 dp top padding give the spacing). The four
+strings (`favoritesTotalCountLabel`, `favoritesVisibleCountLabel`,
+`favoritesSyncedChip`, `favoritesSyncingChip`) are removed from both ARB files.
+Kept: the header, the chips, the grid, the loading/error/empty states and the
+"Pull down anytime to refresh and sync." line at the foot of the list (not part
+of this request; also removable if the owner wants a cleaner foot). No view-model
+change.
+
+Tests: the status-row widget tests are removed with the widget, along with the
+`_pump` options only they used; a new source guard asserts the row, its
+formatter and the four strings stay gone and that the cards follow the chips
+directly. The guard and the trimmed key list were evaluated against the real
+sources with eight deliberate regressions, all caught; the Flutter run is the
+owner's. Flutter tests, analyzer, device: NOT RUN.
+
+NOW - owner runs `flutter test test/favorites test/home` and looks at Favorites
+on the device (EN and AR, light and dark): the chips should sit under the header
+and the cards start right under them, with no gap or pill in between.

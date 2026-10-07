@@ -1,7 +1,8 @@
 class AppImages {
   // App logos and branding
-  static const String appLogo = "assets/images/app-logo.png";
-  static const String mainAppIcon = "assets/images/MainApp-Icon.png";
+  static const String brandLogoSvg = "assets/Broker_Wallet_Branding/logo.svg";
+  static const String appLogo = "assets/Broker_Wallet_Branding/logo.png";
+  static const String mainAppIcon = "assets/Broker_Wallet_Branding/logo.png";
 
   // Profile and avatar images
   static const String avatarPlaceholder =

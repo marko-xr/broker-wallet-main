@@ -135,10 +135,14 @@ dev_dependencies:
   hive_generator: ^2.0.1
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: true
   ios: true
-  remove_alpha_ios: true
-  image_path: "assets/images/app-logo.png"
+  remove_alpha_ios: false
+  image_path: "assets/Broker_Wallet_Branding/app_icon_master.png"
+  image_path_ios: "assets/Broker_Wallet_Branding/app_icon_ios.png"
+  adaptive_icon_background: "assets/Broker_Wallet_Branding/android_icon_background.png"
+  adaptive_icon_foreground: "assets/Broker_Wallet_Branding/android_icon_foreground.png"
+  adaptive_icon_foreground_inset: 0
   # min_sdk_android: 21
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -159,6 +163,8 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/icons/markers/
+    - assets/Broker_Wallet_Branding/logo.svg
+    - assets/Broker_Wallet_Branding/logo.png
     - lib/src/common/localization/app_en.arb
     - lib/src/common/localization/app_ar.arb
     - assets/fonts/Noto_Sans/static/NotoSans-Regular.ttf

@@ -1,6 +1,7 @@
 // lib/src/Views/Profile/share_app_view.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -196,23 +197,17 @@ class _ShareAppViewState extends State<ShareAppView>
       ),
       child: Column(
         children: [
-          // keep a neutral graphic here (optional)
-          Image.asset(
-            AppImages.mainAppIcon,
-            height: 36,
+          Container(
             width: 36,
-            errorBuilder: (context, error, stackTrace) => Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.share_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
+            height: 36,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: colors.onPrimary,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SvgPicture.asset(
+              AppImages.brandLogoSvg,
+              fit: BoxFit.contain,
             ),
           ),
           const SizedBox(height: 16),

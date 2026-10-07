@@ -10108,3 +10108,38 @@ searches for an Offer whose first file is a video and has a photo, an Offer and
 an Owner with only videos, and an Owner with photos: the cards should show the
 photo or the video frame (with the play mark), Favorites should look as before,
 and scrolling a long result list should stay smooth.
+
+### Production branding and launcher icons — source prepared (2026-10-07)
+
+On `update-app-icon`, the owner-supplied
+`assets/Broker_Wallet_Branding/` artwork is preserved. The locked
+`flutter_launcher_icons 0.14.4` configuration now uses its opaque iOS and
+master launcher sources, the transparent Android foreground over the supplied
+white background, and zero extra inset. The foreground's visible pixels fit
+inside Android's central adaptive-icon safe circle. Android's manifest points
+to the generator's default `ic_launcher` resource; the old multicolor resource
+is no longer referenced as an Android themed monochrome icon. No replacement
+monochrome design was invented.
+
+Share App's hero now displays `logo.svg` on a theme `onPrimary` badge; its
+outgoing share remains text-only. About, Flutter splash and Welcome display the
+same vector. The Share App target tiles use `logo.png` where they still need a
+PNG. The iOS native launch catalog now references an unchanged copy of the
+opaque master art with a fixed aspect-fit image view; Android's native launch
+gradient is unchanged. The store listing image is untouched. Old asset files
+remain present but are no longer referenced by the updated UI or launcher
+configuration. No share logic, app identity, billing, or backend changed.
+
+Source/config only. Launcher icon generation, Flutter tests, analyzer, builds
+and real-device appearance/RTL/share checks were NOT RUN by the agent under the
+owner-controlled execution policy. Existing generated Flutter plugin
+registrant drift was not touched. The unrelated Firebase-blocker note already
+in this checkpoint remains uncommitted.
+
+NOW - owner runs `flutter pub get` then `dart run flutter_launcher_icons` from
+the project root and checks generated Android adaptive/legacy resources and
+iOS `AppIcon.appiconset` before testing.
+NEXT - owner runs scoped Flutter analyze/tests, builds Android/iOS, and checks
+launcher masks, native/Flutter splash, Share App and About in Light/Dark and
+English/Arabic on real devices. Only device acceptance can mark this checkpoint
+VERIFIED_RUNTIME.

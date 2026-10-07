@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
@@ -160,8 +161,12 @@ class _SplashScreenState extends State<SplashScreen>
                           return Transform.scale(
                             scale: _pulseAnimation.value,
                             child: Container(
+                              width: 160,
+                              height: 160,
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
+                                color: Theme.of(context).colorScheme.onPrimary,
+                                borderRadius: BorderRadius.circular(24),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.white.withValues(alpha: 0.3),
@@ -170,11 +175,10 @@ class _SplashScreenState extends State<SplashScreen>
                                   ),
                                 ],
                               ),
-                              child: Image.asset(
-                                AppImages.appLogo,
-                                height: 160,
-                                width: 160,
-                              ),
+                            child: SvgPicture.asset(
+                              AppImages.brandLogoSvg,
+                              fit: BoxFit.contain,
+                            ),
                             ),
                           );
                         },

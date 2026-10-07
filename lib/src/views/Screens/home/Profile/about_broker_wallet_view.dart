@@ -4,6 +4,7 @@
 // tagline, installed version read from the platform). No company/legal
 // details are invented here.
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -36,19 +37,17 @@ class AboutBrokerWalletView extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset(
-                  AppImages.mainAppIcon,
+                Container(
                   width: 72,
                   height: 72,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: colors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Icon(Icons.account_balance_wallet_rounded,
-                        color: colors.primary, size: 36),
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: colors.onPrimary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: SvgPicture.asset(
+                    AppImages.brandLogoSvg,
+                    fit: BoxFit.contain,
                   ),
                 ),
                 const SizedBox(height: 20),

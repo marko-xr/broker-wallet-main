@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:provider/provider.dart';
@@ -112,8 +113,12 @@ class _WelcomeViewState extends State<WelcomeView>
                       children: [
                         // Logo with glow effect
                         Container(
+                          width: 140,
+                          height: 140,
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.white.withValues(alpha: 0.1),
@@ -122,10 +127,9 @@ class _WelcomeViewState extends State<WelcomeView>
                               ),
                             ],
                           ),
-                          child: Image.asset(
-                            AppImages.appLogo,
-                            height: 140,
-                            width: 140,
+                          child: SvgPicture.asset(
+                            AppImages.brandLogoSvg,
+                            fit: BoxFit.contain,
                           ),
                         ),
 

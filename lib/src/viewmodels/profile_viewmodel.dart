@@ -222,7 +222,7 @@ class ProfileViewModel extends ChangeNotifier {
 
       // Preserve existing logout cleanup ordering for token ownership removal.
       // Sign out
-      await NotificationService.instance.clearToken();
+      // await NotificationService.instance.clearToken();
       await authVM.signOut();
       // Debug log suppressed: Profile: Logout completed successfully
     } catch (e) {

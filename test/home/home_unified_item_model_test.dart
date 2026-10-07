@@ -1,5 +1,6 @@
-// What the Home filters read from a record: its own creation time — or the plain
-// fact that it has none — and its price as a number. Uses the app's real models.
+// What the Home filters read from a record: its own creation and last-change
+// times — or the plain fact that it has none — and its price as a number. Uses
+// the app's real models.
 
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
@@ -233,6 +234,147 @@ void main() {
       expect(
         HomeFilterRules.apply(HomeFilterKind.recentlyAdded, known, now: now),
         hasLength(1),
+      );
+    });
+  });
+
+  group('last-change time', () {
+    final changed = created.add(const Duration(days: 2));
+
+    test('a Request, an Offer and an Owner always carry their own', () {
+      for (final item in [
+        UnifiedItemModel.fromRequest(request()),
+        UnifiedItemModel.fromOffer(offer()),
+        UnifiedItemModel.fromOwner(owner()),
+      ]) {
+        expect(item.hasUpdatedAt, isTrue, reason: item.type.name);
+        expect(item.updatedAt, created, reason: item.type.name);
+      }
+    });
+
+    test('a Broker, an Office and a Watchman with one carry it', () {
+      for (final item in [
+        UnifiedItemModel.fromBroker(broker(at: created)),
+        UnifiedItemModel.fromOffice(office(at: created)),
+        UnifiedItemModel.fromWatchmen(watchman(at: created)),
+      ]) {
+        expect(item.hasUpdatedAt, isTrue, reason: item.type.name);
+        expect(item.updatedAt, created, reason: item.type.name);
+      }
+    });
+
+    test('a Broker, an Office and a Watchman without one say so', () {
+      for (final item in [
+        UnifiedItemModel.fromBroker(broker()),
+        UnifiedItemModel.fromOffice(office()),
+        UnifiedItemModel.fromWatchmen(watchman()),
+      ]) {
+        expect(item.hasUpdatedAt, isFalse, reason: item.type.name);
+      }
+    });
+
+    test('only the missing time is missing: the creation time is kept', () {
+      final item = UnifiedItemModel.fromBroker(BrokerModel(
+        id: 'broker-1',
+        name: 'Broker',
+        countryCode: '+971',
+        phoneNumber: '',
+        notes: '',
+        createdAt: created,
+        updatedAt: null,
+      ));
+      expect(item.hasCreatedAt, isTrue);
+      expect(item.createdAt, created);
+      expect(item.hasUpdatedAt, isFalse);
+    });
+
+    test('and are never counted as updated for it, however they are drawn', () {
+      // Without a time of its own the record is drawn with today's date, which
+      // must not make it look as if it was just edited.
+      final now = DateTime.now();
+      final longAgo = now.subtract(const Duration(days: 40));
+      final items = [
+        UnifiedItemModel.fromBroker(BrokerModel(
+          id: 'broker-1',
+          name: 'Broker',
+          countryCode: '+971',
+          phoneNumber: '',
+          notes: '',
+          createdAt: longAgo,
+          updatedAt: null,
+        )),
+        UnifiedItemModel.fromOffice(OfficeModel(
+          id: 'office-1',
+          officeName: 'Office',
+          managerName: 'Manager',
+          countryCode: '+971',
+          phoneNumber: '',
+          officeLocation: '',
+          notes: '',
+          pickUpLocation: '',
+          pickUpAddress: '',
+          createdAt: longAgo,
+          updatedAt: null,
+        )),
+        UnifiedItemModel.fromWatchmen(WatchmenModel(
+          id: 'watchman-1',
+          name: 'Watchman',
+          countryCode: '+971',
+          phoneNumber: '',
+          buildingName: 'Tower',
+          notes: '',
+          buildingLocation: '',
+          pickUpLocation: '',
+          pickUpAddress: '',
+          createdAt: longAgo,
+          updatedAt: null,
+        )),
+      ];
+      for (final item in items) {
+        expect(now.difference(item.updatedAt).inMinutes.abs(), lessThan(5),
+            reason: '${item.type.name} is drawn with today\'s date');
+      }
+      expect(
+        HomeFilterRules.apply(HomeFilterKind.recentlyUpdated, items, now: now),
+        isEmpty,
+      );
+    });
+
+    test('a record edited after it was created is updated, whatever its kind',
+        () {
+      final now = changed.add(const Duration(hours: 1));
+      final items = [
+        UnifiedItemModel.fromBroker(BrokerModel(
+          id: 'broker-1',
+          name: 'Broker',
+          countryCode: '+971',
+          phoneNumber: '',
+          notes: '',
+          createdAt: created,
+          updatedAt: changed,
+        )),
+        UnifiedItemModel.fromOwner(OwnerModel(
+          id: 'owner-1',
+          userId: 'user',
+          name: 'Owner',
+          phoneNumber: '',
+          countryCode: '+971',
+          typeOfProperties: '',
+          propertyLocation: '',
+          notes: '',
+          pickUpLocation: '',
+          pickUpLatitude: null,
+          pickUpLongitude: null,
+          pickUpAddress: '',
+          mediaUrls: const [],
+          createdAt: created,
+          updatedAt: changed,
+        )),
+      ];
+      expect(
+        HomeFilterRules.apply(HomeFilterKind.recentlyUpdated, items, now: now)
+            .map((item) => item.id),
+        ['broker-1', 'owner-1'],
       );
     });
   });

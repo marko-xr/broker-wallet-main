@@ -1,6 +1,7 @@
-// The Home filters' rules — Recently Added, Less Price, This Week — as pure
-// functions: the records and "now" go in, a list comes out, always in the same
-// order. Plain Dart: no backend, no clock, no widget.
+// The Home filters' rules — Recently Added, Less Price, This Week, Highest
+// Price, Recently Updated — as pure functions: the records and "now" go in, a
+// list comes out, always in the same order. Plain Dart: no backend, no clock,
+// no widget.
 
 import 'package:broker_wallet/src/data/models/unified_item_model.dart';
 import 'package:broker_wallet/src/viewmodels/home_filter_rules.dart';
@@ -20,16 +21,25 @@ UnifiedItemModel record(
   bool known = true,
   double? min,
   double? max,
+
+  /// How long ago the record was last changed; unset means it never was (the
+  /// database stamps both times with the same instant on creation).
+  Duration? changedAge,
+  DateTime? changedAt,
+  bool changeKnown = true,
 }) {
   final created = at ?? now.subtract(age);
+  final changed =
+      changedAt ?? (changedAge == null ? created : now.subtract(changedAge));
   return UnifiedItemModel(
     id: id,
     title: id,
     subtitle: '',
     type: type,
     createdAt: created,
-    updatedAt: created,
+    updatedAt: changed,
     hasCreatedAt: known,
+    hasUpdatedAt: changeKnown,
     minPrice: min,
     maxPrice: max,
     originalModel: null,
@@ -49,7 +59,15 @@ List<UnifiedItemModel> thisWeek(Iterable<UnifiedItemModel> items) =>
 List<UnifiedItemModel> cheapest(Iterable<UnifiedItemModel> items) =>
     HomeFilterRules.apply(HomeFilterKind.lessPrice, items, now: now);
 
-/// The filters that have an implementation, in chip order.
+List<UnifiedItemModel> dearest(Iterable<UnifiedItemModel> items) =>
+    HomeFilterRules.apply(HomeFilterKind.highestPrice, items, now: now);
+
+List<UnifiedItemModel> updated(Iterable<UnifiedItemModel> items,
+        {DateTime? at}) =>
+    HomeFilterRules.apply(HomeFilterKind.recentlyUpdated, items,
+        now: at ?? now);
+
+/// The filters that have an implementation, in chip order (all of them).
 final List<HomeFilterKind> implemented = [
   for (final kind in HomeFilterKind.values)
     if (kind.isImplemented) kind,
@@ -67,14 +85,17 @@ Object? thrownBy(void Function() body) {
 
 void main() {
   group('the definitions', () {
-    test('Recently Added is 12 hours, This Week 7 days, Less Price keeps 6',
-        () {
+    test(
+        'Recently Added and Recently Updated are 12 hours, This Week 7 days, '
+        'Less Price and Highest Price keep 6', () {
       expect(HomeFilterRules.recentlyAddedWindow, const Duration(hours: 12));
+      expect(HomeFilterRules.recentlyUpdatedWindow, const Duration(hours: 12));
       expect(HomeFilterRules.thisWeekWindow, const Duration(days: 7));
       expect(HomeFilterRules.lessPriceLimit, 6);
+      expect(HomeFilterRules.highestPriceLimit, 6);
     });
 
-    test('the chips are the three filters, then the two still to be built', () {
+    test('the five chips, in order', () {
       expect(
         [for (final kind in HomeFilterKind.values) kind.labelKey],
         [
@@ -97,11 +118,12 @@ void main() {
       );
     });
 
-    test('only the first three have a filter behind them', () {
+    test('every chip has a filter behind it', () {
       expect(
         [for (final kind in HomeFilterKind.values) kind.isImplemented],
-        [true, true, true, false, false],
+        [true, true, true, true, true],
       );
+      expect(implemented, HomeFilterKind.values);
     });
 
     test('each filter reads only the kinds of record it needs', () {
@@ -116,8 +138,11 @@ void main() {
       expect(HomeFilterRules.filterable, all);
       expect(HomeFilterRules.typesFor(HomeFilterKind.recentlyAdded), all);
       expect(HomeFilterRules.typesFor(HomeFilterKind.thisWeek), all);
+      expect(HomeFilterRules.typesFor(HomeFilterKind.recentlyUpdated), all);
       // Only Requests and Offers carry a price.
       expect(HomeFilterRules.typesFor(HomeFilterKind.lessPrice),
+          [ItemType.request, ItemType.offer]);
+      expect(HomeFilterRules.typesFor(HomeFilterKind.highestPrice),
           [ItemType.request, ItemType.offer]);
     });
 
@@ -132,36 +157,20 @@ void main() {
     });
   });
 
-  group('a chip whose filter is not built yet', () {
-    for (final kind in [
-      HomeFilterKind.highestPrice,
-      HomeFilterKind.recentlyUpdated,
-    ]) {
-      test('${kind.name} has no records to read and no answer to give', () {
-        // Neither call may return something that would pass for an answer: an
-        // empty list would read as "nothing found".
-        expect(thrownBy(() => HomeFilterRules.typesFor(kind)),
-            isA<UnsupportedError>());
+  group('every chip can be asked', () {
+    test('no kind throws for lack of a filter', () {
+      for (final kind in HomeFilterKind.values) {
+        expect(thrownBy(() => HomeFilterRules.typesFor(kind)), isNull,
+            reason: kind.name);
         expect(
           thrownBy(() => HomeFilterRules.apply(
                 kind,
                 [record(ItemType.offer, 'a', age: hour, min: 10)],
                 now: now,
               )),
-          isA<UnsupportedError>(),
+          isNull,
+          reason: kind.name,
         );
-      });
-    }
-
-    test('the three that are built are the ones that can be asked', () {
-      expect(implemented, [
-        HomeFilterKind.recentlyAdded,
-        HomeFilterKind.lessPrice,
-        HomeFilterKind.thisWeek,
-      ]);
-      for (final kind in implemented) {
-        expect(thrownBy(() => HomeFilterRules.typesFor(kind)), isNull,
-            reason: kind.name);
       }
     });
   });
@@ -451,6 +460,274 @@ void main() {
     });
   });
 
+  group('Highest Price', () {
+    test('looks only at Requests and Offers', () {
+      final items = [
+        record(ItemType.broker, 'broker', min: 9000),
+        record(ItemType.owner, 'owner', min: 9000),
+        record(ItemType.office, 'office', min: 9000),
+        record(ItemType.watchmen, 'watchman', min: 9000),
+        record(ItemType.request, 'request', min: 500),
+        record(ItemType.offer, 'offer', min: 400),
+      ];
+      expect(ids(dearest(items)), ['request', 'offer']);
+    });
+
+    test('ranks by the average of the range, or by the one price given', () {
+      final items = [
+        record(ItemType.offer, 'range', min: 100, max: 300), // 200
+        record(ItemType.request, 'only-min', min: 150), // 150
+        record(ItemType.offer, 'only-max', max: 250), // 250
+      ];
+      expect(ids(dearest(items)), ['only-max', 'range', 'only-min']);
+    });
+
+    test('compares prices as numbers, never as text', () {
+      final items = [
+        record(ItemType.offer, 'one-million', min: 1000000),
+        record(ItemType.offer, 'nine-hundred', min: 900),
+        record(ItemType.offer, 'eighty-five-thousand', min: 85000),
+      ];
+      // As text "900" > "85000" > "1000000".
+      expect(ids(dearest(items)),
+          ['one-million', 'eighty-five-thousand', 'nine-hundred']);
+    });
+
+    test('a record with no usable price is never the highest price', () {
+      final items = [
+        record(ItemType.offer, 'none'),
+        record(ItemType.offer, 'zero', min: 0, max: 0),
+        record(ItemType.offer, 'negative', min: -50, max: 0),
+        record(ItemType.offer, 'not-a-number', min: double.nan),
+        record(ItemType.offer, 'infinite', max: double.infinity),
+        record(ItemType.request, 'valid', min: 10),
+      ];
+      expect(ids(dearest(items)), ['valid']);
+    });
+
+    test('equal prices: newest first, then the kind, then the id', () {
+      final items = [
+        record(ItemType.offer, 'offer-old', min: 100, age: hour * 5),
+        record(ItemType.offer, 'offer-new', min: 100, age: hour),
+        record(ItemType.request, 'request-old', min: 100, age: hour * 5),
+        record(ItemType.offer, 'unknown-time', min: 100, known: false),
+      ];
+      expect(
+        ids(dearest(items)),
+        ['offer-new', 'request-old', 'offer-old', 'unknown-time'],
+      );
+    });
+
+    test('same price, same time, same kind: the id decides', () {
+      final items = [
+        record(ItemType.offer, 'b', min: 100, age: hour),
+        record(ItemType.offer, 'a', min: 100, age: hour),
+      ];
+      expect(ids(dearest(items)), ['a', 'b']);
+      expect(ids(dearest(items.reversed)), ['a', 'b']);
+    });
+
+    test('keeps only the 6 highest, highest first', () {
+      final items = [
+        for (var i = 1; i <= 8; i++)
+          record(ItemType.offer, 'p$i', min: i * 10.0),
+      ];
+      expect(ids(dearest(items)), ['p8', 'p7', 'p6', 'p5', 'p4', 'p3']);
+    });
+
+    test('fewer than 6 priced records are all kept', () {
+      expect(
+        ids(dearest([
+          record(ItemType.offer, 'a', min: 20),
+          record(ItemType.request, 'b', min: 10),
+        ])),
+        ['a', 'b'],
+      );
+    });
+
+    test('does not depend on how old a record is', () {
+      expect(
+        ids(dearest([
+          record(ItemType.offer, 'ancient', min: 5, age: day * 400),
+        ])),
+        ['ancient'],
+      );
+    });
+
+    test('is Less Price turned around when no two prices are equal', () {
+      final items = [
+        for (var i = 1; i <= 5; i++)
+          record(i.isEven ? ItemType.offer : ItemType.request, 'p$i',
+              min: i * 10.0),
+      ];
+      expect(ids(dearest(items)), ids(cheapest(items)).reversed.toList());
+    });
+  });
+
+  group('Recently Updated', () {
+    test('keeps a record changed inside the last 12 hours', () {
+      expect(
+        ids(updated([
+          record(ItemType.offer, 'just-now',
+              age: day * 3, changedAge: const Duration(minutes: 1)),
+          record(ItemType.owner, 'eleven',
+              age: day * 3, changedAge: const Duration(hours: 11)),
+        ])),
+        containsAll(['just-now', 'eleven']),
+      );
+    });
+
+    test('drops a record last changed more than 12 hours ago', () {
+      expect(
+        updated([
+          record(ItemType.offer, 'old',
+              age: day * 5, changedAge: const Duration(hours: 12, minutes: 1)),
+          record(ItemType.request, 'older', age: day * 9, changedAge: day * 3),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('the boundary is explicit: changed exactly 12 hours ago is out', () {
+      final window = HomeFilterRules.recentlyUpdatedWindow;
+      final exactly =
+          record(ItemType.offer, 'exactly', age: day * 2, changedAge: window);
+      final justInside = record(ItemType.offer, 'inside',
+          age: day * 2, changedAge: window - const Duration(microseconds: 1));
+      final justOutside = record(ItemType.offer, 'outside',
+          age: day * 2, changedAge: window + const Duration(microseconds: 1));
+      expect(ids(updated([exactly, justInside, justOutside])), ['inside']);
+    });
+
+    test('a record that was never changed is not updated, however new it is',
+        () {
+      // Created and last changed at the same instant: nothing was edited.
+      expect(
+        updated([
+          record(ItemType.offer, 'fresh', age: const Duration(minutes: 1)),
+          record(ItemType.request, 'fresh-too', age: hour),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a new record that was then edited is updated', () {
+      expect(
+        ids(updated([
+          record(ItemType.offer, 'edited',
+              age: hour * 3, changedAge: const Duration(minutes: 10)),
+        ])),
+        ['edited'],
+      );
+    });
+
+    test('a record older than the window is still updated if changed in it',
+        () {
+      // Added months ago, edited an hour ago: it is not "recently added" but it
+      // is "recently updated".
+      final edited =
+          record(ItemType.owner, 'edited', age: day * 90, changedAge: hour);
+      expect(ids(updated([edited])), ['edited']);
+      expect(recently([edited]), isEmpty);
+    });
+
+    test('a change time before the creation time proves no change', () {
+      // A phone whose clock disagrees with the server's.
+      expect(
+        updated([
+          record(ItemType.offer, 'backwards', age: hour, changedAge: hour * 2),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a record with no creation time of its own is never updated', () {
+      expect(
+        updated([
+          record(ItemType.broker, 'unknown-created',
+              age: day, changedAge: hour, known: false),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a record with no change time of its own is never updated', () {
+      // Its updatedAt is only a stand-in (today's date); it proves nothing.
+      final unknown = record(ItemType.office, 'unknown-changed',
+          age: day * 4, changedAt: now, changeKnown: false);
+      expect(unknown.updatedAt, now);
+      expect(updated([unknown]), isEmpty);
+      expect(
+        ids(updated([
+          unknown,
+          record(ItemType.office, 'known', age: day * 4, changedAge: hour),
+        ])),
+        ['known'],
+      );
+    });
+
+    test('combines every kind of record, grouped in the order Home lists them',
+        () {
+      final items = [
+        for (final type in [
+          ItemType.watchmen,
+          ItemType.office,
+          ItemType.owner,
+          ItemType.broker,
+          ItemType.offer,
+          ItemType.request,
+        ])
+          record(type, type.name, age: day, changedAge: hour),
+      ];
+      expect(ids(updated(items)),
+          ['request', 'offer', 'broker', 'owner', 'office', 'watchmen']);
+    });
+
+    test('inside a kind the most recently changed comes first, not the newest',
+        () {
+      final items = [
+        // Created last, changed longest ago.
+        record(ItemType.offer, 'created-last',
+            age: day, changedAge: const Duration(hours: 9)),
+        // Created first, changed most recently.
+        record(ItemType.offer, 'changed-last',
+            age: day * 30, changedAge: const Duration(minutes: 5)),
+        record(ItemType.offer, 'middle',
+            age: day * 10, changedAge: const Duration(hours: 3)),
+      ];
+      expect(ids(updated(items)), ['changed-last', 'middle', 'created-last']);
+    });
+
+    test('equal change times fall back to the id, so the order is stable', () {
+      final items = [
+        record(ItemType.offer, 'b', age: day, changedAge: hour),
+        record(ItemType.offer, 'a', age: day, changedAge: hour),
+      ];
+      expect(ids(updated(items)), ['a', 'b']);
+      expect(ids(updated(items.reversed)), ['a', 'b']);
+    });
+
+    test('uses the clock it is given, never its own', () {
+      final items = [record(ItemType.offer, 'a', age: day, changedAge: hour)];
+      expect(ids(updated(items)), ['a']);
+      expect(updated(items, at: now.add(const Duration(hours: 12))), isEmpty);
+    });
+
+    test('a timestamp held in local time is the same instant as in UTC', () {
+      final created = now.subtract(day * 3);
+      final changed = now.subtract(const Duration(hours: 2));
+      expect(
+        ids(updated([
+          record(ItemType.offer, 'utc',
+              at: created.toUtc(), changedAt: changed.toUtc()),
+          record(ItemType.request, 'local',
+              at: created.toLocal(), changedAt: changed.toLocal()),
+        ])),
+        ['local', 'utc'],
+      );
+    });
+  });
+
   group('whatever the input order, the answer is the same', () {
     final mixed = [
       record(ItemType.watchmen, 'w1', age: hour, min: 1),
@@ -461,6 +738,12 @@ void main() {
       record(ItemType.owner, 'ow1', age: day * 2),
       record(ItemType.office, 'of1', age: hour * 30),
       record(ItemType.offer, 'old', age: day * 10, min: 50),
+      record(ItemType.offer, 'edited-1',
+          age: day * 3, changedAge: hour, min: 700),
+      record(ItemType.offer, 'edited-2',
+          age: day * 3, changedAge: hour, min: 700),
+      record(ItemType.owner, 'edited-owner',
+          age: day * 40, changedAge: hour * 5),
     ];
 
     for (final kind in implemented) {
@@ -487,7 +770,8 @@ void main() {
         expect(HomeFilterRules.apply(kind, quotations, now: now), isEmpty);
         final withOthers = [
           ...quotations,
-          record(ItemType.offer, 'offer', age: hour, min: 10),
+          record(ItemType.offer, 'offer',
+              age: hour * 2, changedAge: hour, min: 10),
         ];
         expect(
           ids(HomeFilterRules.apply(kind, withOthers, now: now)),

@@ -278,7 +278,17 @@ void main() {
         viewModel.indexOf('void _resetCountsForSignedOutUser()'),
         viewModel.indexOf('/// Initialize live streams'),
       );
-      expect(signedOut.contains('_filters.clear();'), isTrue);
+      // Signing out also forgets every record that was read for the filters.
+      expect(signedOut.contains('_filters.reset();'), isTrue);
+      expect(signedOut.contains('_filters.clear();'), isFalse);
+    });
+
+    test('the records kept for the filters are tied to the signed-in account',
+        () {
+      expect(
+          viewModel
+              .contains('currentUserId: () => _authRepository.currentUserId,'),
+          isTrue);
     });
 
     test('the home screen\'s pull asks to keep the filter', () {
@@ -371,6 +381,10 @@ void main() {
       expect(model.contains('hasCreatedAt: office.createdAt != null'), isTrue);
       expect(
           model.contains('hasCreatedAt: watchmen.createdAt != null'), isTrue);
+      expect(model.contains('hasUpdatedAt: broker.updatedAt != null'), isTrue);
+      expect(model.contains('hasUpdatedAt: office.updatedAt != null'), isTrue);
+      expect(
+          model.contains('hasUpdatedAt: watchmen.updatedAt != null'), isTrue);
     });
   });
 
@@ -400,9 +414,38 @@ void main() {
       }
     });
 
+    test('the loading state appears only after a short delay, never at once',
+        () {
+      final loading = view.substring(
+        view.indexOf('Widget _buildLoadingState('),
+        view.indexOf('static String errorMessage'),
+      );
+      expect(loading.contains('DelayedReveal('), isTrue);
+      expect(loading.contains('CircularProgressIndicator('), isTrue);
+      expect(loading.indexOf('DelayedReveal('),
+          lessThan(loading.indexOf('CircularProgressIndicator(')),
+          reason: 'the spinner is inside the delay, not beside it');
+    });
+
     test('a short result can still be pulled to refresh', () {
       expect(view.contains('physics: const AlwaysScrollableScrollPhysics()'),
           isTrue);
+    });
+
+    test(
+        'Recently Updated shows when a record last changed, the rest when it was added',
+        () {
+      expect(
+          view.contains(
+              'vm.selectedFilterKey == HomeFilterKind.recentlyUpdated.labelKey'),
+          isTrue);
+      expect(
+          view.contains(
+              'date: showsUpdateDate ? item.updatedAt : item.createdAt'),
+          isTrue);
+      // Every tile gets the chosen date, never the creation time directly.
+      expect(view.contains('createdAt: item.createdAt'), isFalse);
+      expect(RegExp(r'createdAt: date,').allMatches(view).length, 6);
     });
 
     test('a chip whose filter is not built says so, ahead of both', () {

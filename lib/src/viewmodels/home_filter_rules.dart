@@ -11,11 +11,11 @@ enum HomeFilterKind {
   /// Records created in the last 7 days.
   thisWeek('thisWeek', 'This Week'),
 
-  /// The highest-priced Offers and Requests. Only its chip exists so far.
-  highestPrice('highestPrice', 'Highest Price', isImplemented: false),
+  /// The highest-priced Offers and Requests.
+  highestPrice('highestPrice', 'Highest Price'),
 
-  /// Records changed after they were created. Only its chip exists so far.
-  recentlyUpdated('recentlyUpdated', 'Recently Updated', isImplemented: false);
+  /// Records changed, after they were created, in the last 12 hours.
+  recentlyUpdated('recentlyUpdated', 'Recently Updated');
 
   const HomeFilterKind(this.labelKey, this.label, {this.isImplemented = true});
 
@@ -38,12 +38,20 @@ enum HomeFilterKind {
 ///
 /// **Time.** A window is elapsed time before [apply]'s `now` — 12 hours, or
 /// 7 x 24 hours — not calendar days, not a calendar week and not anchored to
-/// midnight. A record counts only when it was created strictly after the start
-/// of the window, so one created exactly at the start is out. The comparison is
-/// between instants, so it makes no difference whether a timestamp is held in
-/// UTC or local time, and no offset (the UAE's included) is applied anywhere.
-/// A record whose own creation time is unknown ([UnifiedItemModel.hasCreatedAt]
-/// is false) is never inside a window: nothing proves it is recent.
+/// midnight. A record counts only when it was created (Recently Updated: last
+/// changed) strictly after the start of the window, so one exactly at the start
+/// is out. The comparison is between instants, so it makes no difference
+/// whether a timestamp is held in UTC or local time, and no offset (the UAE's
+/// included) is applied anywhere. A record whose own creation time is unknown
+/// ([UnifiedItemModel.hasCreatedAt] is false) is never inside a creation
+/// window, and one whose own last-change time is unknown
+/// ([UnifiedItemModel.hasUpdatedAt] is false) never counts as updated: nothing
+/// proves it is recent.
+///
+/// **Updated.** A record counts as updated only when it was changed *after* it
+/// was created: its last-change time is strictly later than its creation time.
+/// The database stamps both with the same instant when a record is created, so
+/// a record that was never edited is not "updated" however new it is.
 ///
 /// **Scope.** Quotations are not part of the Home filters: the filtered list has
 /// no tile for them, so they are never read for a filter and one that turns up
@@ -55,8 +63,14 @@ abstract final class HomeFilterRules {
   /// How far back This Week looks.
   static const Duration thisWeekWindow = Duration(days: 7);
 
+  /// How far back Recently Updated looks: the same "recent" as Recently Added.
+  static const Duration recentlyUpdatedWindow = recentlyAddedWindow;
+
   /// How many records Less Price keeps.
   static const int lessPriceLimit = 6;
+
+  /// How many records Highest Price keeps: as many as Less Price.
+  static const int highestPriceLimit = 6;
 
   /// The kinds of record the filters look through, in the order Home lists them:
   /// Requested, Offers, Brokers, Owners, Offices, Watchmen. Quotations are not
@@ -70,7 +84,8 @@ abstract final class HomeFilterRules {
     ItemType.watchmen,
   ];
 
-  /// The kinds that carry a price: the only ones Less Price looks through.
+  /// The kinds that carry a price: the only ones Less Price and Highest Price
+  /// look through.
   static const List<ItemType> priced = <ItemType>[
     ItemType.request,
     ItemType.offer,
@@ -81,15 +96,17 @@ abstract final class HomeFilterRules {
   /// Throws [UnsupportedError] for a kind that is not implemented: it has no
   /// answer to look for.
   static List<ItemType> typesFor(HomeFilterKind kind) {
+    if (!kind.isImplemented) {
+      throw UnsupportedError('The ${kind.name} filter is not built yet.');
+    }
     switch (kind) {
       case HomeFilterKind.recentlyAdded:
       case HomeFilterKind.thisWeek:
+      case HomeFilterKind.recentlyUpdated:
         return filterable;
       case HomeFilterKind.lessPrice:
-        return priced;
       case HomeFilterKind.highestPrice:
-      case HomeFilterKind.recentlyUpdated:
-        throw UnsupportedError('The ${kind.name} filter is not built yet.');
+        return priced;
     }
   }
 
@@ -97,9 +114,12 @@ abstract final class HomeFilterRules {
   ///
   /// Recently Added and This Week list the records created inside the window,
   /// grouped by kind in the order of [filterable] and newest first inside a
-  /// group. Less Price lists the [lessPriceLimit] cheapest Offers and Requests
-  /// by [UnifiedItemModel.averagePrice], cheapest first; records with the same
-  /// price go newest first, then by kind, then by id.
+  /// group. Recently Updated lists the records changed inside the window after
+  /// they were created, grouped the same way and most recently changed first
+  /// inside a group (then by id). Less Price lists the [lessPriceLimit]
+  /// cheapest Offers and Requests by [UnifiedItemModel.averagePrice], cheapest
+  /// first; Highest Price lists the [highestPriceLimit] dearest, dearest first.
+  /// Records with the same price go newest first, then by kind, then by id.
   ///
   /// Throws [UnsupportedError] for a kind that is not implemented, rather than
   /// returning a list that would pass for an answer.
@@ -108,17 +128,21 @@ abstract final class HomeFilterRules {
     Iterable<UnifiedItemModel> items, {
     required DateTime now,
   }) {
+    if (!kind.isImplemented) {
+      throw UnsupportedError('The ${kind.name} filter is not built yet.');
+    }
     final candidates = items.where((item) => filterable.contains(item.type));
     switch (kind) {
       case HomeFilterKind.recentlyAdded:
         return _createdAfter(candidates, now.subtract(recentlyAddedWindow));
       case HomeFilterKind.thisWeek:
         return _createdAfter(candidates, now.subtract(thisWeekWindow));
+      case HomeFilterKind.recentlyUpdated:
+        return _updatedAfter(candidates, now.subtract(recentlyUpdatedWindow));
       case HomeFilterKind.lessPrice:
         return _cheapest(candidates);
       case HomeFilterKind.highestPrice:
-      case HomeFilterKind.recentlyUpdated:
-        throw UnsupportedError('The ${kind.name} filter is not built yet.');
+        return _dearest(candidates);
     }
   }
 
@@ -134,6 +158,25 @@ abstract final class HomeFilterRules {
     return inside;
   }
 
+  static List<UnifiedItemModel> _updatedAfter(
+    Iterable<UnifiedItemModel> items,
+    DateTime windowStart,
+  ) {
+    final inside = items
+        .where((item) =>
+            _wasChangedAfterCreation(item) &&
+            item.updatedAt.isAfter(windowStart))
+        .toList();
+    inside.sort(_byTypeThenLatestChange);
+    return inside;
+  }
+
+  /// Whether the record's own times prove it was changed after it was created.
+  static bool _wasChangedAfterCreation(UnifiedItemModel item) =>
+      item.hasCreatedAt &&
+      item.hasUpdatedAt &&
+      item.updatedAt.isAfter(item.createdAt);
+
   static List<UnifiedItemModel> _cheapest(Iterable<UnifiedItemModel> items) {
     final ranked = items
         .where((item) => priced.contains(item.type))
@@ -141,6 +184,15 @@ abstract final class HomeFilterRules {
         .toList();
     ranked.sort(_byPriceThenNewest);
     return ranked.take(lessPriceLimit).toList();
+  }
+
+  static List<UnifiedItemModel> _dearest(Iterable<UnifiedItemModel> items) {
+    final ranked = items
+        .where((item) => priced.contains(item.type))
+        .where(_hasUsablePrice)
+        .toList();
+    ranked.sort(_byPriceDescendingThenNewest);
+    return ranked.take(highestPriceLimit).toList();
   }
 
   /// A price that can rank a record: a real amount above zero. (The model
@@ -162,6 +214,11 @@ abstract final class HomeFilterRules {
     return b.createdAt.compareTo(a.createdAt);
   }
 
+  /// The most recently changed first. Only for records whose change time is
+  /// known (every record [_updatedAfter] keeps).
+  static int _byLatestChange(UnifiedItemModel a, UnifiedItemModel b) =>
+      b.updatedAt.compareTo(a.updatedAt);
+
   static int _byId(UnifiedItemModel a, UnifiedItemModel b) =>
       a.id.compareTo(b.id);
 
@@ -174,6 +231,18 @@ abstract final class HomeFilterRules {
 
   static int _byTypeThenNewest(UnifiedItemModel a, UnifiedItemModel b) =>
       _firstDifference([_byType(a, b), _byNewest(a, b), _byId(a, b)]);
+
+  static int _byTypeThenLatestChange(UnifiedItemModel a, UnifiedItemModel b) =>
+      _firstDifference([_byType(a, b), _byLatestChange(a, b), _byId(a, b)]);
+
+  static int _byPriceDescendingThenNewest(
+          UnifiedItemModel a, UnifiedItemModel b) =>
+      _firstDifference([
+        b.averagePrice!.compareTo(a.averagePrice!),
+        _byNewest(a, b),
+        _byType(a, b),
+        _byId(a, b),
+      ]);
 
   static int _byPriceThenNewest(UnifiedItemModel a, UnifiedItemModel b) =>
       _firstDifference([

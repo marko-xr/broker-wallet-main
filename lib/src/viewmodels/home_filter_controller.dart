@@ -47,11 +47,18 @@ enum _Phase {
 
 /// The Home filter chips and what the chosen one found.
 ///
-/// One chip is chosen at a time. Choosing a chip reads every record the filter
-/// needs, concurrently, and shows the answer only when all of them have
+/// One chip is chosen at a time. A filter is a calculation over the signed-in
+/// user's own records, so the records it needs are read once and kept: choosing
+/// another chip answers at once from what is held, with no loading state at all.
+/// Only records not held (the first chip of a session, or after a change) are
+/// read — concurrently, and the answer is shown only when all of them have
 /// arrived: until then there is one loading state, never a part of the list.
 /// The records come from the app's own services, so the backend in use is
 /// theirs to decide and the signed-in session is the ownership boundary.
+///
+/// What is held is dropped when the user's records change ([onDataChanged]),
+/// when a refresh is asked for, when it is older than [recordsValidFor], when it
+/// belongs to another account than the signed-in one, and on [reset] (sign-out).
 ///
 /// A chip whose filter is not built yet can still be chosen and cleared like the
 /// others, but it reads nothing and is reported as [isUnavailable]: the screen
@@ -65,21 +72,43 @@ class HomeFilterController extends ChangeNotifier {
   HomeFilterController({
     required HomeFilterDataSource dataSource,
     required HomeFilterErrorKind Function(Object error) classifyError,
+    String? Function()? currentUserId,
     DateTime Function()? clock,
     this.loadTimeout = defaultLoadTimeout,
+    this.recordsValidFor = defaultRecordsValidFor,
+    @visibleForTesting bool Function(HomeFilterKind kind)? isBuilt,
   })  : _dataSource = dataSource,
         _classifyError = classifyError,
-        _clock = clock ?? DateTime.now;
+        _currentUserId = currentUserId,
+        _clock = clock ?? DateTime.now,
+        _isBuilt = isBuilt ?? _kindIsImplemented;
+
+  static bool _kindIsImplemented(HomeFilterKind kind) => kind.isImplemented;
 
   /// How long a read may take before it is reported as a connection problem.
   /// It exists so a read that never answers cannot leave a spinner forever.
   static const Duration defaultLoadTimeout = Duration(seconds: 30);
 
+  /// How long the records read for a filter are trusted when nothing says
+  /// they changed (the same as Search).
+  static const Duration defaultRecordsValidFor = Duration(minutes: 5);
+
   final Duration loadTimeout;
+  final Duration recordsValidFor;
 
   final HomeFilterDataSource _dataSource;
   final HomeFilterErrorKind Function(Object error) _classifyError;
   final DateTime Function() _clock;
+
+  /// The signed-in user's id, or null when nobody is signed in. Records read
+  /// for one user are never used for another. Null itself means the controller
+  /// is not tied to an account (tests).
+  final String? Function()? _currentUserId;
+
+  /// Whether the filter behind a chip exists. Every chip has one today; the
+  /// state for a chip without one stays so a chip can be added ahead of its
+  /// filter, and a test can ask for it.
+  final bool Function(HomeFilterKind kind) _isBuilt;
 
   /// The chips, in order. Exactly one is [FilterModel.selected] while a filter
   /// is chosen, none otherwise.
@@ -91,6 +120,14 @@ class HomeFilterController extends ChangeNotifier {
   _Phase _phase = _Phase.idle;
   List<UnifiedItemModel> _items = const <UnifiedItemModel>[];
   HomeFilterErrorKind? _errorKind;
+
+  /// The records read so far, by kind, and when each kind was read. A kind is
+  /// absent until it has been read, even when it has no records ([] then).
+  final Map<ItemType, List<UnifiedItemModel>> _records = {};
+  final Map<ItemType, DateTime> _recordsAt = {};
+
+  /// The user the held records were read for.
+  String? _recordsUser;
 
   /// Bumped by everything that makes an earlier read stale.
   int _generation = 0;
@@ -151,7 +188,7 @@ class HomeFilterController extends ChangeNotifier {
       filters[i].selected = i == index;
     }
     final kind = HomeFilterKind.values[index];
-    if (kind.isImplemented) {
+    if (_isBuilt(kind)) {
       _begin(kind);
     } else {
       _showUnavailable();
@@ -171,6 +208,14 @@ class HomeFilterController extends ChangeNotifier {
     if (hadFilter) _notify();
   }
 
+  /// Back to no filter, and everything read for it forgotten: nobody is signed
+  /// in, or the account changed, so no record may outlive it. (A plain [clear]
+  /// keeps what was read, for the next chip.)
+  void reset() {
+    clear();
+    _forgetRecords();
+  }
+
   /// Tries again after a failure.
   void retry() {
     final kind = _selectedKind;
@@ -185,8 +230,10 @@ class HomeFilterController extends ChangeNotifier {
   /// Never throws.
   Future<void> refresh() async {
     final kind = _selectedKind;
-    if (kind == null || !kind.isImplemented) return;
+    if (kind == null || !_isBuilt(kind)) return;
     final generation = ++_generation;
+    // A refresh asks for what is true now, not for what was held.
+    _forgetRecords();
     if (_phase == _Phase.failed) {
       _phase = _Phase.loading;
       _errorKind = null;
@@ -201,8 +248,10 @@ class HomeFilterController extends ChangeNotifier {
   /// screen is kept. Does nothing when no filter is chosen, or when the chosen
   /// chip has no filter yet.
   void onDataChanged() {
+    // What was read no longer matches the user's records, chosen chip or not.
+    _forgetRecords();
     final kind = _selectedKind;
-    if (kind == null || !kind.isImplemented) return;
+    if (kind == null || !_isBuilt(kind)) return;
     final generation = ++_generation;
     unawaited(_read(kind, generation, quietOnFailure: true));
   }
@@ -221,11 +270,56 @@ class HomeFilterController extends ChangeNotifier {
 
   void _begin(HomeFilterKind kind) {
     final generation = ++_generation;
+    _errorKind = null;
+    if (_missingFor(kind).isEmpty) {
+      // Everything the filter needs is held: answer now, with no loading state.
+      _items = HomeFilterRules.apply(kind, _heldFor(kind), now: _clock());
+      _phase = _Phase.ready;
+      _notify();
+      return;
+    }
     _phase = _Phase.loading;
     _items = const <UnifiedItemModel>[];
-    _errorKind = null;
     _notify();
     unawaited(_read(kind, generation, quietOnFailure: false));
+  }
+
+  // ---- what is held ---------------------------------------------------------
+
+  /// The kinds [kind] needs that are not held, or are held too long.
+  List<ItemType> _missingFor(HomeFilterKind kind) {
+    _forgetRecordsOfAnotherAccount();
+    final now = _clock();
+    return [
+      for (final type in HomeFilterRules.typesFor(kind))
+        if (!_isHeld(type, now)) type,
+    ];
+  }
+
+  bool _isHeld(ItemType type, DateTime now) {
+    final readAt = _recordsAt[type];
+    if (readAt == null || !_records.containsKey(type)) return false;
+    final age = now.difference(readAt);
+    // A clock that went back makes the age negative: nothing proves it is fresh.
+    return !age.isNegative && age < recordsValidFor;
+  }
+
+  List<UnifiedItemModel> _heldFor(HomeFilterKind kind) => [
+        for (final type in HomeFilterRules.typesFor(kind)) ...?_records[type],
+      ];
+
+  void _forgetRecords() {
+    _records.clear();
+    _recordsAt.clear();
+    _recordsUser = null;
+  }
+
+  /// Held records belong to the user they were read for and to no one else.
+  void _forgetRecordsOfAnotherAccount() {
+    final currentUser = _currentUserId;
+    if (currentUser == null || _records.isEmpty) return;
+    final user = currentUser();
+    if (user == null || user != _recordsUser) _forgetRecords();
   }
 
   bool _isCurrent(int generation) => !_disposed && generation == _generation;
@@ -236,11 +330,14 @@ class HomeFilterController extends ChangeNotifier {
     required bool quietOnFailure,
   }) async {
     try {
-      final records = await _dataSource
-          .load(HomeFilterRules.typesFor(kind))
-          .timeout(loadTimeout);
+      final missing = _missingFor(kind);
+      final user = _currentUserId?.call();
+      final records = missing.isEmpty
+          ? const <UnifiedItemModel>[]
+          : await _dataSource.load(missing).timeout(loadTimeout);
       if (!_isCurrent(generation)) return;
-      _items = HomeFilterRules.apply(kind, records, now: _clock());
+      _keep(missing, records, user);
+      _items = HomeFilterRules.apply(kind, _heldFor(kind), now: _clock());
       _errorKind = null;
       _phase = _Phase.ready;
       _notify();
@@ -258,6 +355,23 @@ class HomeFilterController extends ChangeNotifier {
       _phase = _Phase.failed;
       _notify();
     }
+  }
+
+  /// Holds what was read for [types], by kind: a kind with no records is held
+  /// as empty, so it is not read again until it is no longer fresh.
+  void _keep(
+      List<ItemType> types, List<UnifiedItemModel> records, String? user) {
+    if (types.isEmpty) return;
+    if (_records.isNotEmpty && _recordsUser != user) _forgetRecords();
+    final readAt = _clock();
+    for (final type in types) {
+      _records[type] = [
+        for (final record in records)
+          if (record.type == type) record,
+      ];
+      _recordsAt[type] = readAt;
+    }
+    _recordsUser = user;
   }
 
   void _notify() {

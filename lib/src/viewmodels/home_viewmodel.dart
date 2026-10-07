@@ -62,6 +62,8 @@ class HomeViewModel extends ChangeNotifier {
       watchmen: _watchmenService.getUserWatchmen,
     ),
     classifyError: classifyHomeFilterError,
+    // The records read for a filter belong to the account they were read for.
+    currentUserId: () => _authRepository.currentUserId,
   );
 
   // Single combined stream subscription for efficiency
@@ -243,9 +245,10 @@ class HomeViewModel extends ChangeNotifier {
     _ownersCount = 0;
     _requestedCount = 0;
     _quotationCount = 0;
-    // Nobody is signed in: no chip stays chosen and no read still in flight can
-    // show a signed-out user's records to the next one.
-    _filters.clear();
+    // Nobody is signed in: no chip stays chosen, no read still in flight can
+    // show a signed-out user's records to the next one, and nothing that was
+    // read for this user is kept.
+    _filters.reset();
     notifyListeners();
   }
 

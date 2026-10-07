@@ -4,8 +4,12 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/data/models/unified_item_model.dart';
 import 'package:broker_wallet/src/data/models/filter_model.dart';
 import 'package:broker_wallet/src/viewmodels/home_filter_controller.dart';
+import 'package:broker_wallet/src/viewmodels/home_filter_rules.dart'
+    show HomeFilterKind;
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/filtered_tiles.dart';
+import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart'
+    show DelayedReveal;
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
@@ -56,26 +60,30 @@ class FilteredItemsView extends StatelessWidget {
 
   Widget _buildLoadingState(BuildContext context, ThemeData theme) {
     final localization = AppLocalizations.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(
-                theme.colorScheme.primary,
+    // Shown only if the answer is slow. The records are read once and kept, so
+    // this is for a first read; one that comes back at once never flashes it.
+    return DelayedReveal(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.primary,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              localization.translate('loadingFilteredItems'),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface,
+              const SizedBox(height: 16),
+              Text(
+                localization.translate('loadingFilteredItems'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -181,6 +189,10 @@ class FilteredItemsView extends StatelessWidget {
     ThemeData theme,
     FilterModel selectedFilter,
   ) {
+    // Recently Updated is about when a record last changed, so that is the
+    // date its cards show; every other filter shows when the record was added.
+    final showsUpdateDate =
+        vm.selectedFilterKey == HomeFilterKind.recentlyUpdated.labelKey;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -194,7 +206,13 @@ class FilteredItemsView extends StatelessWidget {
               final item = vm.filteredItems[index];
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: _buildFilteredItemCard(context, item, localization, theme),
+                child: _buildFilteredItemCard(
+                  context,
+                  item,
+                  localization,
+                  theme,
+                  date: showsUpdateDate ? item.updatedAt : item.createdAt,
+                ),
               );
             },
           ),
@@ -207,8 +225,9 @@ class FilteredItemsView extends StatelessWidget {
     BuildContext context,
     UnifiedItemModel item,
     AppLocalizations localization,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    required DateTime date,
+  }) {
     // Use specialized tiles based on item type for consistency with list views
     switch (item.type) {
       case ItemType.offer:
@@ -216,42 +235,42 @@ class FilteredItemsView extends StatelessWidget {
           offer: item.originalModel as OfferModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.request:
         return FilteredRequestTile(
           request: item.originalModel as RequestModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.broker:
         return FilteredBrokerTile(
           broker: item.originalModel as BrokerModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.owner:
         return FilteredOwnerTile(
           owner: item.originalModel as OwnerModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.office:
         return FilteredOfficeTile(
           office: item.originalModel as OfficeModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.watchmen:
         return FilteredWatchmenTile(
           watchmen: item.originalModel as WatchmenModel,
           localization: localization,
           index: 0,
-          createdAt: item.createdAt,
+          createdAt: date,
         );
       case ItemType.quotation:
         // Quotations are not part of the Home filters (HomeFilterRules drops

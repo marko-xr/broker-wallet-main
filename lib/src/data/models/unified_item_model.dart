@@ -11,6 +11,9 @@ class UnifiedItemModel {
   /// When the record was created. Only the record's own time while
   /// [hasCreatedAt] is true; otherwise a stand-in so something can be drawn.
   final DateTime createdAt;
+
+  /// When the record was last changed. Only the record's own time while
+  /// [hasUpdatedAt] is true; otherwise a stand-in so something can be drawn.
   final DateTime updatedAt;
 
   /// Whether [createdAt] is the record's own creation time. It is false when the
@@ -18,6 +21,12 @@ class UnifiedItemModel {
   /// says nothing about the record's age, so a filter by age never counts the
   /// record as recent.
   final bool hasCreatedAt;
+
+  /// Whether [updatedAt] is the record's own last-change time. It is false when
+  /// the record carried none and [updatedAt] is only today's date for display;
+  /// that says nothing about when it changed, so a filter by last change never
+  /// counts the record as updated.
+  final bool hasUpdatedAt;
   final String? price; // For offers and requests
   final double? minPrice; // For filtering by price
   final double? maxPrice; // For filtering by price
@@ -31,6 +40,7 @@ class UnifiedItemModel {
     required this.createdAt,
     required this.updatedAt,
     this.hasCreatedAt = true,
+    this.hasUpdatedAt = true,
     this.price,
     this.minPrice,
     this.maxPrice,
@@ -85,6 +95,7 @@ class UnifiedItemModel {
       createdAt: broker.createdAt ?? DateTime.now(),
       updatedAt: broker.updatedAt ?? DateTime.now(),
       hasCreatedAt: broker.createdAt != null,
+      hasUpdatedAt: broker.updatedAt != null,
       originalModel: broker,
     );
   }
@@ -110,6 +121,7 @@ class UnifiedItemModel {
       createdAt: office.createdAt ?? DateTime.now(),
       updatedAt: office.updatedAt ?? DateTime.now(),
       hasCreatedAt: office.createdAt != null,
+      hasUpdatedAt: office.updatedAt != null,
       originalModel: office,
     );
   }
@@ -123,6 +135,7 @@ class UnifiedItemModel {
       createdAt: watchmen.createdAt ?? DateTime.now(),
       updatedAt: watchmen.updatedAt ?? DateTime.now(),
       hasCreatedAt: watchmen.createdAt != null,
+      hasUpdatedAt: watchmen.updatedAt != null,
       originalModel: watchmen,
     );
   }
@@ -163,7 +176,7 @@ class UnifiedItemModel {
     return null;
   }
 
-  // What "recently added" and "this week" mean lives in one place,
-  // HomeFilterRules, so a record cannot be recent by one definition and not by
-  // another.
+  // What "recently added", "this week" and "recently updated" mean lives in
+  // one place, HomeFilterRules, so a record cannot be recent by one definition
+  // and not by another.
 }

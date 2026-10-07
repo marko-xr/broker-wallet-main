@@ -9871,3 +9871,85 @@ analyzer, device: NOT RUN.
 NOW - owner runs `flutter test test/favorites` and opens Favorites with an Offer
 whose first file is a video, an Offer and an Owner with only videos, and an Owner
 with photos, checking the card image in each.
+
+### Home filters — Highest Price and Recently Updated implemented (2026-10-07)
+
+Owner request: the two Home chips that were UI only ("Coming soon") now work.
+
+Definitions (pure, in `HomeFilterRules`, like the other three):
+
+- **Highest Price**: the 6 highest-priced Offers and Requests by average price
+  (the same price rule as Less Price), highest first; equal prices go newest
+  first, then by kind, then by id. Reads only Requests and Offers.
+- **Recently Updated**: records last changed in the last 12 hours (the same
+  "recent" as Recently Added, `recentlyUpdatedWindow`) AND changed after they
+  were created (`updatedAt` strictly later than `createdAt`). The database
+  stamps both with one instant on creation, so a new record that was never
+  edited is not "updated". Grouped by kind in Home's order, most recently
+  changed first inside a kind, then by id. Reads the same six kinds as Recently
+  Added; Quotations are never read.
+- A record whose own change time is unknown never counts as updated:
+  `UnifiedItemModel.hasUpdatedAt` (new, like `hasCreatedAt`) is false for a
+  Broker, Office or Watchman with no `updatedAt`, whose stand-in is "now".
+- The Home list shows a record's last-change date under Recently Updated (so an
+  old record listed there explains itself) and its creation date under every
+  other filter.
+
+Data check (read from the migrations): all six tables stamp `updated_at` on
+every row UPDATE (trigger `bump_sync_version`); no media or other RPC updates
+those rows, so only edits bump it. The app writes an edit with one UPDATE.
+
+The "Coming soon" state (controller phase, view state, two strings) is kept but
+unreachable: no chip uses it now. `HomeFilterController` takes a test-only
+`isBuilt` so the state stays covered for a future chip. Removing it is the
+owner's call.
+
+Tests (source only; the pure ones were also run under a plain-Dart stand-in, not
+`flutter test`): `home_filter_rules_test` (66), `home_unified_item_model_test`
+(17), `home_filter_controller_test` (60) — 143/143 there; nine deliberate
+regressions of the rules and the model were each caught. `home_filter_wiring_test`
+gained a guard for the date and needs Flutter. Flutter tests, analyzer, device:
+NOT RUN.
+
+NOW - owner runs `flutter test test/home` and tries the five chips on Home
+(Highest Price; Recently Updated after editing a record, and after only creating
+one).
+
+### Home filters — instant chips, delayed loader, new Arabic labels (2026-10-07)
+
+Owner report: tapping a Home filter chip flashed a very fast loading state.
+Cause: every tap re-read the records from the backend and replaced the list
+area with a spinner and text at once.
+
+Change: a filter is a calculation over the signed-in user's own records, so
+`HomeFilterController` now reads the records once and keeps them, by kind. A
+chip whose kinds are all held answers at once, with no loading state; only the
+kinds not held are read (the first chip of a session, or the kinds a later chip
+adds). What is held is dropped on a change to the user's records
+(`onDataChanged`, which Home already signals), on a pull to refresh, after
+5 minutes (`recordsValidFor`, as Search), when the clock goes back, when it
+belongs to another account than the signed-in one (`currentUserId`, passed by
+`HomeViewModel`), and on `reset()` (sign-out). A plain `clear()` (tapping the
+chosen chip, leaving Home) keeps it. The answer is always worked out at the
+moment of the tap, so a time window uses the current clock. A failed read keeps
+nothing new; what earlier chips read stays held.
+
+When a read is still needed, the loading state (`FilteredItemsView`) appears
+only after 400 ms and fades in (`DelayedReveal`, as the list screens), so a read
+that returns quickly shows nothing.
+
+Arabic wording (owner's choice): Recently Added is "مضاف مؤخرًا" and Recently
+Updated is "مُحدَّث مؤخرًا". The `recentlyAdded` key is also the Favorites
+chip's label, so Favorites shows the same wording. (The Arabic file declared
+`recentlyAdded` twice; both entries now say the same.)
+
+Tests (source only; the pure ones also run under a plain-Dart stand-in, not
+`flutter test`): `home_filter_controller_test` 77, `home_filter_rules_test` 66,
+`home_unified_item_model_test` 17 — 160/160 there; ten deliberate regressions
+of the new holding logic were each caught. `home_filter_wiring_test` gained
+guards for the sign-out reset, the account tie and the delayed loader and needs
+Flutter. Flutter tests, analyzer, device: NOT RUN.
+
+NOW - owner runs `flutter test test/home test/favorites` and, on the device,
+taps the five chips in turn (the second and later should answer at once), edits
+a record and returns to Home, and signs out and in as another account.

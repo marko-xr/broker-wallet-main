@@ -7,9 +7,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/offer_video_poster.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:intl/intl.dart';
+import 'favorite_card_media.dart';
 import 'favorites_item_model.dart';
 import '../../../../data/models/ScreensModel/offers_model.dart';
 import '../../../../data/models/ScreensModel/request_model.dart';
@@ -211,6 +213,7 @@ class _FavoriteCardState extends State<FavoriteCard>
                                     ),
                                     child: _ImageOrFallback(
                                       imageUrl: widget.favorite.imageUrl,
+                                      media: widget.favorite.media,
                                       type: widget.favorite.type,
                                       typeIcon: widget.favorite.typeIcon,
                                     ),
@@ -915,12 +918,17 @@ class _FavoriteCardState extends State<FavoriteCard>
 /// Header image if available, otherwise a gradient panel with the entity SVG.
 class _ImageOrFallback extends StatefulWidget {
   final String? imageUrl;
+
+  /// The private photo, or a video's still frame, of an Offer or Owner. It is
+  /// drawn by its stable identity and wins over [imageUrl].
+  final FavoriteCardMedia? media;
   final String
       type; // 'offers' | 'requests' | 'owners' | 'offices' | 'brokers' | 'watchmen'
   final String typeIcon; // asset path for the SVG icon
 
   const _ImageOrFallback({
     required this.imageUrl,
+    this.media,
     required this.type,
     required this.typeIcon,
   });
@@ -936,7 +944,69 @@ class _ImageOrFallbackState extends State<_ImageOrFallback> {
   @override
   void initState() {
     super.initState();
-    _checkImageCache();
+    if (widget.media != null) {
+      _keepPhotoOnDevice();
+    } else {
+      _checkImageCache();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ImageOrFallback oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A refreshed list brings the item a fresh link: keep its photo then.
+    if (oldWidget.media?.signedUrl != widget.media?.signedUrl) {
+      _keepPhotoOnDevice();
+    }
+  }
+
+  /// Keeps a private photo's bytes on this device under its stable identity,
+  /// so the next open draws it before any link exists. The same call the
+  /// details gallery makes.
+  void _keepPhotoOnDevice() {
+    final media = widget.media;
+    final url = media?.signedUrl;
+    if (media == null || media.isVideo || url == null || url.isEmpty) return;
+    unawaited(OfflineMediaService.instance.ensureMediaIdCached(
+      cacheKey: media.cacheKey,
+      url: url,
+    ));
+  }
+
+  Widget _buildPrivateMedia(FavoriteCardMedia media) {
+    final fallback =
+        _GradientIcon(type: widget.type, typeIcon: widget.typeIcon);
+    if (media.isVideo) {
+      // A video's still frame: the one this device keeps, or one made from the
+      // video itself. The play mark tells it from a photo.
+      return OfferVideoPoster(
+        cacheKey: media.cacheKey,
+        signedUrl: media.signedUrl,
+        posterPath: media.posterPath,
+        placeholder: fallback,
+        loading: fallback,
+        cacheWidth: 600,
+        frameOverlay: const Center(
+          child: Icon(
+            Icons.play_circle_fill_rounded,
+            color: Colors.white,
+            size: 40,
+          ),
+        ),
+      );
+    }
+    // Bytes this device holds win; otherwise the link, cached under the stable
+    // identity so a new link never means a new download.
+    return OfflineMediaService.instance.buildOfflineAwareImage(
+      imageUrl: media.signedUrl ?? '',
+      cacheKey: media.cacheKey,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      cacheWidth: 600,
+      placeholder: fallback,
+      errorWidget: fallback,
+    );
   }
 
   bool _isValidNetworkUrl(String url) {
@@ -994,6 +1064,9 @@ class _ImageOrFallbackState extends State<_ImageOrFallback> {
 
   @override
   Widget build(BuildContext context) {
+    final media = widget.media;
+    if (media != null) return _buildPrivateMedia(media);
+
     final hasImage =
         widget.imageUrl != null && widget.imageUrl!.trim().isNotEmpty;
 

@@ -1,5 +1,7 @@
 import 'package:hive/hive.dart';
 
+import 'favorite_card_media.dart';
+
 // Hive model for cached favorites - denormalized for instant display
 part 'favorites_item_model.g.dart';
 
@@ -52,6 +54,8 @@ class CachedFavoriteItem {
       title: title,
       subtitle: subtitle,
       imageUrl: imageUrl,
+      // The card's private photo or video frame, by identity (no link).
+      media: FavoriteCardMedia.fromStored(entityData),
       addedAt: addedAt,
       originalData: null, // Will be loaded when needed
     );
@@ -113,6 +117,11 @@ class FavoriteItem {
   final String title;
   final String subtitle;
   final String? imageUrl;
+
+  /// The private photo (or a video's still frame) the card shows, for records
+  /// whose media is private. Takes the place of [imageUrl], which only
+  /// carries a plain URL.
+  final FavoriteCardMedia? media;
   final DateTime addedAt;
   final dynamic originalData; // Store the original model data
 
@@ -122,6 +131,7 @@ class FavoriteItem {
     required this.title,
     required this.subtitle,
     this.imageUrl,
+    this.media,
     required this.addedAt,
     this.originalData,
   });

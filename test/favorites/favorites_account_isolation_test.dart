@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorite_card_media.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,6 +167,38 @@ void main() {
       // Adoption is by the live uid: B resolves to B's own box name only.
       final otherAccount = FavoriteService()..debugActiveUserIdOverride = _uidB;
       expect(otherAccount.getCachedFavoritesSync(), isEmpty);
+    });
+
+    test(
+        'a cached favorite keeps which private media its card shows, by '
+        'identity only, never a link', () async {
+      final service = FavoriteService()..debugActiveUserIdOverride = _uidA;
+      await service.initializeCache(uidOverride: _uidA);
+      final key = offerMediaCacheKey(ownerId: _uidA, mediaObjectId: 'media-1')!;
+
+      await service.cacheFavorites(
+        [
+          FavoriteItem(
+            id: 'owner-1',
+            type: 'owners',
+            title: 't',
+            subtitle: 's',
+            addedAt: DateTime(2026, 1, 1),
+            media: FavoriteCardMedia(
+              cacheKey: key,
+              isVideo: true,
+              signedUrl: 'https://signed.example/x?sig=1',
+            ),
+          ),
+        ],
+        expectedGeneration: FavoriteService.currentAccountGeneration,
+      );
+
+      final restored = service.getCachedFavoritesSync().single;
+      expect(restored.media!.cacheKey, key);
+      expect(restored.media!.isVideo, isTrue);
+      expect(restored.media!.signedUrl, isNull,
+          reason: 'a link is transport and is never stored');
     });
 
     test(

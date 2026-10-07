@@ -9830,3 +9830,44 @@ Tests (source only, NOT RUN): two view-model cases and one service case added.
 NOW - owner runs `flutter test test/favorites` and opens Favorites on a device
 (second open in a session, and after a restart) to confirm the items appear in
 the first frame.
+
+### Favorites — Offer and Owner photos / video frames on the cards (2026-10-07)
+
+Owner report: Favorites cards for Offers and Owners did not show their images
+even when the record has media. Rule requested: show the first photo; if the
+first file is a video use the first photo after it; if there are only videos,
+show the first video's still frame.
+
+Causes (source-read): the Supabase Owner read always returns an empty
+`mediaUrls`, so an Owner favorite never had a picture; an Offer read returns the
+signed links of ALL its media in server order with no kind, so `mediaUrls.first`
+was a video link whenever a video came first, and the card cannot draw a video as
+an image; the card keyed its image cache by the signed link, which changes on
+every read, so each visit re-downloaded the photo and a stored link was
+useless after it expired.
+
+Change: `FavoriteCardMedia` (new) picks the card's media from a record's media
+refs (first photo, else first video) and is addressed by the stable,
+account-scoped `offerMediaCacheKey`; the link is memory-only. Offers derive it
+from the media ids and kinds their read just remembered (no extra request);
+Owners resolve their private media (one request per Owner, all Owners at once),
+falling back to what the device holds. The card draws a photo through
+`OfflineMediaService.buildOfflineAwareImage` with the stable key (local bytes
+first, cached by identity, bytes kept on the device for the next open) and a
+video through the shared `OfferVideoPoster` with a play mark. The cached
+favorite stores only the identity and kind (`entityData`; no Hive schema
+change), so a reopened screen can draw the photo or kept frame before any link
+exists. Records with plain URLs (Firebase backend) are unchanged.
+`FavoritesViewModel` takes an optional `ownerService` for tests.
+
+Not changed: Search result cards use the same `mediaUrls.first` rule and show
+no private photos either; reported, not touched (not requested).
+
+Tests (source only): `favorite_card_media_test.dart` (11 cases, also run under
+the plain-Dart stand-in: 11/11), Owner/Offer card-media cases in the view-model
+tests, and the stored-identity round trip in the isolation tests. Flutter tests,
+analyzer, device: NOT RUN.
+
+NOW - owner runs `flutter test test/favorites` and opens Favorites with an Offer
+whose first file is a video, an Offer and an Owner with only videos, and an Owner
+with photos, checking the card image in each.

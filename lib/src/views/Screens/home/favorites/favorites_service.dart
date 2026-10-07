@@ -314,7 +314,8 @@ class FavoriteService {
                     item.imageUrl, // Use same URL for now, can optimize later
                 addedAt: item.addedAt,
                 cachedAt: DateTime.now(),
-                entityData: null, // Can add minimal entity data later
+                // The card's private media, by identity only (never a link).
+                entityData: item.media?.toStored(),
               ))
           .toList();
 

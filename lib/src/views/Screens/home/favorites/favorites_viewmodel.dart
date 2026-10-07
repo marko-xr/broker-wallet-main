@@ -7,6 +7,7 @@ import '../../../../data/models/ScreensModel/owners_model.dart';
 import '../../../../data/models/ScreensModel/offices_model.dart';
 import '../../../../data/models/ScreensModel/brokers_model.dart';
 import '../../../../data/models/ScreensModel/watchmen_model.dart';
+import 'favorite_card_media.dart';
 import 'favorites_service.dart';
 import '../../../../services/ScreenServices/offer_service.dart';
 import '../../../../services/ScreenServices/request_service.dart';
@@ -23,7 +24,7 @@ class FavoritesViewModel extends ChangeNotifier {
   final FavoriteService _favoriteService;
   final OfferService _offerService;
   final RequestService _requestService = RequestService();
-  final OwnerService _ownerService = OwnerService();
+  final OwnerService _ownerService;
   final OfficeService _officeService = OfficeService();
   final BrokerService _brokerService = BrokerService();
   final WatchmenService _watchmenService = WatchmenService();
@@ -90,9 +91,11 @@ class FavoritesViewModel extends ChangeNotifier {
     OptimisticFavoritesService? optimisticFavoritesService,
     FavoriteService? favoriteService,
     OfferService? offerService,
+    OwnerService? ownerService,
   })  : _optimisticFavoritesService = optimisticFavoritesService,
         _favoriteService = favoriteService ?? FavoriteService(),
-        _offerService = offerService ?? OfferService() {
+        _offerService = offerService ?? OfferService(),
+        _ownerService = ownerService ?? OwnerService() {
     _initializeAndLoadFavorites();
 
     // Listen to changes in the optimistic favorites service
@@ -966,12 +969,18 @@ class FavoritesViewModel extends ChangeNotifier {
       try {
         final offer = await _offerService.getOffer(metadata.itemId);
         if (offer != null && !_disposed) {
+          // Private media is picked by kind (the first photo, else a video's
+          // still frame); an Offer with plain URLs keeps its first URL.
+          final media = FavoriteCardMedia.fromOffer(offer);
           favorites.add(FavoriteItem(
             id: metadata.itemId,
             type: 'offers',
             title: _getOfferTitle(offer),
             subtitle: _getOfferSubtitle(offer),
-            imageUrl: offer.mediaUrls.isNotEmpty ? offer.mediaUrls.first : null,
+            imageUrl: media == null && offer.mediaUrls.isNotEmpty
+                ? offer.mediaUrls.first
+                : null,
+            media: media,
             addedAt: metadata.addedAt, // Use actual timestamp!
             originalData: offer,
           ));
@@ -1007,28 +1016,66 @@ class FavoritesViewModel extends ChangeNotifier {
 
   Future<void> _loadOwnersWithMetadata(List<FavoriteMetadata> ownerMetadata,
       List<FavoriteItem> favorites) async {
+    final loaded = <(FavoriteMetadata, OwnerModel)>[];
     for (final metadata in ownerMetadata) {
       if (_disposed) return;
 
       try {
         final owner = await _ownerService.getOwner(metadata.itemId);
-        if (owner != null && !_disposed) {
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'owners',
-            title: owner.name.isNotEmpty
-                ? owner.name
-                : _localization?.translate('propertyOwner') ?? 'Property Owner',
-            subtitle: owner.typeOfProperties.isNotEmpty
-                ? owner.typeOfProperties
-                : _localization?.translate('propertyOwner') ?? 'Property Owner',
-            imageUrl: owner.mediaUrls.isNotEmpty ? owner.mediaUrls.first : null,
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: owner,
-          ));
-        }
+        if (owner != null && !_disposed) loaded.add((metadata, owner));
       } catch (e) {
         // Debug log suppressed: Error loading owner ${metadata.itemId}: $e
+      }
+    }
+
+    // An Owner's row carries no media links; its photos and videos are
+    // private and are resolved apart, for every Owner at once.
+    final media = await Future.wait([
+      for (final (_, owner) in loaded) _ownerCardMedia(owner),
+    ]);
+    if (_disposed) return;
+
+    for (var i = 0; i < loaded.length; i++) {
+      final (metadata, owner) = loaded[i];
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'owners',
+        title: owner.name.isNotEmpty
+            ? owner.name
+            : _localization?.translate('propertyOwner') ?? 'Property Owner',
+        subtitle: owner.typeOfProperties.isNotEmpty
+            ? owner.typeOfProperties
+            : _localization?.translate('propertyOwner') ?? 'Property Owner',
+        imageUrl: media[i] == null && owner.mediaUrls.isNotEmpty
+            ? owner.mediaUrls.first
+            : null,
+        media: media[i],
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: owner,
+      ));
+    }
+  }
+
+  /// The photo (or video frame) an Owner's card shows: from the server's
+  /// current list; when that cannot be read, from what this device holds. A
+  /// failure only means the card shows its icon, never that the Owner is lost.
+  Future<FavoriteCardMedia?> _ownerCardMedia(OwnerModel owner) async {
+    final recordId = owner.id?.trim() ?? '';
+    final accountId = _ownerService.currentOwnerId?.trim() ?? '';
+    if (recordId.isEmpty || accountId.isEmpty) return null;
+    try {
+      final resolution = await _ownerService.resolveMedia(
+        recordId: recordId,
+        ownerId: accountId,
+      );
+      // No separate media stage (the Firebase backend): the row's own URLs.
+      if (resolution == null) return null;
+      return FavoriteCardMedia.pick(resolution.items);
+    } catch (_) {
+      try {
+        return FavoriteCardMedia.pick(_ownerService.cachedMedia(recordId));
+      } catch (_) {
+        return null;
       }
     }
   }
@@ -1162,6 +1209,7 @@ class FavoritesViewModel extends ChangeNotifier {
         title: _getOfferTitle(data),
         subtitle: _getOfferSubtitle(data),
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1174,6 +1222,7 @@ class FavoritesViewModel extends ChangeNotifier {
         title: _getRequestTitle(data),
         subtitle: _getRequestSubtitle(data),
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1190,6 +1239,7 @@ class FavoritesViewModel extends ChangeNotifier {
             ? data.typeOfProperties
             : _localization?.translate('propertyOwner') ?? 'Property Owner',
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1208,6 +1258,7 @@ class FavoritesViewModel extends ChangeNotifier {
                 .replaceAll('{name}', data.managerName)
             : _localization?.translate('officeLocation') ?? 'Office Location',
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1223,6 +1274,7 @@ class FavoritesViewModel extends ChangeNotifier {
         subtitle: _localization?.translate('favoritesBrokerSubtitle') ??
             'Real Estate Broker',
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1242,6 +1294,7 @@ class FavoritesViewModel extends ChangeNotifier {
             : _localization?.translate('favoritesSecuritySubtitle') ??
                 'Security Guard',
         imageUrl: item.imageUrl,
+        media: item.media,
         addedAt: item.addedAt,
         originalData: data,
       );
@@ -1253,6 +1306,7 @@ class FavoritesViewModel extends ChangeNotifier {
       title: _localizeFallbackTitle(item),
       subtitle: _localizeFallbackSubtitle(item),
       imageUrl: item.imageUrl,
+      media: item.media,
       addedAt: item.addedAt,
       originalData: item.originalData,
     );

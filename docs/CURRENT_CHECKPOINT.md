@@ -10108,3 +10108,1233 @@ searches for an Offer whose first file is a video and has a photo, an Offer and
 an Owner with only videos, and an Owner with photos: the cards should show the
 photo or the video frame (with the play mark), Favorites should look as before,
 and scrolling a long result list should stay smooth.
+
+### Map screen: Supabase data, language, and failure handling (2026-10-07)
+
+Owner request: check the map screen (`/map-view`) works properly; find the
+issues and fix them. Source review only; nothing was run on a device.
+
+Findings, in order of weight:
+
+1. **The map read only Firestore** (`users/{uid}/{offers,owners,offices,
+   watchmen}`, real-time `snapshots()`). Core entities live in Supabase and
+   Firebase is no longer initialized, so the map could only come up empty or with
+   an error. (The login/startup preload was already skipped in Supabase mode.)
+2. A failed read was invisible: each collection's error was swallowed (an empty
+   map looked like "no places"); a failure of the whole thing replaced the map
+   with the raw exception text, in English.
+3. `pickUpAddress ?? pickUpLocation` takes an empty string over a real value;
+   Supabase stores "" not null, so addresses came out empty.
+4. The card's photo read `mediaUrls`, which the list reads never carry (the
+   Search finding): Offer and Owner cards never had a photo.
+5. Call and WhatsApp used the raw stored number and an English "Hello", and
+   failed silently.
+6. The "Area, City" line dropped any address part that merely contains the
+   letters "st" (Dubai Investments Park, Dubai Studio City, Dubai Sports City).
+7. The map cache was never invalidated by Supabase saves (their save paths
+   return before `invalidateCache()`), so reopening within 5 minutes could show
+   stale places.
+8. Concurrency: overlapping marker rebuilds could leave the older one on the
+   map; an open card kept showing a place after it was deleted or filtered out;
+   the camera was re-framed on every refresh.
+9. Hard-coded English: toasts (some quoting the exception), the "N items at this
+   location" marker text, title/address fallbacks; an Offer's property type was
+   shown as stored English in Arabic.
+
+Changes:
+
+- **Data** (`MapLocationSource`, `DefaultMapLocationSource`): Supabase reads the
+  same four list reads Search uses; the legacy Firestore read is kept for a
+  `USE_SUPABASE_AUTH=false` build (read once, no live updates). One mapper
+  (`MapLocationMapper`, plain Dart) decides which records are places (an id and
+  a position the detail screens would accept: both present, in range, not (0, 0))
+  and what each says (first non-empty address; no English placeholders).
+- **Loading** (`MapPlacesLoader`, plain Dart, run under the stand-in): opens at
+  once from the last read when it is still good; otherwise reads; reads again
+  after every data change, one read at a time (`CoalescedRunner`); drops an
+  answer for another account or a closed screen; a failure never shows "no
+  places" and never empties a map that has places (only a map with nothing to
+  show says it could not load, with a working Retry).
+- `MapDataCacheService` now implements the loader's cache, invalidates on every
+  `CoreEntityMutationNotifier` change, ignores a read that raced a change
+  (generation count) and no longer preloads from Firebase in Supabase mode.
+- **View model**: newest marker build wins; a rebuilt group is not overwritten by
+  a stale pin update; an open card follows its place through a refresh (same
+  place, else the nearest page) and closes when its place is gone; the camera
+  frames the places when they first appear and on a filter change, not on every
+  refresh; marker text and empty titles are worded in the app's language.
+- **Screen**: failure state and every toast are translated and never quote an
+  exception (8 new strings, en + ar); call/WhatsApp use `PhoneInputService.
+  formatForDial`, the translated business message and `wa.me/<digits>`, and say
+  so when they cannot open; the Offer/Owner photo or video frame uses
+  `SearchCardMediaResolver` + `PrivateCardMedia` (the Search/Favorites path);
+  an Offer's property type is shown in the app's language (`ShareFormat.
+  propertyType`); the address line is `MapLocationMapper.areaAndCity`.
+- `LocationFilter` moved to `lib/src/constants/location_filter.dart` (plain
+  Dart) and is re-exported by `location_colors.dart`; every import still works.
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`):
+`test/map/map_location_data_test` 24, `map_places_loader_test` 16,
+`map_screen_wiring_test` 18 (58 total). Forty-five deliberate regressions of the
+loader, runner, mapper, cache, view model, source and screen were each caught.
+NOT run, needs Flutter: the view model and screen themselves (markers, camera,
+cards), the analyzer, a device.
+
+Not changed, reported: (a) the app-level `MapViewViewModel` provider in
+`main.dart` is never read (the screen creates its own); harmless now that the
+model no longer touches Firestore. (b) Places within about 111 m share one
+marker (3-decimal grouping); two places a metre apart can still straddle a
+rounding edge and draw as two overlapping markers. (c) Tapping a marker shows the
+platform info window as well as the card. (d) `MapPickerView` (the picker in the
+add/edit forms) was not reviewed. (e) A `USE_SUPABASE_AUTH=false` build has no
+live updates on the map.
+
+NOW - owner runs `flutter test test/map` and `flutter analyze`, then on a
+device with the Supabase account: open the map (places should appear, framed
+once), tap a marker (card: photo or video frame for Offers/Owners, type in the
+app's language, "Area, City" line), call and WhatsApp from the card, switch the
+filters, edit or delete a place and return (the map updates, an open card
+follows or closes), switch to Arabic, and turn the network off before opening
+(a translated error with Retry; with places already shown, they stay).
+
+### Map: smart filters (2026-10-07)
+
+Owner request: replace the four per-kind chips with ONE selector and add Nearby,
+City, Property type and Rent/Sale, all optional. The Supabase map, its cache and
+refresh, the pins, the card, media, Call and WhatsApp are unchanged. Source
+changes only; nothing was run on a device.
+
+What the map supports (read from the source, not assumed): exactly four kinds,
+Offers, Owners, Offices and Watchmen (no Requests, no Brokers). Each place has
+an id, a position, a title and address, a phone, and (Offers, Owners) media. What
+the filters read, from data the records already had:
+
+| kind | city | property type | rent / sale |
+|---|---|---|---|
+| Offer | `selectedCity` (catalog name) | `specificPropertyType` -> the forms' key | `offerType` `rent` / `sell` |
+| Owner | its saved location text, by `OwnerLocationCodec` | its type text, by `OwnerPropertyTypes.match` | none |
+| Office | its location text, by the same codec | none | none |
+| Watchman | its building location, by the same codec | none | none |
+
+Area exists only on Offers (`selectedAreas`) and Owners (in the location text);
+no filter uses it, so it was not added.
+
+Design: `all places -> MapFilterState -> visible places -> markers + open card`.
+`MapFilterState` is one immutable value (category, Nearby, city, property type,
+transaction); `MapFilterEngine` applies it (AND; an active condition excludes a
+place that has no such field); `MapFilterController` holds the loaded places,
+the state, the visible list and the open card's key. A filter change recomputes
+in memory and redraws the markers (the pins are cached): it never reads the
+backend. Files: `map_filter.dart`, `map_filter_controller.dart`,
+`map_nearby_locator.dart`, `map_filter_bar.dart`; `map_location_data.dart` now
+also derives city, property type and transaction.
+
+Vocabulary: no list of the map's own. Cities are `UaeAreaCatalog` (labelled by its
+`cityKey`); property types are the Offer forms' / share messages' keys
+(`ShareFormat.propertySubTypeKeys`, read the way `ShareFormat.propertyType`
+reads them: a source guard pins the two readings together) plus the Owner
+suggestions' keys; rent/sale are the stored `rent` / `sell`, and nothing is read
+from free text. The selectors list only the cities and types some loaded place
+has (plus the chosen one), so there are no dead options. All labels exist in
+English and Arabic (checked for all 9 cities, 26 form types, 19 owner types).
+
+Nearby: the app had no Nearby rule, so: 5 / 10 / 25 km, default 10. Location is
+asked for only when the person turns Nearby on (the map opening now only
+*checks* whether it is already allowed; it used to prompt). It goes through the
+app's own permission flow; every failure becomes a result the screen words
+(services off, no position) or is already explained by that flow (denied):
+Nearby stays off, every place stays visible, no raw error. Distance is a
+haversine (R = 6371008.8 m). The position lives only in the filter state in
+memory: not stored, sent or logged. A place without a valid position is never
+near, even where the arithmetic would say so.
+
+Behaviour: the card follows the filter (a place that stops matching closes its
+card at once; one that still matches keeps it, including after a refresh); the
+camera frames the markers once per filter change; a filter that matches nothing
+leaves the map up with "No locations match these filters." and a Clear filters
+button, and is not a load error (the load-error screen and Retry are unchanged);
+Clear restores the default in one tap and reads nothing.
+
+Decisions: (a) the legacy Firestore read kept for a non-Supabase build is
+removed: the map is Supabase-only, as asked (that build now shows the load
+error with Retry); `preloadMapData()` is an empty method kept for its callers.
+(b) the selected place is now one key held by the controller; the earlier
+"nearest page when the place is gone" rule is replaced by "the card closes", the
+baseline's own rule.
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`):
+`test/map` `map_filter_test` 56, `map_location_data_test` 31,
+`map_places_loader_test` 21 (including: filters cost no read; "no matches" is not
+a failure), `map_screen_wiring_test` 35 = 143. Forty-four deliberate regressions
+(each condition ignored, OR for AND, a missing field passing, Nearby asking at
+the wrong time, a stale position applied, Firestore returning, a string missing
+in Arabic, ...) were each caught; one gap they found (an impossible position
+being "near") now has its own test. NOT run, needs Flutter: the view model, the
+filter bar and sheets, the screen, the analyzer, a device.
+
+Not done / for later: markers are not diffed: a filter change redraws every
+marker (its pin comes from the pin cache), which is cheap but not minimal; the
+city and type lists are not narrowed by the other active filters; Offices and
+Watchmen have a city only when their location text starts with a catalog city.
+
+NOW - owner runs `flutter test test/map` and `flutter analyze`, then on a
+device: open the map (no location prompt), choose each selector, combine two or
+three, Clear; turn Nearby on (prompt, then "Nearby · 10 km"; change the radius;
+turn it off), deny the prompt once and check Nearby stays off and every pin
+stays; choose a filter that matches nothing (banner, Clear); open a card and
+filter it away (it closes) or keep it (it stays); switch to Arabic and RTL.
+NEXT - if that holds, commit the map changes on the map-update branch.
+
+### Map: UX correction 2 — no app dialog for location, UAE opening camera, all cities, city text, price (2026-10-07)
+
+Owner's Samsung test of the smart map found four things. Narrow correction: the
+architecture (Supabase source, cache and refresh, filter engine, category
+selector, pins, card, media, Call / WhatsApp, Nearby, `MapPickerView`) is
+unchanged. Source and tests only; nothing was run on a device.
+
+Supersedes three statements in "Map: smart filters" above: the City list is no
+longer "the cities some loaded place is in"; Nearby no longer "goes through the
+app's own permission flow"; and an Office or Watchman no longer has a city "only
+when its location text starts with a catalog city".
+
+**1. Location, with no dialog of the app's.** Cause: Nearby and the my-location
+button both went through `CleanPermissionService.requestLocationPermission`
+(its pre-permission dialog, settings dialog and snackbar) and
+`CleanLocationService.getCurrentPosition` (a services-off dialog and a raw
+English error toast). Now there is one boundary, `DeviceNearbyLocator`
+(`map_nearby_locator.dart`, plain Dart) over `DeviceLocationPlatform`; the only
+file that touches geolocator / permission_handler is the thin
+`device_location_platform.dart`. The flow: services on? -> read the permission ->
+the operating system's own prompt only when it is neither granted nor refused for
+good -> the position (rough for Nearby, fine for my-location). It takes no
+`BuildContext`, so it cannot show a dialog; it never opens Settings. Outcomes are
+results the screen words with one short toast each (`nearbyFixMessageKey`):
+denied `locationPermissionDenied`, refused for good the new `mapLocationBlocked`
+(never prompted for again), services off `locationServiceDisabledMessage`, no
+position `mapNearbyUnavailable`. Nearby then stays off and every pin stays. Opening
+the map only *reads* the permission (to draw the device's dot); it asks nothing
+and gets no position. "My location" moves the camera and touches no filter. Two
+taps never mean two requests. The position is never stored or logged.
+`CleanPermissionService` / `CleanLocationService` are untouched (the picker still
+uses them).
+
+**2. Opening camera.** Always the whole UAE: a fixed box (22.5-26.1 N, 51.5-56.5 E,
+all nine catalog cities well inside), worked out from the map's real size and the
+space the search bar, filter row and location button cover, and given to the map
+as its `initialCameraPosition` (`LayoutBuilder` in the screen, `UaeMapFraming.fit`
+in `map_camera.dart`). So there is no timer, nothing waits for a layout, and no
+marker load can override it: the old fit-on-first-markers and the 300 ms delay are
+gone. `MapCameraDirector` keeps the first answer (the one-time guard). Only an
+explicit filter choice, Clear included, still frames the markers it shows (as
+before); nothing ever frames the UAE again.
+
+**3. City list.** "All cities" plus every `UaeAreaCatalog.supportedCities` entry
+(9), labelled by `cityKey` exactly as the forms are, from the catalog and not from
+the loaded places; a city with no places is selectable and gives the existing
+"No locations match these filters" + Clear.
+
+**4. City text.** Offer: the structured `selectedCity` first, then its text.
+Owner / Office / Watchman: the Owner form's own reader first, then
+`UaeCityMatcher` (`common/data/uae_city_matcher.dart`) over the record's text and
+then the picker's address. It matches whole words, anywhere, in English or Arabic
+(`Ajman, Al Jurf` = `Al Jurf, Ajman`); no loose substrings (`Dubailand`, `Ain
+Dubai` is not Al Ain); a road named after a city is not the city; two unrelated
+cities named = no city; Al Ain / Khor Fakkan beat Abu Dhabi / Sharjah when both
+appear. No geocoding, nothing stored is changed. With no vocabulary the mapper
+still reads only an Offer's structured city.
+
+**5. Price.** One chip (`Price`), three choices (All prices / Lowest price /
+Highest price), `MapPriceMode` inside the one `MapFilterState`, Clear resets it.
+It sorts what is loaded: no read. Only an Offer has a price: its minimum when that
+is a usable amount, else its maximum, else none (`MapPrice`; plain digits with
+thousands commas or decimals only; zero, negative, malformed and free-form text
+are no price and never zero). A place with no price is left out of a price
+ordering; so Owners / Offices / Watchmen with a price ordering are the ordinary
+"no matches".
+
+For the owner to confirm: Home's Less / Highest Price rank an Offer by the
+midpoint of its minimum and maximum (`UnifiedItemModel.averagePrice`); the Map
+uses the minimum-first rule that was asked for, so an Offer with both can rank
+differently on the two screens. One line in `MapPrice.comparable` changes it.
+
+Files: new `uae_city_matcher.dart`, `map_price.dart`, `map_camera.dart`,
+`device_location_platform.dart`; changed `map_filter.dart`,
+`map_filter_controller.dart`, `map_location_data.dart`, `map_location_source.dart`,
+`map_nearby_locator.dart`, `map_viewmodel.dart`, `map_view.dart`,
+`map_filter_bar.dart`, the two ARB files (5 strings: `mapFilterPrice`,
+`mapAllPrices`, `mapLowestPrice`, `mapHighestPrice`, `mapLocationBlocked`).
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`): `test/map`
+301 = filter 61, location data 31, places loader 21, wiring 50, location boundary
+24, camera 38, city matching 35, price 41 (+ 46 in the two shared test files).
+Seventy-two deliberate regressions (a prompt before reading the permission, a
+permission refused for good asked again, a dialog or a timer coming back, the
+frame shifted or clipped, a city list short, a substring or a road counted as a
+city, a malformed price as zero, Clear keeping the price, a number in a message,
+...) were each caught. Existing tests changed because the owner's new rules
+replaced what they asserted: two loaded-cities-only option tests (filter), the
+fit-on-first-markers guard and the four Nearby-permission-flow guards (wiring);
+several others were only extended (chip order, pure files, never-logged, string
+tables). NOT run, needs Flutter: the view model, the screen, the bar and sheets,
+the analyzer, a device.
+
+Not changed: with nothing loaded at all, a chosen filter shows no banner (nothing
+was filtered away); the pins stay un-diffed on a filter change.
+
+NOW - owner runs `flutter test test/map` and `flutter analyze`, then on the Samsung:
+open the map (no prompt, no dialog; the whole UAE with all emirates in view);
+tap my-location (only the system sheet; deny it, then tap again; then allow);
+turn Nearby on the same way, and with Location switched off in the phone; open
+the City list (all 9, also one with no places); an Office or Watchman written as
+"Al Jurf, Ajman" under Ajman; the Price chip (lowest / highest / all), Clear;
+Arabic and RTL.
+NEXT - if that holds, commit the map changes on the map-update branch.
+
+### Map: option lists — the check mark beside the count (2026-10-07)
+
+Owner's note from the device: in the Category list the chosen row's check mark sat
+outside its count, which pushed that row's count out of line with the others (3
+against 2, 0, 0, 1). The check now sits on the label's side of the count, so the
+counts stay in one column at the edge in Arabic (check to the right of the number)
+and in English (check to its left). Lists with no counts (City, Price, ...) look
+as before. Source and a guard only (`map_filter_bar.dart`, wiring test 51); not
+seen on a device.
+
+NOW - owner opens the Category list on the phone and checks the counts line up with
+a row chosen, in Arabic and English.
+NEXT - with the rest of Correction 2, commit the map changes on map-update.
+
+### Map: opening camera — the cities' area, not the whole country (2026-10-07)
+
+Owner's note from the device: the map opened too wide, and a screenshot showed the
+view wanted (Abu Dhabi at the left edge, Fujairah / Khor Fakkan at the right, Al Ain
+at the bottom, Ras Al Khaimah at the top). Measured with the frame as it was: the
+whole-country box (51.5-56.5 E) put every city in the right 40% of the screen (Abu
+Dhabi at 0.57 of the width; 0.01 in the wanted view) and left the rest sea and
+desert. The frame is now the cities' own area: 24.08-25.95 N, 54.28-56.46 E in
+`UaeMapFraming` (supersedes the box in "UX correction 2", item 2). On a 360 dp
+phone the zoom goes from about 6.5 to about 7.7. Against the wanted view, Dubai,
+Sharjah, Ras Al Khaimah, Fujairah and Al Ain land within 0.03 of the screen's width
+and 0.02 of its height; Abu Dhabi is at 0.09 (not 0.01) so its pin is not cut by
+the edge. Nothing else changed: the frame is still fixed (not from the records or
+the person's position), decided once, with no timer; all nine catalog cities stay
+in view on every size tested; a place outside this area (the far west of Abu Dhabi's
+emirate, say) is off screen until the person pans.
+
+Tests: `map_camera_test` 46 (was 38): the old country-level assertions replaced by
+the cities' own (the west edge east of 54 E, room for a pin, and on each portrait
+size Abu Dhabi near the left edge and Khor Fakkan near the right, the cities
+spanning the screen). Five more deliberate regressions (the country box back, an
+edge cutting a city or its pin) were caught; 77 in all for Correction 2.
+
+NOW - owner opens the map on the phone and checks it opens like the screenshot.
+If it should be a little tighter or looser, the four numbers in
+`lib/src/services/map_camera.dart` (west / east set the zoom on a portrait phone)
+are the only thing to change.
+NEXT - with the rest of Correction 2, commit the map changes on map-update.
+
+### Map: filter / camera correction 3 — Nearby radius and City camera (2026-10-10)
+
+Owner's Samsung test found two defects: choosing 5 / 10 / 25 km after Nearby was on
+did not reliably change the result or the camera, and choosing a city (Abu Dhabi)
+could move the map to an Offer in another city (Ajman). Supabase source, UI, pins,
+cards, media, Call / WhatsApp, the filter engine and the opening camera are unchanged.
+Source and tests only; nothing was run on a device.
+
+Proven root causes (read from the source before any change). The distance filter was
+right: a radius change recomputes the visible places by a plain haversine, and a test
+already proved it. The fault was the layer after it. `_applyFilterAndFit` framed
+"whatever is in the marker cache":
+ - no marker: it returned without any camera action, so a radius or a city with no
+   places left the camera on the previous frame (an earlier Nearby or "my location"
+   frame on an Ajman Offer, say), with the "no matches" banner over it;
+ - one marker: street-level zoom 15, whatever the radius or the city;
+ - 5 / 10 / 25 km that show the same few places gave the same frame: the radius
+   changed nothing the person could see;
+ - a `catch` fallback ran after an `await` and animated to a centre worked out from
+   the old filter's markers, so it could land after a newer filter had moved the
+   camera; and a background refresh that overtook a pending filter build made the
+   person's camera action silently disappear.
+A City filter is the record's `selectedCity`; the Offer form keeps that and the pin
+(`pickUpLatitude/Longitude`, from the map picker) as two independent fields, so an
+Offer whose city says Abu Dhabi but whose pin is in Ajman is an Abu Dhabi place that
+the camera will go to. That cannot be proven from source: if the Ajman Offer shows
+Abu Dhabi as its city when opened, the record, not the code, is the cause.
+
+Design. Filter choice -> one immutable `MapFilterSnapshot` (choice + visible places +
+open card, with a filter version that counts choices, not refreshes) -> the markers
+are drawn from that snapshot (never from live state) -> published only if it is the
+newest draw -> the camera is planned from the SAME published snapshot and the filter
+in it, in the same synchronous step. `MapDrawPipeline` (plain Dart,
+`map_camera_policy.dart`) owns that order; a request for the camera carries the
+filter version of the person's choice and fires only against the draw of that same
+choice, once; a request for an older choice can never fire; the person's own camera
+moves ("my location", a searched place) cancel a waiting request, and "my location"
+does not move the camera if a newer choice was made while the position was coming.
+There is no timer, no delay, and nothing runs after a camera move: the old native
+bounds call and its late fallback are gone; a move is one camera position computed by
+`MapFraming` (the maths the opening camera already used).
+
+What each cause shows. Opening: the UAE's cities (the map's starting camera, unchanged).
+City: that city's places and only those, or the city itself (a small canonical table of
+camera centres, keyed by `UaeAreaCatalog`'s own names and pinned to them by a test;
+nothing is geocoded) when none match; never another city's places, never all places.
+Nearby on / radius changed: the circle of the chosen radius around the held device
+position (5 km closer, 25 km wider; every place it lets through is inside it; with no
+place it is the same circle, over the "no matches" banner). "My location": the device
+only, and it does not turn Nearby on. Any other filter, Clear included: the places the
+snapshot lets through (none: the camera stays). A refresh: no camera move. A radius
+change reuses the held position: no location request, no backend read; Clear asks the
+device for nothing. A card whose place a city or radius removes closes; one that still
+matches stays.
+
+Files: new `lib/src/services/map_camera_policy.dart`, `test/map/map_filter_camera_test.dart`;
+changed `map_camera.dart` (`MapFraming`: box, points and centred-place maths; the opening
+camera's results are identical), `map_filter_controller.dart` (the snapshot),
+`map_viewmodel.dart`; tests `map_screen_wiring_test.dart` (guards that pinned the removed
+internals now pin the new ones, stricter), `map_camera_test.dart` (the maths).
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`): `map_filter_camera_test`
+58, `map_camera_test` 52, `map_screen_wiring_test` 55. Thirty-four deliberate regressions
+(an older draw publishing late, a request firing for an older choice, a fallback camera
+after a failure, the radius ignored or read in the wrong unit, a city that goes to another
+city, a refresh asking for the camera, ...) were each caught by a real failing test.
+NOT run, needs Flutter: the view model, the screen, the analyzer, a device.
+
+NOW - owner runs `flutter test test/map` and `flutter analyze`, then on the Samsung: turn
+Nearby on, choose 5, 10 and 25 km in turn (the picture should zoom each time, even when the
+same pins show; one with no pin shows the circle and the banner); choose Abu Dhabi with
+Abu Dhabi places (only those, framed) and with none (Abu Dhabi, the banner, no Ajman
+pin); change city twice quickly; open an Ajman card and choose Abu Dhabi (the card
+closes); Clear; "my location" while Nearby is off (Nearby stays off).
+NEXT - if that holds, commit the map changes on the map-update branch.
+
+### Map: city data integrity + Nearby latency correction 4 (2026-10-10)
+
+Owner's Samsung test after correction 3: Nearby works but turning it on is slow, and
+choosing Abu Dhabi, Dubai or Fujairah can focus a seemingly random record (an Ajman Offer)
+while Sharjah and Ajman behave. Source and tests only. No hosted row was read or changed,
+nothing ran on a device. Supabase source, the UI, cards, media, Call / WhatsApp and the
+opening camera are unchanged.
+
+Traced layer by layer before any edit (nothing guessed):
+ - Camera table: the nine cities' frames equal their reference centres (0.00 km each);
+   latitude and longitude are not swapped, no frame is a copy or an alias of another,
+   there is no fallback frame. A test pins the keys to the catalog's cities and every
+   frame to its reference.
+ - Matching: every spelling the matcher knows (English, Arabic, case, hyphens) resolves
+   to its own city and no other; the City filter compares the canonical city exactly.
+   No substring, no first-record, no previous-marker fallback exists.
+ - Repository mapping: `selected_city` and `pickup_latitude/longitude` are read as they
+   are; no swap, no default.
+ - The data contract: a record's city and its pin are two separate fields and NOTHING ties
+   them. The Offer form takes the city from the city chips and the pin from the map
+   picker; the database range-checks the coordinates only. An Offer can be saved as
+   Abu Dhabi with its pin in Ajman. Only Offers store a city (`selected_city`); Owners,
+   Offices and Watchmen get theirs from their location text.
+ - Reproduction (a probe over the real filter engine and camera planner): three records
+   tagged Abu Dhabi, Dubai and Fujairah with pins in Ajman give exactly the reported
+   behaviour: those three cities jump to the Ajman pin at street zoom; a city with no
+   record centres on itself. The owner reports three records.
+
+PROVEN: the code path (a record's pin, not its city, decides where the camera goes).
+NOT PROVEN: that the owner's three records are inconsistent. The hosted rows cannot be
+read from here and the owner has not supplied them. The read-only query below settles it.
+
+CODE FIX (all of it is in source, none of it needs the backend):
+ - A record whose pin is clearly in another listed city is not shown as a place of the
+   city it names: `MapCityGeography.otherCityAt`. Rule: conflict only when the pin is
+   OUTSIDE its own city's core (15 km of the centre) AND INSIDE another canonical city's
+   core. A pin near its own city, far from every city (Hatta, remote Abu Dhabi), or in a
+   city nested in the chosen city's emirate (Al Ain for Abu Dhabi, Khor Fakkan for
+   Sharjah) is never a conflict. Sharjah / Ajman (11 km apart) overlap and are not judged.
+   There are no city borders in the app, so nothing else is claimed.
+ - The mapper flags it (`CachedLocationData.cityConflict`); the City filter lets a flagged
+   record through only under All. It stays on the map under All, in its own pin, with its
+   card; it is never framed as a place of the city it names, so it can no longer drag the
+   camera.
+ - A city with no valid place: the camera goes to that city's centre and the existing
+   "no matches" banner shows. Not an error, no other city's pin is touched.
+ - New records: `AddOffersViewModel.save()` refuses an Offer whose pin is clearly in
+   another listed city, with a localized toast (`offerCityPinMismatch`, English and
+   Arabic) naming both cities, and saves nothing. The Offer's own fields are not
+   altered; the person fixes the city or moves the pin.
+ - Same class of risk on the Owner, Office and Watchman forms (their city comes from
+   their location text): REPORTED, not changed. Their records are covered by the display
+   rule above.
+
+NEARBY LATENCY. Stages traced: tap -> permission check -> (first time) permission prompt
+-> service check -> position -> filter recompute -> marker draw -> camera -> visible. The
+app's own stages (filter recompute, draw, camera maths) measure under 1 ms for 10 000
+places in plain Dart (not a device figure). The dominant wait is the platform's
+`getCurrentPosition`: on Android it asks for a NEW fix (a location-update request plus a
+settings check) and waits seconds for it; `getLastKnownPosition` answers at once.
+ - Nearby (a rough position is enough) first uses the position the system already holds
+   if it is at most 60 s old AND accurate to 500 m or better (a tenth of the smallest
+   radius, so 5 km stays right). Anything older, less accurate, or with no time or
+   accuracy to judge it by is never used; then a new fix is awaited, as before. A time
+   in the future is a wrong clock, not a fresh position. "My location" is precise and
+   never takes the shortcut.
+ - A radius change reuses the held position: no location request. Taps that arrive while
+   a request runs share it: one prompt, one fix. No background tracking, no delays.
+ - Loading: `isLocatingNearby` is true for exactly the wait; the Nearby chip shows a
+   small spinner and ignores taps. Nothing is hidden or blocked; the filter changes once,
+   when the position arrives. Clearing the filter meanwhile drops the late answer.
+ - No coordinate is logged, stored or sent, and no timing log is left in source (guards).
+
+DATA CLEANUP (owner action, none performed): only if the query below lists a row whose
+nearest_canonical_city is not its selected_city. Change that Offer's city or move its
+pin in the app; the Offer form now refuses to save until they agree.
+
+Read-only check for the Offers (one SELECT, no write; run it in the Supabase SQL editor or
+psql). It returns only the offer id, its city, its pin (rounded to 4 decimals, about 11 m)
+and the listed city whose centre the pin is nearest. The optional last condition limits it
+to one account:
+
+    with centres(city, lat, lng) as (
+      values
+        ('Dubai',          25.2048, 55.2708),
+        ('Abu Dhabi',      24.4539, 54.3773),
+        ('Sharjah',        25.3463, 55.4209),
+        ('Ajman',          25.4052, 55.5136),
+        ('Ras Al Khaimah', 25.7895, 55.9432),
+        ('Fujairah',       25.1288, 56.3265),
+        ('Umm Al Quwain',  25.5647, 55.5552),
+        ('Al Ain',         24.2075, 55.7447),
+        ('Khor Fakkan',    25.3395, 56.3563)
+    )
+    select
+      o.id                                  as offer_id,
+      o.selected_city                       as selected_city,
+      round(o.pickup_latitude::numeric, 4)  as latitude,
+      round(o.pickup_longitude::numeric, 4) as longitude,
+      (
+        select c.city
+        from centres c
+        order by 6371 * acos(least(1, greatest(-1,
+          cos(radians(o.pickup_latitude)) * cos(radians(c.lat)) *
+            cos(radians(c.lng) - radians(o.pickup_longitude))
+          + sin(radians(o.pickup_latitude)) * sin(radians(c.lat))
+        )))
+        limit 1
+      )                                     as nearest_canonical_city
+    from offers o
+    where o.deleted_at is null
+      and o.pickup_latitude  is not null
+      and o.pickup_longitude is not null
+      -- and o.owner_id = '<your user id>'   -- optional: only one account's Offers
+    order by o.selected_city, o.id;
+
+Reading the rows: `selected_city` is what the Offer says; `nearest_canonical_city` is the
+listed city whose centre its pin is nearest. A row where they differ is a CANDIDATE, not yet
+a proven conflict: the app flags only a pin outside its own city's 15 km core AND inside
+another listed city's 15 km core, and never Al Ain under Abu Dhabi or Khor Fakkan under
+Sharjah. The five columns are enough to apply that rule (the distances come from the
+latitude and longitude). Owners, Offices and Watchmen have no stored city (it is read from
+their location text): compare the same `nearest_canonical_city` with the area their card
+shows.
+
+Files: new `lib/src/services/map_city_geography.dart` (city frames, the pin-vs-city rule),
+`lib/src/services/geo_distance.dart` (haversine, moved out of map_filter.dart),
+`test/map/map_city_data_integrity_test.dart`; changed `map_camera_policy.dart` (frames
+moved out, re-exported), `uae_city_matcher.dart` (emirate nesting made public),
+`map_location_data.dart`, `map_filter.dart`, `map_filter_controller.dart`,
+`map_nearby_locator.dart`, `device_location_platform.dart`, `map_viewmodel.dart`,
+`map_filter_bar.dart`, `add_offers_viewmodel.dart`, `app_en.arb`, `app_ar.arb`; tests
+`map_location_boundary_test.dart`, `map_city_matching_test.dart` (fixture pins moved to
+the cities they name), `map_screen_wiring_test.dart`.
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`): Map total 466
+(`map_city_data_integrity_test` 58, `map_location_boundary_test` 48, `map_city_matching_test`
+35, `map_screen_wiring_test` 61, `map_filter_camera_test` 58, `map_camera_test` 52,
+`map_filter_test` 61, `map_location_data_test` 31, `map_places_loader_test` 21,
+`map_price_test` 41), none weakened. Thirty deliberate regressions (the City filter
+ignoring the conflict, the core too wide or too narrow, a wrong, swapped or copied city
+camera, a held position that is old, rough or has no time used, "my location" taking a
+held position, taps not sharing one request, the wait never marked or never ended, the
+chip tappable while it waits, an Offer form that stops judging the pin, ...) were each
+caught by a real failing test, with every file restored byte for byte. NOT run, needs
+Flutter: the view model, the screen, the Offer form, the analyzer, a device.
+
+NOW - owner runs `flutter test test/map` and `flutter analyze` on the map folders, runs
+the query above (read-only) and says whether any Offer is listed, then on the Samsung:
+choose Abu Dhabi, Dubai and Fujairah (each shows its own places framed, or its centre and
+the banner, never an Ajman pin); turn Nearby on (the chip shows a small spinner, then
+applies once; a second turn-on within a minute is near-instant); 5 / 10 / 25 km (no GPS
+wait); try saving an Offer as Abu Dhabi with a pin in Ajman (refused with the toast).
+NEXT - correct any listed Offer in the app, then commit the map changes on the map-update
+branch.
+
+### Map: correction 4 cleanup — analyzer warnings and the data-check gate (2026-10-10)
+
+Owner's real Flutter run after correction 4: `flutter test test/map` 466/466 pass; the
+scoped analyzer reports no Map compile error and 8 `unnecessary_non_null_assertion`
+warnings, all in `lib/src/services/map_location_data.dart` (the four `cityConflict:` lines,
+two each). Every other finding is an info-level deprecation: out of scope here, not touched.
+
+The fix, and why it cannot change anything. In each of the four mappers (Offer, Owner,
+Office, Watchman) `lat` and `lng` are local `double?` variables. Their first use,
+`latitude: lat!` and `longitude: lng!`, is a real assertion (`isUsableCoordinate` does not
+promote the caller's variables) and promotes both to `double` for the rest of the call. The
+second `lat!, lng!`, inside `cityConflict: ...`, asserted what was already known. The four
+lines (247, 299, 344, 389) now read
+`cityConflict: MapCityGeography.conflicts(city, lat, lng),` and nothing else in the file
+changed (a line-by-line comparison with a copy of the file shows exactly those four lines).
+The first assertions stay: they are the ones that are needed. Nothing about the city, the
+flag, the coordinates, the filter or the camera is different at run time.
+
+Evidence (source and plain Dart only: no Flutter command, no analyzer was run):
+ - the Dart front-end compiles the real file, and would reject `conflicts(city, lat, lng)`
+   if the variables were not promoted at that point;
+ - a differential: 311 355 generated records (Offers with 15 spellings of a city, Owners,
+   Offices and Watchmen with 12 location texts; each of the nine centres and a grid around
+   it, 5 000 random pins, and every kind of unusable position) went through the copy of the
+   file as it was before and through the edited file, in six mapper runs (410 930 inputs).
+   409 761 places came out (22 284 flagged, 387 477 not; 335 319 with a city, 74 442 with
+   none) and EVERY field of EVERY place was identical: 0 differences. The same differential
+   reports 9 693 differences against a deliberately broken copy, so it is not vacuous;
+ - each of the four edited lines, broken three ways (the flag always false, latitude and
+   longitude swapped, the city dropped), fails a real test: 12 of 12 caught, none only by a
+   compile error, and the file restored byte for byte.
+
+Two test changes this needed (no behaviour changed):
+ - `map_screen_wiring_test` pinned the exact text of those four lines (counted 4 times); it
+   pins the new text now, still counted exactly 4 times;
+ - the per-line check showed that the Offer and Watchman flags were pinned by behaviour but
+   the Owner and Office ones only by that text guard (the correction 4 regression changed all
+   four lines at once and hid it). One test was added to `map_city_data_integrity_test`: an
+   Owner and an Office whose city and pin disagree are flagged, ones that agree are not.
+   Map total under the stand-in: 467 (`map_city_data_integrity_test` 59, the rest as in
+   correction 4); the two shared tests still 33 and 13. NOT run, needs Flutter: all of it
+   under `flutter test`, and the analyzer.
+
+DATA CHECK (unchanged, still open). Hosted inconsistency is NOT PROVEN: no hosted row has
+been read and nothing was written. Proven: the code path, and that the form and the database
+let a city and a pin differ. The Map now keeps a clear cross-city mismatch from deciding the
+camera, and the Offer form refuses to save one. The owner's Abu Dhabi, Dubai and Fujairah
+records are not to be called wrong until the read-back (the query in the correction 4
+section) shows it. The query was re-checked as text (one WITH ... SELECT; no insert, update,
+delete or DDL; no phone, media, notes or owner column) and run against a throwaway in-memory
+SQLite table, the only SQL engine here (Postgres was not available): it returns exactly the
+five columns, leaves out deleted Offers and Offers with a missing coordinate, names Ajman
+for three Abu Dhabi / Dubai / Fujairah records pinned in Ajman, and agrees with an
+independent haversine reference on 4 000 random pins. It was NOT run against Supabase.
+
+NOW - owner runs `flutter analyze lib/src/services/map_location_data.dart` (the 8 warnings
+should be gone; `flutter analyze` of the Map folders should show no Map warning, only the
+info-level deprecations), runs `flutter test test/map` (expect 467), and runs the read-only
+query on the hosted database and pastes the rows back (the five columns only).
+NEXT - if the analyzer shows no Map warning and the rows are consistent (or the listed
+Offers are corrected in the app), commit the map changes on the map-update branch.
+
+### Map: hosted data integrity — read-back classification and cleanup plan (2026-10-10)
+
+Owner's results after the correction 4 cleanup: `flutter test test/map` 467/467 pass;
+`flutter analyze lib/src/services/map_location_data.dart`: No issues found. The owner's
+read-only hosted query of the Offers (9 rows) is VERIFIED_HOSTED evidence that some current
+Offer rows hold a city that disagrees with their pin. This step changed no source file, no
+hosted row and nothing else outside this note. The classification below was computed by
+running the real mapper, city geography, filter engine and camera planner over those nine
+rows (CODE_PROVEN under the plain-Dart stand-in; not seen on a device).
+
+Classification by the app's own rule (`MapCityGeography`: a pin conflicts only when it is
+outside its own city's 15 km core AND inside another listed city's core): 5 CONSISTENT,
+3 CLEAR CITY/PIN CONFLICT, 1 INVALID COORDINATES, none ambiguous.
+ - CONSISTENT: five Ajman Offers, 0.4 to 9.0 km from Ajman's centre (38f90a51, 64024d54,
+   7a8e8b3d, f6e1cb32, fcc0b932).
+ - CLEAR CONFLICT 56ef764d-eda2-471e-a11f-5886c2821f9a: city Abu Dhabi, pin 0.7 km from
+   Ajman's centre (156.7 km from Abu Dhabi's).
+ - CLEAR CONFLICT 1eae6cb7-7668-48d4-ba49-7f28fd301842: city Fujairah, pin 0.4 km from
+   Ajman's centre (87.7 km from Fujairah's); the same pin, to 4 decimals, as an Ajman Offer.
+ - CLEAR CONFLICT c4f512a9-fab9-44aa-9658-ade38e55b234: city Sharjah, pin exactly the
+   map picker's built-in default (25.2048, 55.2708 = Dubai's centre), 21.8 km from Sharjah's.
+ - INVALID COORDINATES eaf8e58f-a586-4b42-9aee-d754f1088e55: city Umm Al Quwain, longitude
+   34.09: 2 160 km from Umm Al Quwain and outside the UAE. It is a valid position on Earth,
+   so every check in the app and the database passes it, and the city/pin rule does not flag
+   it (the pin is in no listed city's core).
+Which half of each conflict is wrong (the city or the pin) only the owner can say.
+
+What the Map does with them now (executed on these rows):
+ - The three conflicts cannot drive a City camera. Abu Dhabi, Dubai, Sharjah and Fujairah
+   each show no place, the existing "no matches" banner and that city's own centre; Ajman
+   frames its five consistent Offers. Under All the three still show, at their pins.
+   With the flag switched off (how it behaved before correction 4) the same rows give
+   Abu Dhabi -> the Ajman pin and Fujairah -> the Ajman pin at street zoom (the reported
+   defect), Sharjah -> Dubai's centre, and Dubai -> no jump (no Offer is labelled Dubai).
+ - OPEN GAP, not fixed: the Umm Al Quwain row is NOT protected. Choosing Umm Al Quwain
+   sends the camera to 24.63, 34.09 at zoom 15 (Egypt); and every choice that frames the
+   visible places (a category, a property type, rent/sale, a price order, Nearby off, Clear)
+   frames this pin too: zoom 4.26 instead of 10.31, so the UAE is a speck. The map opens
+   normally (its opening camera ignores the data); the zoom-out starts at the first such
+   choice. Correcting that Offer's pin removes it at once.
+
+Cleanup: 4 of 9 rows need it (the three conflicts and the invalid pin). Nothing was written
+to the hosted database. The route is the app's own Offer Edit (the city chips and the pin are
+both editable there; the Offer guard runs before the Add, Edit and media-queue saves and
+refuses a clear conflict with "The map pin is in X, but the city chosen is Y. Move the pin,
+or choose X."). The guard does NOT stop the Umm Al Quwain row: the owner must move that pin
+into the UAE. Two things Edit does that the owner should know:
+ - FOUND, not fixed (Offer form, not Map): an Edit save rewrites the Offer's status to
+   Available whatever it was. `AddOffersViewModel` never reads or keeps a status,
+   `_createOfferModel()` builds the Offer with the default, and the update payload writes
+   it (the real payload builder, run on what the form builds, writes 'available' over a
+   stored 'sold'; no media column is written). Look at each Offer's status first and set
+   it again afterwards if it was not Available. A small fix exists (one line in
+   `_createOfferModel()`, `status: _originalOffer?.status ?? PropertyStatus.available`,
+   and an import); it needs the owner's approval, it is not part of the Map.
+ - Choosing another city chip clears the Offer's areas (`selectCity`): re-pick them. Moving
+   the pin keeps them.
+
+How the bad pins could be saved (traced): the form's validation checks only the phone (the
+city/pin guard apart); `MapPickerView` has no bounds, and opened without a pin it preselects
+the device's position (Dubai's default when there is none) with Confirm enabled at once; it
+takes a tap, a drag or a search (the first geocoder match, no region) anywhere on Earth;
+`CoreEntityPayloadBuilder.coordinates` and the
+database (`offers_latitude_range`, `offers_longitude_range`, `offers_coordinates_pair`, and
+the same on owners, offices and watchmen, per the repo's migrations) only check -90..90,
+-180..180 and both-or-neither. There is no UAE boundary anywhere in the repo
+(`UaeMapFraming` is a camera box over the cities; its west edge 54.28 E leaves out the
+Western Region). Which route produced the row is not in the data.
+
+Smallest future prevention (recommendation only, nothing implemented): one UAE sanity
+rectangle (about 22.0 to 26.6 N and 50.5 to 57.0 E: the UAE's extremes, roughly
+22.6 to 26.1 N and 51.6 to 56.4 E, plus half a degree) checked in
+`PickUpInputWidget._openMapPicker` before `vm.setSelectedLocation`: the one funnel every pin
+goes through, shared by the Offer, Owner, Office and Watchman forms, so `MapPickerView` is
+untouched. A position outside it is refused with a short localized message. No migration. Not
+in the payload builder: a legacy bad row would then fail every unrelated update, status
+changes included. Optional companion: the camera ignores pins outside the same rectangle
+when it frames places (one condition in `MapCameraPlanner._places`); that changes what the
+camera shows, so it needs the owner's decision.
+
+Dubai. No Offer is labelled Dubai, so the Offers do not explain a Dubai jump (the Sharjah
+Offer at Dubai's centre would have taken a Sharjah choice there). Owners, Offices and
+Watchmen are the other active Map sources (Requests and Brokers are not). Their city is read
+from text: an Owner's `property_location` is `Area, City` written from the city/area chips
+(independent of the pin); an Office's `office_location` and a Watchman's `building_location`
+are free text (the picker also overwrites a Watchman's with the pin's address); the Map takes
+the first of that text, the pin's address and the pin's own text that names a catalog city.
+None of the three forms compares its city with its pin. Read-only query for them (one
+SELECT; id, the two city source texts, the pin rounded to 4 decimals, the nearest listed
+city; no name, phone, notes or media):
+
+    with centres(city, lat, lng) as (
+      values
+        ('Dubai',          25.2048, 55.2708),
+        ('Abu Dhabi',      24.4539, 54.3773),
+        ('Sharjah',        25.3463, 55.4209),
+        ('Ajman',          25.4052, 55.5136),
+        ('Ras Al Khaimah', 25.7895, 55.9432),
+        ('Fujairah',       25.1288, 56.3265),
+        ('Umm Al Quwain',  25.5647, 55.5552),
+        ('Al Ain',         24.2075, 55.7447),
+        ('Khor Fakkan',    25.3395, 56.3563)
+    ),
+    places as (
+      select 'owner' as entity, id, property_location as location_text,
+             pickup_address as address_text, pickup_latitude, pickup_longitude
+      from owners
+      where deleted_at is null and pickup_latitude is not null and pickup_longitude is not null
+      union all
+      select 'office', id, office_location, pickup_address, pickup_latitude, pickup_longitude
+      from offices
+      where deleted_at is null and pickup_latitude is not null and pickup_longitude is not null
+      union all
+      select 'watchman', id, building_location, pickup_address, pickup_latitude, pickup_longitude
+      from watchmen
+      where deleted_at is null and pickup_latitude is not null and pickup_longitude is not null
+    )
+    select
+      p.entity,
+      p.id,
+      p.location_text,
+      p.address_text,
+      round(p.pickup_latitude::numeric, 4)  as latitude,
+      round(p.pickup_longitude::numeric, 4) as longitude,
+      (
+        select c.city
+        from centres c
+        order by 6371 * acos(least(1, greatest(-1,
+          cos(radians(p.pickup_latitude)) * cos(radians(c.lat)) *
+            cos(radians(c.lng) - radians(p.pickup_longitude))
+          + sin(radians(p.pickup_latitude)) * sin(radians(c.lat))
+        )))
+        limit 1
+      )                                     as nearest_canonical_city
+    from places p
+    order by p.entity, p.location_text, p.id;
+
+NOW - owner runs the query above on the hosted database and pastes the rows back (these
+rows only). Then each Offer in the cleanup list is corrected in the app, status checked
+first.
+NEXT - decide on the UAE sanity check (and the status fix); correct any Owner, Office or
+Watchman the query lists; then commit the map changes on the map-update branch.
+
+### Map: UAE coordinate sanity correction 5 (2026-10-10)
+
+The owner's hosted read-back showed an Offer (Umm Al Quwain, 24.6263, 34.0921) whose pin is
+outside the UAE. It is a valid position on Earth, so every check passed it, and the
+Correction 4 city/pin rule does not flag it (the pin is in no listed city's core). Executed
+on the real rows before this change: choosing Umm Al Quwain sent the camera to that pin at
+zoom 15, and every choice that frames the visible places (a category, a price order, rent/sale,
+Nearby off, Clear) framed it too: zoom 4.26 instead of 10.31. Source and tests only. No hosted
+row was read or changed, no migration, no policy, nothing ran on a device.
+
+The rule. One pure helper, `UaeCoordinateSanity`
+(`lib/src/common/data/uae_coordinate_sanity.dart`), answers only "could this position
+reasonably be inside the UAE?": one rectangle, 22.0 to 26.6 N and 50.5 to 57.0 E, edges
+included, NaN and infinities never. It is generous on purpose (at least half a degree beyond
+the UAE's rough extremes, 22.6 to 26.1 N and 51.6 to 56.4 E), so it admits a strip of the
+neighbours (Doha, Manama) and turns away only what is plainly elsewhere (Egypt, Riyadh,
+Muscat, Bandar Abbas, Mumbai, a swapped pair). It is not a border, not a city or emirate
+test (`MapCityGeography` stays separate and does not know it) and holds no polygon. It is not
+the opening camera box either: that one leaves out the Western Region on purpose.
+
+The Map. `MapLocationMapper.isMapLocation` = the old usable-coordinate rule AND the sanity
+rule, and the four mappers (Offer, Owner, Office, Watchman) use it: a record whose pin could
+not be in the UAE is simply not a place, the way a record with no pin is not. So it has no
+marker, no match for any filter, no part in any camera and none in Nearby (the places never
+contain it). It is not an error and does not fail the read; the record is not changed or
+deleted and still shows in the app's lists and details. The camera's own re-check (`_places`)
+uses the same rule, so a place that came any other way still cannot frame it. The places cache
+is in memory only, so no older list can carry such a record into this build. Unchanged on
+purpose: `isUsableCoordinate` (it also judges the DEVICE's position, and a phone abroad still
+has one for "my location" and Nearby) and the Nearby engine's own place check (existing tests
+pin it at the poles).
+
+A pin picked on the map. `PickedLocationGate.admit`
+(`lib/src/common/data/picked_location_gate.dart`) is called from
+`PickUpInputWidget._openMapPicker`, the one widget the Offer, Owner, Office and Watchman forms
+all use and the only caller of `MapPickerView` and of `setSelectedLocation`. A position outside
+the rectangle is not given to the form (so the form keeps the pin it had) and a short toast
+shows: "Please choose a location inside the UAE." / "يرجى اختيار موقع داخل الإمارات."
+(`pickupLocationOutsideUae`). No dialog. `MapPickerView` is untouched.
+
+Legacy data stays editable: the rule is applied when a position is CHOSEN, not when a record
+is saved. `CoreEntityPayloadBuilder` and the services do not know it (a test builds the update
+payload of the bad Offer and checks it carries the pin unchanged), so the hosted Umm Al Quwain
+Offer can still be edited, have its status changed or be deleted. Opening its pin and
+confirming without moving it is refused (the same toast); the owner moves the pin into the UAE.
+Nothing here cleans the hosted row: that is still the owner's, in the app.
+
+Tests (executed under the plain-Dart stand-in, not `flutter test`): new
+`test/map/map_uae_sanity_test.dart`, 33 cases: the nine city centres, western Abu Dhabi,
+eastern UAE, the hosted coordinate, latitude and longitude out of range, edges, margins, the
+rectangle wider than the camera box; no marker, no city camera, no category / price / rent /
+Clear framing, no Nearby for a record outside the UAE, with the real mapper, filter engine and
+planner; valid records unchanged; the gate accepts and rejects and keeps the previous pin; the
+widget wiring; both messages; no backend call in any new or changed file; the payload builder
+unchanged. Map total 500 (was 467), shared 46. ONE EXISTING ASSERTION CHANGED because the
+contract did: `map_location_data_test` expected a pin at latitude 0 with a real longitude to
+be a place; it is not one now (it is nowhere near the UAE). The intent of that test (only
+(0, 0) means "unset") is kept as direct assertions on `isUsableCoordinate`, which is
+unchanged, and the new place-or-not outcome lives in the new file. The wiring test's lists
+gained the two new files. A before/after differential (the mapper as it was, against now) over
+517 650 generated records: 215 119 inside the rectangle came out identical in every field and
+order, the 301 486 outside were dropped, none survived, 0 differences. Thirty-five deliberate
+regressions (each edge of the rectangle, the rule inverted or swapped, each of the four kinds
+back on the old rule, the camera on the old check, markers from every place, the device judged
+by the UAE rule, the gate accepting or silent or unawaited, the widget skipping the gate, a
+dialog, a wrong message, a missing Arabic or English text, the payload builder refusing a pin)
+were each caught by a real failing test; every file was restored byte for byte. NOT run, needs
+Flutter: all of it under `flutter test`, the analyzer, a device.
+
+Files: new `lib/src/common/data/uae_coordinate_sanity.dart`,
+`lib/src/common/data/picked_location_gate.dart`, `test/map/map_uae_sanity_test.dart`; changed
+`lib/src/services/map_location_data.dart`, `lib/src/services/map_camera_policy.dart`,
+`lib/src/views/Widgets/pickup_location_widget.dart`, `app_en.arb`, `app_ar.arb`,
+`test/map/map_location_data_test.dart`, `test/map/map_screen_wiring_test.dart`.
+
+NOW - owner runs `flutter test test/map` (expect 500) and the scoped analyzer:
+
+    flutter analyze lib/src/common/data/uae_coordinate_sanity.dart lib/src/common/data/picked_location_gate.dart lib/src/services/map_location_data.dart lib/src/services/map_camera_policy.dart lib/src/views/Widgets/pickup_location_widget.dart test/map/map_uae_sanity_test.dart test/map/map_location_data_test.dart test/map/map_screen_wiring_test.dart
+
+then on the device: with the Umm Al Quwain Offer still in the data, open the Map, choose a
+category and Clear (the camera stays on the UAE, no zoom-out), choose Umm Al Quwain (its own
+centre and the "no matches" banner); in an Offer form open the pin picker, search for a place
+outside the UAE and confirm (the toast, the old pin kept); open the Umm Al Quwain Offer's Edit
+and move its pin into the UAE.
+NEXT - the earlier open items: the Owner / Office / Watchman read-only query results (the Dubai
+question); correct the four hosted Offers in the app (status checked first: an Offer Edit
+still rewrites the status to Available, not fixed here); then commit the map changes on the
+map-update branch.
+
+### Map: Smart Map UX Phase 1 — control semantics and the top UI (2026-10-10)
+
+Owner request: a UX checkpoint over the existing Smart Map, wording and hierarchy only. The
+filter logic, the Supabase reads, city matching, Nearby, the camera, the markers, the card, media,
+Call and WhatsApp are unchanged (no backend, no migration, `MapPickerView` untouched). Source and
+tests only; nothing ran on a device and no Flutter command was run.
+
+What the person sees at the top of the map now:
+ - Search: the same search (a geocoder: it finds a LOCATION and moves the camera there). Only the
+   hint changed, to "Search location or record..." / "ابحث عن موقع أو سجل...". NOTE: it does not
+   search records yet, so the hint promises one step more than the search does; record search is a
+   later phase. The place picker keeps its own hint (`searchLocation`, untouched).
+ - One scrolling row, in this order: Layers, Location, Near Me, Rent / Sale, Property Type, Sort.
+   A chip shows its own name until something is chosen, then what was chosen.
+   * Category -> Layers (Arabic: طبقات الخريطة). The kinds are layers of the map (Offers, Owners,
+     Offices, Watchmen); the model is still `LocationFilter` / `setEntityType`.
+   * City -> Location. The same list (the nine catalog cities), the same matching, the same `setCity`.
+   * Nearby -> Near Me in English (Arabic already read بالقرب مني; its "turn off" line now reads
+     إيقاف «بالقرب مني»). 5 / 10 / 25 km, the chip's spinner, the permission boundary, the held
+     position and `enableNearby` are unchanged.
+   * Price -> Sort: Default / Price: Low to High / Price: High to Low (الافتراضي / السعر: من الأقل إلى
+     الأعلى / السعر: من الأعلى إلى الأقل). Wiring checked: `lowest` orders ascending, `highest`
+     descending. FOUND, kept as it was: a price order also leaves out every place with no price (all
+     Owners, Offices and Watchmen, and Offers without a usable price), so "Sort" is sort + hide the
+     price-less. The labels say Sort as asked; whether price-less places should stay visible, sorted
+     last, is for the Price Range phase to decide.
+   * The Clear chip left the row: at its end it scrolled out of sight exactly when a filter was on.
+ - Under the row, floating over the map, `MapFilterStatusLine`: the result count at the start and
+   Reset at the end. Reset shows only while the filters differ from the default (`vm.filtersActive`,
+   which is `state != MapFilterState.initial`, tested over every combination) and calls the same
+   `clearFilters` as the "no matches" banner (now worded "Reset filters"): no read, no location
+   request, the same camera cause. The count is how many places the markers on the map stand for:
+   the draw's own number, set only when a draw is published (`_Drawn.placeCount` ->
+   `_publishedPlaceCount`), so it is never ahead of the markers while a draw is under way; it is
+   null (not shown) before the first draw and after a failed load. Forms for 0, 1, 2, a few and
+   many, in both languages (`MapResultCount`; Arabic uses the CLDR plural categories); the digits are
+   the `intl` ones the rest of the Map writes (Latin, also in Arabic).
+ - The opening camera is unchanged: the status line floats over the area the frame leaves free (as
+   the banner always did) and `_controlsBelowTop` was not touched; the banner moved down by the
+   line's height so the two do not overlap.
+
+Files: new `lib/src/services/map_result_count.dart`,
+`lib/src/views/Screens/home/map/map_filter_status_line.dart`, `test/map/map_ux_phase1_test.dart` (22),
+`test/map/map_filter_status_line_test.dart` (a widget test, 11); changed `map_filter_bar.dart`,
+`map_view.dart`, `map_viewmodel.dart`, `app_en.arb` and `app_ar.arb` (14 keys added, 6 replaced and
+removed: mapFilterCategory, mapClearFilters, mapFilterPrice, mapAllPrices, mapLowestPrice,
+mapHighestPrice), `test/map/map_price_test.dart` (its words group now names Sort) and
+`test/map/map_screen_wiring_test.dart` (the guards that pinned the old names pin the new ones, none
+loosened; the two new lib files are in its file lists).
+
+Tests (executed under the plain-Dart stand-in, NOT `flutter test`): `test/map` 524 = the earlier 500
++ 22 new + 2 (the Sort words group has four tests, not three; the Price chip group became the Sort
+chip group with a second test). Twenty-three deliberate regressions (Reset always shown, the count
+from the live filter or from markers instead of places, a swapped Sort label, an Arabic plural
+boundary, a changed search behavior, a backend import or an await in the new files, ...) were each
+caught by a real failing test, on a throwaway copy; one gap they found (a negative count) now has
+its test. NOT run, needs Flutter: `map_filter_status_line_test.dart` (a widget test), the screen,
+the bar, the analyzer, a device.
+
+Not changed, reported: the Map's chips change width when chosen (their label changes), as they
+always did; `map_view.dart` still has older formatter deviations in the card carousel code, not
+touched.
+
+NOW - owner runs `flutter test test/map` (expect 524 + the 11 widget tests) and the scoped analyzer on
+the touched lib files, then on the Samsung: the row and its order in English and Arabic; each Layers
+kind, each Location city, each Sort order (a price order hides Owners, Offices and Watchmen:
+expected); Near Me; the count under the row (it follows every choice; 0 for a city with none; the
+singular); Reset appears only with a filter and restores everything with no reload; the "no matches"
+banner sits under the status line; dark mode; large text.
+NEXT - Phase 2: one geographic scope in Location (All UAE / city / area / Near Me / this area).
+
+### Map: Smart Map UX Phase 2 — one Location control (2026-10-10)
+
+Owner request: unify Location and Near Me into ONE geographic control. Wording, a state rule and
+wiring only: the distance engine, city matching, the Supabase reads, the camera policy and its
+causes, Layers, Rent / Sale, Property Type, Sort, the result count and Reset are unchanged. Source
+and tests only; nothing ran on a device and no Flutter command was run. This supersedes the Phase 1
+text about the Near Me chip and the search hint.
+
+ - The row is now: Layers, Location, Rent / Sale, Property Type, Sort. The Near Me chip is gone.
+ - The Location chip says "Location" until something is chosen, then the city, or "Near Me · 10 km".
+   While Near Me waits for the device it says "Near Me" with the spinner, and cannot be tapped (as
+   the old Near Me chip could not).
+ - Its list: All UAE; the nine catalog cities; then a Near Me group (a heading, then 5, 10 and
+   25 km). Near Me is the last group, as specified: on a short phone it needs a scroll.
+ - One place to look: a city and Near Me exclude each other. The rule is in `MapFilterState`
+   (`withCity` with a city clears Near Me; `withNearby` with a position clears the city), so no
+   path can hold both, not even for a frame.
+   * Dubai -> Near Me 10 km: the city is replaced when the position arrives, in the one change that
+     turns Near Me on. If no position comes (denied, blocked for good, services off, none), nothing
+     changes: the city stays and one short message says why.
+   * Near Me -> Ajman: Near Me is off, Ajman is on, and the device is not asked.
+   * A city or All UAE chosen while Near Me still waits for the position drops the late answer
+     (`_dropNearbyRequest`), so it can never undo the newer choice.
+ - All UAE (`setAllUae`): no city and Near Me off; the other filters stay (Reset still clears
+   everything). No location request, no read. Camera: the old "every city" cause (`cityChanged`:
+   the places the filters let through; with none, the camera stays), so there is no new camera rule
+   and the planner is untouched. (A fixed re-frame of the whole UAE would be a new camera cause: not
+   done.)
+ - Near Me keeps: permission only on a tap, the spinner, the held-position shortcut, 5 / 10 / 25 km
+   and one position for any radius change (a radius row while Near Me is on only calls
+   `setNearbyRadius`). Choosing a radius starts Near Me at that radius (`enableNearby(radiusKm:)`).
+ - Search hint: "Search location..." / "ابحث عن موقع..." (the search finds a location only; record
+   search is a later phase). The search logic is untouched.
+ - Strings: added `mapAllUae`; changed `mapSearchHint`; removed `mapAllCities`, `mapNearbyRadius`
+   and `mapNearbyTurnOff` (the old radius list and its turn-off row are replaced by the Location
+   list).
+
+Files: changed `map_filter.dart`, `map_filter_controller.dart`, `map_viewmodel.dart`,
+`map_filter_bar.dart`, `app_en.arb`, `app_ar.arb`; new test `test/map/map_location_scope_test.dart`
+(19); updated tests `map_screen_wiring_test.dart`, `map_ux_phase1_test.dart`,
+`map_filter_camera_test.dart`.
+
+Tests (executed under the plain-Dart stand-in, NOT `flutter test`): `test/map` 543 = 524 + 19 new.
+One behavior test changed because the rule did: "Nearby combines with the other filters, with AND"
+used a city as the other filter; it now uses the layer (the city half is the new exclusivity
+tests). The guards that pinned the old chip, its handler, the old list, the labels and the hint were
+rewritten to pin the new ones (the exact list shape, the three awaits, one Location chip, ...). No
+mutation run this phase (not asked). NOT run, needs Flutter: the screen and the bar, the Phase 1
+widget test, the analyzer, a device.
+
+NOW - owner runs `flutter test test/map` (expect 543 + the 11 widget tests) and the scoped analyzer,
+then on the Samsung: Dubai -> Near Me 10 km -> Ajman -> All UAE (the chip and the map at each step);
+Near Me with the permission denied while a city is chosen (the city stays, a short message); a new
+radius while Near Me is on (no new wait); All UAE restores the whole map; Arabic and RTL; dark mode.
+NEXT - contextual filters by layer (Rent / Sale and Property Type only for the layers that have
+them).
+
+### Map: Smart Map UX Phase 2.1 — Location polish (2026-10-10)
+
+Owner request: finish the Location control. Source and tests only; no Flutter command was run and
+nothing ran on a device. Layers, Rent / Sale, Property Type, Sort, Reset, the result count, city
+matching, the Near Me 5 / 10 / 25 km logic, the permission policy, UAE sanity, city/pin integrity,
+the Supabase reads, markers, cards, media, Call and WhatsApp are unchanged.
+
+ - List order (supersedes Phase 2): All UAE; Near Me (a heading, then 5, 10 and 25 km); a line; the
+   nine cities. Near Me is in sight without scrolling past the cities.
+ - Locating no longer locks Location. The chip keeps its spinner (and says "Near Me" while it
+   waits) but stays tappable. While a Near Me request waits, a city or All UAE can be chosen: it
+   supersedes the request through the protection that was already there (the controller's request
+   number). The late position is ignored, the chip stops waiting at once (even when the choice
+   changes nothing else, such as All UAE on the default map: the view model now notifies), and
+   nothing is said about an old answer, success or failure. Near Me's own three rows are dimmed
+   until the request is over (a second Near Me request while one waits still starts nothing).
+   The only new code is a read-only getter, `MapFilterController.nearbyRequest`, which lets the
+   view model compare the number its request was given with the newest: no second cancellation
+   system. It also closes a quiet case: Near Me, then a city, then Near Me again before the first
+   answer came would otherwise have been applied (and its camera requested) twice.
+ - All UAE camera: a new cause, `MapCameraCause.allUae` (subject `uaeOverview`): the planner uses
+   `UaeMapFraming.fit(viewport)`, the very function the opening camera uses (its constants are
+   untouched). So it is not the places the filters let through, and not the old city when nothing is
+   visible; other filters stay selected. Chosen again while already on All UAE it still goes back to
+   the overview (`force`: a redraw and the camera, nothing else). No read, no location request.
+   Reset is unchanged: it still frames the places there are. There are eight causes now.
+
+Files: changed `map_camera_policy.dart`, `map_filter_controller.dart`, `map_viewmodel.dart`,
+`map_filter_bar.dart`; tests `map_location_scope_test.dart` (28), `map_screen_wiring_test.dart`,
+`map_filter_camera_test.dart` (the cause list). `map_view.dart`, `map_filter.dart` and the ARB files
+were not touched.
+
+Tests (executed under the plain-Dart stand-in, NOT `flutter test`): `test/map` 552 = 543 + 9 new.
+The pins of the old behavior (the list order, the locked chip, All UAE's old cause, the seven causes)
+were rewritten to the new contract. No mutation run (not asked). NOT run, needs Flutter: the screen
+and the bar, the Phase 1 widget test, the analyzer, a device.
+
+NOW - owner runs `flutter test test/map` (expect 552 + the 11 widget tests) and the scoped analyzer,
+then on the Samsung: the list order (Near Me visible at once); Near Me on a cold fix, tap the chip
+while the spinner shows and choose All UAE, then a city (the spinner stops, and the late position
+never brings Near Me back, with no message); All UAE from a city with the layer set to one that has
+no places (the camera still goes to the UAE overview); All UAE again after panning away.
+NEXT - contextual filters by layer (Rent / Sale and Property Type only for the layers that have
+them).
+
+### Map: Smart Map UX Phase 3 — contextual filters by layer (2026-10-10)
+
+Owner request: make the filter row contextual to the layer that is chosen, and never let a hidden
+filter stay on. Source and tests only; no Flutter command was run and nothing ran on a device; no
+backend, no migration, no commit, no push. Location (All UAE / city / Near Me, 5 / 10 / 25 km), the
+UAE framing, the camera policy and its causes, city matching, city/pin integrity, UAE coordinate
+sanity, the result count, search, markers and clustering, the card, media, Call and WhatsApp are
+unchanged.
+
+Contract verified first (the real `MapLocationMapper`, executed; CODE_PROVEN):
+ - Rent / Sale: Offer only. A transaction is read only for an Offer.
+ - Sort (by price): Offer only. A price is read only for an Offer.
+ - Property Type: NOT Offer only. An Owner has one too (its `typeOfProperties`, read against the
+   Owner form's own suggestions by `appMapVocabulary`), and the Property Type list already orders
+   the Owner suggestions. An Office and a Watchman have none.
+
+The row now (one table, `MapLayerControls` in `map_layer_controls.dart`):
+ - All Layers: Layers, Location.
+ - Offers: Layers, Location, Rent / Sale, Property Type, Sort.
+ - Owners: Layers, Location, Property Type (see OWNER DECISION below).
+ - Offices, Watchmen: Layers, Location.
+ No filter was added: the chips are the same five. The three layer-owned ones are left out of the row
+ where the table has no control for them; they are the last chips, so none of the chips before them
+ moves because they appear or go.
+
+Hidden filters never stay on:
+ - Choosing another layer puts Rent / Sale, Property Type and Sort back to their defaults in the very
+   same state change (`MapFilterState.withEntityType`, the way Phase 2 made a city and Near Me
+   exclusive: no path can hold the new layer with the old filters, not even for a frame). One
+   change, one version, one redraw, one camera request.
+ - That is every layer change, Offers -> Owners included (an Offer's Property Type is not carried
+   to Owners, nor an Owner's to Offers), and any layer -> Offers. Coming back to a layer starts at
+   the defaults; nothing is remembered for a layer that is not on screen. Choosing the layer that is
+   already chosen changes nothing (its filters stay).
+ - Where the map looks stays: the city or Near Me (its position, its radius, and a request still
+   waiting), the search, the loaded places and the rule for the open card are untouched. A layer
+   change asks the device nothing and reads nothing.
+ - Reset is unchanged (`filtersActive` is still "the state differs from the default"). Because the
+   hidden filters are cleared, Reset can only be on for something in the row: Offers + Sale, then
+   All Layers, leaves the default map and no Reset; Offers + Sale, then Watchmen, leaves Reset on
+   because of the Layers chip (Watchmen) alone.
+ - The camera policy is the same (a layer change is still `filterChanged`). What differs is what the
+   snapshot holds: Offers + Sale + Apartment, then Watchmen, used to keep Sale and Apartment over the
+   Watchmen (nothing to show: the "no matches" banner); it now shows the watchmen.
+
+OWNER DECISION NEEDED (Property Type for Owners): the target row gave Owners only Layers and
+Location, on the assumption that Rent / Sale, Property Type and Sort are all Offer-specific. Property
+Type is not: Owners can be filtered by it today. Hiding it would remove a working filter, which the
+brief said to report first, so it was NOT hidden: the Owners row keeps Property Type. To hide it
+(Owners = Layers + Location), take `MapFilterControl.propertyType` out of the `LocationFilter.owners`
+arm of `MapLayerControls.of`; nothing else in the code changes, because the reset already clears
+Property Type on every layer change. Four tests pin the current row and would then be rewritten on
+purpose: "Owners: Layers, Location and Property Type", "Property Type is in the Offers and Owners
+rows only", the table guard's `LocationFilter.owners` line, and "each kind's row has exactly the
+controls its places carry" (it would need to say that the Owners' Property Type is deliberately not
+offered).
+
+Files: new `lib/src/services/map_layer_controls.dart` and `test/map/map_ux_phase3_test.dart` (39);
+changed `map_filter.dart` (`withEntityType`) and `map_filter_bar.dart` (the three chips are
+conditional); doc comments only in `map_filter_controller.dart` and `map_viewmodel.dart`;
+`test/map/map_screen_wiring_test.dart` (the new file is in its file list) and
+`test/map/map_price_test.dart` (one test's setup, below). The ARB files, `map_view.dart`, the status
+line, the camera and the loader were not touched.
+
+Tests (executed under the plain-Dart stand-in, NOT `flutter test`): `test/map` 591 = 552 + 39 new.
+New: the contract from the real mapper and the app's own wiring; the row of each layer; the reset
+(the owner's example through every other layer, each filter, one version bump, the state transition
+on its own, Reset); Location, Near Me (also a request still waiting), the device, search and the
+backend untouched; every sequence of up to five choices the row offers (187,510 states: every layer
+reached, every control on at some point, 16,170 of them straight after leaving Offers with a filter
+on) with four checks after each one; and source guards. One existing test changed: "every other
+choice keeps the price" chose a price with All Layers showing (a state the row can no longer make)
+and then Offers; it now chooses the price under Offers, its assertions unchanged. No mutation run
+(not asked). NOT run, needs Flutter: the screen and the bar, the Phase 1 widget test, the analyzer,
+a device.
+
+Backlog, reported and not done: the Property Type list is built from every loaded place, so under
+Offers it can list a type only Owners have (and the other way round), and choosing it shows "no
+matches". Scoping that list to the chosen layer is a small separate change.
+
+NOW - owner decides Property Type for Owners (keep, as built, or hide), runs `flutter test test/map`
+(expect 591 + the 11 widget tests) and the scoped analyzer, then on the Samsung: the row of each
+layer in English and Arabic (All Layers, Offices, Watchmen: two chips; Owners: three; Offers: five);
+Offers + Sale + Apartment + Sort, then each other layer (the filters are gone, the map shows that
+layer, Reset is on only because of the layer), then back to Offers (all three at their defaults);
+Offers + Sale, then All Layers (no Reset); a city or Near Me kept through every layer change; dark
+mode; large text.
+NEXT - the later phases the owner named (Price Range, Status filter, More Filters, multi-layer
+selection, Results List), one at a time and only when asked; none is started.
+
+### Map: Location and Near Me are two chips again (2026-10-10)
+
+Owner request: put Near Me and the cities in two separate filter chips, and do only that. The one
+Location control of Phases 2 and 2.1 is split back into two chips; nothing else changes. Source and
+tests only; no Flutter command was run, nothing ran on a device; no backend, no migration, no
+commit, no push. This supersedes the Phase 2 / 2.1 text about ONE Location control and a Near Me chip
+that is gone, and gives Phase 3's rows a Near Me chip.
+
+The row, in this order: Layers, Location, Near Me, then the layer's own (Phase 3): Rent / Sale,
+Property Type, Sort.
+ - Location (the cities chip): its own name, or the city. Its list: All UAE, then the nine cities. A
+   city replaces Near Me; All UAE puts the default back (no city, no Near Me) and goes to the UAE
+   overview, as in Phase 2.1. With Near Me on no row is checked (the map is on neither a city nor all
+   of the UAE). It is never locked: a city or All UAE chosen while Near Me waits supersedes that
+   request and ends the wait (Phase 2.1's protection in the controller and view model, untouched).
+ - Near Me: a chip of its own, as before Phase 2. It says "Near Me", or "Near Me · 10 km" once on,
+   with the spinner while the device is asked, and cannot be tapped meanwhile. Off: one tap turns it
+   on at 10 km (permission only on that tap, the held position, a refusal or failure worded in one
+   short message, and a chosen city stays until a position comes). On: a tap opens "Near Me radius"
+   (5 / 10 / 25 km, the current one checked, and "Turn off Near Me").
+ - DELIBERATELY KEPT, and the one thing to confirm: a city and Near Me still exclude each other (the
+   rule is `MapFilterState`'s since Phase 2, not the chips'). Choosing a city or All UAE turns Near Me
+   off, and Near Me replaces the city once the device answers, so the two chips never both read as
+   on. If the two should instead combine (a city AND within 10 km), that is a change of the state
+   rule and its Phase 2 tests, not of the chips: not done, because the request was the chips only.
+ - Phase 3 rows: Near Me is in every layer's row, like Location (both say where the map looks), so
+   All Layers, Offices and Watchmen show Layers, Location, Near Me; Owners add Property Type; Offers
+   add Rent / Sale, Property Type and Sort. A layer change still never touches either chip.
+ - Strings: restored `mapNearbyRadius` ("Near Me radius" / "نطاق البحث") and `mapNearbyTurnOff` ("Turn
+   off Near Me" / "إيقاف «بالقرب مني»"), as they were before Phase 2. `mapAllUae` stays as the first
+   row of the Location list; `mapAllCities` stays gone.
+ - Gone with the merged list, because nothing else used them: its Near Me heading, its line, its
+   indented and dimmed radius rows (`_SheetOption.header`, `.divider`, `indented`, `enabled`), the
+   merged label function and the merged handler. The list helper is the one it was before Phase 2.
+ - Not changed: the filter state, the controller, the view model (no code change), the camera policy
+   and its causes, the Supabase reads, the permission boundary, city matching, city/pin integrity,
+   UAE sanity, the result count, search, markers and clustering, the card, media, Call and WhatsApp.
+   (`enableNearby(radiusKm:)` keeps its parameter; the bar now passes none.)
+
+Files: changed `map_filter_bar.dart`, `map_layer_controls.dart` (a Near Me control in every row),
+`app_en.arb` and `app_ar.arb` (two keys back). Tests: `map_ux_phase1_test.dart`,
+`map_location_scope_test.dart` (its "Location control in the row" group is now "the Location and Near
+Me chips in the row"), `map_screen_wiring_test.dart` (the chip order, the busy state, the two lists,
+the awaits of each handler, the Near Me entry point) and `map_ux_phase3_test.dart` (six controls, the
+table, a second walk that starts with Near Me on). The guards that pinned the merged control were
+rewritten to pin the two chips at the same strictness. Removed, because the thing they described is
+gone: the guards of the Near Me group inside the old Location list (its heading, line, indented and
+dimmed rows, and their order), and `mapNearbyRadius` / `mapNearbyTurnOff` in the "replaced names are
+gone" lists, because those names are back.
+
+Tests (executed under the plain-Dart stand-in, NOT `flutter test`): `test/map` 594 = 591 + 3. No
+mutation run (not asked). NOT run, needs Flutter: the screen and the bar, the Phase 1 widget test, the
+analyzer, a device.
+
+NOW - owner confirms the city / Near Me rule (they exclude each other: keep, or combine), runs
+`flutter test test/map` (expect 594 + the 11 widget tests) and the scoped analyzer, then on the
+Samsung: the row in English and Arabic (Layers, Location, Near Me, then the layer's own); Near Me on
+one tap at 10 km, the spinner, then "Near Me · 10 km"; a tap again for 5 / 10 / 25 km and "Turn off
+Near Me"; a city while Near Me is on (Near Me turns off); Near Me while a city is chosen (the city is
+replaced when the position arrives, and stays if it is refused); Location open and All UAE while Near
+Me waits (the spinner stops, no late answer); the layer changed with Near Me or a city on (both stay);
+dark mode; large text.
+NEXT - the later Smart Map phases the owner named, one at a time and only when asked.
+
+### Map: final filter semantics prepared for owner verification (2026-10-10)
+
+Status: SOURCE_CHECKED; Flutter tests, analyzer and real-device verification have not run for this
+step. The earlier Map device status is unchanged. No backend read, migration, commit or push was made.
+
+- Final rows: All Layers / Offices / Watchmen = Layers, Location, Near Me; Owners adds Property Type;
+  Offers adds Rent / Sale, Property Type, Price, Sort in that order.
+- Offer Property Type is the Offer form/share canonical list (`OfferPropertyTypes.keys`, exposed through
+  `ShareFormat.propertySubTypeKeys`); Owner Property Type is `OwnerPropertyTypes.options`. The lists
+  no longer mix types from loaded map places. A type survives Offers <-> Owners only when its key is
+  valid in the target vocabulary; otherwise it clears in the same state transition. Both geographic
+  chips and their city/Near Me exclusion remain unchanged.
+- Price is an Offer-only inclusive range over the already-loaded comparable amount (stored minimum,
+  else maximum). Either bound may be empty. Both empty clears it; non-numeric, negative, non-finite
+  and min > max entries cannot enter state. The compact, localized sheet offers Min, Max, Apply and
+  Clear. Unpriced Offers remain visible without a range and are excluded by an active range.
+- Sort keeps Default load order or places priced Offers ascending/descending first, with unpriced
+  Offers last and stable load order among ties and unpriced places. Sort never removes an Offer.
+- Changing layer clears Sale, Price and Sort atomically, plus Property Type when invalid for the
+  target layer. Reset therefore reflects only visible controls. Returning to Offers after another
+  layer starts Offer-only controls at their defaults.
+- Updated the relevant map tests and source guards for canonical options, layer transitions, price
+  validation/filtering, unpriced sorting and localization. Targeted PowerShell source guards passed;
+  `git diff --check` passed. The direct Dart formatter reported 0 changes on the two new vocabulary
+  files, then exited with a telemetry-file permission error; no formatter mutation occurred. No
+  Flutter command or device check was run.
+
+NOW - owner runs `flutter test test/map` and a scoped analyzer on the changed Map files, then fixes
+any failures before opening the Map on a device.
+NEXT - on a real device, verify all five rows in English and Arabic; shared and exclusive Property
+Types across Offers/Owners; Min only, Max only, both and invalid prices; unpriced Offers under both
+sorts and an active range; layer cleanup and Reset; Location/Near Me preservation. Record the
+result before calling the Map checkpoint VERIFIED_RUNTIME.
+
+### Map: final Flutter test correction awaiting owner rerun (2026-10-10)
+
+Owner's first real `flutter test test/map`: 593 passed, 16 failed. Eleven status-line widget tests
+could not find the widget, text, keys or semantics. The test harness loaded the app's asynchronous
+ARB localization delegate for the first time inside `testWidgets` fake async; a pump could finish
+before the home route mounted. The test now preloads and checks both language assets in `setUpAll`,
+before the widget tests. The other five failures were stale source guards: the new Price sheet's
+`toString()` was mistaken for location error text; an old property-type method ended a city source
+range; the former inline ShareFormat Offer key list caused the same RangeError in English and
+Arabic; and a Phase 1 guard still forbade the real Price filter. The guards now pin the relevant
+current behavior. No production code, backend or migration changed. Targeted PowerShell source
+checks and `git diff --check` passed; Flutter tests and device verification have not been rerun.
+This is TESTS_EDITED_AWAITING_FLUTTER, not VERIFIED_RUNTIME.
+
+NOW - owner runs `flutter test test/map/map_filter_status_line_test.dart`.
+NEXT - if it passes, owner runs
+`flutter test test/map/map_screen_wiring_test.dart test/map/map_ux_phase1_test.dart`, then
+`flutter test test/map`; after the tests pass, perform the Map device checks above.

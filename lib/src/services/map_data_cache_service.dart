@@ -1,13 +1,39 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:broker_wallet/src/constants/location_colors.dart';
+import 'dart:async';
 
-/// Service to preload and cache map data for faster map loading
-class MapDataCacheService {
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:broker_wallet/src/services/map_location_data.dart';
+import 'package:broker_wallet/src/services/map_places_loader.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+export 'package:broker_wallet/src/services/map_location_data.dart'
+    show CachedLocationData;
+
+/// A place's position as the map draws it.
+extension CachedLocationCoordinates on CachedLocationData {
+  LatLng get coordinates => LatLng(latitude, longitude);
+}
+
+/// Keeps the map's places between visits, so the map opens with them at once.
+///
+/// What is kept belongs to one user and is trusted for [_cacheValidityDuration]
+/// unless the user's own data changed since: every core-entity change anywhere
+/// in the app (Supabase) invalidates it, and so does a call to
+/// [invalidateCache] (the legacy services).
+class MapDataCacheService implements MapPlacesCache {
   static final MapDataCacheService _instance = MapDataCacheService._internal();
   factory MapDataCacheService() => _instance;
-  MapDataCacheService._internal();
+  MapDataCacheService._internal() {
+    // A save, an edit or a delete of an Offer, Owner, Office or Watchman:
+    // the Supabase save paths do not call [invalidateCache] themselves.
+    _mutations = CoreEntityMutationNotifier.changes.listen(
+      (_) => invalidateCache(),
+    );
+  }
+
+  // The process-wide singleton listens for the whole life of the app.
+  // ignore: unused_field
+  late final StreamSubscription<void> _mutations;
 
   // Cache storage
   List<CachedLocationData>? _cachedLocations;
@@ -16,6 +42,14 @@ class MapDataCacheService {
 
   // Track if cache was manually invalidated (data changed)
   bool _wasManuallyInvalidated = false;
+
+  /// Counts the times the data was reported changed. A read remembers the count
+  /// it started at and is kept only if the count is still the same when it
+  /// finishes: a read that raced a change must not be trusted.
+  int _generation = 0;
+
+  @override
+  int get generation => _generation;
 
   // Callback to notify when cache is invalidated
   void Function()? _onCacheInvalidated;
@@ -41,169 +75,31 @@ class MapDataCacheService {
     return hasValidCache ? _cachedLocations : null;
   }
 
+  @override
+  List<CachedLocationData>? get valid => cachedLocations;
+
   // Check if cache needs refresh (was invalidated)
   bool get needsRefresh => _wasManuallyInvalidated;
 
-  /// Preload map data in the background
-  Future<void> preloadMapData() async {
-    try {
-      final currentUserId =
-          RepositoryProvider.instance.authRepository.currentUserId;
-      if (currentUserId == null) {
-        // No user logged in - skipping preload (log removed)
-        return;
-      }
-
-      // Starting background preload for user (log removed): $currentUserId
-
-      final locations = <CachedLocationData>[];
-      final firestore = FirebaseFirestore.instance;
-
-      // Load all collections in parallel for speed
-      final results = await Future.wait([
-        firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('offers')
-            .get(),
-        firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('owners')
-            .get(),
-        firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('offices')
-            .get(),
-        firestore
-            .collection('users')
-            .doc(currentUserId)
-            .collection('watchmen')
-            .get(),
-      ]);
-
-      // Process offers
-      for (final doc in results[0].docs) {
-        final data = doc.data();
-        final lat = data['pickUpLatitude'] as double?;
-        final lng = data['pickUpLongitude'] as double?;
-
-        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-          locations.add(CachedLocationData(
-            id: doc.id,
-            title: data['specificPropertyType'] ?? 'Property Offer',
-            address:
-                data['pickUpAddress'] ?? data['pickUpLocation'] ?? 'No address',
-            latitude: lat,
-            longitude: lng,
-            type: LocationFilter.offers,
-            phoneNumber: data['phoneNumber'],
-            mediaUrl: data['mediaUrl'],
-            mediaUrls: List<String>.from(data['mediaUrls'] ?? []),
-            additionalData: {
-              'offerType': data['offerType'],
-              'city': data['selectedCity'],
-              'minPrice': data['minPrice'],
-              'maxPrice': data['maxPrice'],
-              'propertyType': data['specificPropertyType'],
-            },
-          ));
-        }
-      }
-
-      // Process owners
-      for (final doc in results[1].docs) {
-        final data = doc.data();
-        final lat = data['pickUpLatitude'] as double?;
-        final lng = data['pickUpLongitude'] as double?;
-
-        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-          locations.add(CachedLocationData(
-            id: doc.id,
-            title: data['name'] ?? 'Property Owner',
-            address:
-                data['pickUpAddress'] ?? data['pickUpLocation'] ?? 'No address',
-            latitude: lat,
-            longitude: lng,
-            type: LocationFilter.owners,
-            phoneNumber: data['phoneNumber'],
-            mediaUrl: data['mediaUrl'],
-            mediaUrls: List<String>.from(data['mediaUrls'] ?? []),
-            additionalData: {
-              'typeOfProperties': data['typeOfProperties'],
-              'propertyLocation': data['propertyLocation'],
-            },
-          ));
-        }
-      }
-
-      // Process offices
-      for (final doc in results[2].docs) {
-        final data = doc.data();
-        final lat = data['pickUpLatitude'] as double?;
-        final lng = data['pickUpLongitude'] as double?;
-
-        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-          locations.add(CachedLocationData(
-            id: doc.id,
-            title: data['officeName'] ?? 'Real Estate Office',
-            address:
-                data['pickUpAddress'] ?? data['pickUpLocation'] ?? 'No address',
-            latitude: lat,
-            longitude: lng,
-            type: LocationFilter.offices,
-            phoneNumber: data['phoneNumber'],
-            additionalData: {
-              'managerName': data['managerName'],
-              'officeLocation': data['officeLocation'],
-            },
-          ));
-        }
-      }
-
-      // Process watchmen
-      for (final doc in results[3].docs) {
-        final data = doc.data();
-        final lat = data['pickUpLatitude'] as double?;
-        final lng = data['pickUpLongitude'] as double?;
-
-        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-          locations.add(CachedLocationData(
-            id: doc.id,
-            title: data['name'] ?? 'Building Watchman',
-            address: data['pickUpAddress'] ??
-                data['pickUpLocation'] ??
-                data['buildingLocation'] ??
-                'No address',
-            latitude: lat,
-            longitude: lng,
-            type: LocationFilter.watchmen,
-            phoneNumber: data['phoneNumber'],
-            additionalData: {
-              'buildingName': data['buildingName'],
-              'buildingLocation': data['buildingLocation'],
-            },
-          ));
-        }
-      }
-
-      // Update cache
-      _cachedLocations = locations;
-      _lastCacheTime = DateTime.now();
-      _cachedUserId = currentUserId;
-      _wasManuallyInvalidated = false; // Reset flag after successful load
-
-      // Preloaded ${locations.length} locations successfully (log removed)
-      //   - Offers: ${locations.where((l) => l.type == LocationFilter.offers).length}
-      //   - Owners: ${locations.where((l) => l.type == LocationFilter.owners).length}
-      //   - Offices: ${locations.where((l) => l.type == LocationFilter.offices).length}
-      //   - Watchmen: ${locations.where((l) => l.type == LocationFilter.watchmen).length}
-    } catch (e) {
-      // Error preloading map data (log removed): $e
-      // Don't throw - let the map load data normally if preload fails
-    }
+  /// Keeps [places] as [userId]'s, unless the data changed after the read that
+  /// produced them started at [generation].
+  @override
+  void store(
+    String userId,
+    List<CachedLocationData> places, {
+    required int generation,
+  }) {
+    if (generation != _generation) return;
+    _cachedLocations = List<CachedLocationData>.unmodifiable(places);
+    _lastCacheTime = DateTime.now();
+    _cachedUserId = userId;
+    _wasManuallyInvalidated = false; // Reset flag after a successful load
   }
+
+  /// Kept for the callers that ask for a preload at startup and at sign-in:
+  /// there is nothing to preload. The map reads its places from Supabase when it
+  /// opens, and keeps them here for the next visit.
+  Future<void> preloadMapData() async {}
 
   /// Register a callback to be notified when cache is invalidated
   void setOnCacheInvalidatedCallback(void Function()? callback) {
@@ -212,53 +108,21 @@ class MapDataCacheService {
 
   /// Invalidate cache (call when data changes)
   void invalidateCache() {
-    // Cache invalidated - data was modified (log removed)
+    _generation++;
     _cachedLocations = null;
     _lastCacheTime = null;
     _cachedUserId = null;
     _wasManuallyInvalidated = true; // Mark as needing refresh
 
     // Notify listener if registered (for when map is open)
-    if (_onCacheInvalidated != null) {
-      // Notifying listener of cache invalidation (log removed)
-      _onCacheInvalidated!();
-    }
+    _onCacheInvalidated?.call();
   }
 
   /// Clear all cache
   void clearCache() {
-    // Cache cleared (log removed)
+    _generation++;
     _cachedLocations = null;
     _lastCacheTime = null;
     _cachedUserId = null;
   }
-}
-
-/// Lightweight cached location data
-class CachedLocationData {
-  final String id;
-  final String title;
-  final String address;
-  final double latitude;
-  final double longitude;
-  final LocationFilter type;
-  final String? phoneNumber;
-  final String? mediaUrl;
-  final List<String> mediaUrls;
-  final Map<String, dynamic> additionalData;
-
-  CachedLocationData({
-    required this.id,
-    required this.title,
-    required this.address,
-    required this.latitude,
-    required this.longitude,
-    required this.type,
-    this.phoneNumber,
-    this.mediaUrl,
-    this.mediaUrls = const [],
-    this.additionalData = const {},
-  });
-
-  LatLng get coordinates => LatLng(latitude, longitude);
 }

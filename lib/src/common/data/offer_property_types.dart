@@ -1,0 +1,31 @@
+/// The Offer form's canonical specific property type keys.
+abstract final class OfferPropertyTypes {
+  static const List<String> keys = <String>[
+    'apartment',
+    'villa',
+    'studio',
+    'townhouse',
+    'penthouse',
+    'compound',
+    'duplex',
+    'fullFloor',
+    'halfFloor',
+    'wholeBuilding',
+    'land',
+    'bulkRentUnit',
+    'bungalow',
+    'hotelAndHotelApartment',
+    'officeSpace',
+    'retail',
+    'warehouse',
+    'shop',
+    'showRoom',
+    'bulkSaleUnit',
+    'factory',
+    'laborCamp',
+    'staffAccommodation',
+    'businessCentre',
+    'farm',
+    'offices',
+  ];
+}

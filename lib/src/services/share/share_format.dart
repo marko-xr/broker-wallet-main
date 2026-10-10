@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 
 import 'package:broker_wallet/src/common/data/uae_area_catalog.dart';
+import 'package:broker_wallet/src/common/data/offer_property_types.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/share/share_labels.dart';
 
@@ -214,34 +215,7 @@ abstract final class ShareFormat {
 
   /// The property types the Request and Offer forms offer (and older ones
   /// stored), each of them also an ARB key.
-  static const List<String> propertySubTypeKeys = <String>[
-    'apartment',
-    'villa',
-    'studio',
-    'townhouse',
-    'penthouse',
-    'compound',
-    'duplex',
-    'fullFloor',
-    'halfFloor',
-    'wholeBuilding',
-    'land',
-    'bulkRentUnit',
-    'bungalow',
-    'hotelAndHotelApartment',
-    'officeSpace',
-    'retail',
-    'warehouse',
-    'shop',
-    'showRoom',
-    'bulkSaleUnit',
-    'factory',
-    'laborCamp',
-    'staffAccommodation',
-    'businessCentre',
-    'farm',
-    'offices',
-  ];
+  static const List<String> propertySubTypeKeys = OfferPropertyTypes.keys;
 
   /// The main property category (`residential`, `commercial`, `furnished`) in the
   /// message's language, or the stored text capitalized when it is not one.

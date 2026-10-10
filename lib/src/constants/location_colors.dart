@@ -1,8 +1,10 @@
+import 'package:broker_wallet/src/constants/location_filter.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-// Enums for filtering (import from viewmodel)
-enum LocationFilter { all, offers, owners, offices, watchmen }
+// The filter enum lives in its own plain-Dart file; it is re-exported here so
+// every existing `location_colors.dart` import keeps working.
+export 'package:broker_wallet/src/constants/location_filter.dart';
 
 /// Utility class for consistent location colors across the app
 /// This ensures map markers and filter chips use the same colors

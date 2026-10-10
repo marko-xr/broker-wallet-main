@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -10,7 +12,16 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_bar.dart';
+import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_status_line.dart';
 import 'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
+import 'package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart';
+import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
+import 'package:broker_wallet/src/Views/Widgets/private_card_media.dart';
+import 'package:broker_wallet/src/services/map_camera.dart';
+import 'package:broker_wallet/src/services/map_filter_controller.dart';
+import 'package:broker_wallet/src/services/map_location_data.dart';
+import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/owner_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/office_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/watchmen_service.dart';
@@ -26,8 +37,22 @@ class MapViewScreen extends StatefulWidget {
 class _MapViewScreenState extends State<MapViewScreen> {
   bool _isLegendExpanded = false;
   final TextEditingController _searchController = TextEditingController();
-  bool _hasRequestedPermission =
-      false; // Track if we've already requested permission
+  bool _hasCheckedPermission = false; // Check once, never ask
+
+  // What the screen's own controls cover of the map, so the cities' frame it
+  // opens on sits in what is left: the search bar and the filter row below the
+  // status bar (76 + the row's 48 + a gap), and the my-location button above the
+  // bottom edge.
+  static const double _controlsBelowTop = 76 + 48 + 8;
+  static const double _controlsAboveBottom = 16 + 40 + 16;
+  static const double _controlsSideGap = 16;
+
+  // The status line (the result count, and Reset while a filter is on) floats
+  // over the map right under the filter row, and the "no matches" banner under
+  // it. Like the banner always did, they sit on the map: they are not part of
+  // what the opening frame leaves room for, so that frame is unchanged.
+  static const double _statusLineTop = 76 + 52;
+  static const double _bannerTop = _statusLineTop + MapFilterStatusLine.height;
 
   @override
   void dispose() {
@@ -35,11 +60,26 @@ class _MapViewScreenState extends State<MapViewScreen> {
     super.dispose();
   }
 
+  /// The my-location button. The person tapped it, so location may be asked for
+  /// now (the system's own prompt; the app puts no dialog of its own before
+  /// it). When the camera cannot move, a short non-blocking message says why.
+  Future<void> _locateMe(
+    MapViewViewModel vm,
+    AppLocalizations localization,
+  ) async {
+    final fix = await vm.moveToCurrentLocation();
+    if (!mounted || fix == null) return;
+    final key = nearbyFixMessageKey(fix);
+    if (key != null) _showToast(localization.translate(key), Colors.orange);
+  }
+
   Future<void> _searchLocation(String query, MapViewViewModel vm) async {
     if (query.trim().isEmpty) return;
 
+    final loc = AppLocalizations.of(context);
     try {
       List<Location> locations = await locationFromAddress(query);
+      if (!mounted) return;
       if (locations.isNotEmpty) {
         Location location = locations.first;
         LatLng searchedLocation = LatLng(location.latitude, location.longitude);
@@ -51,10 +91,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
         FocusScope.of(context).unfocus();
 
         // Show success toast
-        _showToast('Location found!', Colors.green);
+        _showToast(loc.translate('mapLocationFound'), Colors.green);
+      } else {
+        _showToast(loc.translate('mapLocationNotFound'), Colors.red);
       }
     } catch (e) {
-      _showToast('Location not found: ${e.toString()}', Colors.red);
+      // The geocoder's own message is not for the person: it is English, and
+      // it can quote what they typed.
+      if (mounted) {
+        _showToast(loc.translate('mapLocationNotFound'), Colors.red);
+      }
     }
   }
 
@@ -71,10 +117,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   Future<void> _navigateToDetails(
       BuildContext context, LocationInfo locationInfo) async {
+    final loc = AppLocalizations.of(context);
     try {
-      // // Show loading indicator
-      // _showToast('Loading...', Colors.blue);
-
       switch (locationInfo.type) {
         case LocationFilter.offers:
           final offerId = locationInfo.id.trim();
@@ -90,7 +134,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
           if (owner != null && context.mounted) {
             context.push('/owners-details', extra: owner);
           } else if (context.mounted) {
-            _showToast('Owner not found', Colors.red);
+            _showToast(loc.translate('ownerNotFound'), Colors.red);
           }
           break;
 
@@ -99,7 +143,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
           if (office != null && context.mounted) {
             context.push('/offices-details', extra: office);
           } else if (context.mounted) {
-            _showToast('Office not found', Colors.red);
+            _showToast(loc.translate('officeNotFound'), Colors.red);
           }
           break;
 
@@ -108,18 +152,19 @@ class _MapViewScreenState extends State<MapViewScreen> {
           if (watchmen != null && context.mounted) {
             context.push('/watchmen-details', extra: watchmen);
           } else if (context.mounted) {
-            _showToast('Watchman not found', Colors.red);
+            _showToast(loc.translate('watchmanNotFound'), Colors.red);
           }
           break;
 
         case LocationFilter.all:
-          // Should not happen, but handle gracefully
-          _showToast('Please select a specific location', Colors.orange);
+          // A place is never "all": nothing to open.
           break;
       }
     } catch (e) {
+      // The error itself is not for the person: it is English and can quote
+      // record data.
       if (context.mounted) {
-        _showToast('Error loading details: ${e.toString()}', Colors.red);
+        _showToast(loc.translate('mapDetailsLoadFailed'), Colors.red);
       }
     }
   }
@@ -132,14 +177,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
       create: (_) => MapViewViewModel(),
       child: Consumer<MapViewViewModel>(
         builder: (context, vm, _) {
-          // Request location permission after map loads (only once)
-          if (vm.error == null && !_hasRequestedPermission) {
-            _hasRequestedPermission = true;
+          vm.updateLocalization(localization);
+
+          // Whether location is already allowed (to show the device's own dot).
+          // Only a check: opening the map never asks for location. Location is
+          // asked for when the person turns Nearby on, or taps "my location".
+          if (!_hasCheckedPermission) {
+            _hasCheckedPermission = true;
             // Use post-frame callback to avoid calling during build
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                vm.requestLocationPermission(context);
-              }
+              if (context.mounted) unawaited(vm.checkLocationPermission());
             });
           }
 
@@ -151,45 +198,64 @@ class _MapViewScreenState extends State<MapViewScreen> {
             body: Stack(
               children: [
                 // Full-screen Map - always display, no loading check
-                vm.error != null
+                vm.hasLoadError
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              size: 64,
-                              color: colors.error,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              vm.error!,
-                              style: TextStyle(color: colors.error),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: vm.loadLocations,
-                              child: Text(localization.translate('retry')),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: colors.error,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                localization.translate('mapLoadFailed'),
+                                style: TextStyle(color: colors.error),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: vm.retry,
+                                child: Text(localization.translate('retry')),
+                              ),
+                            ],
+                          ),
                         ),
                       )
-                    : GoogleMap(
-                        mapType: vm.mapType,
-                        initialCameraPosition: vm.initialCameraPosition,
-                        onMapCreated: vm.onMapCreated,
-                        markers: vm.filteredMarkers,
-                        onTap: vm.onMapTap,
-                        myLocationEnabled: vm
-                            .hasLocationPermission, // Only enable if permission granted
-                        myLocationButtonEnabled:
-                            false, // Disable default button
-                        zoomControlsEnabled: true,
-                        mapToolbarEnabled: false,
-                        compassEnabled: true,
-                        trafficEnabled: false,
-                        buildingsEnabled: true,
+                    : LayoutBuilder(
+                        // The map opens on the UAE's cities, framed for the room it
+                        // really has (the search bar and filters cover the top,
+                        // the location button the bottom). That is its starting
+                        // camera, so nothing moves it afterwards.
+                        builder: (context, constraints) => GoogleMap(
+                          mapType: vm.mapType,
+                          initialCameraPosition: vm.initialCameraFor(
+                            MapViewport(
+                              width: constraints.maxWidth,
+                              height: constraints.maxHeight,
+                              top: MediaQuery.of(context).padding.top +
+                                  _controlsBelowTop,
+                              bottom: _controlsAboveBottom,
+                              left: _controlsSideGap,
+                              right: _controlsSideGap,
+                            ),
+                          ),
+                          onMapCreated: vm.onMapCreated,
+                          markers: vm.filteredMarkers,
+                          onTap: vm.onMapTap,
+                          myLocationEnabled: vm
+                              .hasLocationPermission, // Only enable if permission granted
+                          myLocationButtonEnabled:
+                              false, // Disable default button
+                          zoomControlsEnabled: true,
+                          mapToolbarEnabled: false,
+                          compassEnabled: true,
+                          trafficEnabled: false,
+                          buildingsEnabled: true,
+                        ),
                       ),
 
                 // Floating Back Arrow Button (RTL/LTR aware)
@@ -284,18 +350,48 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   ),
                 ),
 
-                // Floating Filter Chips (full screen width)
+                // The filters: one compact row under the search bar, scrolling
+                // sideways on a small phone.
                 Positioned(
                   top: MediaQuery.of(context).padding.top +
-                      80, // Below search bar
-                  left: 16, // Full width from left
-                  right: 16, // Full width to right
-                  child: _FloatingFilterChips(
+                      76, // Below search bar
+                  left: 0,
+                  right: 0,
+                  child: MapFilterBar(
                     viewModel: vm,
                     localization: localization,
-                    colors: colors,
+                    onMessage: (message) => _showToast(message, Colors.orange),
                   ),
                 ),
+
+                // How many places the map shows, and Reset while the filters
+                // differ from the default. The count is the published draw's
+                // own (the markers' places); Reset is the banner's action.
+                PositionedDirectional(
+                  top: MediaQuery.of(context).padding.top + _statusLineTop,
+                  start: 16,
+                  end: 16,
+                  child: MapFilterStatusLine(
+                    localization: localization,
+                    resultCount: vm.resultCount,
+                    canReset: vm.filtersActive,
+                    onReset: vm.clearFilters,
+                  ),
+                ),
+
+                // Places are loaded but the filters let none through: the map
+                // stays, and says so. (Not a failed load.)
+                if (vm.hasNoFilterMatches)
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + _bannerTop,
+                    left: 16,
+                    right: 16,
+                    child: MapNoMatchesBanner(
+                      message: localization.translate('mapNoFilterMatches'),
+                      actionLabel: localization.translate('mapResetFilters'),
+                      onClear: vm.clearFilters,
+                    ),
+                  ),
 
                 // My Location Button (Bottom Left) - Hidden when info panel is visible
                 if (vm.selectedLocationInfo == null)
@@ -315,7 +411,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                         ],
                       ),
                       child: IconButton(
-                        onPressed: () => vm.moveToCurrentLocation(context),
+                        onPressed: () => _locateMe(vm, localization),
                         icon: Icon(
                           Icons.my_location,
                           color: colors.onSurface,
@@ -339,6 +435,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       cluster: vm.selectedCluster!,
                       onClose: vm.clearSelectedLocation,
                       localization: localization,
+                      titleOf: vm.displayTitle,
+                      cardMedia: vm.cardMedia,
                       onPageChanged: (index) {
                         vm.updateClusterActiveIndex(index);
                       },
@@ -388,7 +486,7 @@ class _FloatingSearchBar extends StatelessWidget {
       child: TextField(
         controller: controller,
         decoration: InputDecoration(
-          hintText: localization.translate('searchLocation'),
+          hintText: localization.translate('mapSearchHint'),
           hintStyle: AppTextStyles.hintText,
           prefixIcon: Icon(Icons.search, color: colors.primary),
           suffixIcon: controller.text.isNotEmpty
@@ -416,265 +514,13 @@ class _FloatingSearchBar extends StatelessWidget {
   }
 }
 
-// Floating Filter Chips Widget
-class _FloatingFilterChips extends StatefulWidget {
-  final MapViewViewModel viewModel;
-  final AppLocalizations localization;
-  final ColorScheme colors;
-
-  const _FloatingFilterChips({
-    required this.viewModel,
-    required this.localization,
-    required this.colors,
-  });
-
-  @override
-  State<_FloatingFilterChips> createState() => _FloatingFilterChipsState();
-}
-
-class _FloatingFilterChipsState extends State<_FloatingFilterChips> {
-  bool _isExpanded = true;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.colors.surface.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: widget.colors.shadow.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header with toggle
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  widget.localization.translate('filterByType'),
-                  style: AppTextStyles.sectionLabel.copyWith(fontSize: 14),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!widget.viewModel.selectedFilters
-                        .contains(LocationFilter.all))
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: widget.colors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${widget.viewModel.selectedFilters.length} • ${widget.viewModel.currentFilteredCount}',
-                          style: TextStyle(
-                            color: widget.colors.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    GestureDetector(
-                      onTap: () => setState(() => _isExpanded = !_isExpanded),
-                      child: Icon(
-                        _isExpanded ? Icons.expand_less : Icons.expand_more,
-                        color: widget.colors.onSurface.withValues(alpha: 0.6),
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Filter chips (collapsible)
-          if (_isExpanded)
-            Container(
-              height: 50,
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _FilterChip(
-                      label: widget.localization.translate('all'),
-                      icon: Icons.view_list,
-                      isSelected:
-                          widget.viewModel.isFilterSelected(LocationFilter.all),
-                      onTap: () =>
-                          widget.viewModel.setFilter(LocationFilter.all),
-                      count: widget.viewModel.totalLocationsCount,
-                      color: LocationColors.getColor(LocationFilter.all),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: widget.localization.translate('offers'),
-                      iconAsset: 'assets/icons/offers-svg.svg',
-                      isSelected: widget.viewModel
-                          .isFilterSelected(LocationFilter.offers),
-                      onTap: () =>
-                          widget.viewModel.setFilter(LocationFilter.offers),
-                      count: widget.viewModel.offersCount,
-                      color: LocationColors.getColor(LocationFilter.offers),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: widget.localization.translate('owners'),
-                      iconAsset: 'assets/icons/owners-svg.svg',
-                      isSelected: widget.viewModel
-                          .isFilterSelected(LocationFilter.owners),
-                      onTap: () =>
-                          widget.viewModel.setFilter(LocationFilter.owners),
-                      count: widget.viewModel.ownersCount,
-                      color: LocationColors.getColor(LocationFilter.owners),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: widget.localization.translate('offices'),
-                      iconAsset: 'assets/icons/offices-svg.svg',
-                      isSelected: widget.viewModel
-                          .isFilterSelected(LocationFilter.offices),
-                      onTap: () =>
-                          widget.viewModel.setFilter(LocationFilter.offices),
-                      count: widget.viewModel.officesCount,
-                      color: LocationColors.getColor(LocationFilter.offices),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: widget.localization.translate('watchmen'),
-                      iconAsset: 'assets/icons/watchman-svg.svg',
-                      isSelected: widget.viewModel
-                          .isFilterSelected(LocationFilter.watchmen),
-                      onTap: () =>
-                          widget.viewModel.setFilter(LocationFilter.watchmen),
-                      count: widget.viewModel.watchmenCount,
-                      color: LocationColors.getColor(LocationFilter.watchmen),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// Filter Chip Widget
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final String? iconAsset;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final int count;
-  final Color? color;
-
-  const _FilterChip({
-    required this.label,
-    this.icon,
-    this.iconAsset,
-    required this.isSelected,
-    required this.onTap,
-    required this.count,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final chipColor = color ?? colors.primary;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? chipColor : colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? chipColor : colors.outline.withValues(alpha: 0.3),
-            width: 1.5,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: chipColor.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null)
-              Icon(
-                icon!,
-                size: 18,
-                color: isSelected ? Colors.white : chipColor,
-              )
-            else if (iconAsset != null)
-              SvgPicture.asset(
-                iconAsset!,
-                width: 18,
-                height: 18,
-                color: isSelected ? Colors.white : chipColor,
-              ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : chipColor,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                fontSize: 13,
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.2)
-                      : chipColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  count.toString(),
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : chipColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // Floating Location Carousel (for clustered locations)
 class _FloatingLocationCarousel extends StatefulWidget {
   final ClusteredLocationInfo cluster;
   final VoidCallback onClose;
   final AppLocalizations localization;
+  final String Function(LocationInfo) titleOf;
+  final SearchCardMediaResolver cardMedia;
   final Function(int) onPageChanged;
   final Function(LocationInfo) onItemTap;
 
@@ -682,6 +528,8 @@ class _FloatingLocationCarousel extends StatefulWidget {
     required this.cluster,
     required this.onClose,
     required this.localization,
+    required this.titleOf,
+    required this.cardMedia,
     required this.onPageChanged,
     required this.onItemTap,
   });
@@ -779,6 +627,8 @@ class _FloatingLocationCarouselState extends State<_FloatingLocationCarousel> {
                         curve: Curves.easeInOut,
                         child: _LocationCarouselCard(
                           locationInfo: locationInfo,
+                          title: widget.titleOf(locationInfo),
+                          cardMedia: widget.cardMedia,
                           onClose: widget.onClose,
                           localization: widget.localization,
                           onTap: () => widget.onItemTap(locationInfo),
@@ -884,6 +734,10 @@ class _CarouselIndicators extends StatelessWidget {
 // Individual carousel card
 class _LocationCarouselCard extends StatelessWidget {
   final LocationInfo locationInfo;
+
+  /// What the place is called, in the app's language.
+  final String title;
+  final SearchCardMediaResolver cardMedia;
   final VoidCallback onClose;
   final AppLocalizations localization;
   final VoidCallback onTap;
@@ -892,47 +746,14 @@ class _LocationCarouselCard extends StatelessWidget {
 
   const _LocationCarouselCard({
     required this.locationInfo,
+    required this.title,
+    required this.cardMedia,
     required this.onClose,
     required this.localization,
     required this.onTap,
     required this.showCloseButton,
     required this.colors,
   });
-
-  String _extractAreaAndCity(String fullAddress) {
-    if (fullAddress.isEmpty) return '';
-
-    final parts = fullAddress
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-
-    if (parts.isEmpty) return fullAddress;
-
-    final meaningfulParts = parts.where((part) {
-      final lowerPart = part.toLowerCase();
-      return !lowerPart.contains('united arab emirates') &&
-          !lowerPart.contains('uae') &&
-          !lowerPart.contains('emirates') &&
-          !lowerPart.contains('street') &&
-          !lowerPart.contains('st') &&
-          !RegExp(r'^\d+').hasMatch(part) &&
-          part.length > 2;
-    }).toList();
-
-    if (meaningfulParts.length >= 2) {
-      return meaningfulParts.skip(meaningfulParts.length - 2).join(', ');
-    } else if (meaningfulParts.length == 1) {
-      return meaningfulParts.first;
-    }
-
-    if (parts.length >= 2) {
-      return parts.skip(parts.length - 2).join(', ');
-    }
-
-    return parts.isNotEmpty ? parts.last : fullAddress;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -968,6 +789,7 @@ class _LocationCarouselCard extends StatelessWidget {
                   children: [
                     _CompactMediaPreview(
                       locationInfo: locationInfo,
+                      cardMedia: cardMedia,
                       colors: colors,
                     ),
                     const SizedBox(width: 12),
@@ -1042,7 +864,7 @@ class _LocationCarouselCard extends StatelessWidget {
                           const SizedBox(height: 4), // Reduced from 6
                           // Title
                           Text(
-                            locationInfo.title,
+                            title,
                             style: AppTextStyles.bodyText.copyWith(
                               fontWeight: FontWeight.w700,
                               fontSize: 14, // Reduced from 15
@@ -1063,7 +885,8 @@ class _LocationCarouselCard extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
-                                    _extractAreaAndCity(locationInfo.address),
+                                    MapLocationMapper.areaAndCity(
+                                        locationInfo.address),
                                     style: AppTextStyles.hintText.copyWith(
                                       color: colors.onSurface.withValues(alpha: 0.6),
                                       fontSize: 11, // Reduced from 12
@@ -1103,25 +926,110 @@ class _LocationCarouselCard extends StatelessWidget {
 }
 
 // Compact media preview widget
-class _CompactMediaPreview extends StatelessWidget {
+///
+/// An Offer's or an Owner's photo (or a video's still frame): the list reads
+/// carry no media links, so the card asks for its own through the resolver
+/// Search uses, only while it is shown. Anything else, or a record whose media
+/// cannot be had, keeps the plain URL it carries, or its icon.
+class _CompactMediaPreview extends StatefulWidget {
   final LocationInfo locationInfo;
+  final SearchCardMediaResolver cardMedia;
   final ColorScheme colors;
 
   const _CompactMediaPreview({
     required this.locationInfo,
+    required this.cardMedia,
     required this.colors,
   });
 
   @override
+  State<_CompactMediaPreview> createState() => _CompactMediaPreviewState();
+}
+
+class _CompactMediaPreviewState extends State<_CompactMediaPreview> {
+  /// The private photo or video frame, once there is one to draw.
+  FavoriteCardMedia? _media;
+
+  /// Identifies the place the media was asked for, so a late answer for a card
+  /// that now shows another place is ignored.
+  int _mediaRequest = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindMedia();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CompactMediaPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.locationInfo.id != widget.locationInfo.id ||
+        oldWidget.locationInfo.type != widget.locationInfo.type ||
+        oldWidget.cardMedia != widget.cardMedia) {
+      _bindMedia();
+    }
+  }
+
+  /// Only Offers and Owners have private photos and videos.
+  CardMediaKind? get _mediaKind {
+    switch (widget.locationInfo.type) {
+      case LocationFilter.offers:
+        return CardMediaKind.offer;
+      case LocationFilter.owners:
+        return CardMediaKind.owner;
+      case LocationFilter.offices:
+      case LocationFilter.watchmen:
+      case LocationFilter.all:
+        return null;
+    }
+  }
+
+  /// Draws what is known at once (an earlier answer, or what this device
+  /// holds), then asks for the rest while the card is shown.
+  void _bindMedia() {
+    final request = ++_mediaRequest;
+    final kind = _mediaKind;
+    if (kind == null) {
+      _media = null;
+      return;
+    }
+    final resolver = widget.cardMedia;
+    final id = widget.locationInfo.id;
+    _media = resolver.current(kind, id);
+    unawaited(resolver
+        .resolve(
+      kind,
+      id,
+      isWanted: () => mounted && request == _mediaRequest,
+    )
+        .then((media) {
+      if (!mounted || request != _mediaRequest) return;
+      if (_sameMedia(_media, media)) return;
+      setState(() => _media = media);
+    }));
+  }
+
+  static bool _sameMedia(FavoriteCardMedia? a, FavoriteCardMedia? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.cacheKey == b.cacheKey &&
+        a.isVideo == b.isVideo &&
+        a.signedUrl == b.signedUrl &&
+        a.posterPath == b.posterPath;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final locationInfo = widget.locationInfo;
+    final colors = widget.colors;
+    final media = _media;
+
     // Check if media exists
-    final hasMedia =
-        (locationInfo.mediaUrl != null && locationInfo.mediaUrl!.isNotEmpty) ||
-            locationInfo.mediaUrls.isNotEmpty;
     final firstMediaUrl = locationInfo.mediaUrl ??
         (locationInfo.mediaUrls.isNotEmpty
             ? locationInfo.mediaUrls.first
             : null);
+    final hasUrl = firstMediaUrl != null && firstMediaUrl.isNotEmpty;
+    final hasMedia = media != null || hasUrl;
 
     return Container(
       width: 60,
@@ -1138,31 +1046,40 @@ class _CompactMediaPreview extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: hasMedia && firstMediaUrl != null
-            ? CachedNetworkImage(
-                imageUrl: firstMediaUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  color: locationInfo.color.withValues(alpha: 0.1),
-                  child: Center(
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: locationInfo.color,
+        child: media != null
+            ? PrivateCardMedia(
+                cacheKey: media.cacheKey,
+                isVideo: media.isVideo,
+                signedUrl: media.signedUrl,
+                posterPath: media.posterPath,
+                fallback: _buildIconBadge(),
+              )
+            : hasUrl
+                ? CachedNetworkImage(
+                    imageUrl: firstMediaUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      color: locationInfo.color.withValues(alpha: 0.1),
+                      child: Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: locationInfo.color,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                errorWidget: (context, url, error) => _buildIconBadge(),
-              )
-            : _buildIconBadge(),
+                    errorWidget: (context, url, error) => _buildIconBadge(),
+                  )
+                : _buildIconBadge(),
       ),
     );
   }
 
   Widget _buildIconBadge() {
+    final locationInfo = widget.locationInfo;
     return Center(
       child: locationInfo.iconAsset != null
           ? SvgPicture.asset(
@@ -1194,20 +1111,47 @@ class _CompactActionButtons extends StatelessWidget {
     required this.loc,
   });
 
+  // The same dial form the detail screens use (+<digits>, no spaces), so a
+  // stored number written either way reaches the phone.
   Future<void> _makePhoneCall(String phoneNumber) async {
-    final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
-    if (await canLaunchUrl(phoneUri)) {
-      await launchUrl(phoneUri);
+    try {
+      final dial = PhoneInputService.formatForDial(phoneNumber);
+      final Uri phoneUri = Uri(scheme: 'tel', path: dial);
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri);
+        return;
+      }
+    } catch (_) {
+      // Told below, in the person's language.
     }
+    _MapViewScreenState._showToast(
+      loc.translate('unableToMakePhoneCall'),
+      Colors.red,
+    );
   }
 
   Future<void> _openWhatsApp(String phoneNumber) async {
-    final String message = Uri.encodeComponent('Hello');
-    final Uri whatsappUri =
-        Uri.parse('https://wa.me/$phoneNumber?text=$message');
-    if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    try {
+      // wa.me wants the international number as digits only.
+      final digits = PhoneInputService.formatForDial(phoneNumber)
+          .replaceAll(RegExp(r'[^0-9]'), '');
+      final template = loc.translate('whatsAppBusinessMessage').replaceAll(
+            '{managerName}',
+            loc.translate('propertyManager'),
+          );
+      final message = Uri.encodeComponent(template);
+      final Uri whatsappUri = Uri.parse('https://wa.me/$digits?text=$message');
+      if (digits.isNotEmpty && await canLaunchUrl(whatsappUri)) {
+        await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {
+      // Told below, in the person's language.
     }
+    _MapViewScreenState._showToast(
+      loc.translate('couldNotOpenWhatsApp'),
+      Colors.red,
+    );
   }
 
   @override

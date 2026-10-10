@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:broker_wallet/src/Views/Widgets/map_picker_view.dart';
+import 'package:broker_wallet/src/common/data/picked_location_gate.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 
@@ -257,8 +259,27 @@ class _PickUpInputWidgetState extends State<PickUpInputWidget> {
       ),
     );
 
-    if (selectedLocation != null) {
-      await vm.setSelectedLocation(selectedLocation, context);
-    }
+    if (selectedLocation == null || !context.mounted) return;
+
+    // The one place a pin picked on the map enters a form (Offer, Owner,
+    // Office, Watchman). A position that could not be in the UAE is turned away
+    // with a short message, and the form keeps the pickup location it had.
+    await PickedLocationGate.admit(
+      latitude: selectedLocation.latitude,
+      longitude: selectedLocation.longitude,
+      accept: () => vm.setSelectedLocation(selectedLocation, context),
+      reject: _showOutsideUae,
+    );
+  }
+
+  void _showOutsideUae() {
+    Fluttertoast.showToast(
+      msg: widget.localization.translate('pickupLocationOutsideUae'),
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 1,
+      backgroundColor: Colors.red,
+      textColor: Colors.white,
+    );
   }
 }

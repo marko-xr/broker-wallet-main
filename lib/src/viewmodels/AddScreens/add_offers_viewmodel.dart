@@ -10,6 +10,8 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/common/data/uae_area_catalog.dart';
+import 'package:broker_wallet/src/services/map_city_geography.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -1223,6 +1225,30 @@ class AddOffersViewModel extends ChangeNotifier
         return;
       }
 
+      // The city chosen and the pin placed are two separate fields. An Offer
+      // saved as one city with its pin clearly in another is listed under the
+      // wrong city on the map, so it is not saved until the two agree. The pin
+      // is only judged when it is clearly in another listed city (see
+      // MapCityGeography): a remote pin, or one on a border, saves as it did.
+      final pinCity = _cityOfConflictingPin();
+      if (pinCity != null) {
+        final loc = AppLocalizations.of(context);
+        _error = loc
+            .translate('offerCityPinMismatch')
+            .replaceAll(
+              '{city}',
+              loc.translate(UaeAreaCatalog.cityKey(selectedCity)),
+            )
+            .replaceAll(
+              '{pinCity}',
+              loc.translate(UaeAreaCatalog.cityKey(pinCity)),
+            );
+        _isLoading = false;
+        notifyListeners();
+        _showToast(_error!, Colors.red);
+        return;
+      }
+
       // Convert PlatformFiles to Files for upload
       final mediaFilesToUpload = <File>[];
       for (final platformFile in _selectedFiles) {
@@ -1468,6 +1494,15 @@ class AddOffersViewModel extends ChangeNotifier
   }
 
   /// Increment quota count after successful save
+
+  /// The listed city the pin is clearly in when that is not the city chosen,
+  /// or null (no city or no pin chosen, or nothing clearly wrong).
+  String? _cityOfConflictingPin() {
+    final lat = _pickUpLatitude;
+    final lng = _pickUpLongitude;
+    if (selectedCity.isEmpty || lat == null || lng == null) return null;
+    return MapCityGeography.otherCityAt(selectedCity, lat, lng);
+  }
 
 // Update the validation method
   bool _validateData() {

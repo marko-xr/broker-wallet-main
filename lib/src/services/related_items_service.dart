@@ -1,12 +1,26 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../data/models/ScreensModel/offers_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
+import 'supabase_core_entities_service.dart';
 
 /// 🔗 Service for fetching related offers and requests based on phone number matching
 /// Used in detail screens to show cross-referenced items
 class RelatedItemsService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  RelatedItemsService({
+    SupabaseCoreEntitiesService? coreEntities,
+    FirebaseFirestore? firestore,
+  })  : _coreEntitiesOverride = coreEntities,
+        _firestoreOverride = firestore;
+
+  final SupabaseCoreEntitiesService? _coreEntitiesOverride;
+  final FirebaseFirestore? _firestoreOverride;
+  late final SupabaseCoreEntitiesService _coreEntities =
+      _coreEntitiesOverride ?? SupabaseCoreEntitiesService();
+  FirebaseFirestore get _firestore =>
+      _firestoreOverride ?? FirebaseFirestore.instance;
 
   /// Fetch offers matching the given phone number
   /// Returns a stream of offers where phoneNumber matches
@@ -15,16 +29,17 @@ class RelatedItemsService {
       return Stream.value([]);
     }
 
-    final userId =
-        RepositoryProvider.instance.authRepository.currentUserId;
+    final cleanPhone = _cleanPhoneNumber(phoneNumber);
+    if (SupabaseConfig.useSupabaseAuth) {
+      return _coreEntities.getRelatedOffers(cleanPhone);
+    }
+
+    final userId = RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return Stream.value([]);
     }
 
     // Clean phone number for matching (remove spaces, dashes, etc.)
-    final cleanPhone = _cleanPhoneNumber(phoneNumber);
-
-
     return _firestore
         .collection('users')
         .doc(userId)
@@ -44,16 +59,17 @@ class RelatedItemsService {
       return Stream.value([]);
     }
 
-    final userId =
-        RepositoryProvider.instance.authRepository.currentUserId;
+    final cleanPhone = _cleanPhoneNumber(phoneNumber);
+    if (SupabaseConfig.useSupabaseAuth) {
+      return _coreEntities.getRelatedRequests(cleanPhone);
+    }
+
+    final userId = RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return Stream.value([]);
     }
 
     // Clean phone number for matching
-    final cleanPhone = _cleanPhoneNumber(phoneNumber);
-
-
     return _firestore
         .collection('users')
         .doc(userId)
@@ -101,8 +117,12 @@ class RelatedItemsService {
       return 0;
     }
 
-    final userId =
-        RepositoryProvider.instance.authRepository.currentUserId;
+    if (SupabaseConfig.useSupabaseAuth) {
+      final cleanPhone = _cleanPhoneNumber(phoneNumber);
+      return _coreEntities.getRelatedItemsCount(cleanPhone);
+    }
+
+    final userId = RepositoryProvider.instance.authRepository.currentUserId;
     if (userId == null) {
       return 0;
     }

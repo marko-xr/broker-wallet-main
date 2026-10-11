@@ -11495,3 +11495,39 @@ the screen, both entry points, copy action, mail compose, and no-mail-app
 fallback on a real device in English and Arabic, light and dark, including
 large text and a short screen.
 NEXT - record the device results before marking this VERIFIED_RUNTIME.
+
+### Related Items Firebase crash correction (2026-10-11)
+
+Status: SOURCE_CHECKED only; targeted Flutter rerun, analyzer and Samsung
+verification pending. Owner saw `[core/no-app]` while opening Owner Details.
+The shared `RelatedItemsService` eagerly read `FirebaseFirestore.instance` in a field
+initializer; Owner, Office, Broker and Watchman Details all instantiate it and
+use its Offer/Request streams. Offer and Request Details do not use it.
+
+In Supabase mode the service now delegates to `SupabaseCoreEntitiesService`.
+Its existing refresh stream and row mappers read the signed-in account's Offers
+and Requests by the cleaned detail phone against stored `phone_number`, exclude
+`deleted_at` rows, and return at most ten of each in document-id order (the
+legacy Firestore query's implicit order). Count remains exact and unbounded.
+The Firestore getter is lazy and can only run in explicit legacy mode. No
+Firebase initialization, UI, schema, RLS, migration, deployment, commit or push
+changed. The new targeted test uses an injected Supabase client without a
+Firebase App and checks filters, counts, limit, ordering, error propagation and
+the four detail-screen call sites. `git diff --check` passed on the initial fix.
+As with the existing Supabase core-entity lists, stream refreshes follow local
+core-entity mutations; cross-device writes are visible after a fresh read, not
+through a Firestore-style remote snapshot subscription.
+
+Owner's first targeted Flutter run: one test passed, one failed at the ordering
+assertion. Installed `postgrest` 2.9.1 defaults `.order('id')` to descending and
+serializes its order with a null-position suffix. The related Offer and Request
+reads now explicitly request ascending ID order; the test checks the exact
+`id.asc.nullslast` query value. Only those two calls and the expectation changed.
+The owner has not rerun Flutter after this correction; device verification is
+still pending.
+
+NOW - owner reruns `flutter test test/related_items/related_items_service_test.dart`.
+NEXT - after it passes, run the scoped analyzer, then open Owner, Office, Broker
+and Watchman Details on the Samsung in Supabase mode. Verify matched
+Offer/Request cards and no Firebase default-app error, then record the runtime
+result before VERIFIED_RUNTIME.

@@ -225,7 +225,7 @@ class SupabaseCoreEntitiesService {
             .eq('owner_id', ownerId)
             .eq('phone_number', phoneNumber)
             .isFilter('deleted_at', null)
-            .order('id')
+            .order('id', ascending: true)
             .limit(10);
         return rows.map(_requestFromRow).toList(growable: false);
       });
@@ -352,7 +352,7 @@ class SupabaseCoreEntitiesService {
             .eq('owner_id', ownerId)
             .eq('phone_number', phoneNumber)
             .isFilter('deleted_at', null)
-            .order('id')
+            .order('id', ascending: true)
             .limit(10);
         return rows.map(_offerFromRow).toList(growable: false);
       });

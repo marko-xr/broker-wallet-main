@@ -11531,3 +11531,42 @@ NEXT - after it passes, run the scoped analyzer, then open Owner, Office, Broker
 and Watchman Details on the Samsung in Supabase mode. Verify matched
 Offer/Request cards and no Firebase default-app error, then record the runtime
 result before VERIFIED_RUNTIME.
+
+### Profile legal content V2 integration (2026-10-12)
+
+Status: SOURCE_CHECKED only; real-device verification pending. The Privacy
+Policy and Terms & Conditions screens now present the supplied pre-release V2
+English and Arabic content in the existing legal-screen visual language. The
+Terms privacy reference opens the existing internal Privacy Policy route.
+Unapproved effective dates, internal draft markers, and the unpublished
+court/forum sentence are omitted. No publication approval is implied. No
+backend, package, or unrelated Profile/Help screen changed. Targeted source
+checks and `git diff --check` passed; Flutter commands were not run.
+
+NOW - run the targeted legal tests and inspect both legal screens on a real
+device in English and Arabic, light and dark, with large text and a short
+screen. Open Privacy Policy from the Terms reference.
+NEXT - record the device results before marking this VERIFIED_RUNTIME; obtain
+separate legal publication approval before any final effective date is shown.
+
+Owner's targeted legal test run: one test failed in the Terms-to-Privacy route
+test at `firstWhere` after scrolling only to the Privacy section heading. The
+link lives in the following card and was not yet built in the ListView viewport.
+This is a test defect, not a legal route or content defect. The test now scrolls
+to the actual reference and taps its rendered link span in English and Arabic.
+The owner's scoped analyzer passed before this correction. Flutter tests have
+not been rerun after it; runtime verification remains pending.
+
+Owner's follow-up choice (2026-10-12): legal body paragraphs are justified in
+both languages. The pre-release Privacy and Terms age statements now say 14+
+in English and Arabic; the Privacy sentence saying the app is not intended for
+children was removed because it conflicted with the new age threshold. This
+departs from the supplied V2's 18+ wording and needs legal review before
+publication, including requirements for users under 18. No account-age gate or
+backend behavior changed. Source checks only; Flutter and device verification
+remain pending.
+
+NOW - run the targeted legal tests, then inspect paragraph spacing and the
+Terms-to-Privacy link on a real device in EN/AR, light/dark and large text.
+NEXT - record the device result and obtain legal review of the 14+ wording
+before publication approval.

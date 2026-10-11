@@ -9,8 +9,10 @@ import 'package:broker_wallet/src/views/Screens/home/Profile/legal_information_v
 import 'package:broker_wallet/src/views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/views/Widgets/settings_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 late Map<String, dynamic> _en;
 late Map<String, dynamic> _ar;
@@ -83,9 +85,8 @@ void main() {
       'noEmailAdded',
       'notAdded',
       'securityPasswordHint',
-      'legalInformationStatus',
-      'legalContentPending',
-      'legalContentAvailableBeforeRelease',
+      'legalPrivacyIntro',
+      'legalTermsIntro',
     ];
 
     for (final key in keys) {
@@ -136,16 +137,79 @@ void main() {
 
     await tester.pumpWidget(_app(const PrivacyPolicyView()));
     await tester.pumpAndSettle();
-    expect(find.text(_en['legalContentPending'] as String), findsOneWidget);
-    expect(
-      find.text(_en['legalContentAvailableBeforeRelease'] as String),
-      findsOneWidget,
-    );
+    expect(find.textContaining('professional real-estate productivity app'),
+        findsOneWidget);
 
     await tester.pumpWidget(_app(const TermsConditionsView()));
     await tester.pumpAndSettle();
     expect(find.text(_en['termsConditions'] as String), findsWidgets);
+    expect(find.text(_en['legalTermsIntro'] as String), findsOneWidget);
   });
+
+  for (final languageCode in ['en', 'ar']) {
+    testWidgets('Terms privacy reference opens Privacy Policy in $languageCode',
+        (tester) async {
+      final localized = languageCode == 'en' ? _en : _ar;
+      final referenceText = localized['legalTermsPrivacyReference'] as String;
+      final router = GoRouter(
+        initialLocation: '/terms-conditions',
+        routes: [
+          GoRoute(
+            path: '/terms-conditions',
+            builder: (context, state) => const TermsConditionsView(),
+          ),
+          GoRoute(
+            path: '/privacy-policy',
+            builder: (context, state) => const PrivacyPolicyView(),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(
+        routerConfig: router,
+        locale: Locale(languageCode),
+        theme: AppTheme.lightTheme,
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+      ));
+      await tester.pumpAndSettle();
+      final referenceFinder = find.byWidgetPredicate(
+        (widget) => widget is Text &&
+            (widget.textSpan?.toPlainText().contains(referenceText) ?? false),
+        description: 'Terms privacy reference',
+      );
+      await tester.scrollUntilVisible(
+        referenceFinder,
+        300,
+      );
+      await tester.pumpAndSettle();
+      expect(referenceFinder, findsOneWidget);
+
+      final reference = tester.widget<Text>(referenceFinder);
+      final plainText = reference.textSpan!.toPlainText();
+      final start = plainText.indexOf(referenceText);
+      expect(start, greaterThanOrEqualTo(0));
+      final paragraph = tester.renderObject<RenderParagraph>(referenceFinder);
+      final linkBox = paragraph
+          .getBoxesForSelection(TextSelection(
+            baseOffset: start,
+            extentOffset: start + referenceText.length,
+          ))
+          .first;
+      await tester.tapAt(
+        tester.getTopLeft(referenceFinder) + linkBox.toRect().center,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PrivacyPolicyView), findsOneWidget);
+    });
+  }
 
   testWidgets('Security safely presents real identity values and empty states',
       (tester) async {

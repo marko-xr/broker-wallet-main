@@ -11570,3 +11570,62 @@ NOW - run the targeted legal tests, then inspect paragraph spacing and the
 Terms-to-Privacy link on a real device in EN/AR, light/dark and large text.
 NEXT - record the device result and obtain legal review of the 14+ wording
 before publication approval.
+
+### Profile information architecture cleanup (2026-10-12)
+
+Status: SOURCE_CHECKED only; owner Flutter tests, scoped analyzer and real-device
+verification pending. Main Profile now keeps its header and Edit Profile entry,
+then shows General Settings (Language, Theme), Account & Security (Security,
+Log Out), Support (Contact Us, Send Feedback), and Legal & App (Privacy Policy,
+Terms & Conditions, About Broker Wallet, Share App). The four section labels
+are localized in English and Arabic. Existing destinations and actions remain.
+
+My Plan, Help & Support, Export Data, Notifications, Delete Account and the
+Subscription row are absent from main Profile navigation. The Help & Support
+route and screen remain, with only its Notifications entry removed. Delete
+Account remains under Profile -> Security. No subscription, payments, paywall
+or RevenueCat entry is exposed from Profile. No backend or legal content changed.
+Targeted Profile source tests were added/updated. No Flutter command, commit or
+push was run for this checkpoint.
+
+NOW - owner runs `flutter test test/profile/profile_information_architecture_test.dart test/profile/profile_completion_one_ui_test.dart test/profile/contact_us_source_test.dart` and `flutter analyze lib/src/views/Screens/home/Profile`.
+NEXT - after those pass, verify the four sections, every remaining row,
+English/Arabic and RTL on a real device; confirm Delete Account through Security
+and record the result before marking this checkpoint VERIFIED_RUNTIME.
+
+### Profile deferred-feature UI completion (2026-10-12)
+
+This owner clarification supersedes the previous Profile navigation exclusion
+for My Plan, Subscriptions, Export Data and Notifications. Status: SOURCE_CHECKED
+only; owner Flutter tests, scoped analyzer and Samsung verification pending.
+The UI-only Profile structure is General Settings (Language, Theme,
+Notifications), Plan & Billing (My Plan, Subscriptions, Billing & Payments),
+Account & Security (Security, Log Out), Privacy & Data (Export Data, Privacy
+Policy), Support (Contact Us, Send Feedback), and Legal & App (Terms &
+Conditions, About Broker Wallet, Share App). Delete Account remains under
+Security only. All new section labels and unavailable-state copy are in English
+and Arabic.
+
+Existing My Plan, Subscriptions and payment-selection views were refined to
+remove legacy quota/plan claims, hard-coded prices, test purchase controls and
+simulated checkout from their customer-facing surfaces. My Plan shows an
+unavailable plan state and opens the single Subscriptions/paywall view. That
+view shows the unconfigured store-product state, disabled Subscribe/Restore
+controls, and working internal Privacy/Terms links. The historical payment
+selection route renders the same safe surface. New Billing & Payments and
+Export Data screens show honest unavailable states, with no card entry, payment
+success or generated export. The existing Notifications settings and preference
+switches remain; the screen now says push delivery is not configured.
+
+Store products, subscription authority, purchase/restore, billing history,
+export generation, push delivery and RevenueCat integration remain deferred.
+RevenueCat has no user-facing UI. No backend, package, legal content, commit or
+push changed for this checkpoint. The unrelated `lib/main.dart` modification
+was left untouched. Targeted Profile and account-deletion source tests were
+updated, with EN/AR presentation checks; Flutter commands were not run.
+
+NOW - owner runs `flutter test test/profile/profile_information_architecture_test.dart test/profile/profile_completion_one_ui_test.dart test/profile/contact_us_source_test.dart test/account/delete_account_test.dart` and `flutter analyze lib/src/views/Screens/home/Profile`.
+NEXT - after those pass, inspect all six Profile sections and deferred screens
+on the Samsung in English and Arabic, light and dark, RTL/LTR and large text;
+confirm routes, disabled purchase/export actions, saved notification preferences
+and Delete Account through Security. Record the result before VERIFIED_RUNTIME.

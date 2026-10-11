@@ -34,8 +34,10 @@ import 'package:broker_wallet/src/Views/Screens/ViewLists/requests_list_view.dar
 import 'package:broker_wallet/src/Views/Screens/ViewLists/watchmen_list_view.dart';
 
 import 'package:broker_wallet/src/Views/Screens/home/Profile/about_broker_wallet_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/billing_payments_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/contact_us_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/edit_profile_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/export_data_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/feedback_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/info_placeholder_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/help_support_view.dart';
@@ -748,6 +750,14 @@ GoRouter _createRouter(
       GoRoute(
         path: '/my-plan',
         builder: (context, state) => const MyPlanView(),
+      ),
+      GoRoute(
+        path: '/billing-payments',
+        builder: (context, state) => const BillingPaymentsView(),
+      ),
+      GoRoute(
+        path: '/export-data',
+        builder: (context, state) => const ExportDataView(),
       ),
       GoRoute(
         path: '/payment-selection/:plan',

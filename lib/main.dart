@@ -11,7 +11,6 @@ import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
-// import 'package:broker_wallet/src/services/notification_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/signup_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';

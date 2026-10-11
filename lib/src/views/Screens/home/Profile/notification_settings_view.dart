@@ -117,6 +117,17 @@ class _NotificationSettingsViewState extends State<NotificationSettingsView> {
                             vm.toggleSetting('systemUpdates', value),
                       ),
                       const SizedBox(height: 24),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            AppLocalizations.of(context)
+                                .translate('pushDeliveryNotConfigured'),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         AppLocalizations.of(context).translate('channels'),
                         style: Theme.of(context).textTheme.titleMedium,

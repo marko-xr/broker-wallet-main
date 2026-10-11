@@ -957,9 +957,13 @@ void main() {
       final source =
           File('lib/src/views/Screens/home/Profile/profile_view.dart')
               .readAsStringSync();
-      // Every title/subtitle key in file order, captured from the approved
-      // version of this screen before Delete Account was wired.
-      final titles = RegExp(r"title:\s*localization\.translate\('(\w+)'\)")
+      final security =
+          File('lib/src/views/Screens/home/Profile/security_view.dart')
+              .readAsStringSync();
+      final titles = RegExp(
+        r"^\s*title:\s*localization\.translate\('(\w+)'\)",
+        multiLine: true,
+      )
           .allMatches(source)
           .map((match) => match.group(1))
           .toList();
@@ -968,43 +972,38 @@ void main() {
         'language',
         'theme',
         'notifications',
-        'accountBilling',
-        'subscription',
+        'planBilling',
         'myPlan',
-        'viewQuotaUsage',
-        'supportInformation',
-        'helpSupport',
+        'subscriptions',
+        'billingPayments',
+        'accountSecurity',
+        'security',
+        'logout',
+        'privacyData',
+        'exportData',
         'privacyPolicy',
+        'profileSupport',
+        'contactUs',
+        'sendFeedback',
+        'legalAndApp',
         'termsConditions',
         'aboutBrokerWallet',
-        'contactUs',
-        'contactUs',
-        'feedBack',
         'shareApp',
-        'privacySecurityAccount',
-        'security',
-        'securityHint',
-        'exportData',
-        'exportDataHint',
-        'exportData',
-        'deleteAccount',
-        'deleteAccountHint',
-        'logout',
       ]);
-      expect(source, contains("onTap: () => context.push('/help-support')"));
       expect(source, contains("onTap: () => context.push('/privacy-policy')"));
       expect(
         source,
         contains("onTap: () => context.push('/terms-conditions')"),
       );
       expect(source, contains("onTap: () => context.push('/security')"));
-      expect(source, contains('onTap: () => showDeleteAccountFlow(context)'));
+      expect(source, isNot(contains("localization.translate('deleteAccount')")));
+      expect(security, contains('onTap: () => showDeleteAccountFlow(context)'));
       expect(source.contains('deleteAccountUnavailable'), isFalse);
       expect(source, contains('onTap: vm.isLoggingOut ? null : vm.logout'));
       expect(
-        RegExp(r'destructive: true').allMatches(source).length,
+        RegExp(r'destructive: true').allMatches(security).length,
         1,
-        reason: 'the existing destructive treatment is unchanged',
+        reason: 'Security retains the destructive Delete Account tile',
       );
     });
   });

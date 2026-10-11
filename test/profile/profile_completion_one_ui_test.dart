@@ -4,8 +4,13 @@ import 'dart:io';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/billing_payments_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/export_data_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/help_support_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/legal_information_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/my_plan_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/profile_feature_widgets.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/views/Widgets/settings_tile.dart';
 import 'package:flutter/material.dart';
@@ -226,6 +231,32 @@ void main() {
     expect(find.text(_en['notAdded'] as String), findsOneWidget);
   });
 
+  for (final languageCode in ['en', 'ar']) {
+    testWidgets('Deferred Profile screens show unavailable state in $languageCode',
+        (tester) async {
+      final localized = languageCode == 'en' ? _en : _ar;
+      final direction = languageCode == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr;
+      final screens = <(Widget, String)>[
+        (const MyPlanView(), 'planStatusUnavailable'),
+        (const SubscriptionView(), 'subscriptionPlansUnavailable'),
+        (const BillingPaymentsView(), 'billingUnavailable'),
+        (const ExportDataView(), 'exportUnavailable'),
+      ];
+      for (final (screen, statusKey) in screens) {
+        await tester.pumpWidget(_app(screen, locale: Locale(languageCode)));
+        await tester.pumpAndSettle();
+        expect(find.text(localized[statusKey] as String), findsOneWidget);
+        expect(
+          Directionality.of(tester.element(find.byType(ProfileFeatureScaffold))),
+          direction,
+        );
+        expect(find.textContaining('AED'), findsNothing);
+      }
+    });
+  }
+
   test('Profile uses the approved destinations and existing account flows', () {
     final profile = File(
       'lib/src/views/Screens/home/Profile/profile_view.dart',
@@ -236,14 +267,20 @@ void main() {
     final app = File('lib/app.dart').readAsStringSync();
 
     for (final route in [
-      '/help-support',
+      '/notification-settings',
+      '/my-plan',
+      '/subscription',
+      '/billing-payments',
       '/security',
+      '/export-data',
       '/privacy-policy',
       '/terms-conditions',
     ]) {
       expect(profile, contains("context.push('$route')"));
       expect(app, contains("path: '$route'"));
     }
+    expect(profile, isNot(contains("context.push('/help-support')")));
+    expect(app, contains("path: '/help-support'"));
     expect(profile, isNot(contains('user@example.com')));
     expect(security, contains('context.watch<AuthViewModel>()'));
     expect(security, contains('showDeleteAccountFlow(context)'));

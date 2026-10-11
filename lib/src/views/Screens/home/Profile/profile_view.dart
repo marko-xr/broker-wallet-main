@@ -9,11 +9,9 @@ import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
-import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
 import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
-import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -145,151 +143,45 @@ class ProfileView extends StatelessWidget {
                               iconAsset: SvgIcon.notifications,
                               isSvg: true,
                               title: localization.translate('notifications'),
-                              subtitle: localization
-                                  .translate('notificationsSettingsHint'),
-                              hasSwitch: true,
-                              switchValue: vm.notificationsEnabled,
-                              onSwitch: vm.toggleNotifications,
-                              onTap: () =>
-                                  context.push('/notification-settings'),
+                              onTap: () => context.push('/notification-settings'),
                             ),
                           ],
                         ),
-
-                        // ===== Category 2: Account & Billing =====
                         const SizedBox(height: 28),
+                        // ===== Category 2: Plan & Billing =====
                         SettingsSectionHeader(
-                          title: localization.translate('accountBilling'),
+                          title: localization.translate('planBilling'),
                         ),
                         SettingsSectionCard(
                           children: [
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.premiumPlan,
-                              isSvg: true,
-                              title: localization.translate('subscription'),
-                              subtitle: vm.isSubscribed
-                                  ? '⭐ ${localization.translate('plusPlan')} - ${_getLocalizedPlanName(context, vm.currentUser?.subscription.plan ?? 'premium')}'
-                                  : '${localization.translate('freePlan')} - ${localization.translate('upgradeToPremium')}',
-                              hasTrailing: true,
-                              trailingWidget: vm.isSubscribed
-                                  ? Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.star,
-                                          color: Colors.amber,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.check_circle,
-                                          color: Colors.green,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    )
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: colors.primary,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        localization.translate('upgrade'),
-                                        style: texts.labelSmall!.copyWith(
-                                          color: colors.onPrimary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                              onTap: () => context.push('/subscription'),
-                            ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.premiumPlan,
                               isSvg: true,
                               title: localization.translate('myPlan'),
-                              subtitle:
-                                  localization.translate('viewQuotaUsage'),
                               onTap: () => context.push('/my-plan'),
                             ),
-                          ],
-                        ),
-
-                        // ===== Category 3: Support & Information =====
-                        const SizedBox(height: 28),
-                        SettingsSectionHeader(
-                          title: localization.translate('supportInformation'),
-                        ),
-                        SettingsSectionCard(
-                          children: [
                             SettingsTile(
                               grouped: true,
-                              iconAsset: SvgIcon.feedback,
-                              isSvg: false,
-                              materialIcon: Icons.support_agent_rounded,
-                              title: localization.translate('helpSupport'),
-                              onTap: () => context.push('/help-support'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.lockPassword,
-                              isSvg: false,
-                              materialIcon: Icons.privacy_tip_rounded,
-                              title: localization.translate('privacyPolicy'),
-                              onTap: () => context.push('/privacy-policy'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.lockPassword,
-                              isSvg: false,
-                              materialIcon: Icons.description_rounded,
-                              title: localization.translate('termsConditions'),
-                              onTap: () => context.push('/terms-conditions'),
+                              iconAsset: SvgIcon.subscription,
+                              isSvg: true,
+                              title: localization.translate('subscriptions'),
+                              onTap: () => context.push('/subscription'),
                             ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.subscription,
                               isSvg: false,
-                              materialIcon: Icons.info_outline_rounded,
-                              title:
-                                  localization.translate('aboutBrokerWallet'),
-                              onTap: () => context.push('/about'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.email,
-                              isSvg: false,
-                              materialIcon: Icons.mail_outline_rounded,
-                              title: localization.translate('contactUs'),
-                              onTap: () => context.push('/contact-us'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.feedback,
-                              isSvg: true,
-                              title: localization.translate('feedBack'),
-                              onTap: () => context.push('/feedback'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.shareApp,
-                              isSvg: true,
-                              title: localization.translate('shareApp'),
-                              onTap: vm.shareApp,
+                              materialIcon: Icons.receipt_long_rounded,
+                              title: localization.translate('billingPayments'),
+                              onTap: () => context.push('/billing-payments'),
                             ),
                           ],
                         ),
-
-                        // ===== Category 4: Privacy, Security & Account =====
                         const SizedBox(height: 28),
+                        // ===== Category 3: Account & Security =====
                         SettingsSectionHeader(
-                          title:
-                              localization.translate('privacySecurityAccount'),
+                          title: localization.translate('accountSecurity'),
                         ),
                         SettingsSectionCard(
                           children: [
@@ -301,33 +193,6 @@ class ProfileView extends StatelessWidget {
                               title: localization.translate('security'),
                               subtitle: localization.translate('securityHint'),
                               onTap: () => context.push('/security'),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.uploadMedia,
-                              isSvg: false,
-                              materialIcon: Icons.download_rounded,
-                              title: localization.translate('exportData'),
-                              subtitle:
-                                  localization.translate('exportDataHint'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title: localization.translate('exportData'),
-                                message: localization
-                                    .translate('exportDataPlaceholder'),
-                                icon: Icons.download_rounded,
-                              ),
-                            ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.closeIcon,
-                              isSvg: false,
-                              materialIcon: Icons.delete_outline_rounded,
-                              destructive: true,
-                              title: localization.translate('deleteAccount'),
-                              subtitle:
-                                  localization.translate('deleteAccountHint'),
-                              onTap: () => showDeleteAccountFlow(context),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -352,6 +217,88 @@ class ProfileView extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 28),
+                        // ===== Category 4: Privacy & Data =====
+                        SettingsSectionHeader(
+                          title: localization.translate('privacyData'),
+                        ),
+                        SettingsSectionCard(
+                          children: [
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.uploadMedia,
+                              isSvg: false,
+                              materialIcon: Icons.download_rounded,
+                              title: localization.translate('exportData'),
+                              onTap: () => context.push('/export-data'),
+                            ),
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.lockPassword,
+                              isSvg: false,
+                              materialIcon: Icons.privacy_tip_rounded,
+                              title: localization.translate('privacyPolicy'),
+                              onTap: () => context.push('/privacy-policy'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 28),
+                        // ===== Category 5: Support =====
+                        SettingsSectionHeader(
+                          title: localization.translate('profileSupport'),
+                        ),
+                        SettingsSectionCard(
+                          children: [
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.email,
+                              isSvg: false,
+                              materialIcon: Icons.mail_outline_rounded,
+                              title: localization.translate('contactUs'),
+                              onTap: () => context.push('/contact-us'),
+                            ),
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.feedback,
+                              isSvg: true,
+                              title: localization.translate('sendFeedback'),
+                              onTap: () => context.push('/feedback'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 28),
+                        // ===== Category 6: Legal & App =====
+                        SettingsSectionHeader(
+                          title: localization.translate('legalAndApp'),
+                        ),
+                        SettingsSectionCard(
+                          children: [
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.lockPassword,
+                              isSvg: false,
+                              materialIcon: Icons.description_rounded,
+                              title: localization.translate('termsConditions'),
+                              onTap: () => context.push('/terms-conditions'),
+                            ),
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.subscription,
+                              isSvg: false,
+                              materialIcon: Icons.info_outline_rounded,
+                              title:
+                                  localization.translate('aboutBrokerWallet'),
+                              onTap: () => context.push('/about'),
+                            ),
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.shareApp,
+                              isSvg: true,
+                              title: localization.translate('shareApp'),
+                              onTap: vm.shareApp,
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 96),
                       ]),
                     ),
@@ -362,37 +309,6 @@ class ProfileView extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-
-  /// Helper function to get localized plan name
-  String _getLocalizedPlanName(BuildContext context, String plan) {
-    final localization = AppLocalizations.of(context);
-    final planLower = plan.toLowerCase();
-
-    if (planLower == 'monthly') {
-      return localization.translate('monthly');
-    } else if (planLower == 'yearly') {
-      return localization.translate('yearly');
-    } else {
-      // Fallback for 'premium' or any other plan type
-      return localization.translate('premiumPlan');
-    }
-  }
-
-  /// Navigates to the shared "not available yet" screen for
-  /// Support & Information / Privacy-Security rows whose real
-  /// implementation is deferred to a later checkpoint. Never invents
-  /// policy or legal content — see [InfoPlaceholderView].
-  void _openInfoPlaceholder(
-    BuildContext context, {
-    required String title,
-    required String message,
-    required IconData icon,
-  }) {
-    context.push(
-      '/info-placeholder',
-      extra: InfoPlaceholderArgs(title: title, message: message, icon: icon),
     );
   }
 }

@@ -14,6 +14,8 @@ import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_bar.dart';
 import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_status_line.dart';
+import 'package:broker_wallet/src/Views/Screens/home/map/map_opening.dart';
+import 'package:broker_wallet/src/Views/Screens/home/map/map_tallest_page_frame.dart';
 import 'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
@@ -39,6 +41,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _hasCheckedPermission = false; // Check once, never ask
 
+  /// Whether the map exists yet. It is made after the page has slid in, and the
+  /// page's colour laid over it fades away when it is.
+  bool _mapCreated = false;
+
   // What the screen's own controls cover of the map, so the cities' frame it
   // opens on sits in what is left: the search bar and the filter row below the
   // status bar (76 + the row's 48 + a gap), and the my-location button above the
@@ -56,6 +62,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// The map was made: the view model keeps its controller, and the cover over
+  /// it can fade away.
+  void _onMapCreated(GoogleMapController controller, MapViewViewModel vm) {
+    vm.onMapCreated(controller);
+    if (mounted && !_mapCreated) setState(() => _mapCreated = true);
   }
 
   /// The my-location button. The person tapped it, so location may be asked for
@@ -223,38 +236,55 @@ class _MapViewScreenState extends State<MapViewScreen> {
                           ),
                         ),
                       )
-                    : LayoutBuilder(
-                        // The map opens on the UAE's cities, framed for the room it
-                        // really has (the search bar and filters cover the top,
-                        // the location button the bottom). That is its starting
-                        // camera, so nothing moves it afterwards.
-                        builder: (context, constraints) => GoogleMap(
-                          mapType: vm.mapType,
-                          initialCameraPosition: vm.initialCameraFor(
-                            MapViewport(
-                              width: constraints.maxWidth,
-                              height: constraints.maxHeight,
-                              top: MediaQuery.of(context).padding.top +
-                                  _controlsBelowTop,
-                              bottom: _controlsAboveBottom,
-                              left: _controlsSideGap,
-                              right: _controlsSideGap,
+                    // The page slides in first, with the controls on its own
+                    // colour; the native map is made when it is in place, so
+                    // building it cannot stall the slide. By then the places and
+                    // the location permission are usually known, so it is made
+                    // with them and nothing is changed on it just after.
+                    : AfterRouteTransition(
+                        child: LayoutBuilder(
+                          // The map opens on the UAE's cities, framed for the room
+                          // it really has (the search bar and filters cover the
+                          // top, the location button the bottom). That is its
+                          // starting camera, so nothing moves it afterwards.
+                          builder: (context, constraints) => GoogleMap(
+                            mapType: vm.mapType,
+                            initialCameraPosition: vm.initialCameraFor(
+                              MapViewport(
+                                width: constraints.maxWidth,
+                                height: constraints.maxHeight,
+                                top: MediaQuery.of(context).padding.top +
+                                    _controlsBelowTop,
+                                bottom: _controlsAboveBottom,
+                                left: _controlsSideGap,
+                                right: _controlsSideGap,
+                              ),
                             ),
+                            onMapCreated: (controller) =>
+                                _onMapCreated(controller, vm),
+                            markers: vm.filteredMarkers,
+                            onTap: vm.onMapTap,
+                            myLocationEnabled: vm
+                                .hasLocationPermission, // Only enable if permission granted
+                            myLocationButtonEnabled:
+                                false, // Disable default button
+                            zoomControlsEnabled: true,
+                            mapToolbarEnabled: false,
+                            compassEnabled: true,
+                            trafficEnabled: false,
+                            buildingsEnabled: true,
                           ),
-                          onMapCreated: vm.onMapCreated,
-                          markers: vm.filteredMarkers,
-                          onTap: vm.onMapTap,
-                          myLocationEnabled: vm
-                              .hasLocationPermission, // Only enable if permission granted
-                          myLocationButtonEnabled:
-                              false, // Disable default button
-                          zoomControlsEnabled: true,
-                          mapToolbarEnabled: false,
-                          compassEnabled: true,
-                          trafficEnabled: false,
-                          buildingsEnabled: true,
                         ),
                       ),
+
+                // The page's own colour over the map while it opens, fading away
+                // once the map exists, so its first frames are never seen.
+                Positioned.fill(
+                  child: MapRevealCover(
+                    revealed: _mapCreated || vm.hasLoadError,
+                    color: colors.surface,
+                  ),
+                ),
 
                 // Floating Back Arrow Button (RTL/LTR aware)
                 Positioned(
@@ -524,6 +554,11 @@ class _FloatingLocationCarousel extends StatefulWidget {
 }
 
 class _FloatingLocationCarouselState extends State<_FloatingLocationCarousel> {
+  /// The least height a card has: what the carousel was always given. A card
+  /// that needs more (Arabic lines are taller, and so is larger text) gets what
+  /// it needs, see [TallestPageFrame].
+  static const double _cardMinHeight = 135;
+
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -567,9 +602,30 @@ class _FloatingLocationCarouselState extends State<_FloatingLocationCarousel> {
     widget.onPageChanged(index);
   }
 
+  /// An unseen copy of [item]'s card that only has its height measured, with
+  /// the close button the shown card has, so the frame is never shorter than
+  /// the card on show.
+  Widget _measureCard(LocationInfo item, ColorScheme colors) {
+    return _LocationCarouselCard(
+      locationInfo: item,
+      title: widget.titleOf(item),
+      cardMedia: widget.cardMedia,
+      onClose: () {},
+      localization: widget.localization,
+      onTap: () {},
+      showCloseButton: true,
+      measureOnly: true,
+      colors: colors,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Built once per build, not once per frame of the slide-up below.
+    final measure = [
+      for (final item in widget.cluster.items) _measureCard(item, colors),
+    ];
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 300),
@@ -593,9 +649,10 @@ class _FloatingLocationCarouselState extends State<_FloatingLocationCarousel> {
                       activeColor: widget.cluster.activeItem.color,
                     ),
                   ),
-                // Carousel
-                SizedBox(
-                  height: 135,
+                // Carousel, as tall as its tallest card
+                TallestPageFrame(
+                  minHeight: _cardMinHeight,
+                  measure: measure,
                   child: PageView.builder(
                     controller: _pageController,
                     onPageChanged: _onPageChanged,
@@ -728,6 +785,11 @@ class _LocationCarouselCard extends StatelessWidget {
   final bool showCloseButton;
   final ColorScheme colors;
 
+  /// The card is only being measured (see [TallestPageFrame]): the same text,
+  /// buttons and spacing, so the same height, but a blank box where the photo
+  /// and the type icon go, so an unseen copy loads and draws nothing.
+  final bool measureOnly;
+
   const _LocationCarouselCard({
     required this.locationInfo,
     required this.title,
@@ -736,6 +798,7 @@ class _LocationCarouselCard extends StatelessWidget {
     required this.localization,
     required this.onTap,
     required this.showCloseButton,
+    this.measureOnly = false,
     required this.colors,
   });
 
@@ -771,11 +834,14 @@ class _LocationCarouselCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _CompactMediaPreview(
-                      locationInfo: locationInfo,
-                      cardMedia: cardMedia,
-                      colors: colors,
-                    ),
+                    if (measureOnly)
+                      const SizedBox.square(dimension: _CompactMediaPreview.size)
+                    else
+                      _CompactMediaPreview(
+                        locationInfo: locationInfo,
+                        cardMedia: cardMedia,
+                        colors: colors,
+                      ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -796,7 +862,9 @@ class _LocationCarouselCard extends StatelessWidget {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (locationInfo.iconAsset != null)
+                                    if (measureOnly)
+                                      const SizedBox.square(dimension: 14)
+                                    else if (locationInfo.iconAsset != null)
                                       SvgPicture.asset(
                                         locationInfo.iconAsset!,
                                         width: 14,
@@ -916,6 +984,9 @@ class _LocationCarouselCard extends StatelessWidget {
 /// Search uses, only while it is shown. Anything else, or a record whose media
 /// cannot be had, keeps the plain URL it carries, or its icon.
 class _CompactMediaPreview extends StatefulWidget {
+  /// The preview's side; a measuring copy of the card keeps a blank box this big.
+  static const double size = 60;
+
   final LocationInfo locationInfo;
   final SearchCardMediaResolver cardMedia;
   final ColorScheme colors;
@@ -1016,8 +1087,8 @@ class _CompactMediaPreviewState extends State<_CompactMediaPreview> {
     final hasMedia = media != null || hasUrl;
 
     return Container(
-      width: 60,
-      height: 60,
+      width: _CompactMediaPreview.size,
+      height: _CompactMediaPreview.size,
       decoration: BoxDecoration(
         color: locationInfo.color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),

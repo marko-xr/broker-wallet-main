@@ -11354,3 +11354,95 @@ NOW - owner runs `flutter test test/map/map_filter_status_line_test.dart` and
 NEXT - after tests pass, verify zero results with and without filters, marker
 selection and replacement, empty-map deselection, clusters, English and Arabic
 on a real device before marking this Map polish VERIFIED_RUNTIME.
+
+### Map: pin card "BOTTOM OVERFLOWED BY 2.0 PIXELS" fixed in source (2026-10-11)
+
+Status: SOURCE_CHECKED only; DEVICE VERIFICATION PENDING. Owner screenshot: the
+floating card shown when a pin is tapped (Arabic, an Offer) painted the overflow
+stripe over its Call/WhatsApp buttons. Cause: `_FloatingLocationCarousel` gave
+its `PageView` a hard-coded `SizedBox(height: 135)`, but the card's real height
+is content-driven (a 60 px photo or the title/address column, whichever is
+taller, plus padding and the 36 px button row), and Arabic lines are taller than
+Latin ones, so the card needed 137. Any larger system text size would do the same.
+
+Fix (map screen only): the new `TallestPageFrame`
+(`lib/src/views/Screens/home/map/map_tallest_page_frame.dart`) sizes the carousel
+from the cards themselves. It lays out one invisible stand-in per card (the real
+`_LocationCarouselCard` with `measureOnly: true`, so no photo is requested and no
+icon is drawn, and with the close button) and is as tall as the tallest, never
+below 135, so a card that always fitted looks exactly as before. The height is the
+same on every page. Nothing else on the map, and no data, camera, filter, backend,
+migration, commit or push, changed. New `test/map/map_tallest_page_frame_test.dart`
+(frame sizing, no overflow at text scale 1/1.5/2, source guards that the hard-coded
+height is gone); it has not been run.
+
+NOW - owner runs `flutter test test/map/map_tallest_page_frame_test.dart`.
+NEXT - after it passes, on a real device in Arabic and English (and with the
+phone's font size at its largest): tap a pin, tap a cluster pin and swipe its
+cards; no overflow stripe, the card does not resize while swiping, the buttons
+still call and open WhatsApp, then mark VERIFIED_RUNTIME.
+
+### Map: flicker when the map opens, source fix (2026-10-11)
+
+Status: SOURCE_CHECKED only; DEVICE VERIFICATION PENDING. Owner report: the map
+screen "flicks for a moment" when it opens. Nothing was run or captured on a
+device, so the cause below is read from the code and the plugin's own source and
+README, not from a trace.
+
+What the code does on opening (before this change): the page slides in (Flutter
+3.47.2's default Android push is `FadeForwardsPageTransitionsBuilder`, 450 ms),
+and in its very first frame the screen builds the native `GoogleMap`. On Android
+the map is an `AndroidView` (texture layer; `useAndroidViewSurface` is false by
+default, and the app never sets it). Making it blocks the phone's main thread:
+the first time in a run of the app the Google Maps SDK loads itself there, which
+`google_maps_flutter_android`'s README documents ("may briefly block the main
+thread, which could cause UI jank", fix: `GoogleMapsFlutterAndroid.warmup()`,
+added in 2.18.0; the app had no call to it), and every time the view itself is
+built. Flutter's Android embedding paces frames from that same thread (general
+engine knowledge, not checked in this repo), so the slide stalls and jumps. The
+map's own first frames (empty, then dark satellite, then tiles; the default type
+is Hybrid) then appear abruptly on the white page, and the my-location dot and the
+pins arrive in later updates. Not proven: how long the stall is on the owner's
+phone, and which of these the eye reads as the flicker.
+
+Changes (the map's opening only; filters, pins, card, camera, data, backend,
+migrations unchanged; nothing committed):
+
+1. `MapSdkWarmup` (`lib/src/services/map_sdk_warmup.dart`), started from
+   `main()` after `runApp`: three seconds later, in the background, Android only,
+   it calls the plugin's `warmup()` once, so the SDK's first-use stall happens at
+   a quiet moment instead of while the map slides in. Any failure is swallowed
+   (the map then does that work on first open, as before). Proof it ran:
+   `adb logcat -s GoogleMapInitializer` shows "Google Maps warmup started." and
+   "Maps warmup complete." about three seconds after launch.
+2. `AfterRouteTransition` (`lib/src/views/Screens/home/map/map_opening.dart`)
+   makes the map only after the page has finished sliding in (bounded to 1.2 s so
+   it always appears). The page slides in at full smoothness with the controls on
+   its own colour; by the time the map is made, the places and the location
+   permission are usually known, so it is created with its markers and its
+   my-location setting instead of being changed just after.
+3. `MapRevealCover` (same file): a sheet of the page's own colour (`colors.surface`)
+   over the map that takes no touches and fades away over 300 ms once the map
+   reports it exists (or after 4 s at most, or at once when the load-error page is
+   shown), so the map's first frames are never seen.
+4. `map_view.dart` uses the three; `MapViewViewModel` is untouched. The screen has
+   no timer of its own (the existing guard against one in `map_view.dart` still
+   holds); the waiting lives in the widgets.
+
+Tests written, not run: `test/map/map_opening_test.dart` (both widgets, plus source
+guards on how the screen uses them) and `test/map/map_sdk_warmup_test.dart`.
+
+Known trade-off: after tapping Map, the page slides in and the map fades in a
+moment later (the time to make the map), instead of the map appearing sooner with a
+stutter. If that gap looks too long on the device, say so before changing it.
+
+NOW - owner runs `flutter test test/map` (the two new files, and the existing map
+guards that read `map_view.dart`).
+NEXT - on a real phone: launch the app, wait five seconds, open the map: the page
+slides in smoothly and the map fades in with no flash; open it again, and open it
+once straight after a fresh launch (inside the three seconds); in Arabic and
+English, light and dark. Check the map still moves, the pins and the pin card
+work, and Back works. If it still flickers, capture one open with
+`flutter run --profile` and the Performance view in DevTools (the frames that
+miss their budget) plus `adb logcat -s GoogleMapInitializer flutter`, and send the
+trace before anything else is changed.

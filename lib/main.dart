@@ -5,6 +5,7 @@ import 'package:broker_wallet/src/services/count_cache_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
+import 'package:broker_wallet/src/services/map_sdk_warmup.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
@@ -365,4 +366,9 @@ void main() async {
       child: const MyApp(),
     ),
   );
+
+  // The Google Maps SDK freezes the phone's main thread for a moment the first
+  // time a map is shown. Do that once, in the background, now that the app is
+  // up, so it does not happen while the map page is sliding in.
+  unawaited(MapSdkWarmup.start());
 }

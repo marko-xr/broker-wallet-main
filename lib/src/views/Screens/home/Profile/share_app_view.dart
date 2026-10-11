@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
+import 'package:broker_wallet/src/common/utils/share_app_icons.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 class ShareAppView extends StatefulWidget {
@@ -446,13 +447,13 @@ class _ShareAppViewState extends State<ShareAppView>
     return [
       _ShareTarget(
         name: 'WhatsApp',
-        asset: AppImages.whatsapp,
+        asset: ShareAppIcons.whatsapp,
         color: const Color(0xFF25D366),
         uriBuilder: () => Uri.parse('whatsapp://send?text=$msg'),
       ),
       _ShareTarget(
         name: 'Facebook',
-        asset: AppImages.facebookIcon,
+        asset: ShareAppIcons.facebook,
         color: const Color(0xFF1877F2),
         // Facebook share dialogs typically require a URL. This will likely fall back.
         uriBuilder: () => Uri.parse(
@@ -460,14 +461,14 @@ class _ShareAppViewState extends State<ShareAppView>
       ),
       _ShareTarget(
         name: 'Instagram',
-        asset: AppImages.googleIcon,
+        asset: ShareAppIcons.instagram,
         color: const Color(0xFFE4405F),
         // Instagram doesn’t support text-only deep links; will fall back to system share.
         uriBuilder: () => Uri.parse('instagram://app'),
       ),
       _ShareTarget(
         name: 'X',
-        asset: AppImages.mainAppIcon,
+        asset: ShareAppIcons.x,
         color: const Color(0xFF1DA1F2),
         // X supports text-only via tweet intent
         uriBuilder: () =>
@@ -475,27 +476,27 @@ class _ShareAppViewState extends State<ShareAppView>
       ),
       _ShareTarget(
         name: 'Telegram',
-        asset: AppImages.whatsapp, // Using WhatsApp icon as fallback
+        asset: ShareAppIcons.telegram,
         color: const Color(0xFF24A1DE),
         // tg://msg?text=... is widely supported; tg://share?text=... works too
         uriBuilder: () => Uri.parse('tg://msg?text=$msg'),
       ),
       _ShareTarget(
         name: 'AirDrop',
-        asset: AppImages.appleIcons,
+        asset: ShareAppIcons.airDrop,
         color: const Color(0xFF34C759),
         uriBuilder: () => Uri.parse('sms:?body=$msg'),
       ),
       _ShareTarget(
         name: 'Email',
-        asset: AppImages.googleIcon,
+        asset: ShareAppIcons.email,
         color: const Color(0xFFEA4335),
         uriBuilder: () => Uri.parse(
             'mailto:?subject=${Uri.encodeComponent("Broker Wallet")}&body=$msg'),
       ),
       _ShareTarget(
         name: 'LinkedIn',
-        asset: AppImages.mainAppIcon,
+        asset: ShareAppIcons.linkedIn,
         color: const Color(0xFF0084FF),
         // NOTE: LinkedIn generally requires a link for share. We still attempt;
         // if unsupported, system share will take over.

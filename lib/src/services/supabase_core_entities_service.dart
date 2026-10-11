@@ -208,6 +208,28 @@ class SupabaseCoreEntitiesService {
 
   Stream<List<RequestModel>> getRequests() => _refreshedStream(_fetchRequests);
 
+  /// The same account-scoped, soft-delete-aware read as the Requests list,
+  /// narrowed to the phone stored on the row. Related Items uses the legacy
+  /// exact-match contract after cleaning the detail record's phone.
+  Stream<List<RequestModel>> getRelatedRequests(String phoneNumber) =>
+      _refreshedStream(() async {
+        final ownerId = _requireUserId();
+        final rows = await _client
+            .from('requests')
+            .select('''
+              id, owner_id, request_type, selected_city, location_text,
+              phone_number, country_code, min_price, max_price, square_footage,
+              notes, property_type, specific_property_type, rooms, bathrooms,
+              status, created_at, updated_at, request_areas(area, ordinal)
+            ''')
+            .eq('owner_id', ownerId)
+            .eq('phone_number', phoneNumber)
+            .isFilter('deleted_at', null)
+            .order('id')
+            .limit(10);
+        return rows.map(_requestFromRow).toList(growable: false);
+      });
+
   Future<List<RequestModel>> _fetchRequests() async {
     final ownerId = _requireUserId();
     final rows = await _client
@@ -312,6 +334,45 @@ class SupabaseCoreEntitiesService {
   }
 
   Stream<List<OfferModel>> getOffers() => _refreshedStream(_fetchOffers);
+
+  /// Related Items shares the Offers list's mapping and refresh lifecycle.
+  Stream<List<OfferModel>> getRelatedOffers(String phoneNumber) =>
+      _refreshedStream(() async {
+        final ownerId = _requireUserId();
+        final rows = await _client
+            .from('offers')
+            .select('''
+              id, owner_id, offer_type, selected_city, location_text,
+              phone_number, country_code, min_price, max_price, square_footage,
+              notes, property_type, specific_property_type, rooms, bathrooms,
+              pickup_location_text, pickup_latitude, pickup_longitude,
+              pickup_address, legacy_uploaded_file_name, status, created_at,
+              updated_at, offer_areas(area, ordinal)
+            ''')
+            .eq('owner_id', ownerId)
+            .eq('phone_number', phoneNumber)
+            .isFilter('deleted_at', null)
+            .order('id')
+            .limit(10);
+        return rows.map(_offerFromRow).toList(growable: false);
+      });
+
+  /// Exact count is independent of the carousel's ten-row limit.
+  Future<int> getRelatedItemsCount(String phoneNumber) async {
+    final ownerId = _requireUserId();
+    Future<int> count(String table) async {
+      final response = await _client
+          .from(table)
+          .select('id')
+          .eq('owner_id', ownerId)
+          .eq('phone_number', phoneNumber)
+          .isFilter('deleted_at', null)
+          .count(CountOption.exact);
+      return response.count;
+    }
+
+    return (await count('offers')) + (await count('requests'));
+  }
 
   Future<List<OfferModel>> _fetchOffers() async {
     final ownerId = _requireUserId();

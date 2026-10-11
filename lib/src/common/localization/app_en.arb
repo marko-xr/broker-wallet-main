@@ -2865,7 +2865,7 @@
   "mapReset": "Reset",
   "mapResetFilters": "Reset filters",
   "mapNoFilterMatches": "No locations match these filters.",
-  "mapResultsNone": "{count} results",
+  "mapResultsNone": "No results",
   "mapResultsOne": "{count} result",
   "mapResultsTwo": "{count} results",
   "mapResultsFew": "{count} results",

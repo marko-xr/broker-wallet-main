@@ -248,6 +248,46 @@ void main() {
       },
     );
 
+    test('one record opens or replaces the bottom card without a callout', () {
+      final model = _squash(_read(viewModel));
+      final screen = _squash(_read(view));
+      final create = model.substring(
+        model.indexOf('Future<void> _createClusterMarker('),
+        model.indexOf('Future<void> updateClusterMarker('),
+      );
+      final update = model.substring(
+        model.indexOf('Future<void> updateClusterMarker('),
+        model.indexOf('// Handle cluster tap'),
+      );
+
+      // Both initial-marker paths and the carousel update retain the cluster
+      // callout, while an individual marker has no native info window.
+      expect(_count(create, 'infoWindow: cluster.hasMultipleItems'), 2);
+      expect(_count(create, ': InfoWindow.noText,'), 2);
+      expect(_count(update, 'infoWindow: cluster.hasMultipleItems'), 1);
+      expect(_count(update, ': InfoWindow.noText,'), 1);
+      expect(_count(create, 'title: _markerTitle(cluster),'), 2);
+      expect(_count(update, 'title: _markerTitle(cluster),'), 1);
+      expect(_count(create, 'onTap: () => _onClusterTap(cluster),'), 2);
+      expect(_count(update, 'onTap: () => _onClusterTap(cluster),'), 1);
+
+      final tap = model.substring(
+        model.indexOf('void _onClusterTap('),
+        model.indexOf('// Update active item in cluster'),
+      );
+      expect(tap.contains('_filters.select(cluster.activeItem.key);'), isTrue);
+      expect(tap.contains('_selectedCluster = cluster;'), isTrue);
+      expect(tap.contains('_selectedLocationInfo = cluster.activeItem;'),
+          isTrue);
+      expect(screen.contains('if (vm.selectedCluster != null) Positioned('),
+          isTrue);
+      expect(_count(screen, 'child: _FloatingLocationCarousel('), 1);
+      expect(screen.contains('cluster: vm.selectedCluster!,'), isTrue);
+      expect(screen.contains('onClose: vm.clearSelectedLocation,'), isTrue);
+      expect(model.contains('void onMapTap(LatLng position) { if (_disposed) return; clearSelectedLocation(); }'),
+          isTrue);
+    });
+
     test('a failed read never empties a map that has places', () {
       final text = _squash(_read(viewModel));
       expect(
@@ -290,7 +330,7 @@ void main() {
     test('the screen has the bar and no per-kind chips any more', () {
       final text = _read(view);
       expect(text.contains('MapFilterBar('), isTrue);
-      expect(text.contains('MapNoMatchesBanner('), isTrue);
+      expect(text.contains('MapNoMatchesBanner('), isFalse);
       for (final gone in [
         '_FloatingFilterChips',
         '_FilterChip',
@@ -509,20 +549,28 @@ void main() {
       );
     });
 
-    test('filters that match nothing say so, and are not a failed load', () {
+    test('zero results use only the status line; load failure stays separate', () {
       final screen = _squash(_read(view));
-      expect(screen.contains('if (vm.hasNoFilterMatches) Positioned('), isTrue);
+      final line = _squash(_read(
+          'lib/src/views/Screens/home/map/map_filter_status_line.dart'));
+      expect(_count(screen, 'MapFilterStatusLine('), 1);
+      expect(screen.contains('resultCount: vm.resultCount,'), isTrue);
+      expect(screen.contains('canReset: vm.filtersActive,'), isTrue);
+      expect(screen.contains('onReset: vm.clearFilters,'), isTrue);
+      expect(line.contains('if (count != null) Flexible('), isTrue);
+      expect(line.contains('if (canReset) Flexible('), isTrue);
+      expect(screen.contains('if (vm.hasNoFilterMatches)'), isFalse);
+      expect(screen.contains('MapNoMatchesBanner('), isFalse);
+      expect(_read(bar).contains('class MapNoMatchesBanner'), isFalse);
       expect(
         screen.contains("localization.translate('mapNoFilterMatches')"),
-        isTrue,
+        isFalse,
       );
-      expect(
-        screen.contains("localization.translate('mapResetFilters')"),
-        isTrue,
-      );
-      expect(screen.contains('onClear: vm.clearFilters,'), isTrue);
       // The map stays visible: the load-error branch is a different state.
       expect(screen.contains('vm.hasLoadError ? Center('), isTrue);
+      expect(screen.contains("localization.translate('mapLoadFailed')"),
+          isTrue);
+      expect(screen.contains('onPressed: vm.retry,'), isTrue);
       expect(
         _squash(_read(viewModel))
             .contains('bool get hasNoFilterMatches => _filters.hasNoMatches;'),

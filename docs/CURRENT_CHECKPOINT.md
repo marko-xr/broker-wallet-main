@@ -11338,3 +11338,19 @@ NOW - owner runs `flutter test test/map/map_filter_status_line_test.dart`.
 NEXT - if it passes, owner runs
 `flutter test test/map/map_screen_wiring_test.dart test/map/map_ux_phase1_test.dart`, then
 `flutter test test/map`; after the tests pass, perform the Map device checks above.
+
+### Map: final UX polish awaiting Flutter and device verification (2026-10-11)
+
+Status: SOURCE_CHECKED only. The duplicate filter-empty banner was removed. The
+compact status line now says "No results" / "لا توجد نتائج" at zero, with Reset
+only when filters are active; load failure remains separate. Individual markers
+have no native info window, while selection and the bottom record card remain;
+cluster info windows and carousel behavior are retained. Targeted widget and
+source tests were updated, but no Flutter command or device test was run. No
+filtering, count calculation, camera, backend, migration, commit or push changed.
+
+NOW - owner runs `flutter test test/map/map_filter_status_line_test.dart` and
+`flutter test test/map/map_screen_wiring_test.dart test/map/map_ux_phase1_test.dart`.
+NEXT - after tests pass, verify zero results with and without filters, marker
+selection and replacement, empty-map deselection, clusters, English and Arabic
+on a real device before marking this Map polish VERIFIED_RUNTIME.

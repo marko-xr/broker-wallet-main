@@ -14,11 +14,10 @@ import 'package:flutter/material.dart';
 ///    gives it the number of the last draw that was published, so it is always
 ///    the same places as the markers; nothing is asked or counted again here.
 ///    It is null (and so not shown) while nothing has been drawn yet, or when
-///    the places could not be loaded: it never says "0 results" for a map that
+///    the places could not be loaded: it never says "No results" for a map that
 ///    simply has not loaded.
-///  * Reset is shown only while the filters differ from the default, and does
-///    what the no-matches banner's action does: [onReset] puts the filters
-///    back. It reads nothing and asks the device for nothing.
+///  * Reset is shown only while the filters differ from the default.
+///    [onReset] puts them back without reading data or asking the device.
 ///
 /// The widget holds no state and reads nothing: its inputs are plain values.
 class MapFilterStatusLine extends StatelessWidget {
@@ -137,7 +136,7 @@ class MapFilterStatusLine extends StatelessWidget {
 }
 
 /// A small pill with the surface and shadow the map's other floating controls
-/// (the search bar, the buttons, the banner) have.
+/// (the search bar and the buttons) have.
 class _StatusPill extends StatelessWidget {
   const _StatusPill({super.key, required this.child});
 

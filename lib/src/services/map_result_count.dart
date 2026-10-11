@@ -2,7 +2,7 @@ import 'package:intl/intl.dart' show NumberFormat;
 
 /// The words that say how many places the map shows.
 ///
-///     0 results    1 result    12 results                          (English)
+///     No results    1 result    12 results                         (English)
 ///     لا توجد نتائج    نتيجة واحدة    نتيجتان    3 نتائج    12 نتيجة     (Arabic)
 ///
 /// The words are the app's own, in `app_en.arb` and `app_ar.arb`. This only

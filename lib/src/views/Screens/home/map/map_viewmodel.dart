@@ -206,7 +206,7 @@ class MapViewViewModel extends ChangeNotifier {
   /// a draw is published (never from the live filter, which is ahead of the
   /// markers while a draw is under way), and costs no count and no read of its
   /// own. Null when there is nothing to say yet, and when the places could not
-  /// be loaded: a map that has not loaded does not say "0 results".
+  /// be loaded: a map that has not loaded does not say "No results".
   int? get resultCount => _hasLoadError ? null : _publishedPlaceCount;
 
   LocationInfo? _selectedLocationInfo;
@@ -533,10 +533,12 @@ class MapViewViewModel extends ChangeNotifier {
           position: cluster.coordinates,
           onTap: () => _onClusterTap(cluster),
           icon: customPin,
-          infoWindow: InfoWindow(
-            title: _markerTitle(cluster),
-            snippet: activeItem.address,
-          ),
+          infoWindow: cluster.hasMultipleItems
+              ? InfoWindow(
+                  title: _markerTitle(cluster),
+                  snippet: activeItem.address,
+                )
+              : InfoWindow.noText,
         ),
       );
     } catch (e) {
@@ -551,10 +553,12 @@ class MapViewViewModel extends ChangeNotifier {
           icon: BitmapDescriptor.defaultMarkerWithHue(
             LocationColors.getMarkerHue(activeItem.type),
           ),
-          infoWindow: InfoWindow(
-            title: _markerTitle(cluster),
-            snippet: activeItem.address,
-          ),
+          infoWindow: cluster.hasMultipleItems
+              ? InfoWindow(
+                  title: _markerTitle(cluster),
+                  snippet: activeItem.address,
+                )
+              : InfoWindow.noText,
         ),
       );
     }
@@ -587,10 +591,12 @@ class MapViewViewModel extends ChangeNotifier {
           position: cluster.coordinates,
           onTap: () => _onClusterTap(cluster),
           icon: customPin,
-          infoWindow: InfoWindow(
-            title: _markerTitle(cluster),
-            snippet: activeItem.address,
-          ),
+          infoWindow: cluster.hasMultipleItems
+              ? InfoWindow(
+                  title: _markerTitle(cluster),
+                  snippet: activeItem.address,
+                )
+              : InfoWindow.noText,
         ),
       };
       _safeNotifyListeners();

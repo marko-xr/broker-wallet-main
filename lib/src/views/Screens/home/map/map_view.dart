@@ -48,11 +48,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
   static const double _controlsSideGap = 16;
 
   // The status line (the result count, and Reset while a filter is on) floats
-  // over the map right under the filter row, and the "no matches" banner under
-  // it. Like the banner always did, they sit on the map: they are not part of
-  // what the opening frame leaves room for, so that frame is unchanged.
+  // over the map right under the filter row. It is not part of what the opening
+  // frame leaves room for, so that frame is unchanged.
   static const double _statusLineTop = 76 + 52;
-  static const double _bannerTop = _statusLineTop + MapFilterStatusLine.height;
 
   @override
   void dispose() {
@@ -366,7 +364,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
                 // How many places the map shows, and Reset while the filters
                 // differ from the default. The count is the published draw's
-                // own (the markers' places); Reset is the banner's action.
+                // own (the markers' places).
                 PositionedDirectional(
                   top: MediaQuery.of(context).padding.top + _statusLineTop,
                   start: 16,
@@ -378,20 +376,6 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     onReset: vm.clearFilters,
                   ),
                 ),
-
-                // Places are loaded but the filters let none through: the map
-                // stays, and says so. (Not a failed load.)
-                if (vm.hasNoFilterMatches)
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + _bannerTop,
-                    left: 16,
-                    right: 16,
-                    child: MapNoMatchesBanner(
-                      message: localization.translate('mapNoFilterMatches'),
-                      actionLabel: localization.translate('mapResetFilters'),
-                      onClear: vm.clearFilters,
-                    ),
-                  ),
 
                 // My Location Button (Bottom Left) - Hidden when info panel is visible
                 if (vm.selectedLocationInfo == null)

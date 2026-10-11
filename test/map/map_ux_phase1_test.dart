@@ -427,8 +427,8 @@ void main() {
       final screen = _squash(_read(_view));
       expect(screen.contains('canReset: vm.filtersActive,'), isTrue);
       expect(screen.contains('onReset: vm.clearFilters,'), isTrue);
-      // The "no matches" banner's action is the very same call.
-      expect(screen.contains('onClear: vm.clearFilters,'), isTrue);
+      expect(screen.contains('MapNoMatchesBanner('), isFalse);
+      expect(screen.contains('onClear: vm.clearFilters,'), isFalse);
       expect(_count(screen, 'MapFilterStatusLine('), 1);
       expect(
         screen.indexOf('child: MapFilterBar('),
@@ -467,10 +467,10 @@ void main() {
       }
     });
 
-    test('English reads 0 results, 1 result, 12 results', () {
-      expect(_words('en', 0), '0 results');
+    test('English reads No results, 1 result, 12 results', () {
+      expect(_words('en', 0), 'No results');
       // A count is never negative; if one ever came, it reads as none.
-      expect(_words('en', -3), '0 results');
+      expect(_words('en', -3), 'No results');
       expect(_words('ar', -3), 'لا توجد نتائج');
       expect(_words('en', 1), '1 result');
       expect(_words('en', 2), '2 results');

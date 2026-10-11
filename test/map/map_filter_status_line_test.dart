@@ -97,9 +97,9 @@ void main() {
     expect(find.text('Reset'), findsNothing);
   });
 
-  testWidgets('English: 0 results, 1 result, 12 results', (tester) async {
+  testWidgets('English: no results, 1 result, 12 results', (tester) async {
     for (final entry in {
-      0: '0 results',
+      0: 'No results',
       1: '1 result',
       2: '2 results',
       12: '12 results',
@@ -144,6 +144,37 @@ void main() {
     await tester.tap(find.byKey(MapFilterStatusLine.resetKey));
     await tester.pump();
     expect(resets, 1);
+  });
+
+  testWidgets('zero results have one compact state and Reset only with filters',
+      (tester) async {
+    var resets = 0;
+    await _pump(tester, resultCount: 0, canReset: false);
+    expect(find.text('No results'), findsOneWidget);
+    expect(find.byKey(MapFilterStatusLine.resultCountKey), findsOneWidget);
+    expect(find.byKey(MapFilterStatusLine.resetKey), findsNothing);
+
+    await _pump(
+      tester,
+      resultCount: 0,
+      canReset: true,
+      onReset: () => resets++,
+    );
+    expect(find.text('No results'), findsOneWidget);
+    expect(find.byKey(MapFilterStatusLine.resultCountKey), findsOneWidget);
+    expect(find.byKey(MapFilterStatusLine.resetKey), findsOneWidget);
+    await tester.tap(find.byKey(MapFilterStatusLine.resetKey));
+    await tester.pump();
+    expect(resets, 1);
+
+    await _pump(
+      tester,
+      resultCount: 0,
+      canReset: true,
+      locale: const Locale('ar'),
+    );
+    expect(find.text('لا توجد نتائج'), findsOneWidget);
+    expect(find.text('إعادة تعيين'), findsOneWidget);
   });
 
   testWidgets('Reset can show before there is a count', (tester) async {

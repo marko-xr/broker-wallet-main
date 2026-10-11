@@ -95,6 +95,7 @@ class ContactUsView extends StatelessWidget {
               Text(
                 loc.translate('contactBrandByline'),
                 textAlign: TextAlign.center,
+                textDirection: TextDirection.ltr,
                 style: texts.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),

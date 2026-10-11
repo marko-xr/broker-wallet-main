@@ -11464,3 +11464,14 @@ NOW - run the targeted Home tests and inspect both recent chips on a real device
 including a creation-only record and an edited existing record near the 24-hour
 boundary.
 NEXT - record the device result before marking this correction VERIFIED_RUNTIME.
+
+### Profile Feedback localization (2026-10-11)
+
+Status: SOURCE_CHECKED only; real-device verification pending. The existing
+rating/comment validation and submit-failure messages now resolve from English
+and Arabic localization keys at display time. Feedback UI, submission behavior,
+and Supabase/legacy service paths are unchanged. Targeted source checks and
+`git diff --check` passed; no Flutter command, commit, or push was run.
+
+NOW - verify both Feedback errors in English and Arabic on a real device.
+NEXT - record the device result before marking this change VERIFIED_RUNTIME.

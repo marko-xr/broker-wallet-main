@@ -11,12 +11,12 @@ class FeedbackViewModel extends ChangeNotifier {
 
   // Loading and error states
   bool _isSubmitting = false;
-  String? _errorMessage;
+  String? _errorKey;
   bool _isSubmitted = false;
 
   // Getters
   bool get isSubmitting => _isSubmitting;
-  String? get errorMessage => _errorMessage;
+  String? get errorKey => _errorKey;
   bool get isSubmitted => _isSubmitted;
   bool get canSubmit => rating > 0 && commentController.text.trim().isNotEmpty;
 
@@ -29,7 +29,7 @@ class FeedbackViewModel extends ChangeNotifier {
   /// Submit feedback to Firebase for admin review
   Future<void> submitFeedback(UserModel user) async {
     if (!canSubmit) {
-      _setError('Please provide a rating and comment');
+      _setError('feedbackRatingCommentRequired');
       return;
     }
 
@@ -46,21 +46,21 @@ class FeedbackViewModel extends ChangeNotifier {
 
       _isSubmitted = true;
     } catch (e) {
-      _setError('Failed to submit feedback. Please try again.');
+      _setError('feedbackSubmitFailed');
     } finally {
       _isSubmitting = false;
       notifyListeners();
     }
   }
 
-  void _setError(String message) {
-    _errorMessage = message;
+  void _setError(String key) {
+    _errorKey = key;
     notifyListeners();
   }
 
   void _clearError() {
-    if (_errorMessage != null) {
-      _errorMessage = null;
+    if (_errorKey != null) {
+      _errorKey = null;
       notifyListeners();
     }
   }
@@ -70,7 +70,7 @@ class FeedbackViewModel extends ChangeNotifier {
     rating = 0;
     commentController.clear();
     _isSubmitting = false;
-    _errorMessage = null;
+    _errorKey = null;
     _isSubmitted = false;
     notifyListeners();
   }

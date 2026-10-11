@@ -125,7 +125,7 @@ class FeedbackView extends StatelessWidget {
                   const SizedBox(height: 140), // Reduced from 120
 
                   // Error message if any
-                  if (vm.errorMessage != null)
+                  if (vm.errorKey != null)
                     Container(
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
@@ -142,7 +142,7 @@ class FeedbackView extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              vm.errorMessage!,
+                              loc.translate(vm.errorKey!),
                               style: texts.bodySmall
                                   ?.copyWith(color: colors.error),
                             ),

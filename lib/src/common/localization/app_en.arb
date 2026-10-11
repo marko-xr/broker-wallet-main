@@ -760,6 +760,8 @@
   "feedBack": "FeedBack",
   "feedBackScreen": "FeedBack",
   "feedbackSubtitle": "Give ratings, according to services.",
+  "feedbackRatingCommentRequired": "Please provide a rating and comment",
+  "feedbackSubmitFailed": "Failed to submit feedback. Please try again.",
   "comment": "Comment",
   "featuredInsights": "Featured Insights",
   "fileSize": "File size",

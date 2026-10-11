@@ -643,6 +643,8 @@
   "feedBack": "التقييمات",
   "feedBackScreen": "قيمنا",
   "feedbackSubtitle": "قم بتقييم الخدمة",
+  "feedbackRatingCommentRequired": "يرجى تقديم تقييم وتعليق",
+  "feedbackSubmitFailed": "فشل إرسال التقييم. يرجى المحاولة مرة أخرى.",
   "comment": "التعليق",
   "featuredInsights": "رؤى مميزة",
   "fileSize": "حجم الملف",

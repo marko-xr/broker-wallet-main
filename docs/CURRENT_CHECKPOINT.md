@@ -11475,3 +11475,23 @@ and Supabase/legacy service paths are unchanged. Targeted source checks and
 
 NOW - verify both Feedback errors in English and Arabic on a real device.
 NEXT - record the device result before marking this change VERIFIED_RUNTIME.
+
+### Profile Contact Us completion and final UI polish (2026-10-11)
+
+Status: SOURCE_CHECKED only; real-device verification pending. Profile and
+Help & Support open a dedicated Contact Us screen. The final top-down,
+scrollable layout presents the localized Broker Wallet name, untranslated NMO
+Digital brand, help copy, a support-email card with a compact copy action,
+one primary Email Support button, and a localized security note. Arabic uses
+"تواصل معنا". Email Support still opens a mail app for
+brokerwallet@nmodigital.com with subject "Broker Wallet Support"; if no app
+opens, it copies only that public address and shows one localized message.
+The old Contact Us placeholder copy was removed. Other placeholder
+destinations, backend, and packages are unchanged. Targeted source guards and
+`git diff --check` passed; no Flutter command, commit, or push ran.
+
+NOW - run `flutter test test/profile/contact_us_source_test.dart` and verify
+the screen, both entry points, copy action, mail compose, and no-mail-app
+fallback on a real device in English and Arabic, light and dark, including
+large text and a short screen.
+NEXT - record the device results before marking this VERIFIED_RUNTIME.

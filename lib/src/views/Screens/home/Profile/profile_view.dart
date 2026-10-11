@@ -266,13 +266,7 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.mail_outline_rounded,
                               title: localization.translate('contactUs'),
-                              onTap: () => _openInfoPlaceholder(
-                                context,
-                                title: localization.translate('contactUs'),
-                                message: localization
-                                    .translate('contactUsPlaceholder'),
-                                icon: Icons.mail_outline_rounded,
-                              ),
+                              onTap: () => context.push('/contact-us'),
                             ),
                             SettingsTile(
                               grouped: true,
@@ -389,7 +383,7 @@ class ProfileView extends StatelessWidget {
   /// Navigates to the shared "not available yet" screen for
   /// Support & Information / Privacy-Security rows whose real
   /// implementation is deferred to a later checkpoint. Never invents
-  /// policy, legal, or contact content — see [InfoPlaceholderView].
+  /// policy or legal content — see [InfoPlaceholderView].
   void _openInfoPlaceholder(
     BuildContext context, {
     required String title,

@@ -34,6 +34,7 @@ import 'package:broker_wallet/src/Views/Screens/ViewLists/requests_list_view.dar
 import 'package:broker_wallet/src/Views/Screens/ViewLists/watchmen_list_view.dart';
 
 import 'package:broker_wallet/src/Views/Screens/home/Profile/about_broker_wallet_view.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Profile/contact_us_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/edit_profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/feedback_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/info_placeholder_view.dart';
@@ -769,6 +770,10 @@ GoRouter _createRouter(
       GoRoute(
         path: '/about',
         builder: (context, state) => const AboutBrokerWalletView(),
+      ),
+      GoRoute(
+        path: '/contact-us',
+        builder: (context, state) => const ContactUsView(),
       ),
       GoRoute(
         path: '/info-placeholder',

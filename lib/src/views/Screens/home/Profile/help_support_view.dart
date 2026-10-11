@@ -4,7 +4,6 @@ import 'package:broker_wallet/src/Views/Widgets/settings_section_header.dart';
 import 'package:broker_wallet/src/Views/Widgets/settings_tile.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
-import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -80,7 +79,7 @@ class HelpSupportView extends StatelessWidget {
                   materialIcon: Icons.mail_outline_rounded,
                   title: loc.translate('contactUs'),
                   subtitle: loc.translate('contactUsHint'),
-                  onTap: () => _openContactPlaceholder(context, loc),
+                  onTap: () => context.push('/contact-us'),
                 ),
               ],
             ),
@@ -115,17 +114,6 @@ class HelpSupportView extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _openContactPlaceholder(BuildContext context, AppLocalizations loc) {
-    context.push(
-      '/info-placeholder',
-      extra: InfoPlaceholderArgs(
-        title: loc.translate('contactUs'),
-        message: loc.translate('contactUsPlaceholder'),
-        icon: Icons.mail_outline_rounded,
       ),
     );
   }

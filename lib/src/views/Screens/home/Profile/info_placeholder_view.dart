@@ -2,10 +2,8 @@
 //
 // Reusable, production-quality "not available yet" destination for
 // Profile/Settings rows that exist in the information architecture but
-// whose real implementation (legal content, support content, backend
-// logic) is deferred to a later checkpoint. This screen never invents
-// policy, legal, or contact content — it only communicates honestly that
-// the destination is coming.
+// whose real implementation is deferred to a later checkpoint. This screen
+// never invents policy or legal content; Contact Us has its own real route.
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';

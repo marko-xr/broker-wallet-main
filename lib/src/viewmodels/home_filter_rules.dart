@@ -2,7 +2,7 @@ import '../data/models/unified_item_model.dart';
 
 /// The Home filters, in the order their chips appear.
 enum HomeFilterKind {
-  /// Records created in the last 12 hours.
+  /// Records created in the last 24 hours.
   recentlyAdded('recentlyAdded', 'Recently Added'),
 
   /// The lowest-priced Offers and Requests.
@@ -14,7 +14,7 @@ enum HomeFilterKind {
   /// The highest-priced Offers and Requests.
   highestPrice('highestPrice', 'Highest Price'),
 
-  /// Records changed, after they were created, in the last 12 hours.
+  /// Records changed, after they were created, in the last 24 hours.
   recentlyUpdated('recentlyUpdated', 'Recently Updated');
 
   const HomeFilterKind(this.labelKey, this.label) : isImplemented = true;
@@ -36,7 +36,7 @@ enum HomeFilterKind {
 /// Nothing here reads a clock, a backend or a screen: the records and "now" are
 /// handed in, so the same input always gives the same list, in the same order.
 ///
-/// **Time.** A window is elapsed time before [apply]'s `now` — 12 hours, or
+/// **Time.** A window is elapsed time before [apply]'s `now` — 24 hours, or
 /// 7 x 24 hours — not calendar days, not a calendar week and not anchored to
 /// midnight. A record counts only when it was created (Recently Updated: last
 /// changed) strictly after the start of the window, so one exactly at the start
@@ -58,7 +58,7 @@ enum HomeFilterKind {
 /// anyway is dropped here rather than reaching a screen that cannot draw it.
 abstract final class HomeFilterRules {
   /// How far back Recently Added looks.
-  static const Duration recentlyAddedWindow = Duration(hours: 12);
+  static const Duration recentlyAddedWindow = Duration(hours: 24);
 
   /// How far back This Week looks.
   static const Duration thisWeekWindow = Duration(days: 7);

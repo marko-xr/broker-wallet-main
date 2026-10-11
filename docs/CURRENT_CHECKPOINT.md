@@ -11446,3 +11446,21 @@ work, and Back works. If it still flickers, capture one open with
 `flutter run --profile` and the Performance view in DevTools (the frames that
 miss their budget) plus `adb logcat -s GoogleMapInitializer flutter`, and send the
 trace before anything else is changed.
+
+### Home recent filters — 24-hour window (2026-10-11)
+
+Status: SOURCE_CHECKED; Flutter and real-device verification have not run for
+this correction. The earlier Home notes describing 12 hours are historical and
+are superseded by this entry.
+
+- Recently Added: known `createdAt` strictly after `now - 24 hours`.
+- Recently Updated: known `createdAt` and `updatedAt`, with `updatedAt` strictly
+  later than `createdAt` and strictly after `now - 24 hours`.
+- Both use `HomeFilterRules.recentlyAddedWindow`; `recentlyUpdatedWindow` aliases
+  it. The existing timestamp check excludes creation-only records. No other
+  Home filter, UI, localization, backend or package changed.
+
+NOW - run the targeted Home tests and inspect both recent chips on a real device,
+including a creation-only record and an edited existing record near the 24-hour
+boundary.
+NEXT - record the device result before marking this correction VERIFIED_RUNTIME.

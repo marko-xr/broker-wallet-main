@@ -12182,3 +12182,142 @@ NOW — none for this item. NEXT — checklist item #6, Owner private-media fina
 hosted/current-state re-verification, as its own checkpoint. Optional, not
 required for closure: the owner-run production smoke (it claims account A) and a
 two-device check on a real device.
+
+### Owner private media — final hosted/current-state re-verification (2026-10-12)
+
+Status: **Owner private-media hosted/current-state re-verification = COMPLETE.**
+Classification **A, OWNER_MEDIA_COMPLETE**. **Checklist item #6 is CLOSED.**
+Branch `owner-private-media-final-verification` at `0aedd43`, tree clean at the
+start. No source, test, Supabase or Worker state changed; nothing was deployed,
+committed or pushed; no Flutter or Worker test, runner or device command was
+run, and item #5 was not reopened. "Complete" covers this item only. It does not
+promote the Owner Samsung scenarios (`MEDIA-29`…`MEDIA-32`, `MEDIA-34`) or F1
+(`MEDIA-33`): they are not VERIFIED_REAL_DEVICE, and this item neither promotes
+them nor makes them newly required (see Evidence).
+
+Source (VERIFIED_SOURCE). Read against `docs/DECISIONS.md` (Owner media follows
+the Offer rules: photos and videos only, 10 per Owner, photos 10 MiB, videos 100
+MiB and 3:00, no Documents, 7-day retention, sweeps off). The Owner migration
+`supabase/migrations/20260928131828_owner_media_confirm_rpc.sql` is the reviewed
+file (git blob sha256 `059e31c7…4fbb`, 8,258 bytes). The Worker serves `POST
+/owner-media/authorize|confirm|remove` and `GET /owner-media`
+(`worker.js:231-234`) through `MEDIA_PARENTS.owner` (`:165`): table `owners`, link
+table `owner_media`, key segment `owners`, RPC `confirm_owner_media_upload`,
+limit 10, `owner_not_found`, its own sweep switch. The app agrees: the same routes
+and `ownerRecordId` (`media_parent.dart`), the same limits
+(`offer_media_policy.dart:61-64`), the default Worker URL
+`https://media-api.brokerwallet.ae`, and no server credential in `lib/`. The
+deployable Worker files at HEAD are byte-identical to the staged candidate
+`e2c33d8` (`worker.js` git blob `bebdb90a…`; HEAD differs from it only in this
+document). Since the Owner commit `8e43c6f` the Owner lifecycle files — upload
+queue, private-media store and form, gallery loader, `OwnerService`, picker, pick
+recovery, policy, source sheet, `media_parent.dart`, the SQL, pgTAP, validation
+and the Owner tests — are byte-identical, and no changed line of
+`supabase_core_entities_service.dart` touches `cachedOwnerMedia` or
+`resolveOwnerMedia`. Later edits are additive or unrelated: `session_superseded`
+reporting in the shared upload service, Share in Owner Details and the viewers,
+the Add Owner property-type and location chips. The Worker's only Owner-relevant
+delta is the session gate in `verifySupabaseTokenAndGetUserId`; the rest is
+Quotation (routes and branches guarded by `parent === MEDIA_PARENTS.quotation`)
+and two additive selected columns.
+
+Hosted Supabase (VERIFIED_HOSTED, 2026-10-12; five SELECT-only queries through
+`supabase db query --linked` from an isolated scratch link, the CLI's standard
+ephemeral login role initialised each time; nothing written).
+`20260928131828 owner_media_confirm_rpc` is registered in the migration history
+(17 versions; the newest five are `20261005175500`, `20261001220000`,
+`20260930204217`, `20260928131828`, `20260926092220`).
+`public.confirm_owner_media_upload(uuid, uuid, uuid, text, integer, bigint, text,
+bigint)` exists: plpgsql, SECURITY DEFINER, owner `postgres`, `search_path=""`,
+ACL `{postgres=X/postgres,service_role=X/postgres}` (no PUBLIC, `anon` or
+`authenticated` EXECUTE; `service_role` EXECUTE), the migration's comment, and a
+3,079-byte body whose sha256 `187ebe4c…2e3f93` equals the repository migration's
+function body byte for byte. There is no Owner (or Offer) remove function by
+design: removal is the Worker's guarded `service_role` writes, and `service_role`
+holds the table privileges for it. `public.owner_media`: columns
+`owner_record_id`, `media_id`, `role`, `ordinal`; primary key (`owner_record_id`,
+`media_id`); unique (`owner_record_id`, `role`, `ordinal`); foreign keys to
+`owners` and `media_objects` with ON DELETE CASCADE; checks `ordinal >= 0` and a
+non-empty `role`; an index on `media_id`; the enabled BEFORE INSERT/UPDATE trigger
+`owner_media_validate_owner` (the media owner must be the Owner's owner). RLS is
+enabled on `owner_media`, `offer_media`, `media_objects` and `owners`;
+`owner_media` has `owner_media_select_own` (SELECT, `owns_owner_record`) and the
+restrictive `app_session_gate`. `anon` holds no privilege on any of them,
+`authenticated` holds SELECT only (no INSERT, UPDATE or DELETE on `owner_media`,
+`media_objects` or `owners`), `service_role` holds all four, and none of the four
+tables has a URL-like column, so no signed URL is persisted. Rows, counts only: 3
+ready Owner links, all in `broker-wallet-media` (1 photo, 2 videos; 2 Owner
+records; one account), none in the staging bucket; 0 key-prefix mismatches, 0
+links whose key is not an Owner key, 0 Owner keys linked to an Offer or
+Quotation, 0 media in two link tables, 0 links not ready, 0 content types outside
+the allowlist, 0 photos over 10 MiB, 0 videos over 100 MiB or 181 s, at most 2
+ready on one Owner, 0 ready Owner-key media without a link, 0 abandoned
+`pending_upload` over 24 h, 0 `pending_delete` or `failed`, 0 ready media on a
+soft-deleted Owner. No mismatch with the source.
+
+Production Worker (VERIFIED_HOSTED, 2026-10-12; wrangler 4.136.3 from the local
+npx cache and the owner's existing login; deployments, version-detail and R2
+bucket GETs only). `r2-profile-upload`: the deployment created
+2026-10-12T17:05:15Z serves 100% of `3a8491c3-0811-4ec1-9cc3-f01587b65bee` (#8,
+tag `sad1-c2fe5c5b`; handlers `fetch` and `scheduled`). Bindings: `MEDIA_BUCKET`
+and `R2_BUCKET_NAME` = `broker-wallet-media`; `OFFER_MEDIA_SWEEP_MODE` and
+`OWNER_MEDIA_SWEEP_MODE` = `off`; `QUOTATION_MEDIA_SWEEP_MODE` unbound (off in
+code); secrets by name `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+`SUPABASE_SECRET_KEY`; no `STAGING_TEST_KEY`. Its script etag `5378be36…8d99`
+equals the etag of staging version `a9847ecc-7340-4dc9-b907-3dd3bf13a8c0`
+(compared in full this checkpoint), so production runs the artifact staged from
+`e2c33d8`, whose source holds the Owner routes above (wrangler cannot read the
+live bundle's bytes). Credential-free probes of `media-api.brokerwallet.ae`:
+`GET /owner-media` and `POST /owner-media/authorize`, `/confirm`, `/remove` answer
+401 (`Missing or malformed Authorization header`), the Offer and Quotation lists
+401, an unknown path 404, preflight 204. Bucket `broker-wallet-media`: r2.dev
+public access disabled, no custom domain, no CORS rules. Isolation holds in three
+layers: the Worker compares the exact key `profiles/<uid>/<segment>/<id>/
+<mediaId>.<ext>` on resume, confirm, list and remove (a cross-parent item is
+`media_mismatch`), `assertOwnsParent` requires the caller's live (`deleted_at is
+null`) record, and the database function repeats the prefix check; the sweeps
+select by the parent's own key pattern and are off.
+
+Evidence. (1) 2026-09-28: staging acceptance 126/126 on `ac033060` (source
+`3b16d8e6`), VERIFIED_HOSTED at API level, plus the owner-reported production
+smoke, Worker suite 120/120 and targeted Flutter suite 60/60. (2) 2026-10-12:
+staging run `20261012T162811Z` of the artifact now in production (220 PASS, 1
+FAIL): its Offer and Owner regression (authorize under the own prefix, private
+PUT, confirm, idempotent confirm, listing and signed GET byte-exact, cross-route
+isolation, removal tombstone, 410 afterwards) and the session gate on all 16
+routes passed; the one failure is account A's profile-image bucket, diagnosed
+earlier and not Owner. (3) Device-originated rows on production, 2026-10-07
+05:00–05:20Z, account A, read this checkpoint masked: Owner record 1 holds a
+video (9.4 s, 745 KB) and a photo; Owner record 2 had a video attached at
+05:18:50Z, removed while READY at 05:19:42Z (tombstone `deleted`, so the Owner
+remove route ran to completion), and a different video (8.2 s, 5.4 MB) attached
+at 05:19:43Z. The digit-only names (`NNNNNNNNNN.mp4`, `scaled_NNNNNNNNNN.webp`)
+match Android Photo Picker and `image_picker` output; the runners use `photo.*`,
+`avatar.jpg` and `f1-trigger.jpg` and run on staging only. That is VERIFIED_HOSTED
+for a real client completing authorize, private PUT, confirm, link, remove and
+replace on the production Worker; that it was the owner's Samsung is inference,
+and what the screen showed (playback, seeking, posters, Retry and Remove states)
+was not recorded. No Owner Samsung acceptance is recorded anywhere:
+`MEDIA-29`…`MEDIA-32` and `MEDIA-34` are unticked in the deferred master test
+plan, `docs/PROJECT_STATE.md` lists them open, and F1 `MEDIA-33` phase 2 never
+completed (one early attempt stopped by design; the abandoned-upload rows it
+seeded no longer exist in the hosted database). They stay as they were.
+Applicability: no commit after 2026-10-07T05:20Z touches an Owner lifecycle
+file, the Worker, the SQL or the configuration; the later commits that read
+Owner media are the Favorites and Search cards (`f9e9dab` 05:20Z, `25a42d8`
+08:16Z, each its own checkpoint), so (3) describes the current Flutter code. The
+only later Owner-relevant change is the Worker's Single Active Device gate, live
+since 2026-10-12T17:05Z and runtime-verified on staging with the same artifact
+under item #5 (closed, not reopened). No narrow re-test is required.
+
+Not changed. `docs/PROJECT_STATE.md` still names `6387e2c0` as production and
+Owner media as the active checkpoint (stale; not edited here). The owner's master
+context carries only the 2026-09-28 Owner snapshot and points here for current
+state. The cron schedule and the custom-domain binding are not readable through
+wrangler (the domain answers as the Worker). Local side effects only: wrangler
+refreshed its login file and wrote one local log (the expected "CORS
+configuration does not exist" error); the Supabase link and the query files live
+in the session scratchpad, outside the repository.
+
+NOW — none for this item. NEXT — checklist item #7, Phone Login/Signup
+production backend, as its own checkpoint (not started).

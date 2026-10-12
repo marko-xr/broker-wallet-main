@@ -11969,3 +11969,75 @@ NOW — owner decides whether to approve a separate staging deployment checkpoin
 NEXT — in it: deploy the candidate to staging only, read the new deployment back,
 then run the Quotation runner (`session-gate` must pass) and the Owner runner with
 disposable accounts. No deploy command is prepared here.
+
+### Single active device — staging deployment and read-back (2026-10-12)
+
+Status: **STAGING DEPLOYED, READ-BACK VERIFIED — AUTHENTICATED ACCEPTANCE NOT
+RUN.** Branch `single-active-device-production-parity` at `8ea6e6b` (a docs-only
+commit above the reviewed candidate `e2c33d8`), working tree clean before and
+after. The owner explicitly authorized this staging deployment only.
+
+Pre-deploy gate (VERIFIED_SOURCE). `git diff e2c33d8 HEAD` shows documentation
+only; all seven deployable files (`worker.js`, `account_deletion.js`,
+`active_session.js`, `staging_gate.js`, `wrangler.toml`, `package.json`,
+`package-lock.json`) hash exactly as reviewed; and the locally rebuilt bundle was
+byte-identical to the reviewed one (sha256 `260f99b0c56813b0...`, 141,904 bytes,
+138.58 KiB). Live staging, read first (VERIFIED_HOSTED), matched the review:
+deployment `4c35be8b-...`, version `f875b2f7-...` at 100%, last deployed by
+wrangler, bindings equal to the committed staging config.
+
+Deployment (VERIFIED_HOSTED). Wrangler 4.136.3 (the pinned version, run from the
+npx cache), from the Worker directory: `deploy --env staging --strict --tag
+sad1-c2fe5c5b --message "Single Active Device staging candidate (worker.js sha256
+c2fe5c5b, bundle 260f99b0, e2c33d8)"`. Added to the authorized
+`deploy --env staging`: `--strict`, because a non-interactive wrangler answers yes
+to every "overwrite the remote config?" warning and `--strict` can only abort
+instead; and the repository's usual `--tag` / `--message` annotations. Exit 0,
+2026-10-12 15:07:49-15:08:04Z. It made 10 API requests, 5 of them not GET (`POST
+versions`, `POST deployments`, `PATCH script-settings`, `POST subdomain`, `PUT
+schedules`), every one on script `r2-profile-upload-staging`; none named another
+script, a route, a domain, a zone, R2 or KV, and the only secrets request was a
+read. No secret, variable, binding or file was set, passed or edited.
+
+Result. New deployment `0bbae448-6533-4aa8-b677-a7cbb6dbe772`
+(2026-10-12T15:08:01Z) serves 100% of new version
+`a9847ecc-7340-4dc9-b907-3dd3bf13a8c0` (#23, tag `sad1-c2fe5c5b`), the newest of
+23; worker startup 9 ms; URL
+`https://r2-profile-upload-staging.mohammed-developer-code.workers.dev`,
+schedule `*/5 * * * *`. A separate read-only read-back equals the committed
+staging config: the same 7 var names and non-secret values, `MEDIA_BUCKET` ->
+`broker-wallet-media-staging` (the production bucket is not bound), secret names
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `STAGING_TEST_KEY` and
+`SUPABASE_SECRET_KEY` all present, Offer and Owner sweeps `"off"`,
+`QUOTATION_MEDIA_SWEEP_MODE` unbound (off), compatibility `2024-11-01` +
+`nodejs_compat`, handlers `fetch` and `scheduled`.
+
+**Rollback target: version `f875b2f7-9131-49c9-8bd2-9a35c5f4f1a2` (deployment
+`4c35be8b-1840-45b4-8092-221b88755dca`, 2026-10-02), still the second entry of the
+history.** Do not roll back to `ac033060-...`: its gate key is unrecoverable.
+
+Probe (VERIFIED_HOSTED, 2026-10-12 15:09Z; no key, no authentication). `GET
+/offer-media` and `POST /account/delete` with an empty body each answered 403
+`{"error":"Forbidden"}` from the staging gate, and the CORS preflight answered 204.
+That shows the new deployment is reachable and the outer gate is active. No
+unauthenticated probe can tell the new version from the old one.
+
+Production unchanged (VERIFIED_HOSTED). Read before and after, its live
+deployment is still `47a7ddb1-1f17-40ca-a158-da7e25714563` (100% of
+`5eff52cb-...`) and its full 7-entry deployment list is identical; no request
+named the production script with any method other than GET. Supabase: no change.
+Production parity is NOT complete (classification C stands).
+
+NOT RUN: every authenticated staging acceptance (claims, the two-session A/B
+check, regressions), account creation, media creation, Delete Account, `npm test`,
+the staging runners and the production smoke. The active-session behaviour on
+staging is NOT VERIFIED_RUNTIME. UNKNOWN: the staging script's route and custom
+domain list (no read-only wrangler command; this deploy made no route or domain
+request and the config has none). CODE_PROVEN (owner-run): the Worker suite
+140/140 and the runner self-test on this source.
+
+NOW — owner approval is required for authenticated staging acceptance.
+NEXT — that checkpoint, with disposable or test accounts: the Quotation runner
+(`session-gate`: current, superseded and never-claimed sessions) and the Owner
+runner regressions. Only after it passes would a production checkpoint be
+considered.

@@ -11811,3 +11811,77 @@ two-account A-then-B checks (superseded 403, current 200, never-claimed 403);
 then `versions upload`, read back, `versions deploy <id>@100%` for production
 with rollback `5eff52cb-...`; then the owner's two-device acceptance. Only that
 last step can move this to VERIFIED_RUNTIME.
+
+### Single active device — acceptance-runner claim readiness (2026-10-12)
+
+Status: **SOURCE PREPARED — NOT RUN.** Branch `single-active-device-production-parity`
+at `c29d308`, tree clean at the start. The agent ran no Worker or Flutter test, no
+runner, no launcher and made no hosted call: only static checks (parse-only
+`node --check` on the six JS files, the PowerShell parser on the three
+launchers with 0 errors, and a read-only script asserting the contract below).
+Staging deploy NOT performed. Production is unchanged (`5eff52cb-...`). No
+Supabase, Worker source (`worker.js`, `account_deletion.js`, `active_session.js`,
+`wrangler.toml`) or Flutter change. Staging and production parity are NOT
+verified; the classification stays C.
+
+The defect. Every runner signs in by password grant, which creates a new,
+unclaimed Auth session, and then calls the Worker (a gated Worker answers 403
+`session_superseded`) and the database (since the hosted migration, direct REST
+and `save_quotation` refuse an unclaimed session too). Each live runner therefore
+needed the claim the app performs after a fresh sign-in.
+
+What changed, all under `cloudflare/workers/r2-profile-upload/`:
+
+- `staging-acceptance/app_session_claim.mjs` (new, shared). Calls the existing
+  `claim_current_app_session` RPC with the access token Auth issued, the
+  publishable key and an empty body, accepts only the JSON answer `true`, then
+  asks `is_current_app_session` (the Worker's own authority) and requires `true`.
+  Before any request it refuses a key that is not a publishable key, a token that
+  is not an `authenticated` user's, and a token with no `session_id`. It never
+  chooses or writes a session id and never touches the session tables. Errors are
+  fixed codes; only a one-way session tag is ever printed.
+- `quotation_media_staging_acceptance.mjs`: claims A and B after the
+  designated-account and different-account checks and before the first write; a
+  new last section `session-gate` on account B's own sessions covers A (claimed
+  is accepted), C (a sign-in that never claims is refused), B (the later claimant
+  is accepted; the replaced session is refused and cannot reclaim) and D (no or
+  invalid token is 401), on all 16 gated routes (15 profile/media plus
+  `/account/delete`, sent with no password so nothing can be deleted).
+- `owner_media_staging_acceptance.mjs`: claims A and B after the different-accounts
+  check (full run) and after the account-fingerprint checks (F1 phase 2).
+- `quotation_media_production_smoke.mjs`: claims A after the designated-account
+  check, nothing else. Changed although it is a production runner because it has
+  the same defect (by the migration's `save_quotation` wrapper it would already
+  fail against the applied database) and the offline self-test drives it. No
+  displacement scenario was added and it is NOT to be run until its own approved
+  production checkpoint.
+- `quotation_media_offline_selftest.mjs`: read as stale against the gated
+  `worker.js` (its fake has no `is_current_app_session`, so every authenticated
+  Worker call would answer 503). The fake now models the hosted authority (JWT
+  tokens carrying `session_id`, claim and check following the SQL, an unclaimed
+  session sees no rows) and three faults must be detected: a gate that accepts a
+  never-claimed session, supersession ignored, a displaced session that can reclaim.
+- The three `run_*.ps1` launchers ask the owner to type `CLAIM` first and set
+  `BW_E2E_ACK_SESSION_CLAIM=1`; each runner refuses to start without it. Both
+  READMEs describe the claim, the displacement rule and `session-gate`.
+- `test/app_session_claim.test.mjs` (new): unit tests for the helper.
+
+Account rule preserved. Claiming ends every other session of an account, so each
+runner claims only after it has proven the intended accounts: Quotation A must be
+the designated test-only uid and B a different account; Owner A and B are two
+different fresh, disposable accounts; the smoke's A is the designated uid. No
+credential is in source, and nothing but statuses, fixed codes, record ids and
+one-way session tags is printed.
+
+Expectation, from source analysis and not observed: against the current pre-gate
+staging Worker (`f875b2f7-...`) the claims pass and only `session-gate`'s
+Worker-refusal checks fail; once a gated candidate is on staging they must pass.
+
+NOW — owner runs, in `cloudflare/workers/r2-profile-upload`, `npm ci` if
+`node_modules` is absent, then `npm test`, then
+`node staging-acceptance/quotation_media_offline_selftest.mjs` (expect
+`SELF-TEST PASSED`), and reports the exact results. Owner tests pending.
+NEXT — if they pass, a separate owner-approved checkpoint decides the staging
+deployment of the gated candidate; then the Quotation runner (expect
+`session-gate` to fail before the gate is on staging and pass after) and the Owner
+runner are run on staging with disposable accounts. No deployment is prepared here.

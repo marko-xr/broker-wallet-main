@@ -9,6 +9,11 @@
   Accounts: A and B are two different, fresh, disposable test accounts. Use
   the same two accounts for -Mode F1Verify as for the Full run it follows.
 
+  Single Active Device: the run CLAIMS the active app session for each account it
+  signs in with, which ends every other session of that account. The launcher
+  asks you to type CLAIM first, and the runner refuses to start without that
+  acknowledgement.
+
   -Mode Full      (default) the whole acceptance; needs -VideoPath (MP4, MOV or
                   3GP, at most 3:00 and 100 MB). Writes reports\f1_state_*.json.
   -Mode F1Verify  phase 2 of the F1 check, at least 24 h 10 min after the Full
@@ -31,6 +36,16 @@ function Read-Secret([string] $Prompt) {
   finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 
+function Confirm-SessionClaim([string] $Accounts) {
+  Write-Host ''
+  Write-Host "This run CLAIMS the active Broker Wallet app session for $Accounts (Single Active Device)."
+  Write-Host 'Claiming ends every other session of the same account: a phone or emulator signed in to'
+  Write-Host 'one of them is signed out. Use disposable or designated test-only accounts, never a real user.'
+  $answer = Read-Host 'Type CLAIM to continue'
+  if ($answer -cne 'CLAIM') { throw 'Cancelled: the session claim was not acknowledged. Nothing was run.' }
+  $env:BW_E2E_ACK_SESSION_CLAIM = '1'
+}
+
 if ($Mode -eq 'Full') {
   if (-not $VideoPath) { throw '-VideoPath is required for -Mode Full.' }
   if (-not (Test-Path -LiteralPath $VideoPath)) { throw "Video not found: $VideoPath" }
@@ -42,6 +57,7 @@ if ($Mode -eq 'Full') {
 
 $code = 1
 try {
+  Confirm-SessionClaim 'account A and account B (two fresh, disposable accounts)'
   $env:BW_E2E_WORKER_URL = $WorkerUrl
   if ($Mode -eq 'Full') {
     $env:BW_E2E_MODE = 'full'

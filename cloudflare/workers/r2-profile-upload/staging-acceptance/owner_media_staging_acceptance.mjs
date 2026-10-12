@@ -24,6 +24,14 @@
 // It never modifies or deletes a row it did not create, and it never confirms a
 // profile image, so no account's profile photo is replaced.
 //
+// Single Active Device: the database and the Worker refuse every session that is
+// not the account's ACTIVE Broker Wallet session, and a password sign-in creates
+// a new, unclaimed one. So after signing in, each account's session CLAIMS
+// (app_session_claim.mjs), exactly as the app does after a fresh sign-in; phase 2
+// of the F1 check signs in again and claims again. Claiming ENDS the account's
+// other sessions, which is why the launcher asks for an explicit acknowledgement
+// and why A and B must be disposable.
+//
 // BW_E2E_OFFLINE_CHECK=1 exercises the local helpers only (no network).
 // Node built-ins only: no `npm install` is needed.
 
@@ -31,6 +39,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { claimSessionForRun } from './app_session_claim.mjs';
 
 const SUPABASE_URL = 'https://rbvcnvqpdqrhywcgxkne.supabase.co';
 const PUBLISHABLE_KEY = 'sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz';
@@ -133,6 +143,10 @@ function loadConfig() {
     console.error('BW_E2E_MODE must be full or f1-verify.');
     process.exit(2);
   }
+  if (env.BW_E2E_ACK_SESSION_CLAIM !== '1') {
+    console.error('This run claims the active app session of accounts A and B and ends any other session of them. Run it through run_owner_media_staging_acceptance.ps1, which asks you to acknowledge that.');
+    process.exit(2);
+  }
   const workerUrl = required('BW_E2E_WORKER_URL').replace(/\/+$/, '');
   if (!STAGING_URL_PATTERN.test(workerUrl)) {
     console.error('BW_E2E_WORKER_URL must be the staging workers.dev URL (https://r2-profile-upload-staging.<subdomain>.workers.dev).');
@@ -222,6 +236,15 @@ async function signIn(label, creds) {
   }
   return { label, token: body.access_token, uid: body.user.id };
 }
+
+/**
+ * Claims [session] as its account's one active Broker Wallet session and has the
+ * database confirm it. Call it only after the two accounts are proven different
+ * disposable accounts: claiming ends the account's other sessions.
+ */
+const claimSession = (session) => claimSessionForRun({
+  session, supabaseUrl: SUPABASE_URL, publishableKey: PUBLISHABLE_KEY, check, FatalError,
+});
 
 async function callWorker(session, method, path, body, { key, timeout = 60_000 } = {}) {
   const headers = {};
@@ -896,6 +919,10 @@ async function runF1Verify(images) {
     !check('f1-verify', 'account B is the account that seeded phase 1', fingerprint(b.uid) === state.accounts.B)) {
     throw new FatalError('sign in with the same two accounts as the phase 1 run');
   }
+  // Phase 2 signs in afresh, so its sessions are unclaimed: claim them before any call.
+  note('f1-verify', 'claiming the active app session for A and B ends any other session of those two disposable accounts');
+  await claimSession(a);
+  await claimSession(b);
   const sessions = { A: a, B: b };
   const seeds = state.seeds;
   const expected = ['ownerOne', 'ownerTwo', 'offer', 'profile', 'accountB'];
@@ -1037,6 +1064,10 @@ async function runFull(images) {
     if (!check('setup', 'accounts A and B are different accounts', a.uid !== b.uid)) {
       throw new FatalError('A and B must be two different disposable accounts');
     }
+    // Only now that A and B are two different accounts: claiming ends any other session of each.
+    note('setup', 'claiming the active app session for A and B ends any other session of those two disposable accounts');
+    await claimSession(a);
+    await claimSession(b);
     await section('database', () => sectionDatabase(a));
 
     const ownerOne = await createOwner(a, 'A1');

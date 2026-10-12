@@ -7,9 +7,19 @@
 // Worker's designed behaviour, and — with deliberately injected faults — that
 // its checks actually fail when the system under test misbehaves.
 //
+// Single Active Device: the in-memory Supabase models the hosted migration's
+// active-session authority. Every password sign-in is a NEW Auth session whose
+// access token is a JWT carrying `session_id`; claim_current_app_session and
+// is_current_app_session follow the SQL (a fresh session claims once, only the
+// still-active claimant may repeat, a displaced one can never reclaim); and a
+// session that is not the active one sees no rows. The real worker.js asks that
+// authority before every route, so a runner that forgot to claim fails here
+// exactly as it would on staging.
+//
 // It proves nothing about hosted Supabase, Cloudflare or R2. Run:
 //   node cloudflare/workers/r2-profile-upload/staging-acceptance/quotation_media_offline_selftest.mjs
 
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,6 +45,11 @@ const HEADER_KEYS = ['property_title', 'property_type', 'parking', 'subtitle', '
 const json = (body, status = 200) => new Response(body === null ? null : JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json' },
 });
+
+const b64url = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+/** A user access token the way Supabase Auth issues it: a JWT whose claims carry the Auth `session_id`. */
+const fakeAccessToken = (uid, sessionId, n) =>
+  `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub: uid, role: 'authenticated', session_id: sessionId })}.tok-sig-${n}`;
 
 function matches(value, filter) {
   if (filter.startsWith('not.')) return !matches(value, filter.slice(4));
@@ -94,7 +109,11 @@ class World {
       { id: A_UID, email: 'a@selftest.invalid', password: 'pa' },
       { id: B_UID, email: 'b@selftest.invalid', password: 'pb' },
     ];
-    this.tokens = new Map();
+    this.tokens = new Map(); // access token -> account id
+    this.tokenSessions = new Map(); // access token -> its Auth session id (the JWT `session_id`)
+    this.authSessions = new Map(); // auth.sessions: session id -> account id
+    this.activeSession = new Map(); // public.user_active_sessions: account id -> active session id
+    this.claimLedger = new Map(); // public.app_session_claims: session id -> account id (permanent)
     this.quotes = []; this.media = []; this.links = [];
     this.owners = []; this.offers = []; this.ownerMedia = []; this.offerMedia = [];
     this.env = {
@@ -133,8 +152,12 @@ class World {
       const body = JSON.parse(init.body);
       const user = this.users.find((u) => u.email === body.email && u.password === body.password);
       if (!user) return json({ error_code: 'invalid_credentials' }, 400);
-      const token = `tok-${user.id}-${this.tokens.size}`;
+      // Like Supabase Auth, every password sign-in is a NEW Auth session, not yet claimed.
+      const sessionId = randomUUID();
+      const token = fakeAccessToken(user.id, sessionId, this.tokens.size);
       this.tokens.set(token, user.id);
+      this.tokenSessions.set(token, sessionId);
+      this.authSessions.set(sessionId, user.id);
       return json({ access_token: token, user: { id: user.id } });
     }
     if (p === '/auth/v1/user') {
@@ -142,12 +165,12 @@ class World {
       return uid ? json({ id: uid }) : json({ error_code: 'bad_jwt' }, 403);
     }
     if (init.headers?.apikey === SECRET) return this.service(url, init);
-    if (init.headers?.apikey === PUBLISHABLE && this.tokens.has(bearer)) return this.client(url, init, this.tokens.get(bearer));
+    if (init.headers?.apikey === PUBLISHABLE && this.tokens.has(bearer)) return this.client(url, init, this.tokens.get(bearer), bearer);
     return json({ message: 'invalid api key' }, 401);
   }
 
   // ---- signed-in client (RLS) -------------------------------------------
-  client(url, init, uid) {
+  client(url, init, uid, token) {
     const p = url.pathname;
     const s = url.searchParams;
     const method = init.method ?? 'GET';
@@ -155,6 +178,16 @@ class World {
     const denied = () => json({ code: '42501', message: 'permission denied' }, 403);
     const ownsQuote = (id) => this.quotes.some((q) => q.id === id && q.owner_id === uid);
     const read = (rows, visible) => json(project(orderLimit(filterRows(rows.filter(visible), s), s), s));
+    // The hosted single-active-session migration: the claim and check RPCs are open to any
+    // signed-in session; every other app-data call passes the restrictive app_session_gate
+    // policy, which hides every row from, and refuses every write by, a session that is not
+    // the account's active one (and `save_quotation` raises session_superseded).
+    if (p === '/rest/v1/rpc/claim_current_app_session') return this.claimRpc(token, uid);
+    if (p === '/rest/v1/rpc/is_current_app_session') return json(this.isCurrent(token, uid));
+    if (!this.isCurrent(token, uid)) {
+      if (p === '/rest/v1/rpc/save_quotation') return json({ code: '42501', details: null, hint: null, message: 'session_superseded' }, 403);
+      return method === 'GET' ? json([]) : denied();
+    }
     if (p === '/rest/v1/quotations') {
       if (method === 'GET') return read(this.quotes, (q) => this.opts.leakReads || q.owner_id === uid);
       if (method === 'PATCH') {
@@ -179,6 +212,28 @@ class World {
     if (p === '/rest/v1/rpc/save_quotation') return this.saveQuotation(uid, body);
     if (p.startsWith('/rest/v1/rpc/')) return denied();
     return json({ message: `unexpected client call ${method} ${p}` }, 500);
+  }
+
+  /** public.is_current_app_session(): the account's one active session, which must still exist in auth.sessions. */
+  isCurrent(token, uid) {
+    const sessionId = this.tokenSessions.get(token);
+    if (!sessionId || this.authSessions.get(sessionId) !== uid) return false;
+    if (this.opts.gateAcceptsAnySession) return true; // fault: the gate never refuses a valid sign-in
+    if (this.opts.ignoreSupersession) return this.claimLedger.get(sessionId) === uid; // fault: a replaced session stays current
+    return this.activeSession.get(uid) === sessionId;
+  }
+
+  /** public.claim_current_app_session(): a fresh session claims once; only the still-active claimant may repeat. */
+  claimRpc(token, uid) {
+    const sessionId = this.tokenSessions.get(token);
+    const refuse = (message) => json({ code: '42501', details: null, hint: null, message }, 403);
+    if (!sessionId || this.authSessions.get(sessionId) !== uid) return refuse('session_missing');
+    if (this.claimLedger.has(sessionId) && !this.opts.reclaimAllowed) { // fault: a displaced session may reclaim
+      return this.activeSession.get(uid) === sessionId ? json(true) : refuse('session_superseded');
+    }
+    this.claimLedger.set(sessionId, uid);
+    this.activeSession.set(uid, sessionId);
+    return json(true);
   }
 
   saveQuotation(uid, b) {
@@ -369,7 +424,7 @@ if (base.code !== 0 || baseFails.length > 0) problems += 1;
 
 // No gate key, token, signed-URL material or URL may appear in the runner's output.
 const text = base.lines.join('\n');
-for (const needle of [GATE, 'X-Amz-', 'tok-', 'https://', '@selftest.invalid']) {
+for (const needle of [GATE, 'X-Amz-', 'tok-sig', 'eyJ', 'https://', '@selftest.invalid']) {
   if (text.includes(needle)) { console.log(`LEAK: output contains ${needle}`); problems += 1; }
 }
 
@@ -385,6 +440,10 @@ const mutations = [
   ['the database ignores expected_media_id (the Worker guard still holds)', { ignoreStale: true }, null],
   // Likewise the Worker's own removal step unlinks the media, so a database that left the link behind is repaired.
   ['the database leaves the quotation_media link on removal (the Worker unlinks it)', { removeLeavesLink: true }, null],
+  // Single Active Device: the real worker.js asks this database authority before every route.
+  ['the gate accepts a session that never claimed', { gateAcceptsAnySession: true }, /never-claimed/],
+  ['a replaced session stays current (the database ignores supersession)', { ignoreSupersession: true }, /superseded session is refused/],
+  ['a displaced session can claim again', { reclaimAllowed: true }, /cannot reclaim/],
 ];
 for (const [label, opts, expected] of mutations) {
   const result = await runWorld(opts);
@@ -428,7 +487,7 @@ PRODUCTION SMOKE (no faults): exit ${smoke.code}, ${smokePasses} PASS, ${smokeFa
 for (const line of smokeFails) console.log(`  ${line}`);
 if (smoke.code !== 0 || smokeFails.length > 0) problems += 1;
 const smokeText = smoke.lines.join('\n');
-for (const needle of ['X-Amz-', 'tok-', 'https://', '@selftest.invalid']) {
+for (const needle of ['X-Amz-', 'tok-sig', 'eyJ', 'https://', '@selftest.invalid']) {
   if (smokeText.includes(needle)) { console.log(`LEAK: smoke output contains ${needle}`); problems += 1; }
 }
 if (smoke.world.media.some((m) => m.bucket !== 'broker-wallet-media')) { console.log('smoke wrote a non-production bucket row'); problems += 1; }

@@ -19,6 +19,14 @@
 // (names start "production-smoke"), and leaves them in place — the sweeps are
 // off. The report lists their ids for a narrow cleanup of exactly those ids.
 //
+// Single Active Device: the database refuses every session that is not the
+// account's ACTIVE Broker Wallet session (the gated Worker does too), and a
+// password sign-in creates a new, unclaimed one. So A claims right after its
+// designated-account check (app_session_claim.mjs), as the app does after a fresh
+// sign-in. Claiming ENDS account A's other sessions, for example a phone signed
+// in to it, which is why the launcher asks for an explicit acknowledgement. That
+// is the only gate change here: no displacement scenario runs against Production.
+//
 // Output and the JSON report hold PASS/FAIL, HTTP statuses, Worker codes and
 // record/media ids. Never a token, password, email, object key or URL.
 // Node built-ins only: no `npm install` is needed.
@@ -27,6 +35,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { claimSessionForRun } from './app_session_claim.mjs';
 
 const SUPABASE_URL = 'https://rbvcnvqpdqrhywcgxkne.supabase.co';
 const PUBLISHABLE_KEY = 'sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz';
@@ -118,6 +128,15 @@ async function signIn(label, creds) {
   }
   return { label, token: body.access_token, uid: body.user.id };
 }
+
+/**
+ * Claims [session] as its account's one active Broker Wallet session and has the
+ * database confirm it. Call it only after the account is proven to be the
+ * designated test account: claiming ends the account's other sessions.
+ */
+const claimSession = (session) => claimSessionForRun({
+  session, supabaseUrl: SUPABASE_URL, publishableKey: PUBLISHABLE_KEY, check, FatalError,
+});
 
 async function callWorker(session, method, path, body, { timeout = 60_000 } = {}) {
   const headers = {};
@@ -402,6 +421,9 @@ export async function run(config) {
       throw new FatalError('the signed-in account is not the designated test account; nothing was written');
     }
     accounts = { a: a.uid };
+    // A is proven to be the designated test account, so claiming (which ends any
+    // other session of it) cannot reach an unintended account.
+    await claimSession(a);
     const c = { a, jpeg: loadJpeg() };
     c.q = await createQuotation(a);
     await section('logo', () => smokeMedia(c, 'office_logo', c.jpeg, 'image/jpeg', 'logo'));
@@ -426,6 +448,10 @@ function loadConfig() {
   const workerUrl = (process.env.BW_PROD_WORKER_URL || PROD_URL).replace(/\/+$/, '');
   if (workerUrl !== PROD_URL) {
     console.error(`BW_PROD_WORKER_URL must be ${PROD_URL} (the production Worker).`);
+    process.exit(2);
+  }
+  if (process.env.BW_E2E_ACK_SESSION_CLAIM !== '1') {
+    console.error('This run claims the active app session of account A and ends any other session of it. Run it through run_quotation_media_production_smoke.ps1, which asks you to acknowledge that.');
     process.exit(2);
   }
   return {

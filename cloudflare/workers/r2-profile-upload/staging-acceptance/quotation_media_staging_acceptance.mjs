@@ -19,6 +19,15 @@
 // create and never confirms a profile image. It leaves its records in place
 // (the sweeps are off); the report lists their ids for the narrow cleanup.
 //
+// Single Active Device: the database and the Worker refuse every session that is
+// not the account's ACTIVE Broker Wallet session, and a password sign-in creates
+// a new, unclaimed one. So each session signs in, is proven to belong to the
+// intended test account, and only then CLAIMS (app_session_claim.mjs), exactly
+// as the app does after a fresh sign-in. Claiming ENDS the account's other
+// sessions, which is why the launcher asks for an explicit acknowledgement. The
+// last section, `session-gate`, uses extra sessions of the disposable account B
+// only, to prove current / never-claimed / superseded / no-token behaviour.
+//
 // BW_E2E_OFFLINE_CHECK=1 exercises the local helpers only (no network).
 // Node built-ins only: no `npm install` is needed.
 
@@ -26,6 +35,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import {
+  AppSessionClaimError, claimAppSession, claimSessionForRun, isAppSessionCurrent, sessionIdFromAccessToken,
+} from './app_session_claim.mjs';
 
 const SUPABASE_URL = 'https://rbvcnvqpdqrhywcgxkne.supabase.co';
 const PUBLISHABLE_KEY = 'sb_publishable_zGvG-mwMCkcpjtTYcscv1A_Xec0qXZz';
@@ -149,6 +162,15 @@ async function signIn(label, creds) {
   }
   return { label, token: body.access_token, uid: body.user.id };
 }
+
+/**
+ * Claims [session] as its account's one active Broker Wallet session and has the
+ * database confirm it. Call it only after the account is proven to be the
+ * intended test account: claiming ends the account's other sessions.
+ */
+const claimSession = (session) => claimSessionForRun({
+  session, supabaseUrl: SUPABASE_URL, publishableKey: PUBLISHABLE_KEY, check, FatalError,
+});
 
 async function callWorker(session, method, path, body, { key, timeout = 60_000 } = {}) {
   const headers = {};
@@ -1022,6 +1044,155 @@ async function sectionRemoval(c) {
 }
 
 // ---------------------------------------------------------------------------
+// Single Active Device: the Worker's active-session gate (account B only)
+// ---------------------------------------------------------------------------
+
+const SUPERSEDED = 'session_superseded';
+
+/** The Worker's answer for a session the database does not call current. */
+function isRefusedAsSuperseded(r) {
+  return r.status === 403 && (r.body?.code === SUPERSEDED || r.body?.error === SUPERSEDED);
+}
+
+/** "HTTP 403 session_superseded": the status and a code-shaped Worker word only, never a body. */
+function answered(r) {
+  const codeShaped = (value) => (typeof value === 'string' && /^[a-z0-9_]{1,40}$/i.test(value) ? value : null);
+  const word = codeShaped(r.body?.code) ?? codeShaped(r.body?.error);
+  return `HTTP ${r.status}${word ? ` ${word}` : ''}`;
+}
+
+/**
+ * Every Worker route behind the active-session gate: the fifteen profile and
+ * media routes (verifySupabaseTokenAndGetUserId) and account deletion (its own
+ * call site). A refusing gate never reads the body. [current] says what a
+ * CURRENT session sees, only for the routes that can be probed without a write
+ * and without a signed link; the rest are probed only to prove they refuse.
+ *
+ * Nothing here can delete or write anything: random ids match no record, and
+ * `/account/delete` is sent with NO password, so even a Worker without the gate
+ * would stop at password verification.
+ */
+function gatedRoutes() {
+  const post = (name, path) => ({ name, method: 'POST', path, body: {} });
+  return [
+    { name: 'profile image lookup', method: 'GET', path: '/profile-image-url', current: (r) => r.status === 200 },
+    post('profile image authorize', '/authorize'),
+    post('profile image confirm', '/confirm'),
+    {
+      name: 'Offer media list', method: 'GET', path: `/offer-media?offerId=${randomUUID()}`,
+      current: (r) => r.status === 404 && r.body?.code === OFFER.notFound,
+    },
+    post('Offer media authorize', '/offer-media/authorize'),
+    post('Offer media confirm', '/offer-media/confirm'),
+    post('Offer media remove', '/offer-media/remove'),
+    {
+      name: 'Owner media list', method: 'GET', path: `/owner-media?ownerRecordId=${randomUUID()}`,
+      current: (r) => r.status === 404 && r.body?.code === OWNER.notFound,
+    },
+    post('Owner media authorize', '/owner-media/authorize'),
+    post('Owner media confirm', '/owner-media/confirm'),
+    post('Owner media remove', '/owner-media/remove'),
+    {
+      name: 'Quotation media list', method: 'GET', path: `/quotation-media?quotationId=${randomUUID()}`,
+      current: (r) => r.status === 404 && r.body?.code === 'quotation_not_found',
+    },
+    post('Quotation media authorize', '/quotation-media/authorize'),
+    post('Quotation media confirm', '/quotation-media/confirm'),
+    post('Quotation media remove', '/quotation-media/remove'),
+    {
+      name: 'account deletion (no password is sent)', method: 'POST', path: '/account/delete', body: {},
+      // The gate passed and the request stopped at password verification: nothing was deleted.
+      current: (r) => [403, 409].includes(r.status) &&
+        ['reauthentication_failed', 'reauthentication_unsupported'].includes(r.body?.error),
+    },
+  ];
+}
+
+/** [session]'s answer on each route: how many did not answer as [expect] says, and which. */
+async function sweep(session, expect, { routes, onlyProbed = false }) {
+  const chosen = onlyProbed ? routes.filter((route) => route.current) : routes;
+  const wrong = [];
+  for (const route of chosen) {
+    const r = await callWorker(session, route.method, route.path, route.body);
+    if (!expect(r, route)) wrong.push(`${route.name} ${answered(r)}`);
+  }
+  return { total: chosen.length, wrong };
+}
+
+function verdict({ total, wrong }) {
+  if (wrong.length === 0) return `${total}/${total} routes`;
+  const shown = wrong.slice(0, 4).join('; ');
+  return `${total - wrong.length}/${total} as expected; wrong: ${shown}${wrong.length > 4 ? ` (+${wrong.length - 4} more)` : ''}`;
+}
+
+/**
+ * A) the claimed session is accepted; C) a session that signed in and never
+ * claimed is refused; B) the session that claims last is accepted while the one
+ * it replaced is refused and cannot reclaim; D) no token and an invalid token
+ * are 401 on every route. Every session is account B's, the temporary
+ * disposable account, because claiming ends the account's other sessions.
+ */
+async function sectionSessionGate(c) {
+  const S = 'session-gate';
+  const routes = gatedRoutes();
+  const current = c.b; // claimed during setup: B's active session
+  const args = (session) => ({ supabaseUrl: SUPABASE_URL, publishableKey: PUBLISHABLE_KEY, accessToken: session.token });
+  const refused = (r) => isRefusedAsSuperseded(r);
+  const accepted = (r, route) => !isRefusedAsSuperseded(r) && r.status !== 401 && route.current(r);
+  const allRefused = (session) => sweep(session, refused, { routes });
+  const probedAccepted = (session) => sweep(session, accepted, { routes, onlyProbed: true });
+  const tryClaim = async (session) => {
+    try {
+      await claimAppSession(args(session));
+      return { ok: true, code: null };
+    } catch (error) {
+      if (error instanceof AppSessionClaimError) return { ok: false, code: error.code };
+      throw error;
+    }
+  };
+
+  // D) no session, and an invalid token: 401 on every gated route.
+  const anonymous = await sweep(null, (r) => r.status === 401, { routes });
+  check(S, 'D) no session: 401 on every gated route', anonymous.wrong.length === 0, verdict(anonymous));
+  const forged = await sweep({ token: 'not-a-valid-session' }, (r) => r.status === 401, { routes });
+  check(S, 'D) an invalid session token: 401 on every gated route', forged.wrong.length === 0, verdict(forged));
+
+  // A) the claimed session is accepted.
+  const first = await probedAccepted(current);
+  check(S, 'A) the claimed session is accepted on every route that can be probed without a write', first.wrong.length === 0, verdict(first));
+  check(S, 'A) the database confirms the claimed session is current', (await isAppSessionCurrent(args(current))) === true);
+
+  // C) a sign-in that never claims.
+  const unclaimed = await signIn('B-unclaimed', cfg.b);
+  const currentId = sessionIdFromAccessToken(current.token);
+  const unclaimedId = sessionIdFromAccessToken(unclaimed.token);
+  check(S, 'a second sign-in is a different Auth session from the claimed one', unclaimedId !== null && unclaimedId !== currentId);
+  check(S, 'the database says a session that never claimed is not current', (await isAppSessionCurrent(args(unclaimed))) === false);
+  const unclaimedOut = await allRefused(unclaimed);
+  check(S, 'C) a never-claimed session is refused on every gated route: 403 session_superseded', unclaimedOut.wrong.length === 0, verdict(unclaimedOut));
+  const undisturbed = await probedAccepted(current);
+  check(S, 'signing in without claiming displaced nothing: the claimed session is still accepted', undisturbed.wrong.length === 0, verdict(undisturbed));
+
+  // B) a newer session claims and replaces the older one.
+  const replacement = await signIn('B-replacement', cfg.b);
+  await claimSession(replacement);
+  const winner = await probedAccepted(replacement);
+  check(S, 'B) the session that claimed last is accepted', winner.wrong.length === 0, verdict(winner));
+  const displaced = await allRefused(current);
+  check(S, 'B) the superseded session is refused on every gated route: 403 session_superseded', displaced.wrong.length === 0, verdict(displaced));
+  check(S, 'the database says the superseded session is no longer current', (await isAppSessionCurrent(args(current))) === false);
+  const reclaim = await tryClaim(current);
+  check(S, 'a displaced session cannot reclaim: its claim is refused with session_superseded',
+    !reclaim.ok && reclaim.code === SUPERSEDED, reclaim.ok ? 'the claim was accepted' : reclaim.code);
+  const kept = await probedAccepted(replacement);
+  check(S, 'the refused reclaim displaced nothing: the replacement is still accepted', kept.wrong.length === 0, verdict(kept));
+  const repeat = await tryClaim(replacement);
+  check(S, 'the active claimant may repeat its claim (idempotent)', repeat.ok, repeat.code ?? '');
+  const stillRefused = await allRefused(unclaimed);
+  check(S, 'the never-claimed session is still refused after the replacement claimed', stillRefused.wrong.length === 0, verdict(stillRefused));
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1076,6 +1247,11 @@ export async function run(config) {
       throw new FatalError('the signed-in account B is not the expected temporary account');
     }
     accounts = { a: a.uid, b: b.uid };
+    // Both accounts are now proven to be the intended test accounts, so claiming
+    // (which ends any other session of an account) cannot reach an unintended one.
+    note('setup', 'claiming the active app session for A and B ends any other session of those two test accounts');
+    await claimSession(a);
+    await claimSession(b);
     const c = { a, b, images };
     c.q1 = await createQuotation(a, 'A-main');
     c.q2 = await createQuotation(a, 'A-second');
@@ -1092,6 +1268,8 @@ export async function run(config) {
     await section('cross-user', () => sectionCrossUser(c));
     await section('regression', () => sectionRegression(c));
     await section('removal', () => sectionRemoval(c));
+    // Last: it signs account B in again and displaces B's own sessions.
+    await section('session-gate', () => sectionSessionGate(c));
   } catch (error) {
     check('run', 'run completed', false, error instanceof StepError ? error.message : `${error?.name ?? 'Error'}: ${error?.message ?? ''}`);
   }
@@ -1117,6 +1295,10 @@ function loadConfig() {
   const b = { email: required('BW_E2E_B_EMAIL').trim(), password: required('BW_E2E_B_PASSWORD'), expectedUid: process.env.BW_E2E_B_UID || null };
   if (a.email.toLowerCase() === b.email.toLowerCase()) {
     console.error('Accounts A and B must be different accounts.');
+    process.exit(2);
+  }
+  if (process.env.BW_E2E_ACK_SESSION_CLAIM !== '1') {
+    console.error('This run claims the active app session of accounts A and B and ends any other session of them. Run it through run_quotation_media_staging_acceptance.ps1, which asks you to acknowledge that.');
     process.exit(2);
   }
   return {

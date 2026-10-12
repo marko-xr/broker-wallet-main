@@ -18,12 +18,27 @@
 
   Account A must be the designated test account. Account B must be a different,
   temporary, test-only account; delete it after the run (see README.md).
+
+  Single Active Device: the run CLAIMS the active app session for each account it
+  signs in with, which ends every other session of that account. The launcher
+  asks you to type CLAIM first, and the runner refuses to start without that
+  acknowledgement.
 #>
 param(
   [string] $WorkerUrl = 'https://r2-profile-upload-staging.mohammed-developer-code.workers.dev'
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Confirm-SessionClaim([string] $Accounts) {
+  Write-Host ''
+  Write-Host "This run CLAIMS the active Broker Wallet app session for $Accounts (Single Active Device)."
+  Write-Host 'Claiming ends every other session of the same account: a phone or emulator signed in to'
+  Write-Host 'one of them is signed out. Use disposable or designated test-only accounts, never a real user.'
+  $answer = Read-Host 'Type CLAIM to continue'
+  if ($answer -cne 'CLAIM') { throw 'Cancelled: the session claim was not acknowledged. Nothing was run.' }
+  $env:BW_E2E_ACK_SESSION_CLAIM = '1'
+}
 
 function Get-Setting([string] $Name) {
   $value = [Environment]::GetEnvironmentVariable($Name, 'Process')
@@ -47,6 +62,7 @@ function Get-OrAsk([string] $Name, [string] $Prompt, [switch] $Secret) {
 
 $code = 1
 try {
+  Confirm-SessionClaim 'account A (the designated test account) and account B (the temporary second account)'
   $env:BW_E2E_WORKER_URL = $WorkerUrl
   $env:BW_E2E_STAGING_KEY = Get-OrAsk 'BW_E2E_STAGING_KEY' 'Staging gate key' -Secret
   $env:BW_E2E_A_EMAIL = Get-OrAsk 'BW_TEST_EMAIL' 'Account A email (the designated test account)'

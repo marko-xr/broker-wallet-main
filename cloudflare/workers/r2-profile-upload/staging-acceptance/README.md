@@ -10,6 +10,22 @@ staging. It never targets production: the runner refuses any URL that is not
 It is not part of `npm test` (Node's default test discovery does not match
 these file names) and needs no `npm install`: Node built-ins only.
 
+## Single Active Device (session claim)
+
+Since migration `20261005175500` the database (and the Worker once it carries
+the gate) refuses every session that is not the account's one **active**
+Broker Wallet session, and a password sign-in creates a new, unclaimed one. So
+after each sign-in the runner **claims** that session through the same RPC the
+app uses (`claim_current_app_session`, in `app_session_claim.mjs`) and has the
+database confirm it (`is_current_app_session`) before it sends a single request.
+Phase 2 of the F1 check signs in again, so it claims again. The runner never
+chooses a session id and never sends a secret key.
+
+**Claiming ends every other session of that account.** That is why A and B must
+be fresh, disposable accounts and never a real or production user, and why the
+launcher asks you to type `CLAIM` before it starts (the runner refuses to run
+without that acknowledgement). Only a one-way session tag is ever printed.
+
 ## What it checks
 
 `-Mode Full`:
@@ -68,8 +84,9 @@ Phase 2, a day later (the Full run prints the earliest time):
 ./cloudflare/workers/r2-profile-upload/staging-acceptance/run_owner_media_staging_acceptance.ps1 -WorkerUrl <staging workers.dev URL> -Mode F1Verify -F1StatePath ./cloudflare/workers/r2-profile-upload/staging-acceptance/reports/f1_state_<run id>.json
 ```
 
-The launcher asks for the staging gate key and both passwords with masked
-input and clears them when the run ends.
+The launcher first asks you to type `CLAIM` (see above), then asks for the
+staging gate key and both passwords with masked input, and clears them when the
+run ends.
 
 Exit codes: 0 all passed, 1 at least one failure, 2 configuration error,
 3 (F1Verify only) too early — nothing was changed.

@@ -11885,3 +11885,87 @@ NEXT — if they pass, a separate owner-approved checkpoint decides the staging
 deployment of the gated candidate; then the Quotation runner (expect
 `session-gate` to fail before the gate is on staging and pass after) and the Owner
 runner are run on staging with disposable accounts. No deployment is prepared here.
+
+### Single active device — staging candidate review, dry-run only (2026-10-12)
+
+Status: **READY FOR A SEPARATE OWNER-APPROVED STAGING DEPLOY — NOT DEPLOYED.**
+Branch `single-active-device-production-parity` at `e2c33d8`
+(`e2c33d82c669977817c1af4523b5db1530a1064f`, tree `bb9e0fe7...`), working tree
+clean. Nothing was deployed, uploaded, promoted or mutated; production is
+untouched at `5eff52cb-...`; no Supabase change; the agent ran no test, runner or
+Flutter command. Staging is NOT VERIFIED_RUNTIME and production parity is NOT
+complete (classification C stands).
+
+Candidate (VERIFIED_SOURCE). The Worker directory at HEAD is byte-identical to the
+gate commit `1021e90` (the owner's runner commit changed only runners, one test,
+READMEs and docs) and differs from the Quotation-era `478241f` by the +54 gate
+lines only. The owner's Worker suite is 140/140 (CODE_PROVEN, owner-run). `main`
+is 62 commits behind and is not a source. Entry `worker.js`; the staging Worker is
+`r2-profile-upload-staging` (wrangler appends `-staging`), `workers_dev = true`,
+`preview_urls = false`, no route or custom domain, reachable only at
+`https://r2-profile-upload-staging.<subdomain>.workers.dev`. Compatibility
+`2024-11-01` + `nodejs_compat`. R2: one binding, `MEDIA_BUCKET` ->
+`broker-wallet-media-staging`, and `R2_BUCKET_NAME` the same; the production
+bucket string appears nowhere in the staging environment or the bundle. Vars:
+`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `R2_BUCKET_NAME`, `R2_S3_ENDPOINT`,
+`ALLOWED_ORIGIN`, `OFFER_MEDIA_SWEEP_MODE = "off"`, `OWNER_MEDIA_SWEEP_MODE =
+"off"`. `QUOTATION_MEDIA_SWEEP_MODE` is not configured anywhere, and the Worker
+treats a missing or unknown mode as off (it returns before any database or R2
+call). Required secret names: `SUPABASE_SECRET_KEY`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `STAGING_TEST_KEY`. Cron `*/5 * * * *` (the finalizer;
+every sweep off).
+
+Dry-run (VERIFIED_SOURCE; run by the agent, local only). Wrangler 4.136.3,
+`deploy --env staging --dry-run` from the Worker directory plus `--outdir` and
+`--outfile` into the scratchpad, twice, exit 0 both times. Wrangler's source shows
+a dry-run never authenticates and returns before every API call, and the debug
+log of both runs holds zero Cloudflare API requests (the command also carried a
+deliberately invalid token as a guard). Upload 138.58 KiB (gzip 27.95 KiB), against
+136.90 KiB for the Quotation candidate; the bundle is byte-identical across the
+two runs (sha256 `260f99b0c56813b0...`, 141,904 bytes). Inlined modules:
+`aws4fetch`, `active_session.js`, `account_deletion.js`, `staging_gate.js`,
+`worker.js`; default export `fetch` and `scheduled`. The gate is in the bundle:
+`isCurrentAppSession` with its two call sites (the media routes'
+`verifySupabaseTokenAndGetUserId` and `deleteCallingAccount`),
+`session_superseded`, `session_check_unavailable`. All 15 profile and media
+routes and `/account/delete` are present, the staging gate runs before the
+router, and the Offer, Owner and Quotation confirm functions and the deletion
+finalizer are present; there is no production domain and no `sb_secret_` or
+`service_role` literal. The serialized upload payload has 12 bindings: 7 plain
+vars, the staging R2 bucket and the 4 secrets as `inherit` (kept from the live
+version; none supplied, so no secret value exists in it), and no other binding
+type. A missing required secret makes a real deploy fail rather than deploy
+without the staging key. Wrangler left only an empty gitignored `.wrangler/tmp`.
+
+Isolation (VERIFIED_SOURCE). `STAGING_TEST_KEY` is read only by
+`staging_gate.js`, which logs and returns nothing and compares SHA-256 digests;
+it runs first in `fetch` after the CORS preflight, so it covers `/account/delete`.
+Account deletion refuses any media row outside its own bucket before deleting
+anything, every deletion-job update and the cron finalizer are filtered to its
+own bucket, and R2 calls act only on the bound bucket.
+
+Live staging, read-only (VERIFIED_HOSTED, 2026-10-12 about 14:05 UTC; three GET
+requests). `--env staging` resolves to script `r2-profile-upload-staging`. The
+live deployment is `4c35be8b-1840-45b4-8092-221b88755dca`
+(2026-10-02T09:49:48Z), 100% of version `f875b2f7-9131-49c9-8bd2-9a35c5f4f1a2`
+(#22, the newest of 22). **This is the rollback target.** Its bindings equal the
+committed staging config exactly: the same 7 var names and the same non-secret
+values, the staging bucket, the 4 secret names including `STAGING_TEST_KEY`,
+sweeps `"off"`, no `QUOTATION_MEDIA_SWEEP_MODE`, handlers `fetch` and
+`scheduled`, the same runtime settings. The previous deployment `2196aacd-...`
+(version `fc93b776-...`) is older; `ac033060-...` must not be used (its gate key
+is unrecoverable).
+
+Not established. UNKNOWN: the scope of the R2 API token (bucket-limited or
+account-wide); the live workers.dev, preview-URL and cron toggles (no read-only
+wrangler command; a deploy applies the committed `workers_dev = true`,
+`preview_urls = false` and `*/5 * * * *`); the exact relation of the live bytes
+(recorded hash `a07e7bc5...`, not reproducible from `478241f`) to the committed
+source, which changes neither the candidate nor the rollback, since a rollback
+restores that exact version. The hosted migration is owner-applied and was not
+re-read here.
+
+NOW — owner decides whether to approve a separate staging deployment checkpoint.
+NEXT — in it: deploy the candidate to staging only, read the new deployment back,
+then run the Quotation runner (`session-gate` must pass) and the Owner runner with
+disposable accounts. No deploy command is prepared here.

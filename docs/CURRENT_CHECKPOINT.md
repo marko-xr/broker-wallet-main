@@ -12041,3 +12041,144 @@ NEXT — that checkpoint, with disposable or test accounts: the Quotation runner
 (`session-gate`: current, superseded and never-claimed sessions) and the Owner
 runner regressions. Only after it passes would a production checkpoint be
 considered.
+
+### Single active device — authenticated staging acceptance result and profile 409 diagnosis (2026-10-12)
+
+Status: **authenticated staging active-session behavior = VERIFIED_RUNTIME.**
+Owner-run `quotation_media_staging_acceptance` (run `20261012T162811Z`, the
+report read by the agent) against staging version
+`a9847ecc-7340-4dc9-b907-3dd3bf13a8c0` (deployment `0bbae448-...`, 100%):
+**220 PASS, 1 FAIL**, with the designated account A and a temporary account B.
+An earlier attempt (`...T162224Z`) stopped at B's sign-in (HTTP 400
+`invalid_credentials`) before any claim, and wrote nothing. The report holds no
+token, key, email or URL.
+
+What passed. Setup: A is the designated account, B differs, and A, B and B's
+replacement session each claimed and the database confirmed each current.
+`session-gate` 15/15: no session and an invalid token are 401 on all 16 gated
+routes (D); the claimed session is accepted on the 5 routes probed without a write
+and is current (A); a sign-in that never claimed is not current, is refused 403
+`session_superseded` on all 16 routes and displaced nothing (C); the session that
+claimed last is accepted, the one it replaced is refused 403 `session_superseded` on
+all 16 and is no longer current, cannot reclaim (its claim is refused
+`session_superseded`), the replacement stays current, and the active claimant may
+repeat its claim (B). Every other section passed in full: gate 6/6,
+unauthenticated 3/3, invalid-auth 2/2, setup 13/13, logo-refuse 9/9, logo 36/36,
+pdf 28/28, role-parent 9/9, deleted 8/8, direct-write 11/11, cross-user 25/25,
+removal 16/16. Regression 39/40: Offer and Owner each created, authorized under
+their own prefix, private PUT then confirm, idempotent confirm, listing and signed
+GET byte-exact, one link, unknown id 404, cross-route isolation, removal tombstone
+and 410 afterwards; the Quotation was unchanged by all of it. The dedicated Owner
+media runner has no report and was not part of the 220.
+
+The one FAIL (classification B, test account state). `[regression] profile: the
+image lookup still answers 200 for the account` got HTTP 409 for account A (the
+runner discards the body; the report holds only the status). `GET
+/profile-image-url` answers 409 `{"error":"Profile media is not in the configured
+profile-image bucket"}` (no `code`; worker.js:429) only when the account's
+`profile_media_id` points at a `ready` media row whose bucket is not the Worker's
+own or whose key is not the expected form; the route has no deletion guard. Read-only
+hosted queries (VERIFIED_HOSTED, 2026-10-12 16:42Z, SELECT only, via `supabase db
+query --linked`, whose standard ephemeral CLI login role was initialised): A's
+profile media is `ready`, owned by A, in the expected key form, in bucket
+`broker-wallet-media` (production), created 2026-10-07 06:04Z; A has no deletion
+job. The staging Worker is bound to `broker-wallet-media-staging`, so it correctly
+refuses to sign a production-bucket object. On 2026-10-02 A's profile media was
+null, which is why the earlier staging run answered 200. It is not a regression:
+`handleProfileImageUrl`, `loadProfileMediaId` and the key helpers are identical
+since `478241f` (the gate commit changed only an import and
+`verifySupabaseTokenAndGetUserId`), and the 200 path itself passed in this same run
+for the disposable account B. Production is unaffected (A's image matches
+production's bucket). No source or hosted state was changed. Open choice, not
+done: leave it as an explained result, or approve a test-only correction that reads
+A's profile-media bucket first and asserts 200 (none, or the staging bucket) or
+exactly 409 (another bucket); until then every staging run with account A will
+repeat this one failure.
+
+Production candidate (read-only facts; nothing uploaded). Source: the staged Worker,
+HEAD `972b9c9`, deployable files identical to `e2c33d8`, bundle `260f99b0...`
+(138.58 KiB). Production `r2-profile-upload` serves version
+`5eff52cb-5390-4a6a-9ea1-3a81dcedb12a` (deployment `47a7ddb1-...`, 100%), read
+2026-10-12 15:30Z; that version is the rollback, then `6387e2c0-...`. Source
+delta against `478241f`: +54 lines in 3 files. Live production bindings equal the
+committed top-level config: bucket `broker-wallet-media`, three secrets, no
+`STAGING_TEST_KEY`, sweeps `off`/`off`. A `versions upload` plus `versions deploy`
+promotion leaves the cron and custom domain alone (wrangler applies triggers only
+through `triggers deploy`). No new secret, config or migration is needed, and the
+hosted session RPCs exist and deny the anonymous role. Remaining production
+requirement: owner approval of one production checkpoint that uploads a single
+version from this source with no traffic, verifies it read-only, then promotes it
+with `versions deploy`; afterwards the owner-run production smoke (it claims A) and
+a two-device check. Production parity is NOT complete until then.
+
+NOW — owner decides the open choice above and whether to approve the production
+checkpoint. NEXT — if approved, that checkpoint, with the rollback above.
+
+### Single active device — production promotion and closure (2026-10-12)
+
+Status: **production Worker active-session parity = VERIFIED_HOSTED.**
+Active-session behavior = VERIFIED_RUNTIME on staging (previous section).
+Authenticated production session / A-B test = NOT RUN (not required for this
+infrastructure parity). **Checklist item #5, Single Active Device final
+infrastructure parity, is CLOSED.** The owner explicitly authorized exactly this
+upload and promotion.
+
+Candidate identity. HEAD `972b9c9` (documentation only above `e2c33d8`); the seven
+deployable files are byte-identical to the staging-proven candidate
+(VERIFIED_SOURCE). A local `--dry-run` of the identical production upload built a
+bundle byte-identical to the staged one (sha256 `260f99b0c56813b0...`, 141,904
+bytes, 138.58 KiB). On Cloudflare the uploaded version's script etag, a content
+hash (the Quotation build carries one etag on both Workers), equals staging
+`a9847ecc`'s, `5378be36a7dc39ff...` (VERIFIED_HOSTED). Production therefore runs
+the artifact that passed staging.
+
+Before. Production `r2-profile-upload`: deployment
+`47a7ddb1-1f17-40ca-a158-da7e25714563`, version
+`5eff52cb-5390-4a6a-9ea1-3a81dcedb12a`, 100%. Its bindings equalled the committed
+top-level config: bucket `broker-wallet-media`, three secret names, no
+`STAGING_TEST_KEY`, sweeps `off`/`off`.
+
+Upload (VERIFIED_HOSTED). Wrangler 4.136.3 from the Worker directory:
+`versions upload --env "" --strict --tag sad1-c2fe5c5b --message "..."`, plus
+`--strict` as a safety flag and the repository's usual annotations. Exit 0,
+2026-10-12 17:02:52-17:03:01Z; one non-GET request (`POST .../versions`) and no
+other. New version `3a8491c3-0811-4ec1-9cc3-f01587b65bee` (#8), startup 8 ms, no
+traffic. Read back before promotion: bindings equal the committed config (production
+bucket, the three secrets inherited, no gate key, sweeps off, Quotation sweep
+unbound), the gate call sites in both `worker.js` and `account_deletion.js`, all 15
+profile and media routes and Delete Account present in the exact bundle, and
+credential-free probes of its preview URL answered 401, 401, 401, `session_expired`
+and 404.
+
+Promotion (VERIFIED_HOSTED). `versions deploy 3a8491c3-...@100% --env "" --message
+"..." --yes`. Exit 0, 17:05:06-17:05:14Z; one non-GET request (`POST
+.../deployments`), no trigger, route, domain, secret, R2 or KV call. New deployment
+`f66bb2dc-5ef0-4dd6-8ff5-d81cfc12e11b` (2026-10-12T17:05:15Z) serves 100% of
+`3a8491c3-...`.
+
+Post read-back. Production now has 8 deployments, the previous 7 intact; the live
+version's bindings equal the committed top-level config (production bucket, three
+secrets, no `STAGING_TEST_KEY`, sweeps `off`/`off`, runtime and handlers
+unchanged) and its code hash equals the staging-proven version. Staging is
+unchanged (still deployment `0bbae448-...`, version `a9847ecc-...`, a
+byte-identical 10-entry history, no request named it). Credential-free probes of
+`media-api.brokerwallet.ae`: 401 on `/authorize`, `/profile-image-url`,
+`/offer-media`, `/owner-media` and `/quotation-media`; `/account/delete` 401
+`session_expired`; an unknown route 404; a junk staging-key header an ordinary 401
+(no staging gate on production); the preflight 204. Supabase, secrets, variables,
+bindings, routes, the custom domain and the cron were not edited.
+
+**Rollback: version `5eff52cb-5390-4a6a-9ea1-3a81dcedb12a` (deployment
+`47a7ddb1-1f17-40ca-a158-da7e25714563`), then `6387e2c0-...`.** The repository has
+no emergency-rollback rule, so a rollback needs the owner's approval.
+
+NOT RUN: any authenticated production session claim, A/B displacement, the
+production smoke, and account or media creation or deletion. UNKNOWN: the cron
+schedule and the custom-domain binding as read from Cloudflare (no read-only
+wrangler command; neither is touched by `versions upload` or `versions deploy`, and
+the domain answers as the Worker).
+
+NOW — none for this item. NEXT — checklist item #6, Owner private-media final
+hosted/current-state re-verification, as its own checkpoint. Optional, not
+required for closure: the owner-run production smoke (it claims account A) and a
+two-device check on a real device.

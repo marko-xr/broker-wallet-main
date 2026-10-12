@@ -814,7 +814,7 @@ void main() {
         const Locale('ar'): 'جارٍ حفظ عرض السعر...',
       }.entries) {
         testWidgets(
-            'a short save shows the button spinner only; a long one replaces it with one centered indicator (${entry.key.languageCode})',
+            'a save shows one centered indicator at once and never a spinner inside Save, however long it runs (${entry.key.languageCode})',
             (tester) async {
           // The renderer is held back so no file is opened while the widget
           // test's fake clock cannot finish its I/O.
@@ -826,34 +826,45 @@ void main() {
           expect(find.byType(CircularProgressIndicator), findsNothing);
           expect(find.byType(SaveCancelButtons), findsOneWidget);
 
+          final saveLabel =
+              AppLocalizations.translateFor(entry.key.languageCode, 'save')!;
+
+          // Every moment of a save looks the same: Save is locked but keeps its
+          // label, and the one centered message and indicator are on screen.
+          void expectOneCenteredIndicator(String moment) {
+            expect(tester.widget<ElevatedButton>(saveButton).onPressed, isNull,
+                reason: '$moment: Save is locked');
+            expect(
+                find.descendant(of: saveButton, matching: find.text(saveLabel)),
+                findsOneWidget,
+                reason: '$moment: Save keeps its label');
+            expect(buttonSpinner, findsNothing,
+                reason: '$moment: no spinner inside Save');
+            expect(find.text(entry.value), findsOneWidget,
+                reason: '$moment: the centered message');
+            expect(find.byType(CircularProgressIndicator), findsOneWidget,
+                reason: '$moment: never two spinners at once');
+          }
+
           QuotationSaveOutcome? outcome;
           unawaited(env.vm.performSave().then((o) => outcome = o));
           expect(env.vm.isLoading, isTrue);
           await tester.pump();
 
-          // The first moments: the button locks and spins, nothing else.
-          expect(tester.widget<ElevatedButton>(saveButton).onPressed, isNull);
-          expect(buttonSpinner, findsOneWidget);
-          expect(find.byType(CircularProgressIndicator), findsOneWidget);
-          expect(find.text(entry.value), findsNothing);
+          // The first frame of the save already shows it, not after a delay.
+          expectOneCenteredIndicator('first frame');
 
-          // Just under the threshold: still only the button spinner.
+          // The view-model still moves from saving to longSaving at its
+          // threshold, but the view does not read that state: nothing changes
+          // when a save turns long.
           await tester.pump(AddQuotationViewModel.defaultLongSaveThreshold -
               const Duration(milliseconds: 100));
           expect(env.vm.saveProgress, QuotationSaveProgress.saving);
-          expect(buttonSpinner, findsOneWidget);
-          expect(find.byType(CircularProgressIndicator), findsOneWidget);
-          expect(find.text(entry.value), findsNothing);
+          expectOneCenteredIndicator('just under the threshold');
 
-          // At the threshold: one centered indicator, and the button's goes.
           await tester.pump(const Duration(milliseconds: 100));
           expect(env.vm.saveProgress, QuotationSaveProgress.longSaving);
-          expect(find.text(entry.value), findsOneWidget);
-          expect(find.byType(CircularProgressIndicator), findsOneWidget,
-              reason: 'never two spinners at once');
-          expect(buttonSpinner, findsNothing);
-          expect(tester.widget<ElevatedButton>(saveButton).onPressed, isNull,
-              reason: 'Save stays disabled');
+          expectOneCenteredIndicator('at the threshold');
           expect(tester.takeException(), isNull);
 
           // The save ends in an error: every loading UI is gone at once.

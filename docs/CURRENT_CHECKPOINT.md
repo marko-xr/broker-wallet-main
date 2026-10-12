@@ -11629,3 +11629,91 @@ NEXT - after those pass, inspect all six Profile sections and deferred screens
 on the Samsung in English and Arabic, light and dark, RTL/LTR and large text;
 confirm routes, disabled purchase/export actions, saved notification preferences
 and Delete Account through Security. Record the result before VERIFIED_RUNTIME.
+
+### Quotation async temp-file cleanup — verification (2026-10-12)
+
+Status: SOURCE_CHECKED, classification B (historical defect already fixed). No
+source or test file changed. Flutter tests, analyzer and device NOT RUN. Checked
+on branch `quotation-cleanup-verification` at `42480d2` with a clean tree. The
+correction itself is already in history (`de33a26`, 2026-10-06); no owner result
+for the corrected `add_quotation_viewmodel_test.dart` is recorded in this
+document.
+
+Lifecycle read from the current source: a save's one generated PDF is
+`quotation_<id>.pdf` in the documents directory, written only by
+`PdfGenerationService.generateQuotationPdf`. `_saveAndPublish` owns it from the
+moment `_preparePdf` starts beside `save_quotation` (the overlap is unchanged),
+and it leaves that owner in exactly one of two ways. Success path: `_publishPdf`
+awaits the renderer, then the cache adopts the file, or it is deleted if the
+publish fails. Every other exit (a failed save, or anything unexpected):
+`_discardPreparedPdf` chains the delete onto the renderer's own future, so the
+file is removed only after its write has finished and its handle is closed. A
+failed save still returns at once; the next `_performSave` awaits that discard
+before it can write the same path, and does not start if the view-model was
+disposed meanwhile. Within `lib/` nothing else deletes or overwrites that path
+(the cache prefix `quotation_<id>_` cannot match it, and every recursive delete
+is confined to its own subfolder). Logo temporary copies have unique names and
+are removed on replace, clear, reload and dispose through one tracked chain.
+
+The four owner failures (`PathAccessException` deleting `quotation_vm_test_*`)
+were the fixture deleting the test directory while a discarded renderer's file
+was still being written, not a production delete. `_env` now waits on
+`backgroundWorkSettled()` before and after disposing the view-model and only then
+deletes the directory (a renderer parked on a test's own gate has touched no
+file and is not waited for). Existing cases cover the PDF overlapping the
+database save, a failed save leaving no generated PDF, the retry waiting for and
+not reusing the discarded render, and a retry that does not start after dispose.
+
+NOW - owner runs `flutter test test/quotation/add_quotation_viewmodel_test.dart`
+and `flutter analyze lib/src/views/Screens/home/quotation test/quotation` and
+reports the exact results.
+NEXT - if both pass, record them here; the Quotation real-device pass listed
+under the 2026-10-06 entries stays pending. On a failure, report the test name
+and the exact message.
+
+### Quotation loading UI test follow-up (2026-10-12)
+
+Owner's run of `flutter test test/quotation/add_quotation_viewmodel_test.dart`:
+46 passed, 2 failed. Every PDF lifecycle and cleanup case passed (the PDF
+overlaps the database save, a failed save discards its PDF and the retry waits
+for it, no generated PDF remains after a failed save, a retry does not start
+after dispose), which closes the open item of the section above. The scoped
+analyzer (`flutter analyze lib/src/views/Screens/home/quotation test/quotation`)
+reported no errors or warnings, only 9 existing info-level notices. The only
+failures were the editor loading-UI widget test, English and Arabic, at its first
+spinner assertion: it expected one `CircularProgressIndicator` inside
+`SaveCancelButtons` and found none.
+
+Classification: test expectation defect, not a UI regression and not timing. The
+test asserted the first 2026-10-06 loading design (a spinner inside Save, then
+one centered indicator after `AddQuotationViewModel.defaultLongSaveThreshold`).
+The owner then decided, the same day, to remove the loading state from the Save
+buttons and keep the one in the center. That was implemented in
+`add_quotation_view.dart` only (`showProgress: false`; the centered
+`_QuotationSaveOverlay` while `vm.isLoading`), accepted, and committed in
+`de33a26`; the tests were deliberately left alone at the time and the change was
+reported as making them fail until updated. This section supersedes the "Loading
+UX" bullet of "QUOTATION SAVE — PERFORMANCE CORRECTION" above.
+
+Accepted contract: from the moment Save is tapped the Save button is locked and
+keeps its label (no spinner inside it), and one centered "Saving quotation..." /
+"جارٍ حفظ عرض السعر..." indicator is shown with no delay; it closes the moment
+the save ends, on success or on failure.
+
+Changed: only the two generated cases of that widget test (EN and AR). On the
+first frame, and again just under and at the old threshold, they assert that Save
+is locked with its label, nothing spins inside it, and exactly one centered
+message and indicator are on screen; and that every loading UI is gone when the
+save fails. No production code, PDF lifecycle or fixture changed, and no delay
+or sleep was added (the fake clock is advanced with `tester.pump`). Left as it
+is: `QuotationSaveProgress`, `defaultLongSaveThreshold` and the long-save timer
+still run in the view-model, but the view no longer reads them, so their doc
+comments and the view-model cases named for the two-phase indicator describe the
+superseded design; removing them is a separate decision.
+
+NOW - owner reruns `flutter test test/quotation/add_quotation_viewmodel_test.dart`
+and reports the exact result.
+NEXT - on a real device, confirm one centered indicator from the moment Save is
+tapped and none inside Save, in English and Arabic (RTL) and in Light and Dark;
+this replaces the "2 s centre indicator only on a slow connection" check listed
+earlier.

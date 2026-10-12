@@ -11717,3 +11717,97 @@ NEXT - on a real device, confirm one centered indicator from the moment Save is
 tapped and none inside Save, in English and Arabic (RTL) and in Light and Dark;
 this replaces the "2 s centre indicator only on a slow connection" check listed
 earlier.
+
+### Single active device — production Worker parity (2026-10-12)
+
+Classification: **C — the production Worker is OLDER than the required gate.**
+Branch `single-active-device-production-parity` at `4603c8c`, tree clean at the
+start. No source, test, Supabase or Worker state changed; nothing was deployed,
+committed or pushed; no Flutter command, device run or displacement test was
+run. The only hosted calls were read-only Cloudflare GETs.
+
+The gate, from source (VERIFIED_SOURCE). `isCurrentAppSession`
+(`active_session.js`) forwards the caller's own `Authorization` JWT to
+`rpc/is_current_app_session`. The SQL function reads `auth.uid()` and the JWT
+`session_id` claim and is true only when that session is the account's single
+`user_active_sessions` row and still exists in `auth.sessions`; no client id is
+read. It runs after Auth accepts the token, inside
+`verifySupabaseTokenAndGetUserId` (`worker.js:1570`), which all 11 profile /
+media handlers call before any R2 or database access (15 of 15 router entries),
+and in `deleteCallingAccount` (`account_deletion.js:164`) before the body and
+password are read. Responses: superseded 403 (`code: session_superseded` on
+media routes, `error: session_superseded` on deletion); gate or database
+unavailable 503, fail-closed (`session_check_unavailable`; deletion
+`service_unavailable`); invalid or expired token 401 before the gate. Nothing
+bypasses it: OPTIONS (204) and unknown paths (404) carry no data and
+`scheduled` is server-owned. Flutter reads the same shapes in its four
+Worker-facing services. The gate arrived only in `1021e90` (2026-10-06) and
+the Worker directory at HEAD equals it. Delta from the Quotation commit
+`478241f`: +13 lines in `worker.js`, +15 in `account_deletion.js`, a new
+26-line `active_session.js`; `wrangler.toml` unchanged. `main` is 60 commits
+behind and has none of the Offer, Owner, Quotation or gate Worker code, so it
+is not a deployment source.
+
+Production, read-only (VERIFIED_HOSTED, 2026-10-12 13:02-13:07 UTC; wrangler
+4.136.3 from the local npx cache and the owner's existing login; deployments,
+version-detail and version-list GETs). Script `r2-profile-upload` has 7
+versions and 7 deployments. The live deployment
+`47a7ddb1-1f17-40ca-a158-da7e25714563` (2026-10-02T10:30:56Z) serves 100% of
+`5eff52cb-5390-4a6a-9ea1-3a81dcedb12a` (version 7, tag `qm1-a07e7bc5`, uploaded
+2026-10-02T10:30:02Z), the newest version the script has; nothing was uploaded
+or deployed after 2026-10-02. Live bindings, names only: seven plain vars
+including `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, `MEDIA_BUCKET`, secrets
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `SUPABASE_SECRET_KEY`; no
+`STAGING_TEST_KEY`; handlers `fetch` and `scheduled`; compatibility
+`2024-11-01` + `nodejs_compat`. The gate cannot be in that version:
+`active_session.js` first exists in `1021e90` (2026-10-06), the migration is
+stamped 2026-10-05 17:55, `478241f` holds no gate string, and this document
+recorded the Worker as NOT DEPLOYED (2026-10-05) and unverified (2026-10-06).
+The live bundle's bytes were not read, so absence rests on version chronology,
+not on reading the deployed code.
+
+Impact. Until a gated version is deployed, every Worker route (profile image,
+Offer / Owner / Quotation private media, and `/account/delete`, which also needs
+the account password) accepts a displaced session for as long as that session
+still exists in Supabase Auth (the design deliberately does not revoke it). The
+Worker reads and writes data with the service credential (`supabaseServiceFetch`),
+so the hosted restrictive RLS policies do not cover it. The 2026-10-06 owner
+observation of a displaced device losing access cannot have involved a Worker
+gate. Single Active Device is NOT production-complete.
+
+Not established. UNKNOWN: the live bundle's content. BLOCKED_EXTERNAL: that
+`media-api.brokerwallet.ae` is still bound to `r2-profile-upload` (app default
+`lib/src/config/r2_config.dart:8` and the docs; wrangler 4.136.3 cannot list
+domains, so use the dashboard). UNKNOWN: the recorded deployed `worker.js` hash
+`a07e7bc5...` does not reproduce from the committed `478241f` blob (all-LF,
+all-CRLF and two mixed-ending reconstructions were tried), so the live bytes'
+exact relation to `478241f` is not proven. `docs/PROJECT_STATE.md` still names
+`6387e2c0` as production (stale). CODE_PROVEN, agent-run outside the owner-run
+test policy: `node --test` on the two Worker test files that load without
+`aws4fetch` (`active_session`, `account_deletion`), 47/47; the Offer, Owner and
+Quotation files need `npm ci` and were not run. The owner's own run remains the
+record.
+
+Candidate and prerequisites (prepared, NOT executed). Source: the Worker
+directory at `4603c8c` (equal to `1021e90`); `worker.js` sha256 LF `c34ef911...`,
+CRLF working tree
+`c2fe5c5b675d03f5f78edfe333ab66924128d2846dfa010fc21907d555e9c6fd`. No new
+variable, binding or secret is needed (the gate reads only the two vars the live
+version already has). Rollback: `5eff52cb-...` (live now), then `6387e2c0-...`.
+Tooling gap: the three live runners in `staging-acceptance/`
+(`owner_media_staging_acceptance`, `quotation_media_staging_acceptance`,
+`quotation_media_production_smoke`) sign in by password grant and never claim a
+session, so against a gated Worker every authenticated call returns 403
+`session_superseded`. They need a claim step first (a separate approved
+change), and a claim displaces that account's other session, so use dedicated
+disposable accounts only.
+
+NOW — owner decides whether to authorize a Worker deployment checkpoint
+(staging first); optionally cross-checks the dashboard Deployments page and
+Domains & Routes. Nothing is deployed.
+NEXT — in that checkpoint: add the claim step to the runners; owner runs
+`npm ci` and `npm test`; deploy the candidate to staging only and run the
+two-account A-then-B checks (superseded 403, current 200, never-claimed 403);
+then `versions upload`, read back, `versions deploy <id>@100%` for production
+with rollback `5eff52cb-...`; then the owner's two-device acceptance. Only that
+last step can move this to VERIFIED_RUNTIME.

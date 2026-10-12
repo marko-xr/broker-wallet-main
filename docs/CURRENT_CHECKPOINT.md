@@ -12321,3 +12321,19 @@ in the session scratchpad, outside the repository.
 
 NOW — none for this item. NEXT — checklist item #7, Phone Login/Signup
 production backend, as its own checkpoint (not started).
+
+### Profile logout sheet above curved navigation (2026-10-12)
+
+Status: SOURCE_CHECKED; real-device verification pending. The owner screenshot
+showed the logout confirmation sheet's action area covered by the Profile tab's
+curved bottom navigation and center FAB. Profile is inside a GoRouter branch
+Navigator under `MainScaffold`, while the navigation bar and FAB are painted by
+that parent scaffold. The logout modal now uses the root Navigator so its sheet
+and barrier cover the full shell. Sheet layout, copy, callback and authoritative
+logout behavior are unchanged. No other modal or navigation UI was changed.
+`git diff --check` passed; no Flutter command or push was run.
+
+NOW - owner opens Profile on the Samsung and opens the logout confirmation in
+Arabic and English. Verify the full button is above the curved bar/FAB, the
+close button and barrier dismiss the sheet, and confirmation still signs out.
+NEXT - record the device result before marking this fix VERIFIED_RUNTIME.

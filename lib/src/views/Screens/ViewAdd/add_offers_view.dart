@@ -9,6 +9,8 @@ import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
 import 'package:broker_wallet/src/Views/Widgets/selectable_chip.dart';
 import 'package:broker_wallet/src/Views/Widgets/media_upload_widget.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/Views/Widgets/plan_attachment_section.dart';
+import 'package:broker_wallet/src/Views/Widgets/plan_attachment_selection.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/app_control_sizes.dart';
@@ -229,6 +231,24 @@ class AddOffersView extends StatelessWidget {
                             onRetryOfferMedia: vm.retryOfferMediaAt,
                             onShowAllMedia: vm.showAllMedia,
                           ),
+                          // The land / plot plan: its own optional attachment,
+                          // apart from the photos and videos above.
+                          if (vm.planAttachment case final plan?) ...[
+                            const SizedBox(height: 18),
+                            _Label(
+                                localization.translate('planAttachmentTitle')),
+                            PlanAttachmentSection(
+                              view: plan.view,
+                              localization: localization,
+                              onSelect: () =>
+                                  selectPlanAttachment(context, plan),
+                              onRemove: plan.removeSelection,
+                              onKeep: plan.keepExisting,
+                              // The Offer itself is already saved: Save sends
+                              // the plan again under the same upload id.
+                              onRetry: () => vm.save(context),
+                            ),
+                          ],
                         ],
                       ),
                     ),

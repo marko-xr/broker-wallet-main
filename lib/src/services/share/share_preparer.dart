@@ -1,11 +1,16 @@
 import 'dart:io';
 
 import 'package:broker_wallet/src/services/offer_media_policy.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_policy.dart';
 import 'package:broker_wallet/src/services/share/share_format.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 
 /// What kind of file an attachment is.
-enum ShareAttachmentKind { image, video, pdf }
+///
+/// [document] is a land / plot plan that may be a PDF or a Word file: its real
+/// type is proven from its bytes and only PDF, DOC and DOCX are accepted.
+enum ShareAttachmentKind { image, video, pdf, document }
 
 /// A file an attachment resolved to.
 class FetchedShareFile {
@@ -219,6 +224,13 @@ class SharePreparer {
       throw const ShareFailure(ShareFailureKind.unavailable);
     }
 
+    if (kind == ShareAttachmentKind.document) {
+      final detected = PlanAttachmentPolicy.detectContentType(header);
+      final known = detected == null ? null : _documentTypes[detected];
+      if (known != null) return known;
+      throw const ShareFailure(ShareFailureKind.unavailable);
+    }
+
     final detected = OfferMediaPolicy.resolveContentType(header);
     if (detected != null) {
       final known = _byContentType[detected];
@@ -246,6 +258,13 @@ class SharePreparer {
         header[2] == 0x44 &&
         header[3] == 0x46;
   }
+
+  /// The documents a land / plot plan may be: nothing else is shared as one.
+  static const Map<String, _FileType> _documentTypes = <String, _FileType>{
+    PlanContentTypes.pdf: _FileType('pdf', PlanContentTypes.pdf),
+    PlanContentTypes.doc: _FileType('doc', PlanContentTypes.doc),
+    PlanContentTypes.docx: _FileType('docx', PlanContentTypes.docx),
+  };
 
   static const Map<String, _FileType> _byContentType = <String, _FileType>{
     'image/jpeg': _FileType('jpg', 'image/jpeg'),

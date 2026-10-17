@@ -12337,3 +12337,976 @@ NOW - owner opens Profile on the Samsung and opens the logout confirmation in
 Arabic and English. Verify the full button is above the curved bar/FAB, the
 close button and barrier dismiss the sheet, and confirmation still signs out.
 NEXT - record the device result before marking this fix VERIFIED_RUNTIME.
+
+## OFFER / OWNER LAND / PLOT PLAN ATTACHMENTS — #7 CLOSED 2026-10-17 (the sections below are the dated history; the closure summary is the last section of this file)
+
+Status: SOURCE_CHECKED, with CODE_PROVEN evidence from local engines (below);
+nothing hosted. Branch `offer-owner-plan-attachments` from `757a303`; nothing was
+committed or pushed. The migration is NOT APPLIED, the Worker is NOT UPLOADED or
+DEPLOYED, no R2 object, secret, binding, cron or bucket setting was touched, and
+NO Flutter command (`test`, `analyze`, `run`, `build`) was run: the owner runs
+those. Checklist item #7 (Phone Login/Signup production backend) was not
+started; this was a separate owner-requested checkpoint.
+
+### What it is
+
+One optional, dedicated land / plot plan (Arabic: مخطط الأرض / مخطط القطعة) per
+Offer and per Owner record: an image (JPEG, PNG or WebP up to 10 MiB, the
+gallery's own image contract; a HEIC photo is converted to JPEG on the device
+first) or a document (PDF, DOC or DOCX up to 25 MiB of stored size). It is
+separate from the photo and video gallery: it does not consume the ten places,
+is never listed in the carousel, and is addressed only by its stable media id
+(no permanent URL, no stored link, no storage key in any client type). It can be
+added, replaced, removed, viewed and shared. Sources: Camera, Gallery (one
+photo) and Files. The document Scanner is not offered: the app's scanner is a
+private flow of the Toolkit screen (the plugin's dynamic result shapes, its own
+quota and list), not a reusable service.
+
+### Selected schema — a pointer column, not a gallery link
+
+Decision (also in `docs/DECISIONS.md`): `offers.plan_media_id` and
+`owners.plan_media_id`, nullable foreign keys to `public.media_objects`
+(`ON DELETE SET NULL`), each with a partial unique index so one media identity
+backs at most one parent, the shape of `quotations.pdf_media_id`. A plan is
+deliberately NOT a row of `offer_media` / `owner_media`: the confirm functions'
+ten-item limit, the Worker's list, capacity and sweep queries and the app's card
+and Share media all count every link whatever its `role`. `authenticated` holds
+only column-level INSERT/UPDATE grants on both tables, so the new column is
+server-controlled; the migration grants clients nothing. Plan objects live at
+`profiles/<uid>/offer-plans/<offerId>/<mediaId>.<ext>` and
+`profiles/<uid>/owner-plans/<ownerRecordId>/<mediaId>.<ext>`: inside the account
+prefix Delete Account sweeps, outside the gallery's `profiles/*/offers/*` and
+`profiles/*/owners/*` patterns. DOC and DOCX use the existing `media_type` value
+`unknown` (an enum value added in the same transaction would break the
+rollback-only validation) and are told apart by content type.
+
+New migration (source only): `supabase/migrations/20261012233000_offer_owner_plan_attachments.sql`
+— the two columns, foreign keys and unique indexes; `plan_attachment_rules(text)`
+(the one table of accepted types, extensions, kinds and limits); the trigger
+function `guard_plan_media_pointer()` with an INSERT and an UPDATE trigger per
+table, both inert unless the pointer is written (a client role is refused with
+42501 even if a grant were widened; a non-null pointer must name a READY file of
+the same account whose key is exactly this kind of parent and this parent's id,
+with an allowed type and size; a change that touches only the pointer keeps the
+record's `updated_at` and `version`, so attaching a plan does not reorder Home's
+Recently Updated); and four `SECURITY DEFINER`, `search_path = ''` functions,
+`confirm_offer_plan_upload` / `remove_offer_plan` and the Owner twins
+(`p_owner_record_id`), returning `(outcome, previous_media_id)`. Confirm is
+switch-then-retire in one transaction under the parent's row lock with a
+compare-and-swap on `p_expected_media_id`: outcomes `attached`,
+`already_attached`, `<parent>_not_found`, `media_not_found`, `stale_replacement`,
+`invalid_status`, `invalid_state`; the old plan is marked `pending_delete` only
+inside the switch, so a failed or abandoned replacement never touches it. Remove
+(`removed`, `already_removed`, `<parent>_not_found`, `stale_replacement`,
+`invalid_state`) clears the pointer and retires the object. Every function is
+revoked from PUBLIC, `anon` and `authenticated` and granted to `service_role`
+only. No `begin`/`commit` (the runner supplies the transaction); the reversal is
+a comment at the end of the file (drop order, and that dropping the columns
+leaves attached files until Delete Account's prefix sweep). Deploy order when
+approved: the migration first, then the Worker; rollback is the reverse.
+
+### Media Worker (source only)
+
+`worker.js` gains eight routes behind the existing gate
+(`verifySupabaseTokenAndGetUserId`, i.e. the Single Active Device check, before
+any body read or work): `POST /offer-plan/authorize|confirm|remove`,
+`GET /offer-plan?offerId=…` and the same four under `/owner-plan` (field
+`ownerRecordId`), all running one set of handlers against a `PLAN_PARENTS` entry
+(placed after `MEDIA_PARENTS`, which two existing Dart contract tests index by
+the first `  offer: Object.freeze({`). Authorize validates the type and size
+(`unsupported_media_type`, `image_too_large`, `document_too_large`), is
+idempotent on the app's own `mediaObjectId` (a retry resumes the same row and
+key; a different type, size, bucket or key under the id is
+`idempotency_mismatch`), refuses a stale `expectedMediaId` (`stale_replacement`),
+caps waiting uploads per record at three (`plan_upload_limit`), runs the
+account-deletion quarantine before signing, and never answers with the storage
+key. Confirm proves the bytes in private R2 (size, and the first 64 bytes: JPEG,
+PNG, WebP, `%PDF-1.x/2.x`, an OLE2 header, or a ZIP whose first, unencrypted
+entry is an Office Open XML part; a DOC or DOCX is then proven to be Word's own,
+see the addendum below), rejects and deletes a mismatch
+(`media_type_mismatch`), refuses a stale slot before it reads the object or calls
+the database function, then
+calls the confirm function and retires the replaced object. Read answers
+`plan: null` or the plan with a 900-second signed GET; nothing signed is
+stored. Remove cancels a named candidate upload or removes the current plan
+(compare-and-swap). Sweeps (`runOfferPlanSweeps`, `runOwnerPlanSweeps`, called
+from `scheduled()`) retire abandoned and failed plan uploads, `pending_delete`
+rows and the plans of soft-deleted parents; they follow the parent's own
+`OFFER_MEDIA_SWEEP_MODE` / `OWNER_MEDIA_SWEEP_MODE` (`off` in every environment),
+so no configuration was added, and a plan a record still points at is never
+deleted unless the record is soft-deleted. Account deletion needs no change: the
+prefix sweep already inventories `profiles/<uid>/`. `signMediaUpload` gained an
+additive `includeObjectKey` option (true for the gallery and Quotation, false for
+plans). The staging acceptance runner's `gatedRoutes()` lists the eight plan
+routes (the gate sweep is now 24 routes; README updated); no plan behavior step
+was added to the runner.
+
+### Flutter (source only)
+
+Pure services under `lib/src/services/plan_attachment/` (models, policy,
+screening, transport interface, the Worker client, the upload workflow, the
+verified local-copy layer, the Files picker); `plan_attachment_form.dart`
+(one controller per form: a chosen file, a removal, commit, retry, withdrawal of
+a chosen file, stale handling), `plan_attachment_details_loader.dart` and
+`plan_attachment_form_factory.dart` under `lib/src/viewmodels/`; widgets
+(`plan_attachment_section.dart`, `…_selection.dart`, `…_actions.dart`,
+`…_details_card.dart`) under `lib/src/views/Widgets/`. The Add/Edit Offer and
+Owner forms get one section after the media field (an empty field like the media
+one, or one card; sources Camera / Gallery / Files; Replace, Remove, Keep, Retry),
+only in Supabase mode, and their Details screens one card after the notes, read
+separately and never awaited by the screen. The plan is sent only after its
+record is saved (authorize, signed PUT, confirm under one stable upload id), a
+failure never undoes that save (the form stays open with the chosen file and
+Retry; Save sends it again under the same id), a removal is sent at Save, and a
+change made on another device is reported and retried after a fresh read. The
+plan does not use the gallery's queue, store, cache or pick-recovery: its
+pickers pass no recovery origin. A PDF opens in Broker Wallet's PDF viewer
+(`PdfViewerScreen`) and an image in the existing full-screen image viewer
+(from an in-memory link, `cacheKey: null`, so nothing is cached under a link);
+DOC and DOCX have no in-app renderer, so they are downloaded to an app-verified
+file in the temporary folder (named by record kind, record id and media id; the
+bytes are re-checked as a plan file) and opened by another app on the phone
+(`OpenFilex`), and the card says "Opens in another app on your phone". Share
+sends that same local file through the one share boundary
+(`ShareLive.sendNamedFile`, new `ShareAttachmentKind.document`, which accepts
+only PDF, DOC and DOCX proven from the bytes). `OfferMediaPicker` gained the
+additive `pickGalleryImage`. Localization: 37 `planAttachment*` keys in
+`app_en.arb` and `app_ar.arb` (parity checked); RTL, Light and Dark use the
+existing theme and localization. No existing screen layout or control was
+redesigned or removed, and no dependency was added.
+
+### Security properties (design; hosted proof still pending)
+
+R2 stays private and no signed URL is persisted anywhere (the client holds a
+link in memory for at most its lifetime and never logs, stores or hands it to
+another app). The Flutter app holds no service key and calls no table or RPC
+for plans: only the Worker, which verifies the bearer and the active session
+first. No plan function is callable by `anon`, `authenticated` or PUBLIC. A
+user cannot reach another user's plan (every query is scoped by `owner_id` and
+the key embeds the user id), an Offer plan cannot be attached to an Owner or to
+another Offer (key segment, parent id and kind are checked by the Worker, the
+function and the trigger; routes of the wrong kind answer `<parent>_not_found`),
+and type and size are enforced three times (the app as UX, the Worker on the
+real bytes, the database on confirm and on the pointer). A client cannot bind
+media: the column has no client grant and the trigger refuses a client role.
+
+### Evidence (labelled; nothing here is hosted, device or `flutter test`)
+
+- Database, CODE_PROVEN on a local PostgreSQL engine (PGlite 17.5, the copy
+  bundled with the global firebase-tools; not Supabase, not Docker, no hosted
+  database): the repository's real migration chain plus this migration applied;
+  `supabase/validation/offer_owner_plan_attachments_validation.sql`
+  (rollback-only, psql `\ir`, preflight and postflight) printed
+  `OFFER_OWNER_PLAN_ATTACHMENTS_ROLLBACK_SOURCE_PASS` and `…_RESTORED`;
+  `supabase/tests/offer_owner_plan_attachments_test.sql` (`plan(53)`) passed
+  53/53 under an emulation of the pgTAP functions (the real pgTAP extension was
+  not run; the emulation also passes an existing suite as a control); 13 SQL
+  mutations (a widened grant, lost compare-and-swap, a raised limit, SVG
+  accepted, a plan stored as a gallery link, a missing foreign key, …) were each
+  caught.
+- Worker, agent-run locally under this task's explicit permission for targeted
+  Worker unit tests (no hosted infrastructure touched):
+  `node --test test/plan_attachment.test.mjs` 66/66 (an in-memory Supabase and R2
+  modelling the SQL; every route, type, size, byte-proof, replacement, removal,
+  idempotency, isolation, cleanup, gate, quarantine and Word-proof case), plus
+  the three existing media suites and the staging gate 151/151 in total; 57
+  Worker mutations each caught; the offline acceptance self-test passes.
+- Dart, CODE_PROVEN under the plain `dart` VM with stand-in packages for
+  `flutter`, `flutter_test`, `supabase_flutter` and `path_provider` — NOT
+  `flutter test`: nine pure test files, 176 tests, all passing (policy and
+  Dart⇄Worker⇄SQL parity, workflow, form controller, screening, local files,
+  details loader, share of a document, the Worker client against the real
+  Supabase client with a mock transport, source guards); 25 mutations of the
+  production code each caught. For regression, every existing test file was run
+  the same way on an untouched `git archive` export of `HEAD` and on the working
+  tree: 134 files, 128 with identical outcomes, the other 6 compile-fail under
+  the stand-ins on both (timing differed); 42 existing files (1,025 tests) pass
+  on both, and the 3 files with failing tests (10 tests) fail identically on
+  both. The sweep also caught a real regression of this change, fixed here:
+  `PLAN_PARENTS` placed before `MEDIA_PARENTS` made two existing Dart contract
+  tests read the plan descriptor.
+- Flutter-only tests written and NOT RUN (they need `flutter test`):
+  `plan_attachment_section_test.dart` (21), `plan_attachment_details_card_test.dart`
+  (12), `plan_attachment_offer_form_test.dart` (9: the Offer saved first and the
+  plan after, a failed plan leaves the saved Offer and is retried under one id,
+  ten gallery items plus a plan, an Offer without a plan, editing and removal).
+  Their widget and view-model code has never been compiled; only its syntax was
+  parsed (`dart format`, new files only).
+- `git diff --check` is clean; the new files were converted to CRLF like the
+  rest of the tree.
+
+### Not verified, limits and risks
+
+Not run: any Flutter command, any hosted SQL or Worker, any device. The widget
+layer and the two view-model and four view edits have never been compiled by a
+Flutter toolchain. DOC and DOCX: the Worker proves them to be Word's own (see the
+addendum), not that they are well-formed documents, so a hand-forged Word package
+or stream still passes (the app's file-name check is UX only); there is no in-app
+Word viewer, so it needs another app on the phone. A
+photo taken or picked through the gallery's pickers is scaled to 1920 px at
+quality 85 like every gallery photo; the Files source sends the original file.
+The plan's cleanup sweeps are inert until the owner turns the parent's sweep
+switch on. The app only ever soft-deletes an Offer or Owner (hard delete is not
+granted to clients), so a deleted record's plan is retired by the
+soft-deleted-parent sweep after seven days; a record removed with its account
+goes with the account-prefix sweep. As for the gallery, no sweep selects a
+ready plan whose parent row no longer exists (only an administrator's hard
+delete could leave one). Each Offer or Owner Details open makes one extra Worker
+read, even for a record with no plan, because the models do not carry
+`plan_media_id` yet (a later checkpoint can skip it for records known to have
+none). The Owner form's wiring is covered by source guards and the
+shared controller tests, not by a view-model test (only the Offer form has one).
+The Home milestone's "Recently Updated" ordering is protected by the trigger
+(proven on the local engine), not yet on a device.
+
+### Files
+
+New: the migration, its validation script and pgTAP file; `plan_attachment.test.mjs`;
+the `plan_attachment` services, view-model controller files and widgets above;
+`test/plan_attachment/` (9 pure and 3 Flutter-only test files plus two helpers).
+Changed: `worker.js`; the staging runner's route list and README; `app_en.arb`
+and `app_ar.arb`; `offer_media_picker.dart`; `share_preparer.dart`; the Add
+Offer and Add Owner view models and views; the Offer and Owner Details screens;
+`docs/DECISIONS.md`. The generated plugin registrant files are untouched.
+
+### Addendum — DOC and DOCX are proven to be Word's own (2026-10-13)
+
+The first version of this checkpoint recognized a DOC or DOCX only by its
+container (an OLE2 header, or a ZIP whose first entry is an Office part), which
+Excel and PowerPoint share: an XLS or PPT renamed `.doc`, or an XLSX or PPTX
+renamed `.docx`, would have been attached. That is closed in source: the Worker
+only, with no migration, Flutter or UI change, no new dependency and nothing
+hosted.
+
+`proveWordDocument` (exported from `worker.js`) runs in confirm after the
+container is recognized and before the database function, for those two types
+only; an image or a PDF is read exactly as before (its 64-byte signature and
+nothing else). It makes a few ranged reads of the stored object (never the whole
+file; at most 48) and inflates with `DecompressionStream('deflate-raw')`, which
+the Workers runtime has.
+
+DOCX: it reads the ZIP end record and central directory (one disk, not ZIP64, no
+two parts of one name, compared case-insensitively), then `[Content_Types].xml`
+and `_rels/.rels` (unencrypted, stored or deflated, at most 1 MiB, exactly the
+size the directory states, the local header naming the same part) as plain XML:
+no DTD, entity, CDATA or processing instruction beyond the declaration, and
+comments are dropped first, so a type hidden in a comment is no type. The root
+relationship must name exactly one main document (the `officeDocument` type,
+transitional or strict, not external), the part it names must be in the archive,
+and `[Content_Types].xml` must give that part the WordprocessingML main content
+type as the packaging format defines a part's type: its own Override (exactly
+one) or, if it has none, the Default for its extension (exactly one); an
+Override always wins. Word writes an Override; .NET's packaging library, and the
+generators built on it, types the first XML part it writes by the Default for
+`xml`, and an earlier version of this proof (Overrides only) refused such a
+package, which a cross-check against that library showed. A workbook, a
+presentation, a macro-enabled document (docm), a template, a package whose Word
+part is not the one its root names, and one whose content types give the main
+part no type, two types or another application's type all fail.
+
+DOC: it follows the compound file's header (version 3 with 512-byte sectors, or 4
+with 4096) and its DIFAT and FAT sectors to the directory chain (at most 256
+directory and 32 DIFAT sectors, no loops; sectors are read eight at a time, since
+a directory is nearly always contiguous), and takes the root storage's own
+children (its sibling tree, not the storages below it): they must hold a stream
+named `WordDocument` and none of `Workbook`, `Book` or `PowerPoint Document` (an
+Excel object embedded in a Word file sits below the root and is allowed).
+
+Whatever cannot be read as such fails closed: 422 `media_type_mismatch`, the
+bytes are dropped and the plan the record has is untouched. A storage error is
+not a verdict: it surfaces as a 500, nothing is rejected, and the app retries.
+The proof shows which application's document the file claims to be; it does not
+parse the document, so a hand-forged Word package or stream passes. Unusual real
+files can be refused: ZIP64 packages, XML parts that are not UTF-8, a compound
+file whose directory is scattered over more than about 48 reads.
+
+Evidence (agent-run, local; nothing hosted). `node --test
+test/plan_attachment.test.mjs` 66/66 (16 new: per Offer and Owner, the
+masquerades refused with the replaced plan untouched, genuine layouts accepted (a
+package as .NET's packaging library writes it among them), a 6 MiB DOCX and an
+8 MiB DOC read in a few ranges, images and PDFs read as before, a storage error
+retried; and four tests over 105 package and compound-file shapes, hostile ones
+included, with a time guard: hostile 300 KB parts are refused at once, where a
+first version of the XML scan took 167 s on a 1 MiB one), 151/151 with the
+existing media suites; 42 new Worker mutations each caught (two older ones, of
+the cheap first-entry filter, are now equivalent: the proof refuses the same
+bytes). Independent cross-checks: .NET's ZIP and Open Packaging readers opened
+the packages the fixtures build and, over every content-types shape tried (a
+Default, an Override, both, neither, duplicates), gave the type the proof uses
+wherever .NET accepts the package (it rejects as invalid two Defaults for an
+extension, an Override with no type and a part with no type, which the proof
+refuses too; for two Overrides of one part, differing in case, it resolved the
+first one listed, where the proof refuses as readers disagree); Windows' own
+OLE32 opened the fixtures' compound files (versions 3 and 4, and an 8 MiB stream
+read through DIFAT-listed FAT sectors), and the proof judged correctly the Word-,
+Excel-, PowerPoint- and installer-shaped files OLE32 itself wrote (up to 16 MB,
+with DIFAT); Microsoft's own legacy files that Windows ships in
+`System32\MSDRM` (`MsoIrmProtector.doc`, `.xls` and `.ppt`, read only) hold, as
+OLE32 shows, a `WordDocument`, a `Workbook` and a `PowerPoint Document` stream
+respectively, and the proof accepted the `.doc` and refused the `.xls` and the
+`.ppt`; 29 real Word documents from the owner's project folders (written by
+Microsoft Word on Windows or Mac, all typed by an Override) were accepted, 6
+reads each (read for structure only). No `.doc` saved by the installed Word
+could be made: it did not answer automation here (the hidden instance that hung
+was stopped). The exact source of the proof also ran in a local workerd
+1.20260921.1 (loopback only, with the Worker's compatibility date and flags)
+over 45 files, hostile ones included (a corrupt deflate stream, a 40 MiB bomb,
+lying sizes): the same verdicts as Node and no hang. A narrow Dart guard in
+`plan_attachment_policy_test.dart` (18 tests under the plain-Dart harness; the
+pure total is 176) pins that the Worker proves before it attaches and compares
+the main part's own type. Changed: `worker.js`, `plan_attachment.test.mjs`,
+`plan_attachment_policy_test.dart` and the two docs.
+
+NOW — the owner runs, from the repository root, `flutter test test/plan_attachment`
+and the touched suites (`test/share`, `test/offers`, `test/owners`,
+`test/forms`, `test/account`) and a scoped `flutter analyze` of the files above;
+paste any failure here. NEXT — checkpoint "owner-approved Supabase migration
+validation/apply + staging Worker acceptance": validate the migration against a
+disposable or hosted-staging database with the rollback-only script and the
+pgTAP file, apply it only on the owner's approval, deploy the Worker to staging
+only, and extend the staging runner with the plan flows (attach, replace, remove,
+cross-parent and cross-user, the sweeps, and a real Word DOC and DOCX accepted
+while an Excel and a PowerPoint file renamed `.doc` / `.docx` are refused)
+before any production step.
+
+### Owner run of the plan checkpoint — results and corrections (2026-10-13)
+
+The owner ran the NOW above. Scoped analyzer: one warning. `flutter test
+test/plan_attachment`: 215 passed, 2 failed. `flutter test test/share
+test/offers test/owners test/forms test/account`: 985 passed, 3 failed. Each was
+traced to its cause; only what this checkpoint caused was changed (two source
+files: a five-line method and a one-line call; three test files), and nothing
+hosted, Worker or SQL.
+
+- **Analyzer** (`plan_attachment_form_factory.dart:28`,
+  `invalid_use_of_visible_for_testing_member`). The form's standard wiring passed
+  `HeifToJpegConverter.convert`, the gallery's `@visibleForTesting` hook, from
+  another library. Fixed in source, the annotation kept: `HeifToJpegConverter`
+  gained `toJpeg`, a production method that goes through the hook (so a test that
+  replaces the hook still replaces it), and the factory calls it.
+  `screenOfferMediaSelection` is unchanged: it uses the hook inside its own
+  library, as before.
+  New test (`plan_attachment_form_test.dart`, "the standard wiring"): a HEIC
+  photo picked through `createPlanAttachmentForm` reaches the gallery's
+  converter and becomes the draft; three mutations of that wiring are caught.
+- **"counts a plan as content, and keeps it out of the gallery"** — a wrong
+  test, not a defect. The rig's `add()` also chooses a city (the Save tests need
+  content), and a chosen city is content, so the "empty form" baseline was never
+  empty (`hasAnyContent` starts with `selectedCity.isNotEmpty`). The product
+  contract holds: the plan counts through `_plan?.hasPlan`, and `hasMediaFiles`,
+  the gallery's own test, ignores it. The test now starts from a form with no
+  city (`add(withCity: false)`) and also asserts `hasMediaFiles` stays false.
+- **"without a name it is called by its type"** — a wrong test; the card is
+  right. Its title is the file's name, or its type's own name when it has none;
+  the line under it is always the type, with the size when known. With neither a
+  name nor a size both lines read "PDF", a state no real pick produces (a chosen
+  file has both), and the test used exactly that. It now gives the file a size
+  and asserts the title and the line under it separately. The card is unchanged.
+- **Hive teardown** (`offer_media_session_test.dart`, `PathAccessException`
+  deleting the box file on Windows) — pre-existing Windows test cleanup, not this
+  checkpoint. None of the 14 app files that test can load was changed or added
+  here. The queue opens its box fire-and-forget (`setActiveOwner` →
+  `unawaited(_activate())` → `Hive.openBox`), the tests end synchronously, and
+  `tearDownAll` deletes the box file while that open can still hold it; Windows
+  refuses to delete a file with an open handle, other systems do not (the same
+  class as the Quotation teardown failures recorded above). Not touched.
+- **Delete Account** (`delete_account_test.dart:764`) — the known stale
+  historical path `20260913000100_account_deletion_jobs.sql`, renamed to
+  `20260913175221_…` by `0d7fb17`. Unrelated, not touched.
+- **City / area chips** (`city_area_chip_height_test.dart`, "Request/Offer take
+  three areas and dim the rest; Owner takes one", `StateError: No element`) —
+  UNRELATED_EXISTING_FAILURE. The test mounts stand-in hosts built from the
+  shared chip widgets, not the Add Offer or Add Owner screens, and none of the 7
+  app files it can load was changed here (the plan only added a section after
+  the media field; the city and area control is untouched, and the source guards
+  of that file that read the two screens passed). It was committed in `6afd4d3`
+  with "Flutter tests not run" and fails on the code as committed: under
+  `flutter test` the app's font (`Inter`) is not loaded, so text is drawn in the
+  test font, whose every glyph is one em wide, and at 320, 360 and 412 px the
+  collapsed section shows only the first three Dubai chips. Its fourth tap
+  targets `areas[3]` ("Jumeirah Village Circle"), which is not in the tree. The
+  real planner (`planCollapsedAreaChips`) replayed on the plain Dart VM with that
+  font's widths gives exactly that. Not touched; if wanted, a separate one-line
+  test fix is to tap "Show more" before the fourth tap.
+
+Evidence (agent-run, local). The nine pure plan test files pass under the
+plain-Dart harness, 176 tests (175 plus the wiring test); the harness gained
+stand-ins for the three plugins the gallery converter file imports. NOT run (the
+owner's): any `flutter test`, the analyzer, and the two widget tests corrected
+above, which were checked by reading their code paths only.
+
+NOW — the owner reruns, from the repository root, `flutter test
+test/plan_attachment test/offers/offer_media_video_selection_test.dart
+test/offers/offer_media_picker_test.dart` (the second and third use the file
+that gained `toJpeg`) and `flutter analyze lib/src/services/offer_media_selection.dart
+lib/src/viewmodels/plan_attachment_form_factory.dart test/plan_attachment`. The
+three unrelated failures need no rerun. NEXT — unchanged: the owner-approved
+Supabase migration validation / apply and staging Worker acceptance above.
+
+### Plan attachment — hosted rollback validation, first run: validation-script assumption, blocked before migration apply (2026-10-13)
+
+Status of this first run: **VALIDATION SCRIPT ASSUMPTION / BLOCKED BEFORE
+MIGRATION APPLY.** It was not a migration failure and not a migration-apply
+failure: the migration was never applied in this run and was not changed
+afterwards. The rollback-only validation stopped at one validation-script
+assertion; nothing was applied or deployed; hosted state UNCHANGED
+(VERIFIED_HOSTED). The owner authorized, for this checkpoint only, hosted
+read-only inspection, a rollback-only validation, the apply and read-back, a
+staging Worker deployment and authenticated staging acceptance. The sequence
+stopped at its first gate, as the owner's failure rule says; the owner then
+approved the one-assertion correction and the checkpoint continued in the next
+section.
+
+Baseline (VERIFIED_SOURCE). Branch `offer-owner-plan-attachments` at `757a303`,
+the plan implementation uncommitted in the working tree. Owner results, recorded
+as reported: `flutter test test/plan_attachment` with the Offer picker and
+video-selection tests 260/260 passed, and the scoped analyzer found no issues.
+Frozen candidate: the migration's LF bytes (what git stores and what is applied)
+are 25,336 bytes, sha256 `bb035df7…dd219` (the working-tree file is CRLF, 25,917
+bytes); the validation is `b3509276…81f1`; `worker.js` is `5e69c07e…8e8a` and is
+the only deployable file that differs from HEAD (`account_deletion.js`,
+`active_session.js`, `staging_gate.js`, `wrangler.toml`, `package.json` and
+`package-lock.json` are byte-identical to HEAD).
+
+Hosted pre-read (VERIFIED_HOSTED). Ten SELECT-only queries through `supabase db
+query --linked` from an isolated scratch link, the CLI's standard ephemeral login
+role initialised each time (the session role is `postgres`, not a superuser;
+PostgreSQL 17.6). 17 migrations registered, the newest `20261005175500`, and
+`20261012233000` absent; no plan column, function, index, constraint or trigger
+anywhere; `media_objects` and the `media_type` (`image, video, pdf, unknown`) and
+`media_status` labels as the migration assumes; `offers_bump_sync_version` and
+`owners_bump_sync_version` present; RLS enabled and owned by `postgres` on the five
+tables; the existing media-confirm and session functions present; no residue of
+the validation's fixtures. Data baseline: 19 offers (2 soft-deleted), 7 owners
+(1), 93 media rows, 49 `offer_media` and 3 `owner_media` links.
+
+Validation run (VERIFIED_HOSTED, 2026-10-13 about 10:51Z, rollback only). The
+repository script with exactly its two psql meta-lines replaced: `\set
+ON_ERROR_STOP on` by a comment, and `\ir` by the exact migration LF bytes
+(hash-checked; the combined file is `3c17c59d…43b7`), sent as one request; its
+top-level statements were listed first (no commit, notify, truncate, copy or
+extension). It stopped with `Plan attachment validation failed: offer: the plan is
+not a gallery item`. Before that, on the real database, the preflight, every
+statement of the migration, all structure and privilege assertions (function
+ACLs, `search_path`, column privileges, indexes, constraints, triggers, rules) and
+the fixture inserts ran, and the first three Offer assertions passed. The failing
+assertion is the only unfiltered whole-table read in any validation script (line
+303, `not exists (select 1 from public.owner_media)`): hosted `owner_media` holds 3
+real link rows, which an empty local database never had. It is the script's
+assumption, not the migration. Reproduced on the local PostgreSQL (PGlite) after
+adding the kind of rows a hosted database has: the repository script stops with the
+same message, and the correction below passes the whole script on that populated
+database. Under the stop rule the migration was not applied and the script was not
+edited.
+
+Correction (validation script only, never the migration; proposed here, approved
+by the owner and applied afterwards, see the next section): replace
+`and not exists (select 1 from public.owner_media)`
+by `and not exists (select 1 from public.owner_media as om where om.owner_record_id
+in (select w.id from public.owners as w where w.owner_id in (ua, ub)))`: the same
+claim, that the plan created no Owner gallery link, restricted to the validation's
+own fixtures.
+
+Rollback proof (VERIFIED_HOSTED). A 21-value snapshot (digests of the public
+columns, functions with bodies and ACLs, triggers, indexes, constraints, policies,
+table and column privileges and the migration history; counts and digests of
+offers, owners, media, links, profiles, Auth users and active sessions) taken
+before the first read, immediately before the run and immediately after it is
+identical every time. After the run: 17 migrations and the plan version absent, no
+plan object, and no fixture user or media row.
+
+Workers (VERIFIED_HOSTED, read-only; nothing deployed). Production
+`r2-profile-upload` still serves version `3a8491c3-0811-4ec1-9cc3-f01587b65bee`
+(deployment 2026-10-12T17:05:15Z); staging `r2-profile-upload-staging` still
+serves `a9847ecc-7340-4dc9-b907-3dd3bf13a8c0` (deployment 2026-10-12T15:08:01Z),
+the rollback target for the staging candidate.
+
+At the end of this first run nothing else had been done: no apply, no staging
+deployment and no acceptance. All of that except the authenticated acceptance
+was done in the next section, after the owner approved the correction.
+
+### Plan attachment — migration applied, staging Worker deployed, authenticated staging acceptance prepared (2026-10-13)
+
+Status: **the migration is APPLIED and read back (VERIFIED_HOSTED); the Plan
+Worker candidate is DEPLOYED to STAGING only and read back (VERIFIED_HOSTED); the
+authenticated Plan acceptance on staging is NOT RUN — OWNER_ACCEPTANCE_REQUIRED,
+with a runner and launcher prepared and checked offline (CODE_PROVEN); the
+production Worker has NO Plan support (NOT DEPLOYED); real-device Plan UX NOT
+RUN.** Branch `offer-owner-plan-attachments` at `757a303`; nothing committed or
+pushed. This continues the owner-authorized checkpoint of the section above,
+after the owner approved its one-assertion correction and told the agent to
+continue without another approval for the rerun, the apply, the read-back and
+the staging deployment.
+
+Classification of the first stop, as the owner asked it corrected: a VALIDATION
+SCRIPT ASSUMPTION, BLOCKED BEFORE MIGRATION APPLY. The script assumed an empty
+`owner_media` table and hosted holds three real rows. It was not a
+migration-apply failure: the migration had never been applied at that point, and
+it was not changed afterwards.
+
+The correction (the validation file only, approved by the owner). In
+`supabase/validation/offer_owner_plan_attachments_validation.sql` the assertion
+`not exists (select 1 from public.owner_media)` became `not exists (select 1
+from public.owner_media as om where om.owner_record_id in (select w.id from
+public.owners as w where w.owner_id in (ua, ub)))`: the same claim, that the plan
+created no Owner gallery link, restricted to the script's own two fixture users.
+Undoing exactly that one replacement reproduces the script frozen for the first
+run (`b3509276…81f1`); the corrected script is 47,033 LF bytes, sha256
+`4c0e8307…2bbb`. Not changed: the migration (LF sha256 `bb035df7…dd219`, 25,336
+bytes, still byte-identical at the end of the checkpoint), `worker.js` or any
+other Worker file, any Flutter source, the hosted schema by hand, and every
+existing `owner_media` row.
+
+Rollback-only validation, rerun in full from the beginning (VERIFIED_HOSTED,
+about 11:04Z). The same transport as the first run: the repository script with
+exactly its two psql meta-lines replaced (the single-file form is 72,583 bytes,
+sha256 `4dc9eccd…94bc`; the inserted text is the migration's exact LF bytes,
+hash-checked, and the hosted form was checked to differ from the repository
+script by those two lines only), sent as one request after its top-level
+statements were listed. No assertion raised: the request ran to its end,
+the transaction rolled back, the postflight confirmed every plan object absent,
+and the final result was `OFFER_OWNER_PLAN_ATTACHMENTS_ROLLBACK_RESTORED` (the
+CLI prints only the last result set; the `…_SOURCE_PASS` row is selected before
+the `rollback`, so it ran). The 21-value snapshot of the section above was taken
+before the first read, around both validation runs and immediately before the
+apply: all six are identical, so neither run left a trace.
+
+Apply (VERIFIED_HOSTED, about 11:06Z). `supabase db push --linked --yes` from an
+isolated scratch project (the repository is never linked to the hosted project)
+whose migrations folder held the 17 migrations the hosted history already had
+(the committed files, as git stores them) and the plan migration as its exact LF
+bytes, hash-checked when the folder was built. The push listed exactly one
+pending migration, `20261012233000_offer_owner_plan_attachments.sql`, and
+applied it ("Applying migration …", "Finished supabase db push"). Its one
+warning, that it could not cache a migrations catalog without Docker, is local
+and did not touch the database. Nothing was applied or edited by hand.
+
+Read-back (VERIFIED_HOSTED, SELECT-only, taken right after the apply and read
+again at the end of this checkpoint with the same result):
+
+- History: 18 migrations registered, `20261012233000` exactly once (name
+  `offer_owner_plan_attachments`, 36 statements); newest three
+  `20261012233000, 20261005175500, 20261001220000`.
+- `offers.plan_media_id` and `owners.plan_media_id`: uuid, nullable, no default,
+  commented. Foreign keys `offers_plan_media_fk` and `owners_plan_media_fk` to
+  `media_objects(id)` ON DELETE SET NULL; partial unique indexes
+  `offers_plan_media_id_key` and `owners_plan_media_id_key` (`WHERE
+  plan_media_id IS NOT NULL`); the four guard triggers exist, are enabled and
+  carry the designed `WHEN` conditions. No Offer and no Owner has a plan.
+- The six functions exist and each stored body is byte-identical to the
+  migration's (md5 and length of the source): owner `postgres`; the four confirm
+  and remove functions `SECURITY DEFINER`; every one with an empty
+  `search_path`; EXECUTE for `service_role` only, none for PUBLIC, `anon` or
+  `authenticated`. (`guard_plan_media_pointer` is a trigger function: `service_role`
+  holds the platform's default EXECUTE on it, and a trigger function cannot be
+  called directly.)
+- Column privileges: `anon` cannot read the pointer; `authenticated` can read it
+  (RLS limits the rows) and holds neither INSERT nor UPDATE on it for either
+  table, while it still holds UPDATE on `offers.notes` as before.
+  `plan_attachment_rules` answers PDF with 26,214,400 bytes and has no rule for
+  ZIP or SVG.
+- Nothing else changed: 18 values, the baseline snapshot's digests recomputed
+  over the same objects but without the plan objects and the plan history row
+  (public columns, functions with their ACLs, triggers, indexes, constraints,
+  policies, table ownership, RLS flags and ACLs, column privileges, migration
+  history, and the data digests and counts of offers, owners, media, links,
+  profiles, Auth users and active sessions), are equal to the baseline both
+  right after the apply and at the end of the checkpoint. Row-level security is
+  enabled and owned exactly as before; no policy changed.
+
+Staging Worker (VERIFIED_HOSTED, 11:09–11:12Z; wrangler 4.136.3 from the npx
+cache with the owner's login, run from a scratch folder). Candidate identity:
+`worker.js` (LF sha256 `5e69c07e…8e8a`, 149,007 bytes) is the only deployable
+file that differs from HEAD; `account_deletion.js`, `active_session.js`,
+`staging_gate.js`, `wrangler.toml`, `package.json` and `package-lock.json` are
+byte-identical to HEAD. Two `deploy --env staging --dry-run` runs with a
+deliberately invalid API token and the debug log made zero Cloudflare API
+requests and produced the same bundle (186,914 bytes, sha256 `e8b8169a…9b18`).
+The serialized upload carried exactly 12 bindings: `MEDIA_BUCKET` bound to
+`broker-wallet-media-staging`; seven plain variables as committed
+(`ALLOWED_ORIGIN`, `OFFER_MEDIA_SWEEP_MODE`, `OWNER_MEDIA_SWEEP_MODE`,
+`R2_BUCKET_NAME`, `R2_S3_ENDPOINT`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`);
+and four secrets by name only, inherited and never supplied (`R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `STAGING_TEST_KEY`, `SUPABASE_SECRET_KEY`). The
+production bucket's name, the production domain and any secret-key literal
+appear nowhere in the bundle or the upload; the eight plan routes, the four plan
+function names, the Word proof and the session-gate answers are in it, and every
+older feature (profile image, Offer, Owner and Quotation media, account deletion,
+the staging gate) is still there.
+
+The real deploy (`deploy --env staging --strict`, tag `plan1-5e69c07e`) made ten
+Cloudflare requests, five of them not GET (`POST versions`, `POST deployments`,
+`PATCH script-settings`, `POST subdomain`, `PUT schedules`), every one on the
+`r2-profile-upload-staging` script. Previous staging version
+`a9847ecc-7340-4dc9-b907-3dd3bf13a8c0` (deployment
+`0bbae448-6533-4aa8-b677-a7cbb6dbe772`, 2026-10-12T15:08:01Z) is the rollback
+target. New version `ad00a3f7-a2be-4bf8-b52c-23be8eda8bdd` (number 24, etag
+`612a67c7…678a`); new deployment `b6f82a68-d536-4ef2-bcce-231cf47fe8ad`, created
+2026-10-13T11:11:40Z, serving it at 100% — still the live deployment when read
+last, at the end of this checkpoint. Read back from the version: handlers
+`fetch` and `scheduled`; the code exports the two plan sweeps and
+`proveWordDocument`; the bindings are exactly the dry run's list, with `MEDIA_BUCKET`
+and `R2_BUCKET_NAME` both the staging bucket, `STAGING_TEST_KEY` still present,
+`OFFER_MEDIA_SWEEP_MODE` and `OWNER_MEDIA_SWEEP_MODE` both `off` (the plan
+sweeps follow them, so they are off too) and `SUPABASE_URL` the hosted project.
+
+Staging gate. Statically, over `worker.js`: the staging key gate runs in
+`fetch()` before the first route is matched; exactly eight plan routes are
+routed; each of the four plan handlers awaits `verifySupabaseTokenAndGetUserId`
+first (nothing read, no database or R2 access before it), which asks
+`isCurrentAppSession` with the caller's own token (403 `session_superseded`,
+503 `session_check_unavailable`, never taken for success); all 15 routed
+handlers call it, and account deletion carries its own gate; in the bundle
+`isCurrentAppSession` has one definition and two call sites. Live, on the staging
+URL without a key and with a wrong key: all eight plan routes, an older media
+route and an unknown path answer 403 `Forbidden`, and nothing is read or written.
+What a valid key does (401 without a session, 403 for a session that never
+claimed or was replaced, 200 for the claimed one) needs the staging key and a
+sign-in, so it is the first part of the owner's run below.
+
+Production (VERIFIED_HOSTED, read before the staging deployment and again at the
+end). Not changed: `r2-profile-upload` still serves version
+`3a8491c3-0811-4ec1-9cc3-f01587b65bee` at 100% (deployment
+`f66bb2dc-5ef0-4dd6-8ff5-d81cfc12e11b`, 2026-10-12T17:05:15Z). No upload, no
+traffic change, no secret, binding, cron, route or bucket setting of production
+was touched, and no R2 object of either bucket was written or deleted.
+Credential-free probes of `media-api.brokerwallet.ae`: the eight plan routes
+answer 404 `Not found` (not deployed) while `/offer-media/authorize` and
+`/owner-media/authorize` answer 401. One thing is production-visible by design:
+staging and production share the one hosted Supabase project, so the additive plan
+schema (two nullable columns, four triggers, six service-role-only functions) is
+now in the production database. It is inert there: no pointer is set, no client
+can write one, and the only caller of the functions is the Worker, which has no
+plan route in production.
+
+Authenticated acceptance — prepared, NOT RUN (OWNER_ACCEPTANCE_REQUIRED). It
+needs the staging gate key and the passwords of the two test accounts, which the
+agent must not type. `cloudflare/workers/r2-profile-upload/staging-acceptance/`
+gained `plan_attachment_staging_acceptance.mjs` (Node built-ins only; refuses any
+URL but the staging workers.dev one), `plan_attachment_fixtures.mjs` (PDF, DOCX,
+DOC and the masquerades XLSX, PPTX, XLS and PPT, built in memory),
+`run_plan_attachment_staging_acceptance.ps1` (the launcher: asks to type `CLAIM`,
+reads the same `BW_*` settings as the Quotation launcher or asks with masked
+input, clears its copies at the end), `plan_attachment_offline_selftest.mjs` and
+`PLAN_ATTACHMENT_README.md`. It checks, with the session claimed as the app does
+(the claim signs the accounts' other sessions out): the gate on all eight plan
+routes; the Single Active Device answers (claimed accepted, never-claimed 403,
+replaced 403 and unable to reclaim); the Offer plan lifecycle (a JPEG attached
+with an early confirm refused, a repeated confirm harmless, read with exact bytes
+and a private link, outside the gallery list and with the record's `version` and
+`updated_at` unchanged; replacement safety, where the old JPEG survives an
+unconfirmed PDF upload, a workbook and a deck renamed `.docx` (422
+`media_type_mismatch`) and a stale slot (409); then the valid PDF replacement
+retires the old object, and removal); the Owner lifecycle (a DOC attached, a
+spreadsheet and a deck renamed `.doc` refused, a DOCX replacing it, removal, a
+PNG replaced by a WebP); refusals of unsupported types, over-size files, a PNG declared JPEG, a
+missing slot or id, an unknown record and the cap of three waiting uploads; a
+second account against the first one's Offer and Owner plans (404, `media_id_conflict`,
+nothing readable through RLS), plans against the other kind of record and
+another record, a gallery file used as a plan, and no client able to write a
+pointer or execute a plan function; a regression of the Offer and Owner gallery,
+one Quotation and one Profile route; and a cleanup that removes every plan,
+withdraws every candidate, soft-deletes the test records and verifies that no
+media row it made is left outside a terminal state. It prints and records ids,
+statuses and PASS/FAIL only, never a key, token, password, email, object key or
+URL.
+
+Checked offline (agent-run, no network, no account; CODE_PROVEN, not a hosted
+result): the self-test runs the real `worker.js` and the runner against an
+in-memory Supabase and R2 with the plan functions modelled from the migration.
+Baseline 242 PASS, 0 FAIL, nothing left behind (0 objects, 0 live media rows, 0
+undeleted test records, 0 plan pointers; the 19 plan media rows it made all
+`deleted`); 13 injected faults each caught (a client writing the pointer or
+calling a plan function, leaking reads, a public bucket, corrupted bytes, a
+bumped `version`, a plan stored as a gallery link, no staging key, a gate
+accepting a session that never claimed, a replaced session staying current, a
+displaced session able to claim again, and more) and one correctly held (a
+database ignoring `expected_media_id`, which the Worker's own guard still
+catches). Run again on the final CRLF files. The runner's own offline check, `node
+--check` of the three modules and a parse of the launcher (0 errors) also pass.
+The fixtures: the Worker's own `proveWordDocument` accepts the DOCX and the DOC and
+refuses the four masquerades; Windows' OLE32 and .NET's packaging library read
+them as intended. Caveat: the DOC fixture is a compound file that holds Word's
+`WordDocument` stream, not a file saved by Word (the installed Word did not answer
+automation); the proof shows which application's document a file claims to be.
+A DOC or DOCX saved by a real Word through the live staging Worker is still worth
+one try by hand.
+
+NOT RUN, so not claimed: the whole authenticated acceptance (every item above),
+the Plan sweeps (off in every environment), `flutter test` and the analyzer
+beyond the owner's last reported results (260/260 passed, analyzer clean), the
+production Worker with Plan routes, and every real-device Plan check. Local
+side effects of this checkpoint: the Supabase CLI initialised its standard
+ephemeral login role on each hosted call, and wrangler rewrote its own login
+file on first use (not read); no repository file was linked, no secret was read
+or printed, and nothing was committed or pushed.
+
+Files. New: the five staging-acceptance files above. Changed: the validation
+script (the one assertion), and this document only. Not changed in this
+checkpoint: the migration, `worker.js`, any Flutter source, `docs/DECISIONS.md`.
+`git diff --check` is clean and the new files are CRLF like the tree.
+
+NOW / NEXT of this section are done or superseded: the owner ran the prepared
+acceptance (241 PASS / 0 FAIL) and approved the production Worker promotion
+checkpoint; both are recorded in the next section.
+
+### Plan attachment — staging acceptance passed (owner-run); production Worker uploaded at 0% traffic, NOT promoted: script-etag identity check failed (2026-10-13)
+
+Status: **staging authenticated Plan lifecycle = VERIFIED_RUNTIME (owner-run, 241
+PASS / 0 FAIL). Production Worker candidate uploaded as version
+`96783f3d-6557-437f-addc-658a8f252d0f` (#9) with NO traffic (VERIFIED_HOSTED) and
+NOT promoted: its script etag differs from the staging-proven version's, so exact
+identity with the artifact accepted on staging is NOT established. Production
+still serves `3a8491c3-0811-4ec1-9cc3-f01587b65bee` at 100%; production Plan
+parity is NOT achieved; authenticated production acceptance NOT RUN; Samsung Plan
+UX NOT RUN.** Branch `offer-owner-plan-attachments` at `757a303`; nothing
+committed or pushed. The owner's approval covered only: read-only production
+inspection, uploading the exact staging-proven candidate as a new production
+version at 0% traffic, its read-back and credential-free probes, and (conditional
+on identity) promotion to 100% with post-checks; it excluded Supabase changes,
+production R2 objects, authenticated production tests, secrets, bindings, routes,
+domain, cron, sweeps, staging changes and Flutter changes, and it said to STOP if
+exact candidate identity cannot be established.
+
+Staging acceptance (VERIFIED_RUNTIME, owner-run; the agent read the run report
+only). Run `20261013T171234Z`, 17:12:34-17:16:52Z, staging Worker, bucket
+`broker-wallet-media-staging`: 241 PASS, 0 FAIL, plus one informational note (the
+session claim): gate 4, setup 13, session-gate 12 (claimed accepted on all eight
+routes, never-claimed and superseded 403 `session_superseded`, reclaim refused),
+offer-plan 52, owner-plan 57, refuse 32, isolation 53, regression 15, cleanup 3
+(every test Offer and Owner soft-deleted, 22 media rows checked all terminal and
+every plan object removed from the staging bucket, no record still points at a
+plan). The run created 4 Offers, 4 Owners and 22 media rows, all cleaned up. It
+ran against staging version `ad00a3f7-...`, deployment `b6f82a68-...`, which
+still serves 100% of staging.
+
+Production before (VERIFIED_HOSTED, read-only, GET requests only). Worker
+`r2-profile-upload`: deployment `f66bb2dc-5ef0-4dd6-8ff5-d81cfc12e11b`
+(2026-10-12T17:05:15Z), version `3a8491c3-0811-4ec1-9cc3-f01587b65bee` (#8, tag
+`sad1-c2fe5c5b`, last deployed by wrangler), 100%; 8 deployments in the history.
+Bindings (11) equal the committed top-level config: `MEDIA_BUCKET` and
+`R2_BUCKET_NAME` = `broker-wallet-media`; plain `ALLOWED_ORIGIN`,
+`OFFER_MEDIA_SWEEP_MODE` = `off`, `OWNER_MEDIA_SWEEP_MODE` = `off`,
+`R2_S3_ENDPOINT`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`; secrets by name
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `SUPABASE_SECRET_KEY`;
+`STAGING_TEST_KEY` absent. The Single Active Device gate has no binding of its
+own: `active_session.js` calls `is_current_app_session` at `SUPABASE_URL` with
+the publishable key as `apikey` and the caller's own token. **Rollback target: `3a8491c3-...`
+(deployment `f66bb2dc-...`), then `5eff52cb-...` (deployment `47a7ddb1-...`).**
+
+Candidate identity — established at source and bundle level (VERIFIED_SOURCE).
+The working tree's `worker.js` is LF sha256
+`5e69c07e92d181c0f9626c477f3ac2ac5d670bb987d51a5a93be77b9460a8e8a` (149,007
+bytes), the value hashed before the staging deploy; `account_deletion.js`,
+`active_session.js`, `staging_gate.js`, `wrangler.toml`, `package.json` and
+`package-lock.json` are byte-identical to HEAD, and `cloudflare/` is unchanged
+between `972b9c9` (the source production serves) and HEAD. Against the source
+production serves, the candidate removes exactly three lines (the
+`signMediaUpload` comment and signature and its `objectKey` line, rewritten for
+the optional `includeObjectKey`; an order-independent line count, since git's
+diff shows moved blocks as 148 deleted lines) and adds 1,290; `staging_gate.js` is
+the only code that reads `STAGING_TEST_KEY`, and with it unbound the gate allows
+every request. A local `versions upload --dry-run` of the production
+configuration (guard token, zero API requests, also through the node-launched
+path of the real upload and without `--outdir`) serialized a module
+byte-identical to the one the staging-configuration dry-runs built (sha256
+`e8b8169a1a6d166d5beb3bf62192f47370120cc12550680fcb84376df6f59b18`, 186,914
+bytes); the upload metadata differ only in annotations, `keep_bindings` (the two
+commands serialize it differently), the bucket values and `STAGING_TEST_KEY`; the
+real staging deploy and the real production upload both
+reported 182.53 KiB / 36.08 KiB gzip; the two version records differ only in id,
+number, date, message, the two bucket values and `STAGING_TEST_KEY`, and list the
+same handlers and named handlers (`proveWordDocument`, the two plan sweeps and the
+three media sweeps). One caution about hashes: wrangler's bundle carries comments
+holding the relative path of the wrangler install, so a bundle hash depends on the
+folder depth and the wrangler copy it was built with (a rebuild of the Single
+Active Device commit from a different folder gave 141,680 bytes, not the recorded
+141,904).
+
+Candidate identity — NOT established on Cloudflare (VERIFIED_HOSTED). The script
+etag, the content hash that matched in every earlier same-artifact promotion,
+differs: staging `ad00a3f7-...` `612a67c762c749a7...678a`, new production version
+`96783f3d-...` `a7db4ec263ee05f7...8c44`. Earlier pairs were identical, the
+Single Active Device production version also before promotion (Offer Phase 2
+`ab42e479`/`ecaf125d`, Quotation `f875b2f7`/`5eff52cb`, Single Active Device
+`a9847ecc`/`3a8491c3`). Secret-only new versions keep their etag (`ac033060`/
+`fc93b776`, `c42dd748`/`b6fe833d`), so annotations, secrets and preview flags are
+not the cause; the two version records show no other difference; both etags are
+stable on re-read; it is not a plain hash of the module (18 variants tried
+locally). The cause is UNKNOWN: the real staging upload may have carried
+different bytes than its dry-run, or Cloudflare may hash something not shown.
+Under the owner's rule the checkpoint stopped here.
+
+Upload (VERIFIED_HOSTED). `versions upload --env "" --strict --tag plan1-5e69c07e
+--message "..."` from the Worker directory with wrangler 4.136.3 (the npx copy
+the earlier uploads used), launched by a guard that fixed the arguments as whole
+tokens and checked the request log: exit 0, 2026-10-13 18:42Z; five API requests,
+exactly one not GET (`POST .../workers/scripts/r2-profile-upload/versions`), none
+naming another script, no write to a trigger, route, domain, secret, R2 or KV (the
+secret names and the settings were only read). New
+version `96783f3d-6557-437f-addc-658a8f252d0f` (#9, tag `plan1-5e69c07e`, startup
+10 ms, no traffic); preview URL
+`https://96783f3d-r2-profile-upload.mohammed-developer-code.workers.dev`. Read
+back before any promotion: its 11 bindings equal the live version's name by name
+and value by value (production bucket, three secrets inherited, no
+`STAGING_TEST_KEY`, sweeps `off`/`off`), compatibility `2024-11-01` +
+`nodejs_compat`, handlers `fetch` and `scheduled`, last deployed from wrangler.
+The live deployment stayed `f66bb2dc-...` at 100% of `3a8491c3-...`, with 8
+deployments, before and after.
+
+Credential-free probes (VERIFIED_HOSTED, no token, key or user data). The preview
+URL of #9: 31 of 31 as expected: the eight plan routes answer 401 `Missing or
+malformed Authorization header` (they exist and are gated), the 15 existing
+profile and media routes answer 401, `POST /account/delete` 401 `session_expired`
+(its own refusal, unchanged), an unknown route and a wrong method 404, a junk
+staging-key header changes nothing (the same 401, so no staging gate), the
+preflight 204. The live domain `media-api.brokerwallet.ae`, probed afterwards: the
+same 31, with the eight plan routes still 404 `Not found` (not deployed).
+
+Not done, so not claimed: the promotion (`versions deploy`) and every post-promotion
+check; any authenticated production request or test; Samsung Plan UX. Untouched:
+production traffic, deployments, secrets, bindings, vars, routes, domain, cron, R2
+objects and sweeps; staging (still `ad00a3f7-...`, deployment `b6f82a68-...`);
+Supabase (no Supabase command was run in this part). Version #9 stays uploaded,
+unserved, with a live preview URL that answers like the Worker (authentication
+first); wrangler has no command to delete a version.
+
+NOW / NEXT of this section are superseded: the owner chose to resolve the etag
+difference first (option B); the next section records that result and the
+promotion it allowed.
+
+### Plan attachment — etag identity resolved; production Worker promoted to 100% (2026-10-13)
+
+Status: **production Worker Plan parity = VERIFIED_HOSTED: version
+`96783f3d-6557-437f-addc-658a8f252d0f` (#9) serves 100% of `r2-profile-upload`
+(deployment `4895e3c7-69ce-4b4d-864f-f1b0ebf23bb9`, 2026-10-13T19:22:08Z).
+Authenticated production Plan lifecycle = NOT RUN. Samsung Plan UX = NOT RUN.**
+Staging authenticated Plan lifecycle = VERIFIED_RUNTIME (owner-run, 241/0, section
+above). Branch `offer-owner-plan-attachments` at `757a303`; nothing committed or
+pushed. The owner's rule for this step: upload the exact current tree once to
+staging as a zero-traffic version (no deploy, no staging traffic change, no
+acceptance rerun, no source, config, secret or binding change) and, if its script
+etag equals production candidate #9's, treat exact script identity as resolved and
+continue under the existing promotion approval; if it differs, stop and report only
+the comparison.
+
+The comparison (VERIFIED_HOSTED). Pre-checks first: `worker.js` still LF sha256
+`5e69c07e92d181c0f9626c477f3ac2ac5d670bb987d51a5a93be77b9460a8e8a` (CRLF working
+tree 152,410 bytes, as before), the six other deployable files byte-identical to
+HEAD, live staging `b6f82a68-...` / `ad00a3f7-...` at 100% and production
+`f66bb2dc-...` / `3a8491c3-...` at 100%. A local dry-run of the staging upload
+through the same launcher built the same module as every earlier dry-run (sha256
+`e8b8169a...9b18`, 186,914 bytes). The real upload, 2026-10-13 19:19:52-19:20:02Z
+through a guard fixed to `versions upload --env staging --strict --tag
+plan1-etag-5e69c07e --message "..."`: exit 0; five API requests, exactly one not
+GET (`POST .../workers/scripts/r2-profile-upload-staging/versions`), none naming
+another script, no deployment and no write to a trigger, subdomain, setting,
+secret, R2 or KV (the secret names and the settings were only read). New staging
+version `fc6ab2b7-47c6-488f-bd60-66f9d90433a1` (#25, startup 9
+ms), never deployed. **Its script etag is
+`a7db4ec263ee05f7e2140b966555ace7cdd30690f2a5e29b694ccc7f26b48c44`, equal to
+production #9's: SAME, so exact script identity is resolved under the owner's
+rule.** The version records of `fc6ab2b7` and the live staging version differ only
+in id, number, date, message, tag and etag (the bindings are identical, the staging
+gate secret included).
+
+One fact the owner should keep: the live, acceptance-tested staging version
+`ad00a3f7-...` carries etag `612a67c762c749a7...678a`, which equals neither of the
+two uploads made hours later from the same tree (`fc6ab2b7` to the SAME staging
+script, with identical bindings, and production #9). So the difference is not the
+script, its bindings or its settings; it appeared between the real staging deploy
+(11:11Z) and the uploads (18:42Z and 19:19Z). The cause is UNPROVEN; a change on
+Cloudflare's side between those times fits every earlier pair (they were uploaded
+less than two hours apart and matched), and every local dry-run module is
+byte-identical. Consequence: production now serves the script of `fc6ab2b7`, not
+the exact etag of `ad00a3f7`. If byte-level coverage by the acceptance run is
+wanted, `fc6ab2b7` can be deployed to staging and the acceptance rerun; that needs
+the owner's approval and was not done.
+
+Promotion (VERIFIED_HOSTED). Gates first, all read-only: production unchanged
+(deployment `f66bb2dc-...`, version `3a8491c3-...`, 8 deployments); #9's etag
+unchanged; #9 against the live version: no binding or runtime difference, only the
+id, number, date, message, tag, etag and the three new exports (`proveWordDocument`,
+`runOfferPlanSweeps`, `runOwnerPlanSweeps`). Then, through a guard that fixes the
+arguments as whole tokens and audits the request log, `versions deploy
+96783f3d-...@100% --env "" --message "..." --yes` from the Worker directory: exit 0,
+2026-10-13 19:22:01-19:22:10Z; six API requests, exactly one not GET (`POST
+.../workers/scripts/r2-profile-upload/deployments`), none naming another script;
+wrangler reported "No non-versioned settings to sync"; no trigger, route, domain,
+secret, R2 or KV request. New deployment `4895e3c7-69ce-4b4d-864f-f1b0ebf23bb9`
+(2026-10-13T19:22:08Z), 100% of `96783f3d-...`. No other version was uploaded or
+built between the verification and the promotion.
+
+Post-promotion read-back (VERIFIED_HOSTED). Production: 9 deployments, the previous
+8 intact; the live version's 11 bindings equal the previous live version's: `MEDIA_BUCKET`
+and `R2_BUCKET_NAME` = `broker-wallet-media`, three secret names, `STAGING_TEST_KEY`
+absent, `OFFER_MEDIA_SWEEP_MODE` and `OWNER_MEDIA_SWEEP_MODE` = `off`; compatibility
+`2024-11-01` + `nodejs_compat`; handlers `fetch` and `scheduled`. `scheduled()` now
+also calls the two plan sweeps; with both sweeps off they return before any database
+or R2 call. Staging unchanged: deployment `b6f82a68-...` still serves 100% of
+`ad00a3f7-...` (10 deployments); `fc6ab2b7` exists undeployed. Supabase unchanged
+(one read-only `supabase migration list --linked`, the CLI's ephemeral login role
+initialised): 18 migrations registered, local equal to remote, `20261012233000`
+newest and registered once. No production R2 object was created or deleted: no R2
+command and no authenticated request were made.
+
+Production smoke (VERIFIED_HOSTED, credential-free: no token, key or user data).
+`media-api.brokerwallet.ae`, 31 of 31 as expected: the eight plan routes answer 401
+`Missing or malformed Authorization header` (before the promotion they were 404);
+the 15 existing profile and media routes 401; `POST /account/delete` 401
+`session_expired`; an unknown route and a wrong method 404; a junk staging-key
+header changes nothing (the same 401, so no staging gate on production); the
+preflight 204. The staging URL without a key still answers 403 `Forbidden`.
+
+**Rollback: version `3a8491c3-0811-4ec1-9cc3-f01587b65bee` (deployment
+`f66bb2dc-5ef0-4dd6-8ff5-d81cfc12e11b`), then `5eff52cb-...` (deployment
+`47a7ddb1-...`).** The repository has no emergency-rollback rule, so a rollback
+needs the owner's approval. The database already carries the plan schema (shared
+Supabase project), so rolling the Worker back leaves it inert.
+
+NOT RUN: any authenticated production request or test, the plan sweeps (off), Samsung
+or any real-device Plan UX. Not touched: secrets, vars, bindings, routes, domain, cron,
+sweeps, R2 objects, staging traffic, the Master Context and the Final Production
+Checklist (to be updated after the real-device Plan acceptance closes item #7).
+
+NOW / NEXT of this section are done: see the closure below.
+
+## CHECKPOINT #7 CLOSED — OFFER / OWNER LAND-PLAN & PLOT-PLAN ATTACHMENTS (2026-10-17)
+
+Status: **#7 COMPLETE / CLOSED.** Branch `offer-owner-plan-attachments`, implementation
+based on `757a303`; one local commit `feat(plan-attachments): add private offer and
+owner land plans`; not pushed. This section is the authoritative summary; the dated
+sections above are history and are not to be repeated.
+
+What shipped: one optional dedicated Plan (مخطط الأرض / مخطط القطعة) per Offer and per
+Owner, separate from the gallery (no quota use); JPEG/PNG/WebP (existing 10 MiB image
+contract) or PDF/DOC/DOCX (25 MiB); XLS/XLSX/PPT/PPTX renamed as Word rejected, no
+Word-parsing dependency; private Supabase pointer `plan_media_id` + private R2, signed
+URLs transport only; failure-safe replace, remove unbinds only the Plan; PDF Viewer for
+PDFs, system opener for DOC/DOCX, Share from a local prepared file; Offer/Owner
+isolation; Single Active Device on all eight Plan Worker routes. Decisions are in
+`docs/DECISIONS.md`.
+
+Evidence, each at its own level:
+
+| Area | Evidence | Level |
+| --- | --- | --- |
+| Source + Flutter targeted | 260/260 PASS; scoped analyzer clean (owner-run) | CODE_PROVEN |
+| Supabase | migration `20261012233000_offer_owner_plan_attachments` applied; columns, guards, RPC grants, RLS, history read back | VERIFIED_HOSTED |
+| Staging Worker | version `ad00a3f7-...`, deployment `b6f82a68-...`; authenticated acceptance 241 PASS / 0 FAIL | VERIFIED_RUNTIME |
+| Production Worker | `r2-profile-upload` version `96783f3d-6557-437f-addc-658a8f252d0f` at 100%, deployment `4895e3c7-69ce-4b4d-864f-f1b0ebf23bb9`, 2026-10-13T19:22:08Z; bindings preserved, production bucket, no `STAGING_TEST_KEY`, sweeps off; credential-free smoke 31/31 | VERIFIED_HOSTED |
+| Samsung | narrow Offer + Owner Plan checklist (add, open, Share, replace, remove, gallery separate, Arabic/RTL quick check), owner-reported ALL GOOD / PASS | VERIFIED_REAL_DEVICE (that scope only) |
+| Authenticated production Plan lifecycle | not run; staging is the runtime evidence | NOT RUN |
+
+Rollback target for the production Worker: `3a8491c3-...` (deployment `f66bb2dc-...`).
+No staging or production work is to be repeated without a real regression. Known
+unrelated failures, not part of #7 and not fixed here: the historical Delete Account
+test's old migration filename, the Windows Hive teardown file lock, and the
+`city_area_chip_height_test` collapsed-list brittleness. The reusable staging
+acceptance tooling is committed; its generated run reports (they hold test-account user
+ids) stay local and untracked in `reports/`.
+
+NOW — none for #7. NEXT — checkpoint #8, Phone Login / Signup backend (then #9, real UAE
+SMS/OTP provider). Master Context and Final Production Checklist (outside the repo, in
+the owner's documents folder) and the Broker Wallet Overview were updated in the same
+closure.

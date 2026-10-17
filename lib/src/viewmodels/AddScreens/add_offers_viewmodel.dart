@@ -24,6 +24,12 @@ import 'package:broker_wallet/src/services/offer_media_selection.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
     show OfferMediaUploadCompleted;
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_screening.dart'
+    show PlanFileScreener;
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_transport.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_form.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_form_factory.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_source_sheet.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -61,6 +67,8 @@ class AddOffersViewModel extends ChangeNotifier
     OfferMediaPicker? mediaPicker,
     Future<OfferMediaSource?> Function(BuildContext context, int remaining)?
         chooseMediaSource,
+    PlanAttachmentTransport? planTransport,
+    PlanFileScreener? planScreener,
   })  : _mode = mode,
         _editOfferId = offerId,
         _offerService = offerService ?? OfferService(),
@@ -79,8 +87,33 @@ class AddOffersViewModel extends ChangeNotifier
         _loadOfferForEdit();
       }
     }
-    if (_usesMediaQueue) _startOfferMedia();
+    if (_usesMediaQueue) {
+      _startOfferMedia();
+      // The land / plot plan: its own attachment, never a gallery item.
+      _plan = createPlanAttachmentForm(
+        parent: PlanParent.offer,
+        onChanged: _onPlanChanged,
+        transport: planTransport,
+        screen: planScreener,
+      );
+      _plan?.start(editRecordId: isEditMode ? _editOfferId : null);
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // The Offer's land / plot plan (Supabase mode): one optional attachment of its
+  // own, apart from the photos and videos below. It is sent after the Offer has
+  // been saved, and whatever happens to it never undoes that save.
+  // ---------------------------------------------------------------------------
+
+  PlanAttachmentFormController? _plan;
+
+  void _onPlanChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  /// The plan section's controller (Supabase mode); null otherwise.
+  PlanAttachmentFormController? get planAttachment => _plan;
 
   // ---------------------------------------------------------------------------
   // Offer media (Supabase mode): identity-based, never URL-based.
@@ -308,6 +341,7 @@ class AddOffersViewModel extends ChangeNotifier
       _offerService.offerMediaUploadChanges.removeListener(_onUploadsChanged);
       unawaited(_uploadCompletions?.cancel());
     }
+    _plan?.dispose();
     super.dispose();
   }
 
@@ -1046,6 +1080,7 @@ class AddOffersViewModel extends ChangeNotifier
         _pickUpLocation.isNotEmpty ||
         _pickUpAddress.isNotEmpty ||
         hasMediaFiles ||
+        (_plan?.hasPlan ?? false) ||
         _propertyType != null ||
         _selectedSpecificPropertyType.isNotEmpty;
   }
@@ -1405,13 +1440,27 @@ class AddOffersViewModel extends ChangeNotifier
     _removedExistingIds.removeAll(removedNow);
     _cancelledUploadIds.removeAll(cancelled);
 
+    // The land / plot plan is sent only now that the Offer is saved. It never
+    // throws: a failure stays in the plan section with the chosen file, can be
+    // retried, and leaves the saved Offer as it is.
+    final plan = _plan;
+    final planOutcome = plan == null
+        ? const PlanCommitOutcome.nothing()
+        : await plan.commit(recordId: offerId);
+
     if (!context.mounted) return;
-    if (!result.isComplete) {
+    if (!result.isComplete || !planOutcome.isComplete) {
       if (notQueued.isNotEmpty) {
         _showToast(loc.translate('offerMediaPrepareFailed'), Colors.red);
       }
       if (notRemoved.isNotEmpty) {
         _showToast(loc.translate('offerMediaRemoveFailed'), Colors.red);
+      }
+      if (!planOutcome.isComplete) {
+        _showToast(
+          loc.translate('planAttachmentSavedUploadFailed'),
+          Colors.red,
+        );
       }
       return;
     }

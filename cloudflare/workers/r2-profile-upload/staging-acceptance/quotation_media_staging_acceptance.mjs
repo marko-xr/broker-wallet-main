@@ -1062,9 +1062,13 @@ function answered(r) {
 }
 
 /**
- * Every Worker route behind the active-session gate: the fifteen profile and
- * media routes (verifySupabaseTokenAndGetUserId) and account deletion (its own
- * call site). A refusing gate never reads the body. [current] says what a
+ * Every Worker route behind the active-session gate: the twenty-three profile,
+ * media and land/plot-plan routes (verifySupabaseTokenAndGetUserId) and account
+ * deletion (its own call site). A refusing gate never reads the body. The
+ * Offer and Owner plan routes (`/offer-plan…`, `/owner-plan…`) are listed here
+ * so a hosted acceptance run proves each of them sits inside the gate; the
+ * Worker's own unit test (`test/plan_attachment.test.mjs`) fails if a plan
+ * route is added to the router without being added here. [current] says what a
  * CURRENT session sees, only for the routes that can be probed without a write
  * and without a signed link; the rest are probed only to prove they refuse.
  *
@@ -1099,6 +1103,20 @@ function gatedRoutes() {
     post('Quotation media authorize', '/quotation-media/authorize'),
     post('Quotation media confirm', '/quotation-media/confirm'),
     post('Quotation media remove', '/quotation-media/remove'),
+    {
+      name: 'Offer plan read', method: 'GET', path: `/offer-plan?offerId=${randomUUID()}`,
+      current: (r) => r.status === 404 && r.body?.code === OFFER.notFound,
+    },
+    post('Offer plan authorize', '/offer-plan/authorize'),
+    post('Offer plan confirm', '/offer-plan/confirm'),
+    post('Offer plan remove', '/offer-plan/remove'),
+    {
+      name: 'Owner plan read', method: 'GET', path: `/owner-plan?ownerRecordId=${randomUUID()}`,
+      current: (r) => r.status === 404 && r.body?.code === OWNER.notFound,
+    },
+    post('Owner plan authorize', '/owner-plan/authorize'),
+    post('Owner plan confirm', '/owner-plan/confirm'),
+    post('Owner plan remove', '/owner-plan/remove'),
     {
       name: 'account deletion (no password is sent)', method: 'POST', path: '/account/delete', body: {},
       // The gate passed and the request stopped at password verification: nothing was deleted.

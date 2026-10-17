@@ -3,6 +3,11 @@ import 'dart:ui' as ui;
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/offer_details_load_coordinator.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
+import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
+import 'package:broker_wallet/src/services/plan_attachment/r2_plan_attachment_service.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_details_loader.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
@@ -89,6 +94,10 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   late OfferModel _currentOffer;
   late OfferDetailsLoadCoordinator _loadCoordinator;
 
+  // The Offer's land / plot plan (Supabase mode): its own optional attachment,
+  // read separately from the gallery and shown in its own card.
+  PlanAttachmentDetailsLoader? _planLoader;
+
   // Performance optimization: Cache expensive widgets
   Widget? _cachedMediaGallery;
   Widget? _cachedMapWidget;
@@ -106,6 +115,40 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     _setupUploadCompletionListener();
     _setupOfferMediaUploadListener();
     unawaited(_loadCoordinator.load());
+    _createPlanLoader();
+    unawaited(_planLoader?.load());
+  }
+
+  void _createPlanLoader() {
+    final id = _currentOffer.id?.trim();
+    if (!SupabaseConfig.useSupabaseAuth || id == null || id.isEmpty) return;
+    _planLoader = PlanAttachmentDetailsLoader(
+      parent: PlanParent.offer,
+      parentId: id,
+      transport: R2PlanAttachmentService(),
+      onChanged: _handlePlanChanged,
+    );
+  }
+
+  void _handlePlanChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// The plan card, or nothing while the Offer has no plan (or it is not read
+  /// yet): the screen never waits for it.
+  Widget _buildPlanCard() {
+    final loader = _planLoader;
+    final plan = loader?.plan;
+    if (loader == null || plan == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: PlanAttachmentDetailsCard(
+        key: ValueKey('offer-plan-${plan.mediaObjectId}'),
+        parent: PlanParent.offer,
+        parentId: loader.parentId,
+        plan: plan,
+      ),
+    );
   }
 
   /// [resolvedOffer] is an Offer just read authoritatively (after Edit).
@@ -184,6 +227,10 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       _initializeMediaController();
       _loadFavoriteStatus();
       unawaited(_loadCoordinator.load());
+      _planLoader?.dispose();
+      _planLoader = null;
+      _createPlanLoader();
+      unawaited(_planLoader?.load());
     }
   }
 
@@ -259,6 +306,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   @override
   void dispose() {
     _loadCoordinator.dispose();
+    _planLoader?.dispose();
     _uploadCompletionSubscription?.cancel();
     _offerMediaUploads?.removeListener(_handleOfferMediaUploadsChanged);
     _offerMediaCompletions?.cancel();
@@ -771,6 +819,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
               const SizedBox(height: 12),
               _buildCompactNotesCard(context),
             ],
+            // The land / plot plan: its own card, never part of the gallery.
+            _buildPlanCard(),
             const SizedBox(height: 12),
           ],
         ),
@@ -2260,6 +2310,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       });
       unawaited(_loadCoordinator.load());
     }
+    // The land / plot plan may have been added, replaced or removed in the edit.
+    if (mounted) unawaited(_planLoader?.load());
   }
 
   // Show status selector dialog

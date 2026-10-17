@@ -452,3 +452,56 @@
   claim and the Auth API call. Premium authorization must require both paid
   entitlement and an active Broker Wallet session. Source and migration are
   not deployed or runtime verified; see `docs/CURRENT_CHECKPOINT.md`.
+
+- Offer / Owner land / plot plan (decided 2026-10-13; checkpoint #7 closed
+  2026-10-17: migration applied and verified, staging and production Worker
+  deployed, Samsung accepted; see `docs/CURRENT_CHECKPOINT.md`): one optional plan per Offer
+  and per Owner record, kept apart from the photo and video gallery. Model: a
+  server-controlled pointer column `plan_media_id` on `offers` and `owners`
+  (the shape of `quotations.pdf_media_id`), never a row in `offer_media` /
+  `owner_media`, because the 10-item limit, the Worker's list, capacity and
+  sweep queries and the app's card all count every link whatever its role.
+  Its object key has its own segment (`profiles/<uid>/offer-plans/<offerId>/
+  <mediaId>.<ext>`, `.../owner-plans/...`): inside the account prefix Delete
+  Account sweeps, outside the gallery's key patterns. A plan is addressed only
+  by its media id; no URL or storage key is stored or shown. Types: JPEG, PNG
+  and WebP up to 10 MiB (the gallery's image contract; HEIC is converted on the
+  device) and PDF, DOC, DOCX up to 25 MiB; no SVG, archive, executable or CAD.
+  DOC and DOCX use the existing `media_type` value `unknown` (a new enum value
+  would break rollback-only validation) and are told apart by content type.
+  Their first bytes show only a container, which Excel and PowerPoint share, so
+  the Worker proves a DOC or DOCX is Word's own before it attaches one
+  (`proveWordDocument`: a few ranged reads of the stored object, no
+  dependency): a DOCX's root relationship must name exactly one main part that
+  is in the archive and `[Content_Types].xml` must give it the WordprocessingML
+  main content type, by its own Override or else the Default for its extension
+  (a workbook, a presentation, a macro-enabled document and a template name
+  another); a DOC's root directory must hold the `WordDocument` stream and none
+  of `Workbook`, `Book` or `PowerPoint Document`. Anything
+  malformed, hostile or oversized fails closed, and a storage error is retried,
+  never taken for a verdict. It shows which application's document the file
+  claims to be, not that it is a well-formed document: a hand-forged Word
+  package or stream still passes. The app's file-name check is UX only and the
+  Worker stays authoritative. Replacement is switch-then-retire in one
+  transaction with compare-and-swap on the expected media id: the old plan
+  stays attached until the new file is confirmed, and a failed or abandoned
+  upload never touches it. A change that touches only the pointer keeps the
+  record's `updated_at` and `version` (a plan is an attachment, not an edit of
+  the record's fields, and must not reorder Home's Recently Updated). The
+  plan is sent only after
+  its record is saved; a plan failure never undoes that save and the same
+  upload id is retried. Its cleanup sweeps follow the parent's own
+  `OFFER_MEDIA_SWEEP_MODE` / `OWNER_MEDIA_SWEEP_MODE` (`off` in every
+  environment), so no new configuration exists. Its pickers pass no recovery
+  origin, so a pick Android hands back after stopping the app is never adopted
+  into a gallery. A PDF opens in Broker Wallet's PDF viewer and an image in its
+  image viewer; there is no in-app Word renderer, so DOC and DOCX are opened by
+  another app on the phone from an app-verified local file (or shared), and the
+  card says so. The document Scanner is not offered: the app's scanner is a
+  private flow of the Toolkit screen (the plugin's dynamic result shapes, its
+  own quota and its own list), not a reusable service, and wrapping the plugin
+  would be a second scanner integration. Removing a plan unbinds and retires
+  only the plan, never the Offer or Owner. Every plan route sits behind the
+  Single Active Device gate and is scoped by owner, record kind and parent id, so
+  an Offer plan, an Owner plan and the gallery can never reach one another or
+  another account's files. See `docs/CURRENT_CHECKPOINT.md`.

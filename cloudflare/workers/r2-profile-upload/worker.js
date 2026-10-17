@@ -31,12 +31,36 @@ import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.
  *   POST /quotation-media/confirm
  *   GET  /quotation-media
  *   POST /quotation-media/remove
+ *   POST /offer-plan/authorize
+ *   POST /offer-plan/confirm
+ *   GET  /offer-plan
+ *   POST /offer-plan/remove
+ *   POST /owner-plan/authorize
+ *   POST /owner-plan/confirm
+ *   GET  /owner-plan
+ *   POST /owner-plan/remove
  *   POST /account/delete   (see account_deletion.js)
  *
  * Scheduled:
  *   account deletion finalizer (see account_deletion.js)
  *   offer-media cleanup sweeps (runOfferMediaSweeps; OFF unless configured)
  *   owner-media cleanup sweeps (runOwnerMediaSweeps; OFF unless configured)
+ *   offer-plan / owner-plan cleanup sweeps (runOfferPlanSweeps /
+ *     runOwnerPlanSweeps; same switches as the Offer / Owner media sweeps)
+ *
+ * Land / plot plans (Arabic: مخطط الأرض / مخطط القطعة). Each Offer and each Owner
+ * record has at most ONE dedicated plan: an image or a document (PDF, DOC,
+ * DOCX), kept apart from the photo and video gallery above. The plan is the
+ * parent's `plan_media_id` column (see PLAN_PARENTS), never a gallery link, so
+ * it can neither consume a gallery place nor appear in a gallery listing. Its
+ * object keys have their own segment, `profiles/<uid>/offer-plans/<id>/` or
+ * `profiles/<uid>/owner-plans/<id>/`: still inside the account prefix that
+ * account deletion sweeps, and outside the gallery's `offers/` / `owners/`
+ * patterns, so no gallery query or sweep can touch a plan object. Replacing a
+ * plan uploads and verifies the candidate first; the database function then
+ * switches the pointer and retires the old object in one transaction, so a
+ * failed replacement never costs the existing plan. A DOC or DOCX is verified to
+ * be a Word document, not merely an Office container (see proveWordDocument).
  *
  * Owner media (the Owner records' private photos and videos) is the same
  * lifecycle as Offer media, run for a different parent record: the same types,
@@ -133,6 +157,27 @@ const QUOTATION_ROLE_COLUMNS = Object.freeze({
   office_logo: Object.freeze({ column: 'office_logo_media_id', linkRole: 'logo' }),
   quotation_pdf: Object.freeze({ column: 'pdf_media_id', linkRole: 'pdf' }),
 });
+// Owner decision (2026-10-12): one dedicated land / plot plan per Offer and per
+// Owner record, an image (the accepted gallery image types and size) or a
+// document of at most 25 MiB. `mediaType` is the `media_objects.media_type`
+// enum value: DOC and DOCX have no enum member of their own, so they are
+// `unknown` and are told apart by their content type. The database's
+// `plan_attachment_rules` function holds the same table.
+const MAX_PLAN_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const PLAN_MEDIA_TYPES = Object.freeze({
+  'image/jpeg': Object.freeze({ extension: 'jpg', mediaType: 'image', kind: 'image', maxBytes: MAX_IMAGE_BYTES }),
+  'image/png': Object.freeze({ extension: 'png', mediaType: 'image', kind: 'image', maxBytes: MAX_IMAGE_BYTES }),
+  'image/webp': Object.freeze({ extension: 'webp', mediaType: 'image', kind: 'image', maxBytes: MAX_IMAGE_BYTES }),
+  'application/pdf': Object.freeze({ extension: 'pdf', mediaType: 'pdf', kind: 'document', maxBytes: MAX_PLAN_DOCUMENT_BYTES }),
+  'application/msword': Object.freeze({ extension: 'doc', mediaType: 'unknown', kind: 'document', maxBytes: MAX_PLAN_DOCUMENT_BYTES }),
+  [DOCX_CONTENT_TYPE]: Object.freeze({ extension: 'docx', mediaType: 'unknown', kind: 'document', maxBytes: MAX_PLAN_DOCUMENT_BYTES }),
+});
+// At most this many plan uploads may be waiting (authorized, not yet confirmed
+// and younger than the abandoned-upload cutoff) for one record, which bounds
+// what a client can reserve in private storage. A retry of the same upload
+// reuses its id and is never counted twice.
+const MAX_PENDING_PLAN_UPLOADS = 3;
 
 /**
  * The records private media can belong to. Everything that differs between an
@@ -189,6 +234,43 @@ const MEDIA_PARENTS = Object.freeze({
     deletedParentReportKey: 'deletedQuotationMedia',
   }),
 });
+// The records a land / plot plan can belong to. A plan is not an item of the
+// record's gallery (it has no `offer_media` / `owner_media` row): it is the
+// record's `plan_media_id` pointer, with routes, key segment and confirm / remove
+// functions of its own, so neither record kind can reach the other's plan.
+const PLAN_PARENTS = Object.freeze({
+  offer: Object.freeze({
+    title: 'Offer',
+    noun: 'offer',
+    idField: 'offerId',
+    table: 'offers',
+    keySegment: 'offer-plans',
+    keyPattern: 'profiles/*/offer-plans/*',
+    confirmRpc: '/rest/v1/rpc/confirm_offer_plan_upload',
+    removeRpc: '/rest/v1/rpc/remove_offer_plan',
+    rpcParentParam: 'p_offer_id',
+    notFoundCode: 'offer_not_found',
+    // Plans follow their parent's own cleanup switch: no new configuration.
+    sweepModeVar: 'OFFER_MEDIA_SWEEP_MODE',
+    sweepLogTag: 'offer-plan-sweep',
+    deletedParentReportKey: 'deletedOfferPlans',
+  }),
+  owner: Object.freeze({
+    title: 'Owner',
+    noun: 'owner',
+    idField: 'ownerRecordId',
+    table: 'owners',
+    keySegment: 'owner-plans',
+    keyPattern: 'profiles/*/owner-plans/*',
+    confirmRpc: '/rest/v1/rpc/confirm_owner_plan_upload',
+    removeRpc: '/rest/v1/rpc/remove_owner_plan',
+    rpcParentParam: 'p_owner_record_id',
+    notFoundCode: 'owner_not_found',
+    sweepModeVar: 'OWNER_MEDIA_SWEEP_MODE',
+    sweepLogTag: 'owner-plan-sweep',
+    deletedParentReportKey: 'deletedOwnerPlans',
+  }),
+});
 // ISO base-media `ftyp` brands, matched case-sensitively as written in the
 // file. HEIF image brands are handled by detectImageMimeFromBytes.
 const MP4_BRANDS = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP', 'dash', 'mmp4', 'MSNV', 'f4v ']);
@@ -236,6 +318,14 @@ export default {
       if (request.method === 'POST' && path === '/quotation-media/confirm') return await handleQuotationConfirm(request, env);
       if (request.method === 'GET' && path === '/quotation-media') return await handleQuotationList(request, env);
       if (request.method === 'POST' && path === '/quotation-media/remove') return await handleQuotationRemove(request, env);
+      if (request.method === 'POST' && path === '/offer-plan/authorize') return await handlePlanAuthorize(request, env, PLAN_PARENTS.offer);
+      if (request.method === 'POST' && path === '/offer-plan/confirm') return await handlePlanConfirm(request, env, PLAN_PARENTS.offer);
+      if (request.method === 'GET' && path === '/offer-plan') return await handlePlanGet(request, env, PLAN_PARENTS.offer);
+      if (request.method === 'POST' && path === '/offer-plan/remove') return await handlePlanRemove(request, env, PLAN_PARENTS.offer);
+      if (request.method === 'POST' && path === '/owner-plan/authorize') return await handlePlanAuthorize(request, env, PLAN_PARENTS.owner);
+      if (request.method === 'POST' && path === '/owner-plan/confirm') return await handlePlanConfirm(request, env, PLAN_PARENTS.owner);
+      if (request.method === 'GET' && path === '/owner-plan') return await handlePlanGet(request, env, PLAN_PARENTS.owner);
+      if (request.method === 'POST' && path === '/owner-plan/remove') return await handlePlanRemove(request, env, PLAN_PARENTS.owner);
       return corsResponse({ error: 'Not found' }, 404, env);
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
@@ -260,6 +350,10 @@ export default {
     ctx.waitUntil(runOwnerMediaSweeps(env));
     // Missing mode is off. Enabling this sweep is a separate owner decision.
     ctx.waitUntil(runQuotationMediaSweeps(env));
+    // Plans are cleaned under their parent's own switch (OFFER_MEDIA_SWEEP_MODE
+    // / OWNER_MEDIA_SWEEP_MODE), so they are off wherever those are off.
+    ctx.waitUntil(runOfferPlanSweeps(env));
+    ctx.waitUntil(runOwnerPlanSweeps(env));
   },
 };
 
@@ -571,8 +665,12 @@ async function resumeMediaUpload(row, upload, env) {
   }
 }
 
-/** Issues the signed PUT for [upload], subject to the account-deletion quarantine. */
-async function signMediaUpload(upload, env, { createdNow }) {
+/**
+ * Issues the signed PUT for [upload], subject to the account-deletion
+ * quarantine. [includeObjectKey] is true for the gallery and Quotation routes,
+ * which have always answered with it; the plan routes never do.
+ */
+async function signMediaUpload(upload, env, { createdNow, includeObjectKey = true }) {
   try {
     const quarantineCheckedAt = Date.now();
     await assertUploadsAllowed(upload.userId, env);
@@ -589,7 +687,7 @@ async function signMediaUpload(upload, env, { createdNow }) {
         status: 'pending',
         presignedUrl,
         mediaObjectId: upload.mediaObjectId,
-        objectKey: upload.objectKey,
+        ...(includeObjectKey ? { objectKey: upload.objectKey } : {}),
         mediaType: upload.offerType.mediaType,
         expiresInSeconds: PUT_URL_TTL_SECONDS,
       },
@@ -1414,6 +1512,1024 @@ async function completeQuotationMediaRemoval(row, env) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Land / plot plans: ONE dedicated plan per Offer or Owner record.
+//
+//   POST <prefix>/authorize  reserve an upload for the candidate
+//   POST <prefix>/confirm    verify the bytes, then switch the plan to it
+//   GET  <prefix>            the current plan with a short-lived signed read
+//   POST <prefix>/remove     cancel a candidate, or remove the current plan
+//
+// <prefix> is /offer-plan (field `offerId`) or /owner-plan (`ownerRecordId`);
+// both run the same handlers against their own PLAN_PARENTS entry, so neither
+// can reach the other's objects: every check compares a row's key with the
+// parent's own segment and id. Every handler starts with
+// verifySupabaseTokenAndGetUserId, which includes the Single Active Device
+// gate.
+//
+// `expectedMediaId` (null for "no plan") is what the caller believes the plan
+// is. The server refuses with `stale_replacement` when it is not, and the
+// database function repeats the check under a row lock, so an older operation
+// can never overwrite a newer one.
+// ---------------------------------------------------------------------------
+
+/** `expectedMediaId` is required (null when the caller believes there is no plan). */
+function expectedPlanMediaId(body) {
+  if (!Object.hasOwn(body, 'expectedMediaId')) {
+    throw new WorkerError('expectedMediaId is required', 400, 'invalid_request');
+  }
+  return body.expectedMediaId === null ? null : requireUuid(body.expectedMediaId, 'expectedMediaId');
+}
+
+function planMediaType(contentType) {
+  return typeof contentType === 'string' && Object.hasOwn(PLAN_MEDIA_TYPES, contentType)
+    ? PLAN_MEDIA_TYPES[contentType]
+    : null;
+}
+
+function planTooLargeCode(type) {
+  return type.kind === 'image' ? 'image_too_large' : 'document_too_large';
+}
+
+function planKeyPrefix(plan, userId, parentId) {
+  return `profiles/${userId}/${plan.keySegment}/${parentId}/`;
+}
+
+function planObjectKey(plan, userId, parentId, mediaId, contentType) {
+  const type = planMediaType(contentType);
+  return type ? `${planKeyPrefix(plan, userId, parentId)}${mediaId}.${type.extension}` : null;
+}
+
+function isExpectedPlanObject(plan, row, userId, parentId) {
+  return row.object_key === planObjectKey(plan, userId, parentId, row.id, row.content_type);
+}
+
+/** The plan kind, account and parent a media row's own key names, or null. */
+function planKeyIdentity(row) {
+  if (!row || typeof row.object_key !== 'string') return null;
+  const parts = row.object_key.split('/');
+  if (parts.length !== 5 || parts[0] !== 'profiles' ||
+      !MEDIA_ID_PATTERN.test(parts[1]) || !MEDIA_ID_PATTERN.test(parts[3])) {
+    return null;
+  }
+  const plan = Object.values(PLAN_PARENTS).find((candidate) => candidate.keySegment === parts[2]);
+  if (!plan || row.object_key !== planObjectKey(plan, parts[1], parts[3], row.id, row.content_type)) {
+    return null;
+  }
+  return { plan, userId: parts[1], parentId: parts[3] };
+}
+
+/** The live parent record [userId] owns, with its current plan pointer. */
+async function loadOwnedPlanParent(plan, parentId, userId, env) {
+  const res = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/${plan.table}?id=eq.${encodeURIComponent(parentId)}&owner_id=eq.${encodeURIComponent(userId)}` +
+      '&deleted_at=is.null&select=id,plan_media_id',
+  );
+  if (!res.ok) throw new WorkerError(`Failed to verify ${plan.noun} ownership`, 502);
+  const row = (await res.json())?.[0];
+  if (!row) throw new WorkerError(`${plan.title} not found or not owned by user`, 404, plan.notFoundCode);
+  return row;
+}
+
+/** [userId]'s media row with everything the plan answers need, or null. */
+async function findPlanMedia(mediaObjectId, userId, env) {
+  const res = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(mediaObjectId)}&owner_id=eq.${encodeURIComponent(userId)}` +
+      '&select=id,bucket,object_key,status,media_type,content_type,size_bytes,original_file_name',
+  );
+  if (!res.ok) throw new WorkerError('Failed to load media object', 502);
+  return (await res.json())?.[0] ?? null;
+}
+
+async function handlePlanAuthorize(request, env, plan) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const parentId = requireUuid(body[plan.idField], plan.idField);
+  const expectedMediaId = expectedPlanMediaId(body);
+  // The app's own id for this upload makes authorize idempotent: a retry of the
+  // same logical upload resumes the same row and key, never a second object.
+  const requestedId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const { contentType, contentLength } = body;
+  const type = planMediaType(contentType);
+  if (!type) throw new WorkerError('Unsupported content type', 400, 'unsupported_media_type');
+  if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > type.maxBytes) {
+    throw new WorkerError(
+      `contentLength must be an integer between 1 and ${type.maxBytes} bytes`,
+      400,
+      planTooLargeCode(type),
+    );
+  }
+
+  const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  // A retry whose confirm already went through finds this very upload as the
+  // plan: it is answered as ready below rather than refused as stale.
+  const isThisUpload = requestedId !== null && parent.plan_media_id === requestedId;
+  if (parent.plan_media_id !== expectedMediaId && !isThisUpload) {
+    throw new WorkerError(`${plan.title} plan changed`, 409, 'stale_replacement');
+  }
+  await cleanupAbandonedPlanPending(plan, userId, parentId, env);
+
+  const mediaObjectId = requestedId ?? crypto.randomUUID();
+  const upload = {
+    userId,
+    mediaObjectId,
+    contentType,
+    contentLength,
+    offerType: type,
+    objectKey: planObjectKey(plan, userId, parentId, mediaObjectId, contentType),
+  };
+  if (requestedId) {
+    const existing = await findMediaById(requestedId, env);
+    if (existing) return resumePlanUpload(existing, upload, parent, env);
+  }
+  await assertPlanPendingCapacity(plan, userId, parentId, env, mediaObjectId);
+
+  const inserted = await supabaseServiceFetch(env, 'POST', '/rest/v1/media_objects', {
+    id: mediaObjectId,
+    owner_id: userId,
+    bucket: env.R2_BUCKET_NAME,
+    object_key: upload.objectKey,
+    media_type: type.mediaType,
+    content_type: contentType,
+    size_bytes: contentLength,
+    original_file_name: sanitizeOriginalFileName(body.originalFileName),
+    status: 'pending_upload',
+  });
+  if (!inserted.ok) {
+    if (requestedId && inserted.status === 409) {
+      // A concurrent request for the same id created the row first.
+      const raced = await findMediaById(requestedId, env);
+      if (raced) return resumePlanUpload(raced, upload, parent, env);
+    }
+    throw new WorkerError('Failed to create pending plan media', 502);
+  }
+  return signMediaUpload(upload, env, { createdNow: true, includeObjectKey: false });
+}
+
+/**
+ * Answers an authorize for an id that already has a `media_objects` row. The id
+ * stays bound to the account, plan kind, parent, key and type it was first
+ * authorized for; anything else is refused without touching the row.
+ */
+async function resumePlanUpload(row, upload, parent, env) {
+  if (row.owner_id !== upload.userId) {
+    throw new WorkerError('Media id is not available', 409, 'media_id_conflict');
+  }
+  if (
+    row.bucket !== env.R2_BUCKET_NAME ||
+    row.object_key !== upload.objectKey ||
+    row.content_type !== upload.contentType ||
+    row.media_type !== upload.offerType.mediaType
+  ) {
+    throw new WorkerError('Media id was used for another upload', 409, 'idempotency_mismatch');
+  }
+  switch (row.status) {
+    case 'pending_upload':
+      if (Number(row.size_bytes) !== upload.contentLength) {
+        throw new WorkerError('Media id was used for another upload', 409, 'idempotency_mismatch');
+      }
+      return signMediaUpload(upload, env, { createdNow: false, includeObjectKey: false });
+    case 'ready':
+      if (parent.plan_media_id !== row.id) {
+        throw new WorkerError('Media is not this plan', 409, 'invalid_state');
+      }
+      return corsResponse(
+        { status: 'ready', mediaObjectId: row.id, mediaType: upload.offerType.mediaType },
+        200,
+        env,
+        { 'Cache-Control': 'no-store' },
+      );
+    case 'failed':
+      throw new WorkerError('This upload was rejected', 409, 'upload_rejected');
+    case 'pending_delete':
+    case 'deleted':
+      throw new WorkerError('This media was removed', 410, 'media_removed');
+    default:
+      throw new WorkerError(`Unexpected media status: ${row.status}`, 409, 'invalid_state');
+  }
+}
+
+/** Retires this parent's plan uploads that were never confirmed and are older than the cutoff. */
+async function cleanupAbandonedPlanPending(plan, userId, parentId, env) {
+  try {
+    const res = await supabaseServiceFetch(
+      env,
+      'GET',
+      `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}` +
+        `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
+        `&object_key=like.${encodeURIComponent(planKeyPrefix(plan, userId, parentId))}*` +
+        '&select=id,bucket,object_key,content_type,status,created_at&order=created_at.asc&limit=10',
+    );
+    if (!res.ok) return;
+    const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
+    for (const row of (await res.json()) ?? []) {
+      const createdAt = Date.parse(row.created_at);
+      if (!isExpectedPlanObject(plan, row, userId, parentId) || Number.isNaN(createdAt) || createdAt > cutoff) {
+        continue;
+      }
+      // A status CAS wins over a racing confirm before any bytes are removed.
+      if (await markMediaPendingDelete(row.id, 'pending_upload', env)) {
+        await completePlanMediaRemoval({ ...row, status: 'pending_delete' }, env);
+      }
+    }
+  } catch (_) {
+    console.error('[plan-media] abandoned upload cleanup failed');
+  }
+}
+
+/** Refuses a new reservation while this parent already has the maximum waiting. */
+async function assertPlanPendingCapacity(plan, userId, parentId, env, excludeMediaId) {
+  const res = await supabaseServiceFetch(
+    env,
+    'GET',
+    `/rest/v1/media_objects?owner_id=eq.${encodeURIComponent(userId)}` +
+      `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
+      `&object_key=like.${encodeURIComponent(planKeyPrefix(plan, userId, parentId))}*&select=id,created_at`,
+  );
+  if (!res.ok) throw new WorkerError(`Failed to read pending ${plan.noun} plan uploads`, 502);
+  const cutoff = Date.now() - PENDING_CLEANUP_AGE_MS;
+  const inFlight = ((await res.json()) ?? []).filter((pending) => {
+    if (pending.id === excludeMediaId) return false;
+    const createdAt = Date.parse(pending.created_at);
+    return Number.isNaN(createdAt) || createdAt > cutoff;
+  }).length;
+  if (inFlight >= MAX_PENDING_PLAN_UPLOADS) {
+    throw new WorkerError(`Too many ${plan.noun} plan uploads are waiting`, 409, 'plan_upload_limit');
+  }
+}
+
+/**
+ * The real container type of a plan file from its leading bytes, or null.
+ * Images use the shared detector (HEIC is not a plan type). A document is
+ * recognized by its container: `%PDF-`, the OLE2 compound-file header of a
+ * legacy Word file, or a ZIP whose first entry is an Office Open XML part. That
+ * is only the container: Excel and PowerPoint use the same two, so a DOC or a
+ * DOCX is then proven to be Word by [proveWordDocument].
+ */
+function detectPlanMimeFromBytes(bytes) {
+  const image = detectImageMimeFromBytes(bytes);
+  if (image && image !== 'image/heic') return image;
+  if (
+    bytes.length >= 8 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 &&
+    bytes[3] === 0x46 && bytes[4] === 0x2d && (bytes[5] === 0x31 || bytes[5] === 0x32) &&
+    bytes[6] === 0x2e && bytes[7] >= 0x30 && bytes[7] <= 0x39
+  ) {
+    return 'application/pdf';
+  }
+  if (
+    bytes.length >= 8 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 &&
+    bytes[3] === 0xe0 && bytes[4] === 0xa1 && bytes[5] === 0xb1 && bytes[6] === 0x1a &&
+    bytes[7] === 0xe1
+  ) {
+    return 'application/msword';
+  }
+  if (
+    bytes.length >= 30 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 &&
+    bytes[3] === 0x04 && (bytes[6] & 0x01) === 0
+  ) {
+    const nameLength = bytes[26] | (bytes[27] << 8);
+    if (nameLength > 0 && 30 + nameLength <= bytes.length) {
+      const name = String.fromCharCode(...bytes.slice(30, 30 + nameLength));
+      if (
+        name === '[Content_Types].xml' || name === '_rels/.rels' ||
+        name.startsWith('word/') || name.startsWith('docProps/')
+      ) {
+        return DOCX_CONTENT_TYPE;
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Proof that a DOC / DOCX plan really is a Word document
+// ---------------------------------------------------------------------------
+//
+// The leading bytes of an OLE2 or ZIP file show a CONTAINER, and Excel and
+// PowerPoint use the same two. So before a plan is attached, the stored object
+// is inspected for what only Word has: a few small range reads (never the whole
+// file) and no dependency.
+//
+//  * DOCX: the package's root relationship (`_rels/.rels`) must name exactly one
+//    main document part that exists in the archive, and `[Content_Types].xml`
+//    must give that part the WordprocessingML main content type. A workbook, a
+//    presentation, a macro-enabled document and a template each name another.
+//  * DOC: the compound file's root directory must hold Word's own stream,
+//    `WordDocument`, and none of Excel's `Workbook` / `Book` or PowerPoint's
+//    `PowerPoint Document`.
+//
+// Whatever cannot be read as such, or is malformed, hostile or oversized, is not
+// Word: the proof fails closed. A storage error is not a verdict: it propagates,
+// so the client retries and a good upload is never discarded for it. The proof
+// shows what the file claims to be (which application's document it is); it does
+// not parse the document, so a hand-forged Word package or stream still passes.
+
+const WORD_MAIN_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml';
+const OFFICE_DOCUMENT_RELATIONSHIPS = new Set([
+  'http://schemas.openxmlformats.org/officedocument/2006/relationships/officedocument',
+  'http://purl.oclc.org/ooxml/officedocument/relationships/officedocument',
+]);
+// A plan's package metadata is a few kilobytes; anything near these is hostile.
+const MAX_PACKAGE_PART_BYTES = 1024 * 1024;
+const MAX_ZIP_DIRECTORY_BYTES = 8 * 1024 * 1024;
+const MAX_CFB_DIRECTORY_SECTORS = 256;
+const MAX_CFB_DIFAT_SECTORS = 32;
+// Each read is a request to storage: a real DOCX takes 6, a real DOC a handful.
+const MAX_PROOF_READS = 48;
+// A compound file's directory, FAT and DIFAT sectors are mostly contiguous, so a
+// sector is read together with the ones after it.
+const CFB_PREFETCH_SECTORS = 8;
+const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const CFB_END_OF_CHAIN = 0xfffffffe;
+const CFB_NO_STREAM = 0xffffffff;
+
+class NotWordDocument extends Error {}
+const notWord = () => new NotWordDocument('Not a Word document');
+
+const le16 = (bytes, at) => bytes[at] | (bytes[at + 1] << 8);
+const le32 = (bytes, at) => (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0;
+
+/**
+ * Whether the stored object [key] (of [size] bytes, already recognized as
+ * [contentType]) really is a Word document. True without reading anything for a
+ * type that is not DOC or DOCX, so images and PDFs are unaffected.
+ */
+export async function proveWordDocument(bucket, key, size, contentType) {
+  const isDocx = contentType === DOCX_CONTENT_TYPE;
+  if (!isDocx && contentType !== 'application/msword') return true;
+  // A range read clamped to the object; a range outside it reads nothing. The
+  // number of reads is bounded, so a hostile file cannot make this run on.
+  let reads = 0;
+  const read = async (offset, length) => {
+    const end = Math.min(offset + length, size);
+    if (!(offset >= 0) || offset >= end) return new Uint8Array(0);
+    if (++reads > MAX_PROOF_READS) throw notWord();
+    const object = await bucket.get(key, { range: { offset, length: end - offset } });
+    if (!object) throw new WorkerError('The upload has not arrived', 409, 'upload_incomplete');
+    return new Uint8Array(await object.arrayBuffer());
+  };
+  try {
+    return isDocx ? await proveDocx(read, size) : await proveDoc(read, size);
+  } catch (error) {
+    if (error instanceof NotWordDocument) return false;
+    throw error;
+  }
+}
+
+async function proveDocx(read, size) {
+  const parts = await readZipDirectory(read, size);
+  const contentTypes = await readZipXml(read, size, parts.get('[content_types].xml'));
+  const relationships = await readZipXml(read, size, parts.get('_rels/.rels'));
+
+  const mains = xmlElements(relationships, 'Relationship')
+    .filter((attributes) =>
+      OFFICE_DOCUMENT_RELATIONSHIPS.has(attributes.get('Type')?.toLowerCase()) &&
+      attributes.get('TargetMode') !== 'External');
+  if (mains.length !== 1) return false;
+  const main = packagePartName(mains[0].get('Target'));
+  if (!parts.has(main.toLowerCase())) return false;
+
+  return partContentType(contentTypes, main) === WORD_MAIN_CONTENT_TYPE;
+}
+
+/**
+ * The content type a package gives the part [name] (no leading slash), lower-cased,
+ * or null: its own Override, else the Default for its extension, as the Open
+ * Packaging Conventions define it (Word writes an Override; .NET's packaging
+ * library, and the generators built on it, types the first XML part it writes by
+ * the Default). A part given two answers, or none, has none.
+ */
+function partContentType(contentTypes, name) {
+  const overrides = xmlElements(contentTypes, 'Override')
+    .filter((attributes) => attributes.get('PartName')?.toLowerCase() === `/${name.toLowerCase()}`);
+  if (overrides.length > 0) {
+    return overrides.length === 1 ? overrides[0].get('ContentType')?.toLowerCase() ?? null : null;
+  }
+  const leaf = name.slice(name.lastIndexOf('/') + 1);
+  const dot = leaf.lastIndexOf('.');
+  if (dot < 0 || dot === leaf.length - 1) return null;
+  const defaults = xmlElements(contentTypes, 'Default')
+    .filter((attributes) => attributes.get('Extension')?.toLowerCase() === leaf.slice(dot + 1).toLowerCase());
+  return defaults.length === 1 ? defaults[0].get('ContentType')?.toLowerCase() ?? null : null;
+}
+
+/** The archive's parts by lower-cased name (names that collide are refused). */
+async function readZipDirectory(read, size) {
+  if (size < 22) throw notWord();
+  const tailLength = Math.min(size, 22 + 0xffff);
+  const tailStart = size - tailLength;
+  const tail = await read(tailStart, tailLength);
+  let at = -1;
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (le32(tail, i) === 0x06054b50 && i + 22 + le16(tail, i + 20) === tail.length) {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0) throw notWord();
+  const count = le16(tail, at + 10);
+  const directorySize = le32(tail, at + 12);
+  const directoryOffset = le32(tail, at + 16);
+  // One disk, not empty, and not ZIP64 (a plan is far below its limits).
+  if (le16(tail, at + 4) !== 0 || le16(tail, at + 6) !== 0 || le16(tail, at + 8) !== count) throw notWord();
+  if (count === 0 || count === 0xffff || directorySize === 0xffffffff || directoryOffset === 0xffffffff) throw notWord();
+  if (directorySize > MAX_ZIP_DIRECTORY_BYTES || directoryOffset + directorySize > tailStart + at) throw notWord();
+
+  const directory = await read(directoryOffset, directorySize);
+  if (directory.length !== directorySize) throw notWord();
+  const parts = new Map();
+  let p = 0;
+  for (let n = 0; n < count; n++) {
+    if (p + 46 > directory.length || le32(directory, p) !== 0x02014b50) throw notWord();
+    const nameLength = le16(directory, p + 28);
+    const next = p + 46 + nameLength + le16(directory, p + 30) + le16(directory, p + 32);
+    if (next > directory.length) throw notWord();
+    const name = zipName(directory.subarray(p + 46, p + 46 + nameLength));
+    // Two parts of one name: readers disagree on which one is real.
+    if (parts.has(name.toLowerCase())) throw notWord();
+    parts.set(name.toLowerCase(), {
+      name,
+      flags: le16(directory, p + 8),
+      method: le16(directory, p + 10),
+      compressed: le32(directory, p + 20),
+      uncompressed: le32(directory, p + 24),
+      offset: le32(directory, p + 42),
+    });
+    p = next;
+  }
+  if (p !== directory.length) throw notWord();
+  return parts;
+}
+
+function zipName(bytes) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (_) {
+    throw notWord();
+  }
+}
+
+/** One small, plain part of the package as XML text (stored or deflated). */
+async function readZipXml(read, size, part) {
+  if (!part) throw notWord();
+  const { name, flags, method, compressed, uncompressed, offset } = part;
+  // Not encrypted; stored or deflated; small, and sized as it says.
+  if ((flags & 0x1) !== 0 || (method !== 0 && method !== 8)) throw notWord();
+  if (compressed > MAX_PACKAGE_PART_BYTES || uncompressed > MAX_PACKAGE_PART_BYTES) throw notWord();
+  if (method === 0 && compressed !== uncompressed) throw notWord();
+
+  const nameLength = new TextEncoder().encode(name).length;
+  const local = await read(offset, 30 + nameLength);
+  if (local.length !== 30 + nameLength || le32(local, 0) !== 0x04034b50 || le16(local, 26) !== nameLength ||
+      zipName(local.subarray(30)) !== name) {
+    throw notWord();
+  }
+  const dataStart = offset + 30 + nameLength + le16(local, 28);
+  if (dataStart + compressed > size) throw notWord();
+  const data = await read(dataStart, compressed);
+  if (data.length !== compressed) throw notWord();
+  const bytes = method === 0 ? data : await inflateRaw(data, uncompressed);
+  if (bytes.length !== uncompressed) throw notWord();
+
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (_) {
+    throw notWord();
+  }
+  // No DTD, entity, CDATA or processing instruction (but the one declaration at
+  // the very start): a plain package part has none, and each is a way to make
+  // two readers disagree about what the part says.
+  if (/<!DOCTYPE|<!ENTITY|<!\[CDATA\[/i.test(text)) throw notWord();
+  const body = text.replace(/^<\?xml\s[^>]*\?>/, '');
+  if (body.includes('<?')) throw notWord();
+  return withoutComments(body);
+}
+
+/** Raw deflate, bounded: it must inflate to exactly [length] bytes, never more. */
+async function inflateRaw(data, length) {
+  const source = new ReadableStream({
+    start(controller) {
+      controller.enqueue(data);
+      controller.close();
+    },
+  });
+  const reader = source.pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const out = new Uint8Array(length);
+  let filled = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (filled + value.length > length) throw notWord();
+      out.set(value, filled);
+      filled += value.length;
+    }
+  } catch (_) {
+    await reader.cancel().catch(() => {});
+    throw notWord();
+  }
+  if (filled !== length) throw notWord();
+  return out;
+}
+
+/**
+ * The elements called [name], each as its attributes. One forward pass, and a tag
+ * that is not exactly a name, quoted attributes and its end is refused: a hostile
+ * part (up to 1 MiB) cannot make a search start over and over, so it cannot make
+ * this run on.
+ */
+function xmlElements(xml, name) {
+  const elements = [];
+  const attribute = /\s*([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/y;
+  const tagEnd = /\s*\/?>/y;
+  const start = `<${name}`;
+  for (let at = xml.indexOf(start); at >= 0;) {
+    let i = at + start.length;
+    if (/[\w.:-]/.test(xml.charAt(i))) {
+      at = xml.indexOf(start, i); // another element: `<Relationships` is not `<Relationship`
+      continue;
+    }
+    const attributes = new Map();
+    for (;;) {
+      attribute.lastIndex = i;
+      const found = attribute.exec(xml);
+      if (!found) break;
+      if (attributes.has(found[1])) throw notWord();
+      attributes.set(found[1], xmlAttributeValue(found[2] ?? found[3]));
+      i = attribute.lastIndex;
+    }
+    tagEnd.lastIndex = i;
+    if (!tagEnd.test(xml)) throw notWord();
+    elements.push(attributes);
+    at = xml.indexOf(start, tagEnd.lastIndex);
+  }
+  return elements;
+}
+
+/** [text] without its comments; an unterminated comment is refused. One pass. */
+function withoutComments(text) {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf('<!--', at);
+    if (open < 0) return out + text.slice(at);
+    const close = text.indexOf('-->', open + 4);
+    if (close < 0) throw notWord();
+    out += text.slice(at, open);
+    at = close + 3;
+  }
+}
+
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+function xmlAttributeValue(raw) {
+  return raw.replace(/&(\w+);|&/g, (match, entity) => {
+    if (!entity || !Object.hasOwn(XML_ENTITIES, entity)) throw notWord();
+    return XML_ENTITIES[entity];
+  });
+}
+
+/** A relationship target as a package part name (no encoding, dot segment or backslash). */
+function packagePartName(target) {
+  if (typeof target !== 'string') throw notWord();
+  const name = target.startsWith('/') ? target.slice(1) : target;
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_./-]*$/.test(name) || name.split('/').some((s) => s === '' || s === '.' || s === '..')) {
+    throw notWord();
+  }
+  return name;
+}
+
+async function proveDoc(read, size) {
+  if (size < 1024) throw notWord();
+  const header = await read(0, 512);
+  if (header.length !== 512 || CFB_SIGNATURE.some((byte, i) => header[i] !== byte)) throw notWord();
+  // Version 3 (512-byte sectors) or 4 (4096), little endian, 64-byte mini sectors.
+  const major = le16(header, 26);
+  const sectorShift = le16(header, 30);
+  if (le16(header, 28) !== 0xfffe || le16(header, 32) !== 6 ||
+      !((major === 3 && sectorShift === 9) || (major === 4 && sectorShift === 12))) {
+    throw notWord();
+  }
+  const sectorSize = 1 << sectorShift;
+  const perSector = sectorSize / 4;
+  const fatSectors = le32(header, 44);
+  const firstDirectory = le32(header, 48);
+  const firstDifat = le32(header, 68);
+  const difatSectors = Math.min(le32(header, 72), MAX_CFB_DIFAT_SECTORS);
+
+  const sectors = new Map();
+  const sector = async (id) => {
+    if (id >= 0xfffffffa) throw notWord();
+    if (!sectors.has(id)) {
+      const start = (id + 1) * sectorSize;
+      if (start >= size) throw notWord();
+      const window = await read(start, sectorSize * CFB_PREFETCH_SECTORS);
+      for (let i = 0; i * sectorSize < window.length; i++) {
+        // The last sector may be short: its missing end reads as zeros.
+        const bytes = new Uint8Array(sectorSize);
+        bytes.set(window.subarray(i * sectorSize, (i + 1) * sectorSize));
+        if (!sectors.has(id + i)) sectors.set(id + i, bytes);
+      }
+    }
+    return sectors.get(id);
+  };
+  // The id of the index-th FAT sector: 109 are in the header, the rest in DIFAT sectors.
+  const fatSectorId = async (index) => {
+    if (index >= fatSectors) throw notWord();
+    if (index < 109) return le32(header, 76 + index * 4);
+    let rest = index - 109;
+    let difat = firstDifat;
+    for (let hop = 0; hop < difatSectors; hop++) {
+      const bytes = await sector(difat);
+      if (rest < perSector - 1) return le32(bytes, rest * 4);
+      rest -= perSector - 1;
+      difat = le32(bytes, sectorSize - 4);
+    }
+    throw notWord();
+  };
+  const nextSector = async (id) => {
+    const fat = await sector(await fatSectorId(Math.floor(id / perSector)));
+    return le32(fat, (id % perSector) * 4);
+  };
+
+  // The directory: the sectors of its chain, every entry of each.
+  const entries = [];
+  const seen = new Set();
+  for (let id = firstDirectory; id !== CFB_END_OF_CHAIN; id = await nextSector(id)) {
+    if (seen.has(id) || seen.size >= MAX_CFB_DIRECTORY_SECTORS) throw notWord();
+    seen.add(id);
+    const bytes = await sector(id);
+    for (let at = 0; at < sectorSize; at += 128) {
+      const nameLength = le16(bytes, at + 64);
+      let name = '';
+      if (nameLength >= 2 && nameLength <= 64 && nameLength % 2 === 0) {
+        for (let c = 0; c < (nameLength - 2) / 2; c++) name += String.fromCharCode(le16(bytes, at + c * 2));
+      }
+      entries.push({
+        name: name.toUpperCase(),
+        type: bytes[at + 66],
+        left: le32(bytes, at + 68),
+        right: le32(bytes, at + 72),
+        child: le32(bytes, at + 76),
+      });
+    }
+  }
+  if (entries.length === 0 || entries[0].type !== 5) throw notWord();
+
+  // The root storage's own children: the tree under its `child`, by left and
+  // right siblings only (an object embedded in a document is deeper, not here).
+  const names = new Map();
+  const visited = new Set();
+  const pending = [entries[0].child];
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === CFB_NO_STREAM) continue;
+    if (id >= entries.length || visited.has(id)) throw notWord();
+    visited.add(id);
+    const entry = entries[id];
+    if ((entry.type !== 1 && entry.type !== 2) || names.has(entry.name)) throw notWord();
+    names.set(entry.name, entry);
+    pending.push(entry.left, entry.right);
+  }
+  return names.get('WORDDOCUMENT')?.type === 2 &&
+    !names.has('WORKBOOK') && !names.has('BOOK') && !names.has('POWERPOINT DOCUMENT');
+}
+
+/** Marks an unverifiable candidate failed and drops its bytes, unless a confirm just won. */
+async function rejectInvalidPlanUpload(row, userId, env, reason, code) {
+  const marked = await supabaseServiceFetch(
+    env,
+    'PATCH',
+    `/rest/v1/media_objects?id=eq.${encodeURIComponent(row.id)}&owner_id=eq.${encodeURIComponent(userId)}` +
+      `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload`,
+    { status: 'failed' },
+    { preferRepresentation: true },
+  );
+  if (!marked.ok) throw new WorkerError('Failed to reject invalid plan upload', 502);
+  if ((await marked.json()).length !== 1) {
+    // A concurrent confirm or cancellation won the status CAS: never delete
+    // bytes that may now be a live plan.
+    throw new WorkerError('Plan media changed during verification', 409, 'invalid_state');
+  }
+  await bestEffortDeleteObject(row.object_key, env);
+  throw new WorkerError(reason, 422, code);
+}
+
+async function handlePlanConfirm(request, env, plan) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const parentId = requireUuid(body[plan.idField], plan.idField);
+  const mediaObjectId = requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const expectedMediaId = expectedPlanMediaId(body);
+
+  const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  const row = await findPlanMedia(mediaObjectId, userId, env);
+  if (!row) throw new WorkerError('Media not found', 404, 'media_not_found');
+  const type = planMediaType(row.content_type);
+  if (
+    row.bucket !== env.R2_BUCKET_NAME ||
+    !type ||
+    row.media_type !== type.mediaType ||
+    !isExpectedPlanObject(plan, row, userId, parentId)
+  ) {
+    throw new WorkerError(`Media does not belong to this ${plan.noun} plan`, 409, 'media_mismatch');
+  }
+  if (row.status === 'ready' && parent.plan_media_id === mediaObjectId) {
+    // Ready is only ever set together with the switch, in one transaction, so
+    // a retry after a lost response finds the work done.
+    return corsResponse({ [plan.idField]: parentId, mediaObjectId, alreadyConfirmed: true }, 200, env);
+  }
+  if (parent.plan_media_id !== expectedMediaId) {
+    throw new WorkerError(`${plan.title} plan changed`, 409, 'stale_replacement');
+  }
+  if (row.status === 'failed') throw new WorkerError('This upload was rejected', 409, 'upload_rejected');
+  if (row.status === 'pending_delete' || row.status === 'deleted') {
+    throw new WorkerError('This media was removed', 410, 'media_removed');
+  }
+  if (row.status !== 'pending_upload') {
+    throw new WorkerError(`Unexpected media status: ${row.status}`, 409, 'invalid_state');
+  }
+
+  const object = await env.MEDIA_BUCKET.head(row.object_key);
+  if (!object) throw new WorkerError('The upload has not arrived', 409, 'upload_incomplete');
+  if (object.size > type.maxBytes) {
+    return rejectInvalidPlanUpload(row, userId, env, 'R2 object size is invalid', planTooLargeCode(type));
+  }
+  if (object.size < 1) {
+    return rejectInvalidPlanUpload(row, userId, env, 'R2 object size is invalid', 'unsupported_media_type');
+  }
+  const signature = await env.MEDIA_BUCKET.get(row.object_key, {
+    range: { offset: 0, length: SIGNATURE_BYTES_TO_READ },
+  });
+  if (!signature) throw new WorkerError('The upload has not arrived', 409, 'upload_incomplete');
+  const detected = detectPlanMimeFromBytes(new Uint8Array(await signature.arrayBuffer()));
+  const observed = object.httpMetadata?.contentType ?? null;
+  if (detected !== row.content_type || (observed !== null && observed !== row.content_type)) {
+    return rejectInvalidPlanUpload(
+      row,
+      userId,
+      env,
+      'Uploaded type does not match authorized metadata',
+      'media_type_mismatch',
+    );
+  }
+  // A DOC or DOCX must be Word's own, not another Office file in the same
+  // container (nothing is read for any other type).
+  if (!(await proveWordDocument(env.MEDIA_BUCKET, row.object_key, object.size, detected))) {
+    return rejectInvalidPlanUpload(
+      row,
+      userId,
+      env,
+      'Uploaded file is not a Word document',
+      'media_type_mismatch',
+    );
+  }
+
+  const res = await supabaseServiceFetch(
+    env,
+    'POST',
+    plan.confirmRpc,
+    {
+      p_user_id: userId,
+      [plan.rpcParentParam]: parentId,
+      p_media_id: mediaObjectId,
+      p_bucket: env.R2_BUCKET_NAME,
+      p_expected_media_id: expectedMediaId,
+      p_observed_size: object.size,
+      p_observed_content_type: detected,
+    },
+    { preferRepresentation: true },
+  );
+  if (!res.ok) throw new WorkerError(`Failed to attach ${plan.noun} plan`, 502);
+  const rows = await res.json();
+  const result = Array.isArray(rows) ? rows[0] : rows;
+  switch (result?.outcome) {
+    case 'attached':
+    case 'already_attached':
+      break;
+    case plan.notFoundCode:
+      throw new WorkerError(`${plan.title} not found or not owned by user`, 404, plan.notFoundCode);
+    case 'stale_replacement':
+      throw new WorkerError(`${plan.title} plan changed`, 409, 'stale_replacement');
+    case 'media_not_found':
+      throw new WorkerError(`Media does not belong to this ${plan.noun} plan`, 409, 'media_mismatch');
+    default:
+      throw new WorkerError('Plan could not be attached', 409, 'invalid_state');
+  }
+
+  let cleanupPending = false;
+  if (result.previous_media_id) {
+    // The switch is committed; retiring the old object is finished here or,
+    // failing that, by the pending-delete sweep. It never undoes the switch.
+    const old = await findPlanMedia(result.previous_media_id, userId, env);
+    cleanupPending = !old ||
+      !isExpectedPlanObject(plan, old, userId, parentId) ||
+      (await completePlanMediaRemoval(old, env)).cleanupPending === true;
+  }
+  return corsResponse(
+    {
+      [plan.idField]: parentId,
+      mediaObjectId,
+      previousMediaId: result.previous_media_id ?? null,
+      ...(cleanupPending ? { cleanupPending: true } : {}),
+    },
+    200,
+    env,
+  );
+}
+
+/**
+ * The current plan with a fresh short-lived signed read, or `plan: null`.
+ * Nothing about a stored signed URL exists: each answer signs again.
+ */
+async function handlePlanGet(request, env, plan) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const parentId = requireUuid(new URL(request.url).searchParams.get(plan.idField), plan.idField);
+  const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  if (!parent.plan_media_id) {
+    return corsResponse({ [plan.idField]: parentId, plan: null }, 200, env, { 'Cache-Control': 'no-store' });
+  }
+  const row = await findPlanMedia(parent.plan_media_id, userId, env);
+  const type = row ? planMediaType(row.content_type) : null;
+  if (
+    !row || !type || row.status !== 'ready' || row.bucket !== env.R2_BUCKET_NAME ||
+    row.media_type !== type.mediaType || !isExpectedPlanObject(plan, row, userId, parentId)
+  ) {
+    throw new WorkerError(`${plan.title} plan is unavailable`, 409, 'invalid_state');
+  }
+  const url = await createPresignedR2Url({
+    env,
+    method: 'GET',
+    objectKey: row.object_key,
+    expiresInSeconds: GET_URL_TTL_SECONDS,
+  });
+  return corsResponse(
+    {
+      [plan.idField]: parentId,
+      plan: {
+        mediaObjectId: row.id,
+        contentType: row.content_type,
+        kind: type.kind,
+        fileName: row.original_file_name ?? null,
+        sizeBytes: Number(row.size_bytes) || null,
+        url,
+      },
+      expiresInSeconds: GET_URL_TTL_SECONDS,
+    },
+    200,
+    env,
+    { 'Cache-Control': 'no-store' },
+  );
+}
+
+/**
+ * Cancels a candidate (`mediaObjectId` names a not-yet-attached upload of this
+ * parent) or removes the current plan (RPC, guarded by `expectedMediaId`).
+ * Idempotent; never touches another parent's or another kind's objects.
+ */
+async function handlePlanRemove(request, env, plan) {
+  requireConfiguredBucket(env);
+  const userId = await verifySupabaseTokenAndGetUserId(request, env);
+  const body = await readJson(request);
+  const parentId = requireUuid(body[plan.idField], plan.idField);
+  const expectedMediaId = expectedPlanMediaId(body);
+  const candidateId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
+  const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  const ids = { [plan.idField]: parentId };
+
+  if (candidateId) {
+    const candidate = await findPlanMedia(candidateId, userId, env);
+    if (
+      candidate &&
+      (candidate.bucket !== env.R2_BUCKET_NAME || !isExpectedPlanObject(plan, candidate, userId, parentId))
+    ) {
+      throw new WorkerError(`Media does not belong to this ${plan.noun} plan`, 409, 'media_mismatch');
+    }
+    if (!candidate || candidate.status === 'deleted') {
+      return removalResponse(env, { ...ids, mediaObjectId: candidateId, alreadyRemoved: true });
+    }
+    if (candidate.status === 'pending_upload' || candidate.status === 'failed') {
+      if (await markMediaPendingDelete(candidateId, candidate.status, env)) {
+        const cleanup = await completePlanMediaRemoval({ ...candidate, status: 'pending_delete' }, env);
+        return removalResponse(env, {
+          ...ids,
+          mediaObjectId: candidateId,
+          ...(cleanup.cleanupPending ? { cleanupPending: true } : {}),
+        });
+      }
+    } else if (candidate.status === 'pending_delete') {
+      const cleanup = await completePlanMediaRemoval(candidate, env);
+      return removalResponse(env, {
+        ...ids,
+        mediaObjectId: candidateId,
+        alreadyRemoved: true,
+        ...(cleanup.cleanupPending ? { cleanupPending: true } : {}),
+      });
+    }
+    // A ready candidate is only ever the current plan; anything else changed
+    // while this request ran.
+    if (candidateId !== parent.plan_media_id) {
+      throw new WorkerError(`${plan.title} plan changed`, 409, 'invalid_state');
+    }
+  }
+
+  const res = await supabaseServiceFetch(
+    env,
+    'POST',
+    plan.removeRpc,
+    {
+      p_user_id: userId,
+      [plan.rpcParentParam]: parentId,
+      p_bucket: env.R2_BUCKET_NAME,
+      p_expected_media_id: expectedMediaId,
+    },
+    { preferRepresentation: true },
+  );
+  if (!res.ok) throw new WorkerError(`Failed to remove ${plan.noun} plan`, 502);
+  const rows = await res.json();
+  const result = Array.isArray(rows) ? rows[0] : rows;
+  switch (result?.outcome) {
+    case 'removed':
+    case 'already_removed':
+      break;
+    case plan.notFoundCode:
+      throw new WorkerError(`${plan.title} not found or not owned by user`, 404, plan.notFoundCode);
+    case 'stale_replacement':
+      throw new WorkerError(`${plan.title} plan changed`, 409, 'stale_replacement');
+    default:
+      throw new WorkerError('Plan could not be removed', 409, 'invalid_state');
+  }
+  let cleanupPending = false;
+  if (result.previous_media_id) {
+    const old = await findPlanMedia(result.previous_media_id, userId, env);
+    cleanupPending = !old ||
+      !isExpectedPlanObject(plan, old, userId, parentId) ||
+      (await completePlanMediaRemoval(old, env)).cleanupPending === true;
+  }
+  return removalResponse(env, {
+    ...ids,
+    previousMediaId: result.previous_media_id ?? null,
+    ...(cleanupPending ? { cleanupPending: true } : {}),
+  });
+}
+
+/**
+ * Finishes retiring a plan object already marked `pending_delete`: deletes its
+ * R2 object and tombstones the row. A plan object still pointed at by its
+ * parent is never deleted unless that parent is soft-deleted, in which case the
+ * pointer is cleared first (only while the parent stays deleted and still
+ * points at this exact object). Each step is idempotent; one that does not
+ * finish leaves the row `pending_delete` for the sweep.
+ */
+async function completePlanMediaRemoval(row, env) {
+  const identity = planKeyIdentity(row);
+  if (!identity || row.bucket !== env.R2_BUCKET_NAME || row.status !== 'pending_delete') {
+    return { cleanupPending: true };
+  }
+  const { plan, userId, parentId } = identity;
+  try {
+    const parentRes = await supabaseServiceFetch(
+      env,
+      'GET',
+      `/rest/v1/${plan.table}?id=eq.${encodeURIComponent(parentId)}&select=id,owner_id,deleted_at,plan_media_id`,
+    );
+    if (!parentRes.ok) return { cleanupPending: true };
+    const parent = (await parentRes.json())?.[0];
+    if (parent && parent.owner_id !== userId) return { cleanupPending: true };
+    if (parent?.plan_media_id === row.id) {
+      if (!parent.deleted_at) return { cleanupPending: true };
+      const cleared = await supabaseServiceFetch(
+        env,
+        'PATCH',
+        `/rest/v1/${plan.table}?id=eq.${encodeURIComponent(parentId)}&owner_id=eq.${encodeURIComponent(userId)}` +
+          `&plan_media_id=eq.${encodeURIComponent(row.id)}&deleted_at=not.is.null`,
+        { plan_media_id: null },
+        { preferRepresentation: true },
+      );
+      if (!cleared.ok || (await cleared.json()).length !== 1) return { cleanupPending: true };
+    }
+    if (!(await bestEffortDeleteObject(row.object_key, env))) return { cleanupPending: true };
+    const tombstoned = await supabaseServiceFetch(
+      env,
+      'PATCH',
+      `/rest/v1/media_objects?id=eq.${encodeURIComponent(row.id)}` +
+        `&bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_delete`,
+      { status: 'deleted' },
+    );
+    return tombstoned.ok ? {} : { cleanupPending: true };
+  } catch (_) {
+    return { cleanupPending: true };
+  }
+}
+
 function removalResponse(env, body) {
   return corsResponse({ removed: true, ...body }, 200, env, { 'Cache-Control': 'no-store' });
 }
@@ -1810,6 +2926,177 @@ export function runOwnerMediaSweeps(env, options = {}) {
  * Owner or Profile objects; only exact logo/PDF quotation keys qualify. */
 export function runQuotationMediaSweeps(env, options = {}) {
   return runMediaSweeps(MEDIA_PARENTS.quotation, env, options);
+}
+
+/**
+ * Scheduled cleanup of Offer land / plot plans. It follows the Offer media
+ * rules and switch: `OFFER_MEDIA_SWEEP_MODE` (missing or unknown is `off`), the
+ * same 24 h for abandoned uploads and 7 days for the plan of a soft-deleted
+ * Offer and for failed uploads. Only exact `profiles/<uid>/offer-plans/<offer>/`
+ * keys qualify, so it can never touch the gallery, an Owner plan, a profile
+ * image or a Quotation file. The report names the soft-deleted-parent sweep
+ * `deletedOfferPlans`.
+ */
+export function runOfferPlanSweeps(env, options = {}) {
+  return runPlanSweeps(PLAN_PARENTS.offer, env, options);
+}
+
+/** [runOfferPlanSweeps] for Owner plans, under `OWNER_MEDIA_SWEEP_MODE`. */
+export function runOwnerPlanSweeps(env, options = {}) {
+  return runPlanSweeps(PLAN_PARENTS.owner, env, options);
+}
+
+async function runPlanSweeps(plan, env, { now = () => Date.now() } = {}) {
+  const configured = env?.[plan.sweepModeVar];
+  const mode = OFFER_MEDIA_SWEEP_MODES.has(configured) ? configured : 'off';
+  const report = {
+    mode,
+    abandonedUploads: 0,
+    [plan.deletedParentReportKey]: 0,
+    pendingDeletes: 0,
+    failedUploads: 0,
+    errors: 0,
+  };
+  if (mode === 'off') return report;
+  if (!env.R2_BUCKET_NAME || !env.MEDIA_BUCKET || !env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
+    console.error(`[${plan.sweepLogTag}] missing configuration`);
+    report.errors += 1;
+    return report;
+  }
+
+  const context = {
+    plan,
+    env,
+    at: now(),
+    apply: mode === 'on',
+    limit: mode === 'on' ? OFFER_MEDIA_SWEEP_BATCH : OFFER_MEDIA_SWEEP_DRY_RUN_LIMIT,
+  };
+  const sweeps = [
+    ['abandonedUploads', sweepAbandonedPlanUploads],
+    [plan.deletedParentReportKey, sweepDeletedParentPlans],
+    ['pendingDeletes', sweepPendingPlanDeletes],
+    ['failedUploads', sweepFailedPlanUploads],
+  ];
+  for (const [name, sweep] of sweeps) {
+    try {
+      const result = await sweep(context);
+      report[name] = result.count;
+      report.errors += result.errors;
+    } catch (_) {
+      report.errors += 1;
+    }
+  }
+  console.log(
+    `[${plan.sweepLogTag}] mode=${mode} abandonedUploads=${report.abandonedUploads} ` +
+      `${plan.deletedParentReportKey}=${report[plan.deletedParentReportKey]} pendingDeletes=${report.pendingDeletes} ` +
+      `failedUploads=${report.failedUploads} errors=${report.errors}`,
+  );
+  return report;
+}
+
+/** Marks [rows] `pending_delete` from [fromStatus] and finishes each one. */
+async function retirePlanRows(rows, fromStatus, { env, apply }) {
+  if (!apply) return { count: rows.length, errors: 0 };
+  let count = 0;
+  let errors = 0;
+  for (const row of rows) {
+    try {
+      if (!(await markMediaPendingDelete(row.id, fromStatus, env))) continue;
+      const result = await completePlanMediaRemoval(
+        { ...row, bucket: env.R2_BUCKET_NAME, status: 'pending_delete' },
+        env,
+      );
+      if (result.cleanupPending) errors += 1;
+      else count += 1;
+    } catch (_) {
+      errors += 1;
+    }
+  }
+  return { count, errors };
+}
+
+async function sweepAbandonedPlanUploads({ plan, env, at, apply, limit }) {
+  const cutoff = new Date(at - PENDING_CLEANUP_AGE_MS).toISOString();
+  const rows = await selectRows(
+    env,
+    `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_upload` +
+      `&created_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(plan.keyPattern)}` +
+      `&select=id,object_key,content_type&order=created_at.asc&limit=${limit}`,
+  );
+  return retirePlanRows(rows.filter((row) => planKeyIdentity(row)?.plan === plan), 'pending_upload', { env, apply });
+}
+
+/**
+ * The ready plan of a parent record soft-deleted more than the retention period
+ * ago: marked `pending_delete`. The pending-delete sweep then clears the
+ * parent's pointer (the parent stays deleted) and removes the object.
+ */
+async function sweepDeletedParentPlans({ plan, env, at, apply, limit }) {
+  const cutoff = new Date(at - OFFER_MEDIA_RETENTION_MS).toISOString();
+  const parents = await selectRows(
+    env,
+    `/rest/v1/${plan.table}?deleted_at=lt.${encodeURIComponent(cutoff)}&plan_media_id=not.is.null` +
+      `&select=id,owner_id,plan_media_id&order=deleted_at.asc&limit=${limit}`,
+  );
+  const eligible = [];
+  for (const parent of parents) {
+    const media = await findMediaById(parent.plan_media_id, env);
+    const identity = media ? planKeyIdentity(media) : null;
+    if (
+      media && media.status === 'ready' && media.bucket === env.R2_BUCKET_NAME && identity &&
+      identity.plan === plan && identity.parentId === parent.id &&
+      identity.userId === parent.owner_id && media.owner_id === parent.owner_id
+    ) {
+      eligible.push(media);
+    }
+  }
+  if (!apply) return { count: eligible.length, errors: 0 };
+  let count = 0;
+  let errors = 0;
+  for (const media of eligible) {
+    try {
+      // From here the plan is neither listed nor counted; the pending-delete
+      // sweep owns finishing it, even if this run stops early.
+      if (await markMediaPendingDelete(media.id, 'ready', env)) count += 1;
+    } catch (_) {
+      errors += 1;
+    }
+  }
+  return { count, errors };
+}
+
+async function sweepPendingPlanDeletes({ plan, env, apply, limit }) {
+  const rows = await selectRows(
+    env,
+    `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.pending_delete` +
+      `&object_key=like.${encodeURIComponent(plan.keyPattern)}` +
+      `&select=id,bucket,object_key,content_type,status&order=updated_at.asc&limit=${limit}`,
+  );
+  const eligible = rows.filter((row) => planKeyIdentity(row)?.plan === plan);
+  if (!apply) return { count: eligible.length, errors: 0 };
+  let count = 0;
+  let errors = 0;
+  for (const row of eligible) {
+    try {
+      const result = await completePlanMediaRemoval(row, env);
+      if (result.cleanupPending) errors += 1;
+      else count += 1;
+    } catch (_) {
+      errors += 1;
+    }
+  }
+  return { count, errors };
+}
+
+async function sweepFailedPlanUploads({ plan, env, at, apply, limit }) {
+  const cutoff = new Date(at - OFFER_MEDIA_RETENTION_MS).toISOString();
+  const rows = await selectRows(
+    env,
+    `/rest/v1/media_objects?bucket=eq.${encodeURIComponent(env.R2_BUCKET_NAME)}&status=eq.failed` +
+      `&updated_at=lt.${encodeURIComponent(cutoff)}&object_key=like.${encodeURIComponent(plan.keyPattern)}` +
+      `&select=id,object_key,content_type&order=updated_at.asc&limit=${limit}`,
+  );
+  return retirePlanRows(rows.filter((row) => planKeyIdentity(row)?.plan === plan), 'failed', { env, apply });
 }
 
 async function runMediaSweeps(parent, env, { now = () => Date.now() } = {}) {

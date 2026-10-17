@@ -108,6 +108,23 @@ class OfferMediaPicker {
     return [for (final file in picked) File(file.path)];
   }
 
+  /// One photo chosen from the gallery for [origin], or null when the user
+  /// cancels. Through the same system Photo Picker as [pickFromGallery], with the
+  /// same scale and quality, but one image only (never a video). For the land /
+  /// plot plan: pass a null [origin], so a result Android hands back after it
+  /// stopped the app is never adopted by a photo and video gallery form.
+  Future<File?> pickGalleryImage({required MediaPickOrigin? origin}) async {
+    final picked = await _forOrigin(
+        origin,
+        () => _withPhotoPicker(() => _picker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: _imageQuality,
+              maxWidth: _maxImageDimension,
+              maxHeight: _maxImageDimension,
+            )));
+    return picked == null ? null : File(picked.path);
+  }
+
   /// A photo taken with the camera for the form [origin], or null when the
   /// user cancels.
   Future<File?> capturePhoto({required MediaPickOrigin? origin}) => _camera(

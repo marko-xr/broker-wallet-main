@@ -39,6 +39,11 @@ abstract final class HeifToJpegConverter {
   @visibleForTesting
   static Future<File?> Function(File source) convert = _convert;
 
+  /// Converts [source] to a JPEG on the device; null when it cannot be. What
+  /// production code outside this library calls: it goes through [convert], so
+  /// a test that replaces that hook replaces it for every caller.
+  static Future<File?> toJpeg(File source) => convert(source);
+
   static Future<File?> _convert(File source) async {
     try {
       final directory = await getTemporaryDirectory();

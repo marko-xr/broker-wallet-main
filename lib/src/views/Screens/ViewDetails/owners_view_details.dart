@@ -1,7 +1,11 @@
 ﻿import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/action_decorations.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
+import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
+import 'package:broker_wallet/src/services/plan_attachment/r2_plan_attachment_service.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_details_loader.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
     show OfferMediaUploadCompleted;
@@ -71,6 +75,10 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   Listenable? _ownerMediaUploads;
   StreamSubscription<OfferMediaUploadCompleted>? _ownerMediaCompletions;
 
+  // The Owner's land / plot plan (Supabase mode): its own optional attachment,
+  // read separately from the gallery and shown in its own card.
+  PlanAttachmentDetailsLoader? _planLoader;
+
   // Track current owner data (may be updated after edit)
   late OwnerModel _currentOwner;
 
@@ -90,6 +98,40 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     _setupUploadCompletionListener();
     _setupOwnerMediaUploadListener();
     unawaited(_mediaLoader?.load());
+    _createPlanLoader();
+    unawaited(_planLoader?.load());
+  }
+
+  void _createPlanLoader() {
+    final id = _currentOwner.id?.trim();
+    if (!_usesPrivateMedia || id == null || id.isEmpty) return;
+    _planLoader = PlanAttachmentDetailsLoader(
+      parent: PlanParent.owner,
+      parentId: id,
+      transport: R2PlanAttachmentService(),
+      onChanged: _handlePlanChanged,
+    );
+  }
+
+  void _handlePlanChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// The plan card, or nothing while the Owner has no plan (or it is not read
+  /// yet): the screen never waits for it.
+  Widget _buildPlanCard() {
+    final loader = _planLoader;
+    final plan = loader?.plan;
+    if (loader == null || plan == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: PlanAttachmentDetailsCard(
+        key: ValueKey('owner-plan-${plan.mediaObjectId}'),
+        parent: PlanParent.owner,
+        parentId: loader.parentId,
+        plan: plan,
+      ),
+    );
   }
 
   /// Private R2 media, addressed by identity (Supabase mode). The legacy
@@ -224,6 +266,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   @override
   void dispose() {
     _mediaLoader?.dispose();
+    _planLoader?.dispose();
     _ownerMediaUploads?.removeListener(_handleMediaChanged);
     _ownerMediaCompletions?.cancel();
     _uploadCompletionSubscription?.cancel();
@@ -624,6 +667,8 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
               const SizedBox(height: 12),
               _buildCompactNotesCard(context),
             ],
+            // The land / plot plan: its own card, never part of the gallery.
+            _buildPlanCard(),
             // 🔗 Related offers and requests carousel
             _buildRelatedItemsCarousel(context),
           ],
@@ -1523,6 +1568,8 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     }
     // Media may have been removed or added in the edit: read it again.
     if (mounted) unawaited(_mediaLoader?.load());
+    // So may the land / plot plan.
+    if (mounted) unawaited(_planLoader?.load());
   }
 
   // Show delete confirmation dialog

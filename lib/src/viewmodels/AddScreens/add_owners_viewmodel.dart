@@ -18,6 +18,12 @@ import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/common/enums/add_owners_mode.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_screening.dart'
+    show PlanFileScreener;
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_transport.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_form.dart';
+import 'package:broker_wallet/src/viewmodels/plan_attachment_form_factory.dart';
 import 'package:broker_wallet/src/viewmodels/private_media_form.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
 import '../../services/ScreenServices/owner_service.dart';
@@ -43,6 +49,8 @@ class AddOwnersViewModel extends ChangeNotifier
     Future<OfferMediaSource?> Function(BuildContext context, int remaining)?
         chooseMediaSource,
     OwnerLocationCodec? locationCodec,
+    PlanAttachmentTransport? planTransport,
+    PlanFileScreener? planScreener,
   })  : _mode = mode,
         _editOwnerId = ownerId,
         _ownerService = ownerService ?? OwnerService(),
@@ -54,6 +62,13 @@ class AddOwnersViewModel extends ChangeNotifier
         onChanged: _onMediaChanged,
         picker: mediaPicker,
         chooseSource: chooseMediaSource,
+      );
+      // The land / plot plan: its own attachment, never a gallery item.
+      _plan = createPlanAttachmentForm(
+        parent: PlanParent.owner,
+        onChanged: _onPlanChanged,
+        transport: planTransport,
+        screen: planScreener,
       );
     }
     if (_mode == AddOwnersMode.edit) {
@@ -67,6 +82,7 @@ class AddOwnersViewModel extends ChangeNotifier
       }
     }
     _media?.start(editRecordId: isEditMode ? _editOwnerId : null);
+    _plan?.start(editRecordId: isEditMode ? _editOwnerId : null);
   }
 
   // ---------------------------------------------------------------------------
@@ -108,10 +124,26 @@ class AddOwnersViewModel extends ChangeNotifier
   @visibleForTesting
   PrivateMediaForm? get mediaForm => _media;
 
+  // ---------------------------------------------------------------------------
+  // The Owner's land / plot plan (Supabase mode): one optional attachment of its
+  // own, apart from the photos and videos above. It is sent after the Owner has
+  // been saved, and whatever happens to it never undoes that save.
+  // ---------------------------------------------------------------------------
+
+  PlanAttachmentFormController? _plan;
+
+  void _onPlanChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  /// The plan section's controller (Supabase mode); null otherwise.
+  PlanAttachmentFormController? get planAttachment => _plan;
+
   @override
   void dispose() {
     _disposed = true;
     _media?.dispose();
+    _plan?.dispose();
     super.dispose();
   }
 
@@ -256,7 +288,8 @@ class AddOwnersViewModel extends ChangeNotifier
       propertyLocation.isNotEmpty ||
       notes.isNotEmpty ||
       _pickUpLocation.isNotEmpty ||
-      hasMediaFiles;
+      hasMediaFiles ||
+      (_plan?.hasPlan ?? false);
 
   // Method to check if form is valid for UI feedback
   bool get isFormValid => hasAnyContent && isPhoneValid;
@@ -688,13 +721,27 @@ class AddOwnersViewModel extends ChangeNotifier
       failedToQueueIds: result.failedToQueueIds,
     );
 
+    // The land / plot plan is sent only now that the Owner is saved. It never
+    // throws: a failure stays in the plan section with the chosen file, can be
+    // retried, and leaves the saved Owner as it is.
+    final plan = _plan;
+    final planOutcome = plan == null
+        ? const PlanCommitOutcome.nothing()
+        : await plan.commit(recordId: recordId);
+
     if (!context.mounted) return;
-    if (!result.isComplete) {
+    if (!result.isComplete || !planOutcome.isComplete) {
       if (result.failedToQueueIds.isNotEmpty) {
         _showToast(loc.translate(media.parent.prepareFailedKey), Colors.red);
       }
       if (result.failedRemovalIds.isNotEmpty) {
         _showToast(loc.translate(media.parent.removeFailedKey), Colors.red);
+      }
+      if (!planOutcome.isComplete) {
+        _showToast(
+          loc.translate('planAttachmentSavedUploadFailed'),
+          Colors.red,
+        );
       }
       return;
     }

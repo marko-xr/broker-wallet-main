@@ -23,4 +23,8 @@
     <exclude domain="root" path="app_flutter/offer_media" />
     <exclude domain="root" path="app_flutter/offer_media_uploads.hive" />
     <exclude domain="root" path="app_flutter/offer_media_uploads.lock" />
+    <!-- Scanner: the account folders of scanned documents and the scanner's own
+         working copies stay on this phone (see docs/DECISIONS.md). -->
+    <exclude domain="root" path="app_flutter/scanner" />
+    <exclude domain="file" path="mlkit_docscan_ui_client" />
 </full-backup-content>

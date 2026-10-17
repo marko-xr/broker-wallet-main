@@ -13310,3 +13310,350 @@ NOW — none for #7. NEXT — checkpoint #8, Phone Login / Signup backend (then 
 SMS/OTP provider). Master Context and Final Production Checklist (outside the repo, in
 the owner's documents folder) and the Broker Wallet Overview were updated in the same
 closure.
+
+## CHECKPOINT S1 — DOCUMENT SCANNER PRODUCTION READINESS (2026-10-17)
+
+Status: **SCANNER_S1_COMMITTED_LOCAL — Samsung owner-reported PASS for the tested
+functionality; iPhone and commercial production readiness pending.** Branch
+`scanner-production-readiness`, parent `479e8de` (#7, closed). One local commit
+(`feat(scanner): harden document scanning and local file privacy`); not pushed, not
+merged; no hosted Supabase, Worker, R2, secret or migration change; Phone
+Login/Signup (#8) and the subscription system were not touched. This is not a claim
+that the Scanner is production-ready for release: iPhone is untested and the quota is
+not authoritative (below).
+
+**Samsung owner acceptance (2026-10-18).** The owner ran the Scanner on a Samsung
+phone and reported that it works properly. That is recorded as owner-reported PASS
+(VERIFIED_REAL_DEVICE) for the functionality the owner exercised. The owner's report
+did not itemize the checklist below item by item, so no individual scenario (for
+example the three- and five-page scans, Arabic text, WhatsApp share, second-account
+isolation, the permission screen) is separately claimed here beyond that report. The
+lost-result guard, the backup exclusions and the Android Downloads rollback were not
+provoked on the phone and stay CODE_PROVEN / source-level. One layout issue was
+raised during testing and is **not fixed**: the View / Share / Download buttons at the
+bottom of a grid card could overflow by a few pixels. Two attempts to fix it were
+reverted at the owner's request, so the grid card is unchanged from the version the
+owner tested.
+
+### Findings confirmed against the repository (before the change)
+
+1. `flutter_doc_scanner: ^0.0.16` — for a 0.0.x version that means exactly 0.0.16
+   — while `pubspec.lock` already recorded 0.0.21. The two disagreed.
+2. The screen called the native PDF and image methods.
+3. Two branches reduced a multi-page scan to its first page: an image map used
+   `images.first`, and a list handed back for a PDF used `result.first`.
+4. A PDF's page count was the scanner's number, or a hard-coded 1; nothing read
+   the saved file.
+5. Every save asked for Photos, then All Files Access, then Storage.
+6. `MANAGE_EXTERNAL_STORAGE` was declared; the Scanner was its only consumer.
+7. The stored name came from a field the screen never showed; `_sanitizeFileName`
+   used `\w` (ASCII), so an Arabic title became `scanned_document`; the copy
+   silently overwrote any file of the same name.
+8. Every account's documents shared one `scanned_documents` SharedPreferences
+   list and the app's documents folder.
+9. The free-plan check and the counter used the legacy Firestore `users/{uid}`
+   document, once per saved file (so a 5-image scan was checked, and counted, 5
+   times and could be blocked half way), and failed open.
+10. Quality, Auto Enhance, Auto Crop, Remove Background, OCR, batch and the
+    "AI" chip were never read by any processing; the mode only changed a label.
+11. Android Downloads read the whole document into one byte array, sent it
+    through the channel, treated a null output stream as success, had no
+    `IS_PENDING`, and hard-coded `/storage/emulated/0/Download` for Android 10-.
+12. Share used `ShareLive`, but sent files under their internal names.
+
+Also found: the plugin drops a pending Android result if its Activity detaches
+(a rare process-level loss; unfixable here, see blockers); the iPhone plugin
+writes PNG pages into the app's Documents folder whatever format or quality is
+asked; the iOS project's deployment target is 12.0 while VisionKit's document
+camera and the plugin podspec need 13.0; image preview used `OpenFilex` on a path
+outside the app's FileProvider roots; the "save document" fallback dialog re-saved
+an arbitrary path; `pleaseLoginFirst` and `documentsSaved` do not exist in either
+ARB (toasts showed "undefined"); the review step did not exist.
+
+### What changed
+
+New, all under `lib/src/`:
+- `services/scanner/` — `scan_models.dart` (enums, `ScannerDocument`, naming),
+  `scan_result.dart` (typed `ScanOutput`, `ScanResultParser`, `ScannerFailure`),
+  `scan_file_inspector.dart` + `syncfusion_pdf_page_counter.dart` (type, size and
+  page count read from the file itself), `scan_source_stager.dart` (trusted
+  roots, `content://` through the platform), `scanner_document_store.dart`
+  (account-scoped, journaled store), `scanner_engine.dart`,
+  `scanner_platform.dart` (Android Downloads / iPhone Files export, content
+  reader), `scanner_share_preparer.dart`, `scanner_usage_recorder.dart` and
+  `scanner_usage_gate.dart` (the one quota boundary), `scanner_wiring.dart`,
+  `scan_lifecycle_probe.dart` and `scanner_backup_guard.dart` (pre-device
+  correction, below).
+- `viewmodels/scanner/scanner_viewmodel.dart` — scan → review → save pipeline,
+  account binding, library actions.
+- `views/Screens/home/Toolkit/scanner_review_screen.dart` (review before save),
+  `scanner_image_viewer.dart` (zoomable image viewer).
+
+Changed: `scanner_view.dart` (rewritten as a thin screen), `FileSaverPlugin.kt`
+(`saveFileToDownloads` keeps its contract; `exportFileToDownloads` and
+`copyContentUriToFile` added), `AndroidManifest.xml` (All Files Access removed),
+`Info.plist` (camera purpose mentions scanning), `pubspec.yaml`
+(`^0.0.21`), `Runner.xcodeproj` and `ios/Flutter/AppFrameworkInfo.plist` (iOS
+deployment target 12.0 → 15.0, see below), both ARB files (35 messages added; the six mode descriptions and the
+image-format line no longer promise processing).
+
+### Behaviour now
+
+- **Results**: every plugin answer (PDF map, bare iPhone path, image map with the
+  older `Uri`/`Count` keys, list of paths, `file://`, plain path, `content://`,
+  cancel, malformed) is parsed into a typed value. A format mismatch, a missing,
+  empty, truncated or unreadable file, a path outside the scanner's own folders,
+  or one bad page among several fails the whole scan with nothing saved. A page
+  is never dropped or reduced to "the first one".
+- **Content URIs** are copied with the Android content resolver
+  (`copyContentUriToFile`), never turned into a path by cutting `content://`.
+- **Page count** is read from the PDF itself (Syncfusion parser); a count reported
+  by the scanner is ignored if the file disagrees.
+- **Review**: after the native scanner returns, the review screen shows every
+  page in order (images) or the PDF, the real page count and size, and a name
+  field. Nothing is stored until Save; Discard (after a confirmation) or Back
+  deletes the scan's temporary files. A failed save keeps the scan and Save
+  becomes Retry. A second Save or scan tap does nothing.
+- **Storage**: `<app documents>/scanner/<account>/files/<uuid>.<ext>` plus
+  `index.json` (written to a temp file and renamed). Titles are metadata (Arabic
+  kept, separators/control/bidi characters removed, unique per account, "(2)" on
+  a clash at save, refused on rename). Save is all-or-nothing for a multi-image
+  scan and verified (size + full inspection) before it is listed. Interrupted
+  saves and deletes are completed or undone at the next load. A damaged index or
+  one naming a file outside its folder is set aside, never deleted, and rebuilt
+  from valid files. A document whose file vanished stays listed as "File
+  missing" and can be removed. Selection and every action work on document ids.
+- **Accounts**: the store belongs to `AuthRepository.currentUserId`. Account B
+  never reads account A's folder; an index that names another account is
+  refused. The view model drops any scan or save result that finishes after the
+  account changed or the screen was left, and discards a scan under review when
+  the identity changes. An auth-stream error is not a sign-out. **Legacy
+  documents** (old global list and files) are not migrated, shown or deleted; the
+  screen shows only how many there are. Whose they are is an owner decision.
+- **Export**: Android 10+ copies the stored file to MediaStore Downloads by
+  streaming (entry pending until complete, removed if writing fails, a null stream
+  is a failure, MediaStore picks a free name and the real name is reported);
+  Android 9 and below ask for the legacy storage permission first; iPhone opens
+  the Files save sheet and reports nothing if it is closed. No All Files Access,
+  no Photos permission, no hard-coded external path.
+- **Share**: through `ShareLive.sendFiles`, with copies named by the title (never
+  the internal id) in a share folder that is swept an hour later; only complete,
+  verified files are shared, and a missing file blocks the share with a message.
+- **Settings**: real — export type, page limit (1/5/10/20, sent to the scanner)
+  and a label-only mode. Shown honestly — quality is disabled (neither scanner
+  accepts one), and a note says crop, rotate, retake, filters are done in the
+  scanner's own screen and that background removal and OCR are not available. The
+  Auto Enhance / Auto Crop / Remove Background switches and the "AI" chip are
+  gone because nothing backed them.
+- **Camera**: the app asks for no camera permission for scanning. Android's Google
+  scanner runs inside Google Play services; iPhone VisionKit asks by itself and
+  needs the Info.plist purpose string (updated). Both unverified on a device.
+
+### Pre-device correction: a lost scan result, and backup (2026-10-17)
+
+**The native defect, exactly.** `flutter_doc_scanner` 0.0.21's Android plugin keeps
+the reply to the Dart call in `pendingResult` and sets it to null, without answering
+it, in `onDetachedFromActivity()`; `onDetachedFromActivityForConfigChanges()` calls
+that same method; `onReattachedToActivityForConfigChanges()` only re-adds the result
+listener; and `onActivityResult` returns false while `pendingResult` is null. So if the
+Activity detaches while the scanner is open and the Flutter engine survives, the
+scanner's answer arrives to a plugin with nothing to reply to and the Dart future never
+completes (the screen stayed on "Scanning…"). `MainActivity` already handles
+orientation, size, density, locale, direction, font scale, keyboard and UI mode itself, so
+only the configuration changes it does not list (for example navigation mode or colour
+mode) reach this path: rare. When the Activity and its own engine are destroyed together
+(process death, "Don't keep activities") Dart is gone too and the app restarts: nothing is
+left waiting, but that scan's result is lost and the app cannot recover it.
+
+**The correction (no plugin fork, no timer).** `ScanLifecycleGuard.kt`, registered in
+`MainActivity` next to the plugin, sees the same detach callbacks; only while Dart has
+said a scan is being watched (`begin` … `end`) it reports `scanAbandoned` once. In Dart
+the engine races the plugin's call against that report (`Future.any`), always ends the
+watch, and a lost scan becomes `ScannerFailure.scanAbandoned`: no draft, no document, no
+usage count, the scanning state is cleared, and the screen shows a localized message with a
+Retry action. A result that arrived first is kept; a slow scan or one in the background is
+never ended, because nothing here measures time. A repeated attempt works (the plugin's
+field is already null). iPhone has no such listener and is not given one (VisionKit hands
+its answer back inside the presented controller).
+
+What this is not: the plugin is not fixed. Its result is still lost in that case; the
+Scanner now says so and recovers, instead of waiting forever. The proper fix is upstream.
+The guard is compiled (APK build) and tested through a mocked channel and a fake probe;
+there is no reliable manual way to provoke the configuration change, so its behaviour on a
+phone is unverified.
+
+**Backup.** Before: the Scanner's account folders (`app_flutter/scanner/<uid>/`) and the
+scanner's own working copies (`files/mlkit_docscan_ui_client`) were not excluded, so on
+Android 11 and below (`fullBackupContent`) and 12+ (`dataExtractionRules`: cloud backup
+and device transfer) they could leave the phone in Google's backup; on iPhone anything in
+Documents goes to iCloud / device backup. A restore could not show them to the wrong
+account (folders are named by account id and the index is checked), but plaintext scans
+would have travelled. Now: both XML files exclude `app_flutter/scanner` and
+`mlkit_docscan_ui_client` (cloud backup and device transfer for 12+), next to the existing
+Offer exclusions; nothing else in the backup behaviour changed and `allowBackup` is not
+turned off. On iPhone `AppDelegate.swift` answers a channel that sets
+`isExcludedFromBackup` on `Documents/scanner` (done when the Scanner opens) and on each
+file the iPhone scanner writes into Documents (done when it is staged). Consequence: scans
+are **not** restored from a backup or onto a new phone; Export/Share is the way to keep a
+copy. Remaining limits: old ownerless scans in the root of `app_flutter` have arbitrary
+names, which backup rules cannot match, so they stay backup-eligible (owner decision); a
+scanner output written to iPhone Documents and not yet staged when the app is killed could
+be backed up; the iPhone exclusion needs the launch view controller to be a
+`FlutterViewController` (it is with the current storyboard) and is NOT RUN; scans are
+still not encrypted at rest.
+
+### Quota (classified, not replaced)
+
+Checked once before the scanner opens, counted once after the whole scan was
+stored, through `ScannerUsageGate`. It still reads and writes the legacy Firestore
+`users/{uid}` document (free limit 3 lifetime). That document is client-writable
+and not authoritative for a Supabase account, a missing document or an error lets
+the scan through, and a user cannot be locked out by it. **Server-authoritative
+quota is a release dependency**, not solved here; replace `scanner_usage_gate.dart`
+when it exists.
+
+### Privacy properties (actual)
+
+Scanning and processing are on the device; nothing in the Scanner imports a
+network, Supabase, R2 or upload client (pinned by a source guard). The scanner's
+own Android screen is Google Play services' (Google's module may be fetched by
+Play services on first use). Scans are plain files in the app's private storage:
+**not encrypted at rest**, and kept out of Android cloud backup, device transfer and
+iCloud / device backup by Scanner-specific exclusions (see the correction above). The Scanner writes no log
+of paths, names or content. Account deletion does not purge local
+scans.
+
+### Evidence
+
+| Area | Evidence | Level |
+| --- | --- | --- |
+| Result parsing, file inspection, stager, store, share preparer, view model, engine mapping (mocked channel), exporter (mocked channel), review-screen widgets (including the double-pop regression), source guards | `flutter test test/scanner`: 168/168 PASS / 0 FAIL (includes the lost-result and backup tests); `test/share/share_source_guards_test.dart`: 64/64; together 232/232 PASS / 0 FAIL | CODE_PROVEN (agent-run as the checkpoint prompt asked; not an owner run) |
+| Scoped analyzer on all new and changed Dart and the tests | `flutter analyze` on the Scanner folders, view model, three Scanner screens and `test/scanner`: No issues found | CODE_PROVEN (agent-run) |
+| Android compile | `flutter build apk --debug --target-platform android-arm64`, exit 0 (182 s), and again after the lifecycle/backup correction (`ScanLifecycleGuard.kt`, `MainActivity.kt`, backup XML), exit 0 (82 s); `build/app/outputs/flutter-apk/app-debug.apk` produced; only Flutter's pre-existing warnings that Gradle 8.14.5, AGP 8.11.1 and Kotlin 2.2.20 will soon be unsupported. Compiles `FileSaverPlugin.kt`, the manifest and the plugin 0.0.21 native code | CODE_PROVEN (agent-run, debug build, arm64 only) |
+| iOS configuration | plugin and Firebase minimums read from the pinned packages; project at 15.0; backup-exclusion channel written in `AppDelegate.swift` (not compiled) | VERIFIED_SOURCE |
+| iOS compile, iPhone runtime | not run (Windows) | NOT RUN |
+| Real scanner, ML Kit result shapes, MediaStore export, content URIs on a Samsung phone | owner ran the Scanner and reported it works properly (not itemized) | VERIFIED_REAL_DEVICE (owner-reported, tested functionality only) |
+
+Mocked channels prove the Dart handling of the documented answers, not the native
+behaviour. A defect the review-screen widget test found and that is fixed: the screen
+would have popped twice after a successful save (the test stays).
+
+### Gate evidence (what proves what)
+
+- All pages kept: `scanner_viewmodel_test` (4-image scan → 4 documents in order; 3-page PDF
+  whose scanner claimed 1 page is saved as 3; one damaged page fails the whole scan),
+  `scan_result_parser_test`, `scan_file_inspector_test` (real Syncfusion counts 1/3/5).
+- Accounts: `scanner_document_store_test` (A and B folders separate; a foreign index is
+  refused and kept aside; cold restart), `scanner_viewmodel_test` (A→B→A, scan finishing
+  after a switch is dropped and its files removed, review dropped on a switch,
+  auth-stream error is not a sign-out), `scanner_review_screen_test`.
+- Legacy scans: only counted (`legacyDocumentCount`), never listed; the legacy key is
+  referenced in one file that only reads a length (guard); the store test shows old files
+  beside the account folder are untouched.
+- No overwrite / failed save: unique internal ids, "(2)" titles, copy to `.part` then
+  rename, size+content verification, all-or-nothing batches, full-disk and half-copy tests,
+  retry test; a failed save lists nothing and counts nothing.
+- Rename/delete/bulk: by id; clash, invalid, unknown id, file-missing cases.
+- Export/share files complete: both check the stored file is intact first (size + parse);
+  a missing file blocks them. Android Downloads rollback (`IS_PENDING`, delete on failure,
+  null stream is a failure) is **source-level only**: the Kotlin is compiled but not run.
+- Permissions: no `MANAGE_EXTERNAL_STORAGE` anywhere in `lib` or the manifest (guards);
+  the Scanner requests no permission except the legacy storage permission on Android 9 and
+  below; its only consumer of All Files Access was the old screen.
+- Honest settings: guard forbids the old AI/enhance/crop/background/OCR/batch symbols; mode
+  descriptions carry no processing claim; quality is disabled with a note.
+- No upload, no logs: guards forbid network/Supabase/R2 imports and any print/log/stack-trace
+  call in the Scanner and `FileSaverPlugin.kt`.
+- Localization: the guard checks every literal key used by the Scanner screens exists in both
+  languages and that the 35 added messages match placeholders; the widget test renders English
+  and Arabic (RTL) strings through `AppLocalizations`.
+
+Gaps that remain: native Kotlin/Swift behaviour and the real scanner's output paths and
+shapes (device); Android Downloads partial-file behaviour at runtime; Windows-only Image
+file locks are not exercised on a phone.
+
+### Blockers and owner decisions
+
+- Real-device acceptance (below) — nothing is VERIFIED_REAL_DEVICE.
+- **iOS deployment target (resolved in source, not built).** It was 12.0 in all
+  three `Runner.xcodeproj` configurations and in `AppFrameworkInfo.plist`. The
+  Scanner plugin (podspec and `Package.swift`) needs 13.0, and the app's own
+  pinned Firebase plugins (firebase_core 4.13.0, firebase_auth 6.5.7,
+  cloud_firestore 6.8.0, firebase_messaging 16.5.0) need 15.0, as does Flutter's
+  current project template, so the project could not have built for iOS at 12.0
+  regardless of the Scanner. Setting only 13.0 would still fail, so all four
+  values are now 15.0. Nothing else in the iOS project changed (signing, bundle,
+  capabilities, privacy strings); no Podfile is tracked (Flutter generates it). It
+  drops iOS 12-14 devices, which Firebase already did. The plugin's Swift was read:
+  VisionKit `VNDocumentCameraViewController`, PDFKit; no API above 13. Level:
+  VERIFIED_SOURCE. iOS compile: NOT RUN (Windows). iPhone runtime: NOT RUN.
+- Legacy documents: keep as is, or attribute them to the test account — owner
+  decision (the data cannot say whose they are).
+- Scans are deliberately not restorable from backup or onto a new phone (exclusions
+  above). Old ownerless scans in the `app_flutter` root stay backup-eligible: owner decision.
+- The scanner's Android output folder is assumed to be under the app's files or
+  cache folder (`mlkit_docscan_ui_client`); a result elsewhere is refused with
+  "A scanned page could not be read". The first Samsung scan checks this.
+- The plugin still loses an Android scan result if its Activity detaches while the
+  scanner is open. The Scanner now detects that case when the engine survives (message +
+  Retry, nothing saved) and cannot recover the result; when the Activity and engine are
+  destroyed together the app restarts and that scan is gone. Unverified on a phone.
+- Devices without Google Play services cannot use the Android scanner.
+- Server-authoritative quota (release dependency); OCR (not offered; Arabic OCR
+  must be tested before ever being claimed); encryption at rest (not offered).
+- Remaining Play compliance: `READ_MEDIA_IMAGES/VIDEO` stay for the Offer/Owner
+  media features (the Scanner no longer needs them); `WRITE_EXTERNAL_STORAGE`
+  stays at `maxSdkVersion` 29, `READ_EXTERNAL_STORAGE` at 32.
+- The `flutter` commands run here left the generated plugin registrants unmodified in
+  `git status`; none is part of this change.
+
+### Samsung acceptance (owner)
+
+1. Single page, PDF: opens in the scanner, Review shows "Pages: 1", Save, appears
+   in the list as PDF, 1 page, correct size and date/time.
+2. Three pages, PDF: Review shows "Pages: 3"; open it from the list: 3 pages in
+   the order scanned.
+3. Five pages (or the chosen maximum): all five; try setting the limit to 1 and
+   confirm the scanner stops at one.
+4. A page of Arabic text; 5. a property floor/plot plan; 6. a stamped and signed
+   page: legible when opened.
+7. Images mode: 3 pages → 3 documents named *_page_1..3 in order; each opens in
+   the image viewer and is a JPEG.
+8. Rename (Arabic name too); rename to an existing name is refused; Delete one;
+   select two and Delete; select three and Share to WhatsApp and to Files — the
+   receiver shows the document titles, not ids.
+9. Download: "Saved to Downloads: <name>"; find the file in Files > Downloads and
+   open it; export it twice (the second must not replace the first).
+10. Close the app from Recents, reopen: the list is the same.
+11. Cancel the scanner (back): "Scanning cancelled", nothing saved. Discard on
+    Review: nothing saved. Airplane mode: scanning still works.
+12. Sign out; sign in as another account: that account's list is empty (and the
+    legacy count notice shows only if the old list existed); sign back in: yours
+    is back. Do not use real documents.
+13. Settings: only mode, format, maximum pages are selectable; Quality is greyed
+    with its note. App permissions screen: Camera is not newly prompted and no
+    "All files access" appears.
+
+### iPhone acceptance (later, physical device)
+
+Needs a macOS build first (deployment target is now 15.0). Then: the camera
+prompt wording mentions scanning documents; scan one page and three pages as PDF
+and as images (PNG pages); Review, Save, restart, list persists; preview the PDF
+and an image; Share to Files and to another app; **Download** opens the Files
+save sheet and a saved file appears where chosen (closing the sheet saves nothing
+and says nothing); cancel the scanner; background the app during the review and
+return; second account isolation; Arabic and dark mode.
+
+Still pending after this commit: the iPhone build and device pass (macOS; iOS compile and
+iPhone runtime NOT RUN, deployment target is 15.0 in source); the server-authoritative
+quota (the Scanner's Firestore check is fail-open and not production-grade entitlement
+enforcement, so final commercial production readiness cannot be claimed); the decision
+on ownerless legacy scans (preserved on the phone, isolated from every account, never
+migrated or deleted) and on their backup eligibility; the grid-card button overflow;
+OCR (not implemented) and encryption at rest (not implemented).
+
+NOW — the Scanner commit is local only; push or merge only when the owner decides.
+NEXT — the Toolbox milestone continues with the owner's next tool; the Master Context,
+Final Production Checklist and Overview are refreshed only after the Toolbox milestone
+is owner-accepted. STOP — no push, hosted change, quota or subscription work,
+Phone Login/Signup (#8), or another Toolbox tool without a new instruction.

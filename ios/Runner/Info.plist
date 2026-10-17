@@ -85,9 +85,9 @@
             <key>FirebaseAppDelegateProxyEnabled</key>
     <false/>
 
-    <!-- Camera and photo library: profile pictures and Offer photos/videos -->
+    <!-- Camera and photo library: profile pictures, Offer photos/videos and the Scanner -->
     <key>NSCameraUsageDescription</key>
-    <string>Broker Wallet uses the camera to take photos and videos for your profile and your offers.</string>
+    <string>Broker Wallet uses the camera to take photos and videos for your profile and your offers, and to scan documents.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Broker Wallet lets you choose photos and videos from your library for your profile and your offers.</string>
     

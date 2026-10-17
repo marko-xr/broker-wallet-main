@@ -505,3 +505,56 @@
   Single Active Device gate and is scoped by owner, record kind and parent id, so
   an Offer plan, an Owner plan and the gallery can never reach one another or
   another account's files. See `docs/CURRENT_CHECKPOINT.md`.
+- Document Scanner production readiness (decided 2026-10-17, branch
+  `scanner-production-readiness`, source only; device acceptance pending):
+  - The scan engine stays `flutter_doc_scanner`, now `^0.0.21` (the lockfile
+    already recorded 0.0.21 while `pubspec.yaml` said `^0.0.16`, which for a
+    0.0.x version means exactly 0.0.16). Android uses Google's ML Kit Document
+    Scanner (Google Play services); iPhone uses VisionKit. Crop, rotate, retake,
+    delete-a-page and filters happen in that native screen; the app adds no
+    competing editor.
+  - Scans are stored per signed-in account in
+    `<app documents>/scanner/<account>/` (`files/<id>.<ext>` plus
+    `index.json`), never in the old device-wide `scanned_documents`
+    SharedPreferences list. The old list carried no owner, so it is **not
+    migrated, not shown and not deleted**: its entries and files stay on the
+    phone and the Scanner shows a one-line count. Attributing them to an account
+    is an owner decision (it can only be a guess).
+  - A save is journaled (pending → file written and verified → ready) and a
+    delete is journaled (deleting → removed), so an interrupted operation is
+    finished or undone on the next load and a deleted document cannot reappear.
+    A damaged index is set aside, never deleted, and rebuilt from the valid
+    files. Titles are metadata; stored file names are internal ids only.
+  - One scan is one usage unit however many pages it has, counted once after the
+    whole scan was stored. The free-plan check runs before the scanner opens. It
+    still reads the legacy Firestore document and is fail-open and not
+    authoritative for a Supabase account; replacing
+    `scanner_usage_gate.dart` is the whole server-authoritative-quota change.
+  - Android All Files Access (`MANAGE_EXTERNAL_STORAGE`) is removed: the
+    Scanner was its only consumer. Scans go to app storage; export to Downloads
+    uses MediaStore (`IS_PENDING`) on Android 10+ and the legacy storage
+    permission only on Android 9 and below. The `file_saver` channel keeps
+    `saveFileToDownloads` unchanged for Combine PDFs, Images to PDF and
+    Signature and adds file-based methods for the Scanner.
+  - The Scanner shows only options that change what happens: output type, page
+    limit and a label-only mode. Quality choices are shown disabled (neither
+    platform scanner accepts a quality), and there is no AI, enhance, crop,
+    background-removal, OCR or batch claim. Arabic or any OCR is not offered.
+  - The iOS deployment target is 15.0 (it was 12.0). The Scanner plugin needs
+    13.0 and the app's pinned Firebase plugins need 15.0, so 15.0 is the lowest
+    value the project can build at; it matches Flutter's current template. iOS
+    compile and iPhone runtime are not run.
+  - A scan whose Android result the plugin lost (its Activity detached while the
+    scanner was open and the engine survived) ends in a "scan interrupted, nothing
+    saved, Retry" state instead of waiting forever. A small native listener
+    (`ScanLifecycleGuard.kt`) reports the detach only while a scan is watched; the
+    engine races the plugin against it. No timer is used, a slow or backgrounded scan is
+    never ended, and the plugin is not forked. The result itself is still lost.
+  - Scanner documents are excluded from Android cloud backup and device transfer
+    (`app_flutter/scanner`, `mlkit_docscan_ui_client`) and from iPhone backup
+    (`isExcludedFromBackup` on `Documents/scanner` and on scanner outputs). Scans are
+    therefore not restored onto a new phone; export or share keeps a copy. Old ownerless
+    scans in the `app_flutter` root remain backup-eligible until the owner decides.
+  - Not claimed: encryption at rest (scans are plain files in the app's private
+    storage), real-device behaviour, or secure entitlement enforcement. See
+    `docs/CURRENT_CHECKPOINT.md`.

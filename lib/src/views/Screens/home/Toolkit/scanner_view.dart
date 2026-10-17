@@ -1,139 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_review_screen.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:io';
-import 'dart:convert';
-import 'package:path/path.dart' as path;
 import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:broker_wallet/src/services/clean_permission_service.dart';
+import 'package:broker_wallet/src/services/scanner/scan_models.dart';
+import 'package:broker_wallet/src/services/scanner/scan_result.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_wiring.dart';
+import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 
-enum ScanMode {
-  document,
-  receipt,
-  businessCard,
-  passport,
-  book,
-  magazine,
-}
-
-enum ExportFormat {
-  pdf,
-  images,
-}
-
-enum ScanQuality {
-  low,
-  medium,
-  high,
-  ultra,
-}
-
-class ScannedPage {
-  final String filePath;
-  final ScanMode scanMode;
-  final DateTime createdAt;
-  final String name;
-  final ExportFormat format;
-
-  ScannedPage({
-    required this.filePath,
-    required this.scanMode,
-    required this.createdAt,
-    required this.name,
-    required this.format,
-  });
-}
-
-class ScannedDocument {
-  final String filePath;
-  final ScanMode scanType;
-  final DateTime createdAt;
-  final int fileSize;
-  final String name;
-  final ExportFormat format;
-  final int pageCount;
-
-  ScannedDocument({
-    required this.filePath,
-    required this.scanType,
-    required this.createdAt,
-    required this.name,
-    required this.fileSize,
-    required this.format,
-    this.pageCount = 1,
-  });
-
-  // Convert to JSON for storage
-  Map<String, dynamic> toJson() {
-    return {
-      'filePath': filePath,
-      'scanType': scanType.name,
-      'createdAt': createdAt.toIso8601String(),
-      'name': name,
-      'format': format.name,
-      'pageCount': pageCount,
-      'fileSize': fileSize,
-    };
-  }
-
-  // Create from JSON
-  factory ScannedDocument.fromJson(Map<String, dynamic> json) {
-    return ScannedDocument(
-      filePath: json['filePath'],
-      scanType: ScanMode.values.firstWhere((e) => e.name == json['scanType']),
-      createdAt: DateTime.parse(json['createdAt']),
-      name: json['name'],
-      format: ExportFormat.values.firstWhere((e) => e.name == json['format']),
-      pageCount: json['pageCount'] ?? 1,
-      fileSize: json['fileSize'] ?? 0,
-    );
-  }
-}
-
-// Document corner detection model
-class DocumentCorner {
-  final double x;
-  final double y;
-
-  DocumentCorner(this.x, this.y);
-
-  @override
-  String toString() => 'Corner($x, $y)';
-}
-
-class DocumentBounds {
-  final DocumentCorner topLeft;
-  final DocumentCorner topRight;
-  final DocumentCorner bottomLeft;
-  final DocumentCorner bottomRight;
-  final double confidence;
-
-  DocumentBounds({
-    required this.topLeft,
-    required this.topRight,
-    required this.bottomLeft,
-    required this.bottomRight,
-    this.confidence = 0.0,
-  });
-
-  List<DocumentCorner> get corners =>
-      [topLeft, topRight, bottomRight, bottomLeft];
-}
-
+/// The document Scanner: scan with the phone's own scanner, review, save to the
+/// signed-in account's private list, then preview, rename, share, export and
+/// delete. The logic lives in [ScannerViewModel]; this file is the screen.
 class ScannerView extends StatefulWidget {
   const ScannerView({Key? key}) : super(key: key);
 
@@ -141,143 +25,28 @@ class ScannerView extends StatefulWidget {
   _ScannerViewState createState() => _ScannerViewState();
 }
 
-class _ScannerViewState extends State<ScannerView>
-    with TickerProviderStateMixin {
-  final FlutterDocScanner _docScanner = FlutterDocScanner();
-  final TextEditingController _fileNameController = TextEditingController();
-  final PageController _pageController = PageController();
-  final List<ScannedDocument> _scannedDocuments = [];
-  final List<ScannedPage> _scannedPages = [];
-
-  // Processing state
-  bool _isProcessing = false;
-  bool _isScanning = false;
-  double _processingProgress = 0.0;
-  String _currentProcessingStep = '';
-
-  // Scan settings
-  ScanMode _selectedScanType = ScanMode.document;
-  ScanMode _scanMode = ScanMode.document;
-  ExportFormat _selectedFormat = ExportFormat.pdf;
-  ExportFormat _exportFormat = ExportFormat.pdf;
-  ScanQuality _scanQuality = ScanQuality.high;
-  int _maxPages = 5;
-
-  bool _autoEnhance = true;
-  bool _autoCrop = true;
-  bool _removeBackground = false;
-  bool _ocrEnabled = false;
-  bool _batchMode = false;
-
-  // UI state
+class _ScannerViewState extends State<ScannerView> {
+  late final ScannerViewModel _vm;
   bool _isGridView = true;
-  int? _selectedPageIndex;
-  bool _showSettings = false;
-  bool _showPreview = false;
-  bool _isSelectionMode = false;
-  Set<int> _selectedDocuments = {};
 
-  // Animation controllers
-  late AnimationController _settingsController;
-  late AnimationController _previewController;
-  late Animation<Offset> _settingsAnimation;
-  late Animation<double> _previewAnimation;
-
-  // Platform channel for MediaStore operations
-  static const MethodChannel _channel = MethodChannel('file_saver');
+  static const String _gridViewPreferenceKey = 'scanner_grid_view_mode';
+  static const String _maxPagesPreferenceKey = 'scanner_max_pages';
 
   @override
   void initState() {
     super.initState();
-    _initializeAnimations();
-    _generateFileName();
-    _requestPermissions();
-    _loadSavedDocuments();
-    _loadViewModePreference();
-  }
-
-  void _initializeAnimations() {
-    _settingsController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    _previewController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-
-    _settingsAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _settingsController,
-      curve: Curves.easeOutBack,
-    ));
-    _previewAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _previewController, curve: Curves.easeInOut),
-    );
+    _vm = ScannerWiring.createViewModel();
+    _loadPreferences();
+    _vm.start();
   }
 
   @override
   void dispose() {
-    _settingsController.dispose();
-    _previewController.dispose();
-    _fileNameController.dispose();
+    _vm.dispose();
     super.dispose();
   }
 
-  void _generateFileName() {
-    final now = DateTime.now();
-    final timestamp =
-        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-    _fileNameController.text = '${_scanMode.name}_scan_$timestamp';
-  }
-
-  Future<void> _requestPermissions() async {
-    // NOTE: We don't request permissions here anymore!
-    // Permissions are requested just-in-time when user initiates an action
-    // (e.g., when they press the scan button)
-    // This follows best practices for UX and platform guidelines
-  }
-
-  Future<bool> _requestStoragePermissions() async {
-    if (Platform.isAndroid) {
-      // For Android 13+ (API 33+), request media permissions
-      try {
-        final photos = await Permission.photos.request();
-        if (photos.isGranted) {
-          return true;
-        }
-      } catch (e) {
-        // Photos permission not available: $e (log removed)
-      }
-
-      // For Android 11+ (API 30+), try manage external storage
-      try {
-        final manageStorage = await Permission.manageExternalStorage.request();
-        if (manageStorage.isGranted) {
-          return true;
-        }
-      } catch (e) {
-        // Manage external storage permission not available: $e (log removed)
-      }
-
-      // For older Android versions, request storage permission
-      try {
-        final storage = await Permission.storage.request();
-        if (storage.isGranted) {
-          return true;
-        }
-      } catch (e) {
-        // Storage permission not available: $e (log removed)
-      }
-
-      return false;
-    }
-
-    // iOS doesn't need special permissions for app documents
-    return true;
-  }
+  AppLocalizations get _localization => AppLocalizations.of(context);
 
   void _showToast(String message, Color color) {
     Fluttertoast.showToast(
@@ -290,827 +59,375 @@ class _ScannerViewState extends State<ScannerView>
     );
   }
 
-  // Persistence methods for saving/loading scanned documents
-  Future<void> _saveDocuments() async {
+  // View preferences (not documents): the grid/list choice and the page limit.
+  Future<void> _loadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> documentsJson =
-          _scannedDocuments.map((doc) => jsonEncode(doc.toJson())).toList();
-      await prefs.setStringList('scanned_documents', documentsJson);
-    } catch (e) {
-      // Error saving documents: $e (log removed)
-    }
-  }
-
-  Future<void> _loadSavedDocuments() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? documentsJson =
-          prefs.getStringList('scanned_documents');
-
-      if (documentsJson != null) {
-        final List<ScannedDocument> loadedDocuments = [];
-
-        for (final docJson in documentsJson) {
-          try {
-            final Map<String, dynamic> docMap = jsonDecode(docJson);
-            final document = ScannedDocument.fromJson(docMap);
-
-            // Check if the file still exists before adding to the list
-            final file = File(document.filePath);
-            if (await file.exists()) {
-              // Update file size if it's 0 or missing
-              int actualFileSize = document.fileSize;
-              if (actualFileSize == 0) {
-                try {
-                  actualFileSize = await file.length();
-                } catch (e) {}
-              }
-
-              // Create document with updated file size if needed
-              final updatedDocument = actualFileSize != document.fileSize
-                  ? ScannedDocument(
-                      filePath: document.filePath,
-                      scanType: document.scanType,
-                      createdAt: document.createdAt,
-                      name: document.name,
-                      format: document.format,
-                      pageCount: document.pageCount,
-                      fileSize: actualFileSize,
-                    )
-                  : document;
-
-              loadedDocuments.add(updatedDocument);
-            }
-          } catch (e) {
-            // Error parsing document: $e (log removed)
-            // Skip corrupted documents
-          }
-        }
-
-        setState(() {
-          _scannedDocuments.clear();
-          _scannedDocuments.addAll(loadedDocuments);
-        });
-
-        // Save updated documents with corrected file sizes
-        await _saveDocuments();
+      final pages = prefs.getInt(_maxPagesPreferenceKey);
+      if (!mounted) return;
+      setState(() {
+        _isGridView = prefs.getBool(_gridViewPreferenceKey) ?? true;
+      });
+      if (pages != null && ScannerViewModel.maxPageChoices.contains(pages)) {
+        _vm.maxPages = pages;
       }
     } catch (e) {
-      // Error loading documents: $e (log removed)
-    }
-  }
-
-  // Load and save view mode preference
-  Future<void> _loadViewModePreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _isGridView = prefs.getBool('scanner_grid_view_mode') ?? true;
-      });
-    } catch (e) {
-      // Error loading view mode preference: $e (log removed)
+      // Defaults are fine when preferences cannot be read.
     }
   }
 
   Future<void> _saveViewModePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('scanner_grid_view_mode', _isGridView);
+      await prefs.setBool(_gridViewPreferenceKey, _isGridView);
     } catch (e) {
-      // Error saving view mode preference: $e (log removed)
+      // The choice still applies for this visit.
     }
   }
 
-  AppLocalizations get _localization => AppLocalizations.of(context);
+  Future<void> _saveMaxPagesPreference(int pages) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_maxPagesPreferenceKey, pages);
+    } catch (e) {
+      // The choice still applies for this visit.
+    }
+  }
+
+  String _failureMessage(ScannerFailure failure) {
+    final loc = _localization;
+    switch (failure) {
+      case ScannerFailure.signedOut:
+        return loc.translate('scannerErrSignedOut');
+      case ScannerFailure.busy:
+        return loc.translate('scannerErrBusy');
+      case ScannerFailure.scanAbandoned:
+        return loc.translate('scannerErrAbandoned');
+      case ScannerFailure.engineFailed:
+        return loc.translate('scannerErrEngine');
+      case ScannerFailure.malformedResult:
+        return loc.translate('scannerErrMalformed');
+      case ScannerFailure.wrongFormat:
+        return loc.translate('scannerErrWrongFormat');
+      case ScannerFailure.untrustedSource:
+      case ScannerFailure.missingOutput:
+        return loc.translate('scannerErrUnreadable');
+      case ScannerFailure.emptyOutput:
+        return loc.translate('scannerErrEmpty');
+      case ScannerFailure.corruptOutput:
+        return loc.translate('scannerErrCorrupt');
+      case ScannerFailure.tooLarge:
+        return loc.translate('scannerErrTooLarge');
+      case ScannerFailure.storageFull:
+        return loc.translate('scannerErrStorageFull');
+      case ScannerFailure.writeFailed:
+        return loc.translate('scannerErrWrite');
+      case ScannerFailure.notFound:
+        return loc.translate('scannerErrNotFound');
+      case ScannerFailure.invalidName:
+        return loc.translate('scannerErrInvalidName');
+      case ScannerFailure.nameInUse:
+        return loc.translate('scannerErrNameInUse');
+      case ScannerFailure.fileMissing:
+        return loc.translate('documentFileNotFound');
+      case ScannerFailure.quotaBlocked:
+        return loc.translate('quotaLimitReached');
+      case ScannerFailure.accountChanged:
+        return loc.translate('scannerErrAccountChanged');
+      case ScannerFailure.permissionDenied:
+        return loc.translate('storagePermissionDenied');
+      case ScannerFailure.exportFailed:
+        return loc.translate('scannerErrExport');
+    }
+  }
+
+  // ---------------------------------------------------------------- scanning
 
   Future<void> _startScanning() async {
-    if (_isScanning) return;
-
-    try {
-      setState(() => _isScanning = true);
-
-      // Check camera permission using CleanPermissionService
-      final permissionService = CleanPermissionService();
-      final cameraPermission =
-          await permissionService.requestCameraPermission(context);
-
-      if (!cameraPermission.isGranted) {
-        _showToast(
-            _localization.translate('cameraPermissionRequired'), Colors.red);
-        setState(() => _isScanning = false);
+    if (_vm.isBusy || _vm.draft != null) return;
+    final result = await _vm.startScan(
+      allowNewScan: (uid) => ScannerWiring.usageGate.allowNewScan(context, uid),
+    );
+    if (!mounted) return;
+    if (result.cancelled) {
+      _showToast(_localization.translate('scanningCancelled'), Colors.orange);
+      return;
+    }
+    final failure = result.failure;
+    if (failure != null) {
+      if (failure == ScannerFailure.scanAbandoned) {
+        // The scan's result was lost; nothing was saved. Offer the retry.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_failureMessage(failure)),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: _localization.translate('retry'),
+            onPressed: _startScanning,
+          ),
+        ));
         return;
       }
-
-      dynamic scannedResult;
-
-      if (_selectedFormat == ExportFormat.pdf) {
-        // Get scanned document as PDF
-        scannedResult =
-            await _docScanner.getScannedDocumentAsPdf(page: _maxPages);
-      } else {
-        // Get scanned document as images
-        scannedResult =
-            await _docScanner.getScannedDocumentAsImages(page: _maxPages);
+      // The plan-limit dialog has already told the user why.
+      if (failure != ScannerFailure.quotaBlocked) {
+        _showToast(_failureMessage(failure), Colors.red);
       }
-
-      // Clear loading state immediately after scan completes
-      setState(() => _isScanning = false);
-
-      if (scannedResult != null) {
-        await _processScannedResult(scannedResult);
-      } else {
-        _showToast(_localization.translate('scanningCancelled'), Colors.orange);
-      }
-    } on PlatformException catch (e) {
-      setState(() => _isScanning = false);
-      _showToast('${_localization.translate('scanningFailed')}: ${e.message}',
-          Colors.red);
-    } catch (e) {
-      setState(() => _isScanning = false);
-      _showToast(_localization.translate('errorOccurredScanning'), Colors.red);
+      return;
+    }
+    final draft = result.draft!;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ScannerReviewScreen(viewModel: _vm),
+      ),
+    );
+    if (!mounted) return;
+    if (saved == true) {
+      final loc = _localization;
+      final text = draft.format == ExportFormat.images && draft.pageCount > 1
+          ? loc
+              .translate('scannerImagesSaved')
+              .replaceAll('{count}', '${draft.pageCount}')
+          : loc.translate('documentSavedSuccessfully');
+      _showToast(text, Colors.green);
+    } else {
+      // Left with the system Back gesture or an account change: nothing was
+      // saved, so the scan's temporary files go.
+      await _vm.discardDraft();
     }
   }
 
-  Future<void> _processScannedResult(dynamic result) async {
+  // ----------------------------------------------------------------- actions
+
+  Future<void> _previewDocument(ScannerDocument document) async {
+    final file = await _vm.openableFile(document);
+    if (!mounted) return;
+    if (file == null) {
+      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      return;
+    }
+    final Widget screen = document.format == ExportFormat.pdf
+        ? PdfViewerScreen(localFile: file, title: document.name)
+        : ScannerImageViewer(file: file, title: document.name);
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => screen,
+    ));
+  }
+
+  Future<void> _shareDocuments(List<ScannerDocument> documents) async {
+    if (documents.isEmpty) return;
     try {
-      String? pdfPath;
-      int pageCount = 1;
-
-      if (result is String) {
-        // Single file path (PDF)
-        pdfPath = result;
-        pageCount = 1;
-      } else if (result is Map) {
-        // Handle the result map from flutter_doc_scanner
-        if (result.containsKey('pdfUri')) {
-          // Extract PDF URI and clean it
-          pdfPath = result['pdfUri'].toString().replaceFirst("file://", "");
-          pageCount = result['pageCount'] ?? 1;
-        } else if (result.containsKey('images')) {
-          // Handle multiple images result
-          final images = result['images'] as List?;
-          if (images != null && images.isNotEmpty) {
-            // For now, take the first image
-            pdfPath = images.first.toString();
-            pageCount = images.length;
-          }
-        }
-      } else if (result is List) {
-        // Multiple image paths
-        if (_selectedFormat == ExportFormat.images) {
-          // Save individual images
-          int successCount = 0;
-          for (int i = 0; i < result.length; i++) {
-            final saved =
-                await _saveScannedDocument(result[i], 1, pageIndex: i);
-            if (saved) successCount++;
-          }
-          if (successCount > 0) {
-            _showToast(
-                successCount == result.length
-                    ? _localization.translate('documentsScannedSuccessfully')
-                    : '${successCount} ${_localization.translate('documentsSaved')}',
-                Colors.green);
-          }
-          return;
-        } else {
-          // Take first image for PDF
-          pdfPath = result.first;
-          pageCount = result.length;
-        }
-      }
-
-      if (pdfPath != null && pdfPath.isNotEmpty) {
-        // Directly save the scanned document to the list
-        final saved = await _saveScannedDocument(pdfPath, pageCount);
-        if (saved) {
-          _showToast(_localization.translate('documentSavedSuccessfully'),
-              Colors.green);
-        }
-      } else {
+      final preparation =
+          await _vm.prepareShare(documents.map((d) => d.id).toList());
+      if (!mounted) return;
+      if (!preparation.isShareable) {
         _showToast(
-            _localization.translate('noValidDocumentFound'), Colors.orange);
+          preparation.unavailable.isNotEmpty
+              ? _localization.translate('documentFileNotFound')
+              : _localization.translate('failedToShareDocuments'),
+          Colors.red,
+        );
+        return;
       }
-    } catch (e) {
-      // Error processing scan result: $e (log removed)
-      _showToast(_localization.translate('failedToProcessScanned'), Colors.red);
-    }
-  }
-
-  Future<bool> _saveScannedDocument(String filePath, int pageCount,
-      {int? pageIndex}) async {
-    try {
-      // QUOTA CHECK: Check if user can add more scanned documents
-      final currentUserId =
-          RepositoryProvider.instance.authRepository.currentUserId;
-      if (currentUserId == null) {
-        _showToast(
-            _localization.translate('pleaseLoginFirst'), Colors.red);
-        return false;
-      }
-
-      final canAdd = await QuotaHelper.checkAndWarnQuota(
-        context: context,
-        uid: currentUserId,
-        section: 'scanner',
-        toolName: 'scanner',
-      );
-
-      if (!canAdd) {
-        return false; // User hit quota limit
-      }
-
-      // Check storage permissions first
-      final hasPermission = await _requestStoragePermissions();
-
-      if (!hasPermission) {
-        _showToast(
-            _localization.translate('storagePermissionRequired'), Colors.red);
-        return false;
-      }
-
-      final directory = await getApplicationDocumentsDirectory();
-      final sanitizedName = _sanitizeFileName(_fileNameController.text.trim());
-      final fileName =
-          sanitizedName.isEmpty ? 'scanned_document' : sanitizedName;
-
-      String finalFileName;
-      if (pageIndex != null) {
-        finalFileName = '${fileName}_page_${pageIndex + 1}';
-      } else {
-        finalFileName = fileName;
-      }
-
-      final extension = _selectedFormat == ExportFormat.pdf ? '.pdf' : '.jpg';
-      final finalPath = path.join(directory.path, '$finalFileName$extension');
-
-      // Copy the scanned file to our app directory
-      final sourceFile = File(filePath);
-      final targetFile = File(finalPath);
-      await sourceFile.copy(targetFile.path);
-
-      // Add to our list
-      final scannedDoc = ScannedDocument(
-        filePath: targetFile.path,
-        scanType: _selectedScanType,
-        createdAt: DateTime.now(),
-        name: finalFileName,
-        format: _selectedFormat,
-        pageCount: pageCount,
-        fileSize: await targetFile.length(),
-      );
-
-      setState(() {
-        _scannedDocuments.insert(0, scannedDoc);
-      });
-
-      // Save documents to persistent storage
-      await _saveDocuments();
-
-      // Update quota count
-      await _incrementQuotaCount(currentUserId, 'scanner');
-
-      // Generate new filename for next scan
-      _generateFileName();
-
-      return true; // Successfully saved
-    } catch (e) {
-      // Failed to save document: $e (log removed)
-      _showToast(_localization.translate('failedToSaveDocument'), Colors.red);
-      return false;
-    }
-  }
-
-  Future<void> _incrementQuotaCount(String uid, String section) async {
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'counts': {section: FieldValue.increment(1)},
-        'lifetimeCreated': {section: FieldValue.increment(1)},
-      }, SetOptions(merge: true));
-    } catch (e) {
-      // Failed to update quota count: $e (log removed)
-    }
-  }
-
-  String _sanitizeFileName(String fileName) {
-    return fileName.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-  }
-
-  Future<void> _shareDocument(ScannedDocument document) async {
-    try {
       await ShareLive.sendFiles(
         context,
-        [document.filePath],
-        text: '${_localization.translate('scannedDocument')}: ${document.name}',
+        preparation.paths,
+        text: documents.length == 1
+            ? '${_localization.translate('scannedDocument')}: ${documents.first.name}'
+            : _localization
+                .translate('sharingDocuments')
+                .replaceAll('{count}', '${documents.length}'),
       );
     } catch (e) {
-      _showToast(_localization.translate('failedToShareDocument'), Colors.red);
-    }
-  }
-
-  // Enhanced _saveToDeviceStorage method with proper Android 11+ support
-  Future<void> _saveToDeviceStorage(File documentFile) async {
-    final localization = AppLocalizations.of(context);
-
-    try {
-      Directory? downloadsDirectory;
-      String locationName = 'Documents'; // Default value
-
-      if (Platform.isAndroid) {
-        final androidInfo = await DeviceInfoPlugin().androidInfo;
-        final sdkInt = androidInfo.version.sdkInt;
-
-        if (sdkInt >= 30) {
-          // Android 11+ (API 30+) - Use MediaStore for proper public Downloads saving
-          locationName = 'Downloads';
-          try {
-            final fileName = documentFile.path.split('/').last;
-            final timestamp = DateTime.now().millisecondsSinceEpoch;
-            final nameWithoutExt = fileName
-                .replaceAll('.pdf', '')
-                .replaceAll('.jpg', '')
-                .replaceAll('.jpeg', '')
-                .replaceAll('.png', '');
-            final extension = fileName.split('.').last;
-            final uniqueFileName = '${nameWithoutExt}_$timestamp.$extension';
-            final fileBytes = await documentFile.readAsBytes();
-
-            String mimeType = 'application/pdf';
-            if (extension.toLowerCase() == 'jpg' ||
-                extension.toLowerCase() == 'jpeg') {
-              mimeType = 'image/jpeg';
-            } else if (extension.toLowerCase() == 'png') {
-              mimeType = 'image/png';
-            }
-
-            final result = await _channel.invokeMethod('saveFileToDownloads', {
-              'fileName': uniqueFileName,
-              'fileBytes': fileBytes,
-              'mimeType': mimeType,
-            });
-
-            if (result['success'] == true) {
-              _showToast(
-                '${localization.translate('documentSavedToDownloads')} Downloads\nFile: $uniqueFileName\n(Accessible via Files app)',
-                Colors.green,
-              );
-              return; // Success, exit method
-            } else {
-              throw Exception('MediaStore save failed');
-            }
-          } catch (e) {
-            // Continue to fallback method below
-            final externalDir = await getExternalStorageDirectory();
-            if (externalDir != null) {
-              downloadsDirectory = Directory('${externalDir.path}/Downloads');
-              locationName = 'App Downloads';
-              if (!await downloadsDirectory.exists()) {
-                await downloadsDirectory.create(recursive: true);
-              }
-            } else {
-              downloadsDirectory = await getApplicationDocumentsDirectory();
-              locationName = 'App Documents';
-            }
-          }
-        } else {
-          // Android 10 and below - Request storage permission
-          locationName = 'Downloads';
-          final cleanPermissionService = CleanPermissionService();
-          final storagePermissions =
-              await cleanPermissionService.requestStoragePermissions(context);
-          final hasStorageAccess =
-              storagePermissions.values.any((s) => s.isGranted || s.isLimited);
-
-          if (hasStorageAccess) {
-            try {
-              downloadsDirectory = Directory('/storage/emulated/0/Download');
-              if (!await downloadsDirectory.exists()) {
-                // Fallback paths
-                final fallbackPaths = [
-                  '/sdcard/Download',
-                  '/storage/self/primary/Download',
-                ];
-
-                for (String path in fallbackPaths) {
-                  final testDir = Directory(path);
-                  if (await testDir.exists()) {
-                    downloadsDirectory = testDir;
-                    break;
-                  }
-                }
-
-                // Last resort - external storage
-                if (downloadsDirectory == null ||
-                    !await downloadsDirectory.exists()) {
-                  downloadsDirectory = await getExternalStorageDirectory();
-                  locationName = 'External Storage';
-                }
-              }
-            } catch (e) {
-              downloadsDirectory = await getExternalStorageDirectory();
-              locationName = 'External Storage';
-            }
-          } else {
-            _showToast(
-                localization.translate('storagePermissionDenied'), Colors.red);
-            return;
-          }
-        }
-      } else if (Platform.isIOS) {
-        downloadsDirectory = await getApplicationDocumentsDirectory();
-        locationName = 'Documents';
-      }
-
-      if (downloadsDirectory == null) {
-        _showToast(localization.translate('failedToAccessStorage'), Colors.red);
-        return;
-      }
-
-      // Create the destination file path with timestamp to avoid conflicts
-      final fileName = documentFile.path.split('/').last;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final nameWithoutExt = fileName
-          .replaceAll('.pdf', '')
-          .replaceAll('.jpg', '')
-          .replaceAll('.jpeg', '')
-          .replaceAll('.png', '');
-      final extension = fileName.split('.').last;
-      final uniqueFileName = '${nameWithoutExt}_$timestamp.$extension';
-      final destinationPath = '${downloadsDirectory.path}/$uniqueFileName';
-
-      // Ensure the directory exists
-      await downloadsDirectory.create(recursive: true);
-
-      // Copy the file to the destination
-      final destinationFile = File(destinationPath);
-      await documentFile.copy(destinationPath);
-
-      // Verify the file was created and get its actual size
-      if (await destinationFile.exists()) {
-        // Show success with actual path info
+      if (mounted) {
         _showToast(
-          '${localization.translate('documentSavedToDownloads')} $locationName\nFile: $uniqueFileName',
-          Colors.green,
-        );
-
-        // Additional debug info
-        try {
-          final files = await downloadsDirectory.list().toList();
-          for (var file in files) {
-            if (file.path.contains('.pdf') ||
-                file.path.contains('.jpg') ||
-                file.path.contains('.png')) {}
-          }
-        } catch (e) {}
-      } else {
-        throw Exception(
-            'File was not created at destination: $destinationPath');
+            _localization.translate('failedToShareDocuments'), Colors.red);
       }
-    } catch (e) {
-      _showToast(
-          '${localization.translate('failedToSaveDocument')}: ${e.toString()}',
-          Colors.red);
     }
-  }
-
-  Future<void> _renameDocument(ScannedDocument document, int index) async {
-    final controller = TextEditingController(text: document.name);
-
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(_localization.translate('renameDocument')),
-          content: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              labelText: _localization.translate('documentName'),
-              border: const OutlineInputBorder(),
-            ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(_localization.translate('cancel')),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final newName = controller.text.trim();
-                if (newName.isNotEmpty && newName != document.name) {
-                  await _performRename(document, index, newName);
-                }
-                Navigator.of(context).pop();
-              },
-              child: Text(_localization.translate('rename')),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _performRename(
-      ScannedDocument document, int index, String newName) async {
-    try {
-      final oldFile = File(document.filePath);
-      final directory = oldFile.parent;
-      final extension = path.extension(document.filePath);
-      final newPath = path.join(directory.path, '$newName$extension');
-
-      // Rename the actual file
-      await oldFile.rename(newPath);
-
-      // Update the document in our list
-      final updatedDocument = ScannedDocument(
-        filePath: newPath,
-        scanType: document.scanType,
-        createdAt: document.createdAt,
-        name: newName,
-        format: document.format,
-        pageCount: document.pageCount,
-        fileSize: await File(newPath).length(),
-      );
-
-      setState(() {
-        _scannedDocuments[index] = updatedDocument;
-      });
-
-      // Save documents to persistent storage
-      await _saveDocuments();
-
-      _showToast(
-          _localization.translate('documentRenamedSuccessfully'), Colors.green);
-    } catch (e) {
-      // Error renaming document: $e (log removed)
-      _showToast(_localization.translate('failedToRenameDocument'), Colors.red);
-    }
-  }
-
-  void _enterSelectionMode() {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedDocuments.clear();
-    });
-  }
-
-  void _exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedDocuments.clear();
-    });
   }
 
   Future<void> _shareBulkDocuments() async {
+    final selected = _vm.selectedDocuments;
+    await _shareDocuments(selected);
+    if (mounted) _vm.exitSelectionMode();
+  }
+
+  Future<void> _exportDocument(ScannerDocument document) async {
     try {
-      final selectedDocs =
-          _selectedDocuments.map((index) => _scannedDocuments[index]).toList();
-
-      final paths = [for (final doc in selectedDocs) doc.filePath];
-
-      await ShareLive.sendFiles(
-        context,
-        paths,
-        text: _localization
-            .translate('sharingDocuments')
-            .replaceAll('{count}', '${paths.length}'),
+      final result = await _vm.exportDocument(document.id);
+      if (!mounted || result.cancelled) return;
+      final loc = _localization;
+      final key = result.destination == ScannerExportDestination.downloads
+          ? 'scannerExportedToDownloads'
+          : 'scannerExportedToFiles';
+      _showToast(
+        loc.translate(key).replaceAll('{name}', result.savedName ?? ''),
+        Colors.green,
       );
-
-      _exitSelectionMode();
+    } on ScannerException catch (e) {
+      if (mounted) _showToast(_failureMessage(e.kind), Colors.red);
     } catch (e) {
-      _showToast(_localization.translate('failedToShareDocuments'), Colors.red);
+      if (mounted) {
+        _showToast(_failureMessage(ScannerFailure.exportFailed), Colors.red);
+      }
     }
   }
 
-  Future<void> _deleteBulkDocuments() async {
-    final count = _selectedDocuments.length;
-
-    try {
-      // Show confirmation dialog
-      final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(_localization.translate('confirmDelete')),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    count == 1
-                        ? _localization.translate('areYouSureDeleteOneDocument')
-                        : '${_localization.translate('areYouSureDelete')} $count ${_localization.translate('documents')}?',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _localization.translate('cannotRestoreItems'),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.red[700],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+  Future<void> _renameDocument(ScannerDocument document) async {
+    final controller = TextEditingController(text: document.name);
+    String? error;
+    final renamed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(_localization.translate('renameDocument')),
+              content: TextField(
+                controller: controller,
+                maxLength: ScannerNaming.maxNameRunes,
+                decoration: InputDecoration(
+                  labelText: _localization.translate('documentName'),
+                  errorText: error,
+                  border: const OutlineInputBorder(),
+                  counterText: '',
+                ),
+                autofocus: true,
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: Text(_localization.translate('cancel')),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
+                  onPressed: () async {
+                    final failure =
+                        await _vm.rename(document.id, controller.text);
+                    if (failure == null) {
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop(true);
+                      }
+                      return;
+                    }
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() => error = _failureMessage(failure));
+                  },
+                  child: Text(_localization.translate('rename')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    if (renamed == true && mounted) {
+      _showToast(
+          _localization.translate('documentRenamedSuccessfully'), Colors.green);
+    }
+  }
+
+  Future<void> _deleteDocuments(List<ScannerDocument> documents) async {
+    if (documents.isEmpty) return;
+    final count = documents.length;
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(_localization.translate('confirmDelete')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  count == 1
+                      ? _localization.translate('areYouSureDeleteOneDocument')
+                      : '${_localization.translate('areYouSureDelete')} $count ${_localization.translate('documents')}?',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _localization.translate('cannotRestoreItems'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.red[700],
+                    fontWeight: FontWeight.w500,
                   ),
-                  child: Text(_localization.translate('delete')),
                 ),
               ],
             ),
-          ) ??
-          false;
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(_localization.translate('cancel')),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(_localization.translate('delete')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
 
-      if (!confirmed) return;
-
-      // Delete files and remove from list
-      final indicesToRemove = _selectedDocuments.toList()
-        ..sort((a, b) => b.compareTo(a));
-
-      for (final index in indicesToRemove) {
-        final document = _scannedDocuments[index];
-        final file = File(document.filePath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-        _scannedDocuments.removeAt(index);
-      }
-
-      // Save documents to persistent storage
-      await _saveDocuments();
-
-      setState(() {});
-      _exitSelectionMode();
-
+    final failed = await _vm.delete(documents.map((d) => d.id).toList());
+    if (!mounted) return;
+    _vm.exitSelectionMode();
+    final deleted = count - failed.length;
+    if (failed.isNotEmpty) {
       _showToast(
-        '$count ${count == 1 ? _localization.translate('documentDeleted') : _localization.translate('documentsDeleted')}',
+        count == 1
+            ? _localization.translate('failedToDeleteDocument')
+            : _localization.translate('failedToDeleteSelected'),
+        Colors.red,
+      );
+    } else {
+      _showToast(
+        count == 1
+            ? _localization.translate('documentDeleted')
+            : _localization
+                .translate('documentsDeleted')
+                .replaceAll('{count}', '$deleted'),
         Colors.green,
       );
-    } catch (e) {
-      _showToast(_localization.translate('failedToDeleteSelected'), Colors.red);
     }
   }
 
-  void _toggleDocumentSelection(int index) {
-    setState(() {
-      if (_selectedDocuments.contains(index)) {
-        _selectedDocuments.remove(index);
-      } else {
-        _selectedDocuments.add(index);
-      }
-    });
-  }
-
-  Future<void> _deleteDocument(int index) async {
-    try {
-      final document = _scannedDocuments[index];
-      final file = File(document.filePath);
-
-      if (await file.exists()) {
-        await file.delete();
-      }
-
-      setState(() {
-        _scannedDocuments.removeAt(index);
-      });
-
-      // Save documents to persistent storage
-      await _saveDocuments();
-
-      _showToast(_localization.translate('documentDeleted'), Colors.green);
-    } catch (e) {
-      _showToast(_localization.translate('failedToDeleteDocument'), Colors.red);
-    }
-  }
-
-  Future<void> _previewDocument(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        _showToast(_localization.translate('documentFileNotFound'), Colors.red);
-        return;
-      }
-
-      // Check if it's a PDF file - if so, use inline PDF viewer
-      if (filePath.toLowerCase().endsWith('.pdf')) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => PdfViewerScreen(
-              localFile: file,
-              title: path.basenameWithoutExtension(filePath),
-            ),
-          ),
-        );
-        return;
-      }
-
-      // For non-PDF files, use external app
-      final result = await OpenFilex.open(filePath);
-
-      if (result.type != ResultType.done) {
-        // Fallback: Show a preview dialog with basic info
-        _showDocumentInfoDialog(filePath);
-      }
-    } catch (e) {
-      // Error opening document: $e (log removed)
-      _showDocumentInfoDialog(filePath);
-    }
-  }
-
-  void _showDocumentInfoDialog(String filePath) {
-    final file = File(filePath);
-    final stats = file.statSync();
-    final sizeInMB = (stats.size / (1024 * 1024)).toStringAsFixed(2);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_localization.translate('documentInfo')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                '${_localization.translate('file')}: ${path.basename(filePath)}'),
-            Text('${_localization.translate('size')}: ${sizeInMB} MB'),
-            Text(
-                '${_localization.translate('type')}: ${_selectedFormat.name.toUpperCase()}'),
-            Text(
-                '${_localization.translate('created')}: ${DateTime.now().toString().split('.')[0]}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(_localization.translate('close')),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await _saveScannedDocument(filePath, 1);
-              _showToast(_localization.translate('documentSavedSuccessfully'),
-                  Colors.green);
-            },
-            child: Text(_localization.translate('saveDocument')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ignore: unused_element
-  void _resetForm() {
-    setState(() {
-      _scannedDocuments.clear();
-      _selectedPageIndex = null;
-    });
-    _generateFileName();
-  }
+  // ---------------------------------------------------------------- settings
 
   void _showScanSettings() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setModalState) {
-          return _buildScanSettings(setModalState);
-        },
+      builder: (context) => ListenableBuilder(
+        listenable: _vm,
+        builder: (context, _) => _buildScanSettings(),
       ),
     );
   }
 
-  Widget _buildScanSettings(StateSetter setModalState) {
+  Widget _buildScanSettings() {
+    final colors = Theme.of(context).colorScheme;
     return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         children: [
-          // Handle
           Container(
             width: 40,
             height: 4,
             margin: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.grey[300],
+              color: colors.outline.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-
-          // Title
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Text(
@@ -1120,140 +437,131 @@ class _ScannerViewState extends State<ScannerView>
                   ),
             ),
           ),
-
           const SizedBox(height: 20),
-
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Scan Mode
+                  // Scan mode: a label for the document and its default name.
                   _buildSettingSection(
                     _localization.translate('scanMode'),
                     Column(
-                      children: ScanMode.values.map((mode) {
-                        return RadioListTile<ScanMode>(
-                          title: Text(_getScanTypeLabel(mode)),
-                          subtitle: Text(_getScanModeDescription(mode)),
-                          value: mode,
-                          groupValue: _selectedScanType,
-                          onChanged: (ScanMode? value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedScanType = value;
-                                _scanMode = value;
-                              });
-                              setModalState(() {
-                                _selectedScanType = value;
-                                _scanMode = value;
-                              });
-                              _generateFileName();
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Export Format
-                  _buildSettingSection(
-                    _localization.translate('exportFormat'),
-                    Column(
-                      children: ExportFormat.values.map((format) {
-                        return RadioListTile<ExportFormat>(
-                          title: Text(format.name.toUpperCase()),
-                          subtitle: Text(_getFormatDescription(format)),
-                          value: format,
-                          groupValue: _selectedFormat,
-                          onChanged: (ExportFormat? value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedFormat = value;
-                                _exportFormat = value;
-                              });
-                              setModalState(() {
-                                _selectedFormat = value;
-                                _exportFormat = value;
-                              });
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Quality Settings
-                  _buildSettingSection(
-                    _localization.translate('scanQuality'),
-                    Column(
-                      children: ScanQuality.values.map((quality) {
-                        return RadioListTile<ScanQuality>(
-                          title:
-                              Text(_getScanQualityLabel(quality).toUpperCase()),
-                          value: quality,
-                          groupValue: _scanQuality,
-                          onChanged: (ScanQuality? value) {
-                            if (value != null) {
-                              setState(() => _scanQuality = value);
-                              setModalState(() => _scanQuality = value);
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Advanced Options
-                  _buildSettingSection(
-                    _localization.translate('advancedOptions'),
-                    Column(
                       children: [
-                        SwitchListTile(
-                          title: Text(_localization.translate('autoEnhance')),
-                          subtitle: Text(_localization
-                              .translate('automaticallyEnhanceImageQuality')),
-                          value: _autoEnhance,
-                          onChanged: (value) {
-                            setState(() => _autoEnhance = value);
-                            setModalState(() => _autoEnhance = value);
+                        RadioGroup<ScanMode>(
+                          groupValue: _vm.scanMode,
+                          onChanged: (ScanMode? value) {
+                            if (value != null) _vm.selectScanMode(value);
                           },
+                          child: Column(
+                            children: ScanMode.values.map((mode) {
+                              return RadioListTile<ScanMode>(
+                                title: Text(_getScanTypeLabel(mode)),
+                                subtitle: Text(_getScanModeDescription(mode)),
+                                value: mode,
+                              );
+                            }).toList(),
+                          ),
                         ),
-                        SwitchListTile(
-                          title: Text(_localization.translate('autoCrop')),
-                          subtitle: Text(_localization
-                              .translate('automaticallyDetectAndCrop')),
-                          value: _autoCrop,
-                          onChanged: (value) {
-                            setState(() => _autoCrop = value);
-                            setModalState(() => _autoCrop = value);
-                          },
-                        ),
-                        SwitchListTile(
-                          title:
-                              Text(_localization.translate('removeBackground')),
-                          subtitle: Text(_localization
-                              .translate('removeBackgroundKeepDocument')),
-                          value: _removeBackground,
-                          onChanged: (value) {
-                            setState(() => _removeBackground = value);
-                            setModalState(() => _removeBackground = value);
-                          },
-                        ),
+                        _buildNote(_localization.translate('scannerModeNote')),
                       ],
                     ),
                   ),
-
+                  const SizedBox(height: 20),
+                  _buildSettingSection(
+                    _localization.translate('exportFormat'),
+                    RadioGroup<ExportFormat>(
+                      groupValue: _vm.exportFormat,
+                      onChanged: (ExportFormat? value) {
+                        if (value != null) _vm.selectExportFormat(value);
+                      },
+                      child: Column(
+                        children: ExportFormat.values.map((format) {
+                          return RadioListTile<ExportFormat>(
+                            title: Text(format.name.toUpperCase()),
+                            subtitle: Text(_getFormatDescription(format)),
+                            value: format,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildSettingSection(
+                    _localization.translate('scannerMaxPages'),
+                    Wrap(
+                      spacing: 8,
+                      children: ScannerViewModel.maxPageChoices.map((pages) {
+                        return ChoiceChip(
+                          label: Text('$pages'),
+                          selected: _vm.maxPages == pages,
+                          onSelected: (_) {
+                            _vm.maxPages = pages;
+                            _saveMaxPagesPreference(pages);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Quality: neither platform's scanner takes a quality from
+                  // the app, so the choices are shown as unavailable.
+                  _buildSettingSection(
+                    _localization.translate('scanQuality'),
+                    Column(
+                      children: [
+                        RadioGroup<ScanQuality>(
+                          groupValue: null,
+                          onChanged: (_) {},
+                          child: Column(
+                            children: ScanQuality.values.map((quality) {
+                              return RadioListTile<ScanQuality>(
+                                title: Text(_getScanQualityLabel(quality)
+                                    .toUpperCase()),
+                                value: quality,
+                                enabled: false,
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        _buildNote(
+                            _localization.translate('scannerQualityNote')),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildSettingSection(
+                    _localization.translate('scannerBuiltInToolsTitle'),
+                    _buildNote(
+                        _localization.translate('scannerBuiltInToolsBody')),
+                  ),
                   const SizedBox(height: 40),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNote(String text) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline,
+              size: 18, color: colors.onSurface.withValues(alpha: 0.6)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                  ),
             ),
           ),
         ],
@@ -1325,48 +633,46 @@ class _ScannerViewState extends State<ScannerView>
     }
   }
 
+  // ------------------------------------------------------------------ layout
+
   @override
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
-    final size = MediaQuery.of(context).size;
 
-    return Scaffold(
-      backgroundColor: colors.surface,
-      extendBodyBehindAppBar: true,
-      resizeToAvoidBottomInset: false,
-      appBar: _buildAdvancedAppBar(localization, colors),
-      body: _buildBody(localization, colors, size),
-      floatingActionButton: _buildAdvancedFAB(localization),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      // bottomNavigationBar: _buildBottomAppBar(colors),
+    return ListenableBuilder(
+      listenable: _vm,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: colors.surface,
+          extendBodyBehindAppBar: true,
+          resizeToAvoidBottomInset: false,
+          appBar: _buildAdvancedAppBar(localization, colors),
+          body: _buildBody(localization, colors),
+          floatingActionButton: _buildAdvancedFAB(localization),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerDocked,
+        );
+      },
     );
   }
 
   PreferredSizeWidget _buildAdvancedAppBar(
       AppLocalizations localization, ColorScheme colors) {
+    final documents = _vm.documents;
+    final selecting = _vm.isSelectionMode;
     return AppBar(
       leading: const BackArrowButton(
         iconColor: Colors.white, // Set to white to match the primary gradient
-        backgroundColor: Colors
-            .transparent, // Make background transparent since we have gradient
-        showBackground: false, // Disable the default background circle
+        backgroundColor: Colors.transparent,
+        showBackground: false,
       ),
-      title: Column(
-        children: [
-          Text(
-            _isSelectionMode
-                ? '${_selectedDocuments.length} ${_localization.translate('selected')}'
-                : _localization.translate('Scanner'),
-            style: AppTextStyles.appBarTitle.copyWith(fontSize: 20),
-          ),
-          if (_scannedDocuments.isNotEmpty && !_isSelectionMode)
-            Text(
-              '${_scannedDocuments.length} ${_localization.translate('documentsScanned')}',
-              style: TextStyle(
-                  fontSize: 12, color: colors.onSurface.withValues(alpha: 0.7)),
-            ),
-        ],
+      title: Text(
+        selecting
+            ? '${_vm.selectedCount} ${_localization.translate('selected')}'
+            : _localization.translate('Scanner'),
+        style: AppTextStyles.appBarTitle.copyWith(fontSize: 20),
+        textAlign: TextAlign.center,
       ),
       centerTitle: true,
       backgroundColor: Colors.transparent,
@@ -1385,46 +691,31 @@ class _ScannerViewState extends State<ScannerView>
         ),
       ),
       actions: [
-        if (_isSelectionMode) ...[
-          // Bulk actions when in selection mode
+        if (selecting) ...[
           IconButton(
             icon: const Icon(Icons.share, color: Colors.white),
-            onPressed:
-                _selectedDocuments.isNotEmpty ? _shareBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0 ? _shareBulkDocuments : null,
             tooltip: _localization.translate('shareSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
-            onPressed:
-                _selectedDocuments.isNotEmpty ? _deleteBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0
+                ? () => _deleteDocuments(_vm.selectedDocuments)
+                : null,
             tooltip: _localization.translate('deleteSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: _exitSelectionMode,
+            onPressed: _vm.exitSelectionMode,
             tooltip: _localization.translate('cancelSelection'),
           ),
         ] else ...[
-          if (_scannedDocuments.isNotEmpty) ...[
-            IconButton(
-              icon: Icon(
-                _isGridView ? Icons.view_list : Icons.grid_view,
-                color: Colors.white,
-              ),
-              onPressed: () {
-                setState(() => _isGridView = !_isGridView);
-                _saveViewModePreference();
-              },
-              tooltip: _isGridView
-                  ? _localization.translate('listView')
-                  : _localization.translate('gridView'),
-            ),
+          if (documents.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.checklist, color: Colors.white),
-              onPressed: _enterSelectionMode,
+              onPressed: _vm.enterSelectionMode,
               tooltip: _localization.translate('selectDocuments'),
             ),
-          ],
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.white),
             onPressed: _showScanSettings,
@@ -1435,27 +726,21 @@ class _ScannerViewState extends State<ScannerView>
     );
   }
 
-  Widget _buildBody(
-      AppLocalizations localization, ColorScheme colors, Size size) {
+  Widget _buildBody(AppLocalizations localization, ColorScheme colors) {
+    final documents = _vm.documents;
     return CustomScrollView(
       slivers: [
         // Header space for transparent app bar
         const SliverToBoxAdapter(child: SizedBox(height: 120)),
 
-        // Mode indicator
         SliverToBoxAdapter(
           child: _buildModeIndicator(localization, colors),
         ),
 
-        // Processing indicator
-        if (_isProcessing)
-          SliverToBoxAdapter(
-            child: _buildProcessingIndicator(localization, colors),
-          ),
+        if (_vm.legacyDocumentCount > 0)
+          SliverToBoxAdapter(child: _buildLegacyNotice(colors)),
 
-        // Scanned documents
-        if (_scannedDocuments.isNotEmpty) ...[
-          // Scanned documents header
+        if (documents.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: _buildScannedDocumentsHeader(localization),
           ),
@@ -1463,32 +748,52 @@ class _ScannerViewState extends State<ScannerView>
               ? SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
+                    // A fixed height sized to the tile's content (grows with
+                    // the system text size) instead of a width-based ratio,
+                    // which made the tiles needlessly tall.
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
-                      childAspectRatio: 0.8,
+                      mainAxisExtent: 184 *
+                          (MediaQuery.textScalerOf(context).scale(14) / 14)
+                              .clamp(1.0, 1.6)
+                              .toDouble(),
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final document = _scannedDocuments[index];
-                        return _buildDocumentGridCard(document, index);
+                        final document = documents[index];
+                        return KeyedSubtree(
+                          key: ValueKey<String>(document.id),
+                          child: _buildDocumentGridCard(document),
+                        );
                       },
-                      childCount: _scannedDocuments.length,
+                      childCount: documents.length,
                     ),
                   ),
                 )
               : SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      final document = _scannedDocuments[index];
-                      return _buildDocumentCard(document, index);
+                      final document = documents[index];
+                      return KeyedSubtree(
+                        key: ValueKey<String>(document.id),
+                        child: _buildDocumentCard(document),
+                      );
                     },
-                    childCount: _scannedDocuments.length,
+                    childCount: documents.length,
                   ),
                 ),
-        ] else
+        ] else if (_vm.isLoading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          )
+        else if (_vm.loadFailed)
+          SliverToBoxAdapter(child: _buildLoadFailed())
+        else
           SliverToBoxAdapter(
             child: _buildEmptyState(),
           ),
@@ -1523,7 +828,7 @@ class _ScannerViewState extends State<ScannerView>
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              _getScanModeIcon(_scanMode),
+              _getScanModeIcon(_vm.scanMode),
               color: AppColors.primary,
               size: 28,
             ),
@@ -1535,7 +840,7 @@ class _ScannerViewState extends State<ScannerView>
               children: [
                 Text(
                   _localization.translate('scanModeLabel').replaceAll(
-                      '{mode}', _getScanTypeLabel(_scanMode).toUpperCase()),
+                      '{mode}', _getScanTypeLabel(_vm.scanMode).toUpperCase()),
                   style: AppTextStyles.sectionLabel.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppColors.primary,
@@ -1543,25 +848,25 @@ class _ScannerViewState extends State<ScannerView>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _getScanModeDescription(_scanMode),
+                  _getScanModeDescription(_vm.scanMode),
                   style: AppTextStyles.bodyText.copyWith(
                     color: colors.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
-                    _buildFeatureChip(_localization.translate('qualityLabel'),
-                        _getScanQualityLabel(_scanQuality)),
-                    const SizedBox(width: 6),
-                    if (_autoEnhance)
-                      _buildFeatureChip(
-                          'AI', _localization.translate('aiEnhanced')),
-                    const SizedBox(width: 6),
-                    if (_autoCrop)
-                      _buildFeatureChip(
-                          _localization.translate('autoCropLabel'),
-                          _localization.translate('autoCropLabel')),
+                    _buildFeatureChip(
+                      _localization.translate('exportFormat'),
+                      _getFormatLabel(_vm.exportFormat),
+                    ),
+                    _buildInfoChip(
+                      _localization
+                          .translate('scannerMaxPagesChip')
+                          .replaceAll('{count}', '${_vm.maxPages}'),
+                    ),
                   ],
                 ),
               ],
@@ -1572,7 +877,19 @@ class _ScannerViewState extends State<ScannerView>
     );
   }
 
-  Widget _buildFeatureChip(String label, String value) {
+  Widget _buildLegacyNotice(ColorScheme colors) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: _buildNote(_localization
+          .translate('scannerLegacyNotice')
+          .replaceAll('{count}', '${_vm.legacyDocumentCount}')),
+    );
+  }
+
+  Widget _buildFeatureChip(String label, String value) =>
+      _buildInfoChip('$label: $value');
+
+  Widget _buildInfoChip(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1581,7 +898,7 @@ class _ScannerViewState extends State<ScannerView>
         border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
       ),
       child: Text(
-        '$label: $value',
+        text,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
@@ -1591,72 +908,14 @@ class _ScannerViewState extends State<ScannerView>
     );
   }
 
-  Widget _buildProcessingIndicator(
-      AppLocalizations localization, ColorScheme colors) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircularProgressIndicator(
-                value: _processingProgress,
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _currentProcessingStep,
-                      style: AppTextStyles.bodyText
-                          .copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _localization.translate('percentComplete').replaceAll(
-                          '{percent}',
-                          '${(_processingProgress * 100).toInt()}'),
-                      style: TextStyle(
-                          color: colors.onSurface.withValues(alpha: 0.6)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: _processingProgress,
-            backgroundColor: colors.outline.withValues(alpha: 0.2),
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAdvancedFAB(AppLocalizations localization) {
+    final disabled = _vm.isBusy || _vm.draft != null;
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       child: FloatingActionButton.extended(
-        onPressed: _isScanning ? null : _startScanning,
-        icon: _isScanning
-            ? SizedBox(
+        onPressed: disabled ? null : _startScanning,
+        icon: _vm.isScanning
+            ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
@@ -1666,9 +925,9 @@ class _ScannerViewState extends State<ScannerView>
               )
             : const Icon(Icons.camera_alt),
         label: Text(
-          _isScanning
+          _vm.isScanning
               ? _localization.translate('scanningProgress')
-              : _scannedDocuments.isEmpty
+              : _vm.documents.isEmpty
                   ? _localization.translate('startScanning')
                   : _localization.translate('scanMore'),
           style: const TextStyle(
@@ -1683,7 +942,6 @@ class _ScannerViewState extends State<ScannerView>
     );
   }
 
-  // Helper methods
   IconData _getScanModeIcon(ScanMode mode) {
     switch (mode) {
       case ScanMode.document:
@@ -1716,6 +974,29 @@ class _ScannerViewState extends State<ScannerView>
       case ScanMode.magazine:
         return _localization.translate('enhancedColorReproduction');
     }
+  }
+
+  Widget _buildLoadFailed() {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          Icon(Icons.error_outline,
+              size: 56, color: Theme.of(context).colorScheme.error),
+          const SizedBox(height: 12),
+          Text(
+            _localization.translate('scannerLoadFailed'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: _vm.refresh,
+            child: Text(_localization.translate('retry')),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildEmptyState() {
@@ -1766,30 +1047,84 @@ class _ScannerViewState extends State<ScannerView>
           ),
           const SizedBox(width: 8),
           Text(
-            '${localization.translate('scannedDocuments')} (${_scannedDocuments.length})',
+            '${localization.translate('scannedDocuments')} (${_vm.documents.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
               color: AppColors.primary,
             ),
           ),
           const Spacer(),
-          if (_scannedDocuments.isNotEmpty)
-            Text(
-              _isGridView
-                  ? _localization.translate('gridView')
-                  : _localization.translate('listView'),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+          // Shows the view the tap switches to; replaces the old text label.
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              _isGridView ? Icons.view_list : Icons.grid_view,
+              color: AppColors.primary,
             ),
+            onPressed: () {
+              setState(() => _isGridView = !_isGridView);
+              _saveViewModePreference();
+            },
+            tooltip: _isGridView
+                ? _localization.translate('listView')
+                : _localization.translate('gridView'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildDocumentCard(ScannedDocument document, int index) {
-    final isSelected = _selectedDocuments.contains(index);
+  // The date and time the scan was saved, in the phone's locale.
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final material = MaterialLocalizations.of(context);
+    return '${material.formatMediumDate(local)} '
+        '${material.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  String _pagesLabel(ScannerDocument document) => _localization
+      .translate('scannerPageCountLabel')
+      .replaceAll('{count}', '${document.pageCount}');
+
+  Widget _buildMissingBadge() {
+    final colors = Theme.of(context).colorScheme;
+    return Text(
+      _localization.translate('scannerFileMissingBadge'),
+      style: TextStyle(
+        color: colors.error,
+        fontWeight: FontWeight.w600,
+        fontSize: 11,
+      ),
+    );
+  }
+
+  void _onCardTap(ScannerDocument document) {
+    if (_vm.isSelectionMode) {
+      _vm.toggleSelection(document.id);
+    } else {
+      _previewDocument(document);
+    }
+  }
+
+  void _onCardLongPress(ScannerDocument document) {
+    if (_vm.isSelectionMode) return;
+    _vm.enterSelectionMode();
+    _vm.toggleSelection(document.id);
+  }
+
+  Widget _buildDocumentCard(ScannerDocument document) {
+    final isSelected = _vm.isSelected(document.id);
+    final isSelectionMode = _vm.isSelectionMode;
+    final missing = _vm.isMissing(document.id);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1812,10 +1147,10 @@ class _ScannerViewState extends State<ScannerView>
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: _isSelectionMode
+        leading: isSelectionMode
             ? Checkbox(
                 value: isSelected,
-                onChanged: (_) => _toggleDocumentSelection(index),
+                onChanged: (_) => _vm.toggleSelection(document.id),
                 activeColor: AppColors.primary,
               )
             : Container(
@@ -1832,8 +1167,8 @@ class _ScannerViewState extends State<ScannerView>
                   size: 24,
                 ),
               ),
-        onTap: _isSelectionMode ? () => _toggleDocumentSelection(index) : null,
-        onLongPress: _isSelectionMode ? null : () => _enterSelectionMode(),
+        onTap: () => _onCardTap(document),
+        onLongPress: () => _onCardLongPress(document),
         title: Text(
           document.name,
           style: AppTextStyles.bodyText.copyWith(
@@ -1858,149 +1193,111 @@ class _ScannerViewState extends State<ScannerView>
                 ),
               ),
               const SizedBox(height: 2),
-              Row(
-                children: [
-                  Icon(
-                    Icons.schedule,
-                    size: 14,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _formatDateTime(document.createdAt),
-                    style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
-                      fontSize: 12,
-                    ),
-                  ),
-                  if (document.pageCount > 1) ...[
-                    Text(
-                      ' • ${document.pageCount} ${_localization.translate('pages')}',
-                      style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(Icons.visibility, color: AppColors.primary, size: 20),
-              onPressed: () => _previewDocument(document.filePath),
-              tooltip: _localization.translate('preview'),
-              visualDensity: VisualDensity.compact,
-            ),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert,
+              Text(
+                '${_formatDateTime(document.createdAt)} • ${_pagesLabel(document)} • ${_formatFileSize(document.fileSize)}',
+                style: TextStyle(
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
-                      .withValues(alpha: 0.6)),
-              onSelected: (value) {
-                switch (value) {
-                  case 'share':
-                    _shareDocument(document);
-                    break;
-                  case 'download':
-                    _saveToDeviceStorage(File(document.filePath));
-                    break;
-                  case 'rename':
-                    _renameDocument(document, index);
-                    break;
-                  case 'delete':
-                    _deleteDocument(index);
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'share',
-                  child: Row(
-                    children: [
-                      Icon(Icons.share, size: 20, color: Colors.blue),
-                      const SizedBox(width: 12),
-                      Text(_localization.translate('share')),
-                    ],
-                  ),
+                      .withValues(alpha: 0.6),
+                  fontSize: 12,
                 ),
-                PopupMenuItem(
-                  value: 'download',
-                  child: Row(
-                    children: [
-                      Icon(Icons.download, size: 20, color: Colors.green),
-                      const SizedBox(width: 12),
-                      Text(_localization.translate('download')),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'rename',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit, size: 20, color: Colors.grey),
-                      const SizedBox(width: 12),
-                      Text(_localization.translate('rename')),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, size: 20, color: Colors.red),
-                      const SizedBox(width: 12),
-                      Text(_localization.translate('delete')),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
+              ),
+              if (missing) _buildMissingBadge(),
+            ],
+          ),
         ),
+        trailing: isSelectionMode
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.visibility,
+                        color: AppColors.primary, size: 20),
+                    onPressed: () => _previewDocument(document),
+                    tooltip: _localization.translate('preview'),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6)),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'share':
+                          _shareDocuments([document]);
+                          break;
+                        case 'download':
+                          _exportDocument(document);
+                          break;
+                        case 'rename':
+                          _renameDocument(document);
+                          break;
+                        case 'delete':
+                          _deleteDocuments([document]);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.share,
+                                size: 20, color: Colors.blue),
+                            const SizedBox(width: 12),
+                            Text(_localization.translate('share')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'download',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.download,
+                                size: 20, color: Colors.green),
+                            const SizedBox(width: 12),
+                            Text(_localization.translate('download')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.edit,
+                                size: 20, color: Colors.grey),
+                            const SizedBox(width: 12),
+                            Text(_localization.translate('rename')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.delete,
+                                size: 20, color: Colors.red),
+                            const SizedBox(width: 12),
+                            Text(_localization.translate('delete')),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays > 0) {
-      return '${difference.inDays} ${_localization.translate('daysAgo')}';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} ${_localization.translate('hoursAgo')}';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} ${_localization.translate('minutesAgo')}';
-    } else {
-      return _localization.translate('justNow');
-    }
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
-  Widget _buildDocumentGridCard(ScannedDocument document, int index) {
-    final isSelected = _selectedDocuments.contains(index);
+  Widget _buildDocumentGridCard(ScannerDocument document) {
+    final isSelected = _vm.isSelected(document.id);
+    final isSelectionMode = _vm.isSelectionMode;
+    final missing = _vm.isMissing(document.id);
 
     return Card(
       margin: const EdgeInsets.all(4),
@@ -2012,30 +1309,27 @@ class _ScannerViewState extends State<ScannerView>
             : BorderSide.none,
       ),
       child: InkWell(
-        onTap: _isSelectionMode ? () => _toggleDocumentSelection(index) : null,
-        onLongPress: _isSelectionMode ? null : () => _enterSelectionMode(),
+        onTap: () => _onCardTap(document),
+        onLongPress: () => _onCardLongPress(document),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white,
-                AppColors.primary.withValues(alpha: 0.02),
-              ],
-            ),
+            color: Theme.of(context).colorScheme.surface,
           ),
+          // The tile height is fixed by the grid's aspect ratio, so the
+          // content below is kept compact and the action buttons are pinned
+          // to the bottom; the details clip rather than overflow.
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top row with selection indicator and menu
-              Row(
+              SizedBox(
+                height: 28,
+                child: Row(
                 children: [
-                  // Selection indicator or document icon
-                  if (_isSelectionMode)
+                  if (isSelectionMode)
                     Container(
                       width: 24,
                       height: 24,
@@ -2054,10 +1348,9 @@ class _ScannerViewState extends State<ScannerView>
                           : null,
                     )
                   else
-                    // Document type icon
                     Container(
-                      width: 32,
-                      height: 32,
+                      width: 28,
+                      height: 28,
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
@@ -2067,171 +1360,184 @@ class _ScannerViewState extends State<ScannerView>
                             ? Icons.picture_as_pdf
                             : Icons.image,
                         color: AppColors.primary,
-                        size: 18,
+                        size: 16,
                       ),
                     ),
-
                   const Spacer(),
-
-                  // More options menu
-                  PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_vert,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    onSelected: (value) async {
-                      switch (value) {
-                        case 'preview':
-                          await _previewDocument(document.filePath);
-                          break;
-                        case 'share':
-                          await _shareDocument(document);
-                          break;
-                        case 'save_to_downloads':
-                          await _saveToDeviceStorage(File(document.filePath));
-                          break;
-                        case 'rename':
-                          await _renameDocument(document, index);
-                          break;
-                        case 'delete':
-                          await _deleteDocument(index);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'rename',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.edit,
-                                size: 18, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Text(_localization.translate('rename')),
-                          ],
+                  if (!isSelectionMode)
+                    PopupMenuButton<String>(
+                      // A sized child instead of the default icon button,
+                      // which would add 48 px of height to this row.
+                      child: SizedBox(
+                        width: 32,
+                        height: 28,
+                        child: Icon(
+                          Icons.more_vert,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
+                      onSelected: (value) async {
+                        switch (value) {
+                          case 'rename':
+                            await _renameDocument(document);
+                            break;
+                          case 'delete':
+                            await _deleteDocuments([document]);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'rename',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit,
+                                  size: 18, color: Colors.grey),
+                              const SizedBox(width: 8),
+                              Text(_localization.translate('rename')),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.delete,
+                                  color: Colors.red, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                _localization.translate('delete'),
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              // Details: clipped, never overflowing, if text is scaled up.
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        document.name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              height: 1.2,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '${_getScanTypeLabel(document.scanType)} • ${_getFormatLabel(document.format)} • ${_pagesLabel(document)}',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10,
+                            height: 1.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _formatDateTime(document.createdAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                      ),
+                      const SizedBox(height: 3),
+                      if (missing)
+                        _buildMissingBadge()
+                      else
+                        Row(
                           children: [
-                            const Icon(Icons.delete,
-                                color: Colors.red, size: 18),
-                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.folder,
+                              size: 10,
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 3),
                             Text(
-                              _localization.translate('delete'),
-                              style: const TextStyle(color: Colors.red),
+                              _formatFileSize(document.fileSize),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    fontSize: 10,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                             ),
                           ],
                         ),
-                      ),
                     ],
                   ),
-                ],
-              ),
-
-              const SizedBox(height: 6),
-
-              // Document name
-              Text(
-                document.name,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              const SizedBox(height: 6),
-
-              // Document type and format
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  '${_getScanTypeLabel(document.scanType)} • ${_getFormatLabel(document.format)}',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 10,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
 
-              const SizedBox(height: 6),
-
-              // Date and page count with fixed height
-              SizedBox(
-                height: 16, // Fixed height for date
-                child: Text(
-                  _formatDateTime(document.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 11,
-                      ),
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              // File size with fixed height
-              SizedBox(
-                height: 14, // Fixed height for file size row
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.folder,
-                      size: 10,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      _formatFileSize(document.fileSize),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Fixed spacing instead of Spacer for consistent layout
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
 
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildGridActionButton(
-                    icon: Icons.visibility,
-                    onTap: () => _previewDocument(document.filePath),
-                    color: AppColors.primary,
-                  ),
-                  Tooltip(
-                    message: AppLocalizations.of(context).translate('share'),
+                  Expanded(
                     child: _buildGridActionButton(
-                      icon: Icons.share,
-                      onTap: () => _shareDocument(document),
-                      color: Colors.blue,
+                      icon: Icons.visibility,
+                      onTap: () => _previewDocument(document),
+                      color: AppColors.primary,
                     ),
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.download,
-                    onTap: () => _saveToDeviceStorage(File(document.filePath)),
-                    color: Colors.green,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Tooltip(
+                      message: AppLocalizations.of(context).translate('share'),
+                      child: _buildGridActionButton(
+                        icon: Icons.share,
+                        onTap: () => _shareDocuments([document]),
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildGridActionButton(
+                      icon: Icons.download,
+                      onTap: () => _exportDocument(document),
+                      color: Colors.green,
+                    ),
                   ),
                 ],
               ),
@@ -2248,10 +1554,11 @@ class _ScannerViewState extends State<ScannerView>
     required Color color,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: _vm.isSelectionMode ? null : onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        height: 34,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),

@@ -13,6 +13,7 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         FileSaverPlugin.registerWith(flutterEngine, this)
+        flutterEngine.plugins.add(ScanLifecycleGuard())
         MultiMediaSharePlugin.registerWith(flutterEngine, this)
     }
 }

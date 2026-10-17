@@ -113,7 +113,7 @@ dependencies:
   # better_player: ^0.0.84  # Removed due to AGP compatibility issues
   visibility_detector: ^0.4.0+2
   photo_view: ^0.15.0
-  flutter_doc_scanner: ^0.0.16
+  flutter_doc_scanner: ^0.0.21
   video_compress: ^3.1.4
   timezone: ^0.10.1
   firebase_messaging: ^16.0.3

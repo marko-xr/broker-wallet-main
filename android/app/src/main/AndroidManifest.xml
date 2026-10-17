@@ -16,9 +16,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
         android:maxSdkVersion="32" />
     
-    <!-- For Android 11+ (API 30+) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    
+    <!-- All Files Access (MANAGE_EXTERNAL_STORAGE) is intentionally not
+         declared: the Scanner saves to the app's private storage and exports
+         through MediaStore Downloads, which need no broad storage access. -->
+
     <!-- For Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />

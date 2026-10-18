@@ -156,7 +156,6 @@ void main() {
       expect(kotlin, contains('call.argument<ByteArray>("fileBytes")'));
       expect(kotlin, contains('"success" to true'));
       for (final path in <String>[
-        '$toolkitFolder/combine_pdfs_view.dart',
         '$toolkitFolder/image_to_pdf_view.dart',
         '$toolkitFolder/signature/signature_view.dart',
       ]) {
@@ -164,6 +163,17 @@ void main() {
         expect(source, contains("'saveFileToDownloads'"), reason: path);
         expect(source, contains("'fileBytes'"), reason: path);
       }
+    });
+
+    test('Combine PDFs moved to the streaming route and no longer uses it', () {
+      // Combine PDFs exports through the same file-based route as the Scanner
+      // (Combine PDF S2), so it must not pass whole documents through the
+      // channel any more.
+      final view = read('$toolkitFolder/combine_pdfs_view.dart');
+      expect(view.contains('saveFileToDownloads'), isFalse);
+      expect(view.contains('fileBytes'), isFalse);
+      final platform = read('lib/src/services/combine_pdf/combine_pdf_platform.dart');
+      expect(platform, contains('exportFile('));
     });
 
     test('Scanner export streams a file, never a whole document in memory', () {

@@ -90,14 +90,26 @@ class PlatformScannerExporter implements ScannerExporter {
   final MethodChannel _channel;
 
   @override
-  Future<ScannerExportResult> export(
-      ScannerDocument document, File file) async {
-    if (isAndroid) return _exportAndroid(document, file);
-    return _exportFiles(document, file);
+  Future<ScannerExportResult> export(ScannerDocument document, File file) =>
+      exportFile(
+          file: file,
+          fileName: document.exportFileName,
+          mimeType: document.mimeType);
+
+  /// Exports any stored [file] under [fileName]. The Scanner's own documents go
+  /// through [export]; the Combine tool uses this directly so both share one
+  /// proven route to Downloads / Files.
+  Future<ScannerExportResult> exportFile({
+    required File file,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    if (isAndroid) return _exportAndroid(file, fileName, mimeType);
+    return _exportFiles(file, fileName);
   }
 
   Future<ScannerExportResult> _exportAndroid(
-      ScannerDocument document, File file) async {
+      File file, String fileName, String mimeType) async {
     final sdk = await androidSdk();
     if (sdk <= 28 && !await requestLegacyStoragePermission()) {
       throw const ScannerException(ScannerFailure.permissionDenied);
@@ -107,8 +119,8 @@ class PlatformScannerExporter implements ScannerExporter {
         'exportFileToDownloads',
         <String, Object?>{
           'sourcePath': file.path,
-          'fileName': document.exportFileName,
-          'mimeType': document.mimeType,
+          'fileName': fileName,
+          'mimeType': mimeType,
         },
       );
       if (result is Map &&
@@ -129,11 +141,9 @@ class PlatformScannerExporter implements ScannerExporter {
     }
   }
 
-  Future<ScannerExportResult> _exportFiles(
-      ScannerDocument document, File file) async {
+  Future<ScannerExportResult> _exportFiles(File file, String fileName) async {
     try {
-      final saved =
-          await saveToFiles(document.exportFileName, await file.readAsBytes());
+      final saved = await saveToFiles(fileName, await file.readAsBytes());
       if (saved == null) return const ScannerExportResult.cancelled();
       return ScannerExportResult.saved(
           ScannerExportDestination.files, p.basename(saved));

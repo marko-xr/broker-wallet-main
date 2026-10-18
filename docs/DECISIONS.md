@@ -558,3 +558,36 @@
   - Not claimed: encryption at rest (scans are plain files in the app's private
     storage), real-device behaviour, or secure entitlement enforcement. See
     `docs/CURRENT_CHECKPOINT.md`.
+- Combine PDFs production readiness (decided 2026-10-18, branch
+  `combine-pdfs-production-readiness`, source only; device acceptance pending):
+  - Pages are copied with Syncfusion's `createTemplate()` onto pages that keep the
+    source's own size, orientation and rotation (the old route forced A4). This carries
+    text, fonts and geometry. It does not carry links, bookmarks or annotation objects.
+  - Form fields and annotations are flattened by flatten, save and reload of an in-memory
+    copy (a template of an in-memory flattened page lacks the values), and the user is told
+    on the file's card. Links and bookmarks are dropped and disclosed. The combine is never
+    described as lossless.
+  - Signed PDFs and encrypted PDFs (with a password, or owner-only protection that opens
+    without one) are **refused**, never opened with a supplied password and never copied:
+    a combined copy cannot carry a signature, and copying pages would strip the owner's
+    protection. No password is requested or stored.
+  - A combine is all or nothing: no page or file is skipped; the output is read back (page
+    count, per-page size/rotation, per-page text against its source page) before it is
+    stored, and read back again after it is copied into the store. Failure or cancel stores
+    and counts nothing. PDF work runs on a worker isolate that Cancel stops.
+  - Combined PDFs are stored per signed-in account in
+    `<app documents>/combine_pdfs/<account>/` with the Scanner's journaled store design
+    (not shared code: a PDF-only store of the same shape). The old device-wide
+    `combined_pdf_documents` list and its files are not migrated, shown or deleted; the
+    screen shows a count. Attributing them is an owner decision.
+  - Export reuses the Scanner's file-based route (`exportFileToDownloads`, Files save
+    sheet); Share uses `ShareLive` with title-named copies. The system picker needs no
+    permission, so none is requested. `saveFileToDownloads` stays for Images to PDF and
+    Signature.
+  - One combined PDF is one usage unit, recorded once after it was stored, through
+    `combine_usage_gate.dart` (legacy Firestore, fail-open, not authoritative; replacing
+    that class is the whole server-authoritative-quota change).
+  - `app_flutter/combine_pdfs` is excluded from Android cloud backup and device transfer
+    and from iPhone backup; combined PDFs are not restored onto a new phone and are not
+    encrypted at rest.
+  - No page thumbnails: none were added because that needs a renderer dependency.

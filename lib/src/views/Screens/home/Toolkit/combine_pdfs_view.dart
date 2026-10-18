@@ -1,168 +1,159 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pages_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
-import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:io';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:broker_wallet/src/services/clean_permission_service.dart';
+import 'package:broker_wallet/src/services/combine_pdf/combine_models.dart';
+import 'package:broker_wallet/src/services/combine_pdf/combine_usage_gate.dart';
+import 'package:broker_wallet/src/services/combine_pdf/combine_wiring.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/viewmodels/combine_pdf/combine_pdf_viewmodel.dart';
 
-// Model for combined PDF documents
-class CombinedPdfDocument {
-  final String id;
-  final String name;
-  final String filePath;
-  final DateTime createdAt;
-  final int fileSize;
-  final int pageCount;
-
-  CombinedPdfDocument({
-    required this.id,
-    required this.name,
-    required this.filePath,
-    required this.createdAt,
-    required this.fileSize,
-    required this.pageCount,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'filePath': filePath,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'fileSize': fileSize,
-      'pageCount': pageCount,
-    };
-  }
-
-  factory CombinedPdfDocument.fromJson(Map<String, dynamic> json) {
-    return CombinedPdfDocument(
-      id: json['id'],
-      name: json['name'],
-      filePath: json['filePath'],
-      createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt']),
-      fileSize: json['fileSize'],
-      pageCount: json['pageCount'],
-    );
-  }
-}
-
+/// The Combine PDFs tool: pick PDFs, choose and order their pages, combine them
+/// into one PDF kept in the signed-in account's private list, then preview,
+/// rename, share, export and delete. The logic lives in [CombinePdfViewModel];
+/// this file is the screen.
 class CombinePdfsView extends StatefulWidget {
-  const CombinePdfsView({Key? key}) : super(key: key);
+  const CombinePdfsView({Key? key, this.viewModel, this.usageGate})
+      : super(key: key);
+
+  /// A ready view model, for tests. The app builds its own.
+  final CombinePdfViewModel? viewModel;
+
+  /// The plan-limit check, for tests. The app uses [CombinePdfWiring.usageGate].
+  final CombineUsageGate? usageGate;
 
   @override
   _CombinePdfsViewState createState() => _CombinePdfsViewState();
 }
 
 class _CombinePdfsViewState extends State<CombinePdfsView> {
-  final List<File> _selectedPdfs = [];
-  final List<CombinedPdfDocument> _combinedDocuments = [];
+  late final CombinePdfViewModel _vm;
+  late final bool _ownsViewModel;
   final TextEditingController _fileNameController = TextEditingController();
-  bool _isProcessing = false;
-  double _processingProgress = 0.0;
-  String _currentProcessingStep = '';
   bool _isViewMode = false; // true for list view, false for grid view
 
-  // Selection mode state
-  bool _isSelectionMode = false;
-  Set<int> _selectedDocuments = {};
-
-  // Platform channel for MediaStore operations
-  static const MethodChannel _channel = MethodChannel('file_saver');
+  static const String _viewModeKey = 'combine_pdf_list_view_mode';
 
   @override
   void initState() {
     super.initState();
-    _fileNameController.text =
-        'combined_pdfs_${DateTime.now().millisecondsSinceEpoch}';
-    _loadCombinedDocuments();
+    _ownsViewModel = widget.viewModel == null;
+    _vm = widget.viewModel ?? CombinePdfWiring.createViewModel();
+    _fileNameController.text = _vm.suggestedName;
     _loadViewModePreference();
+    _vm.start();
   }
 
   @override
   void dispose() {
     _fileNameController.dispose();
-    // Clear the list to free memory
-    _selectedPdfs.clear();
+    if (_ownsViewModel) _vm.dispose();
     super.dispose();
   }
 
-  // Load combined documents from storage
-  Future<void> _loadCombinedDocuments() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final documentsJson = prefs.getStringList('combined_pdf_documents') ?? [];
+  AppLocalizations get _localization => AppLocalizations.of(context);
 
-      final documents = <CombinedPdfDocument>[];
-      for (final docJson in documentsJson) {
-        try {
-          final doc = CombinedPdfDocument.fromJson(json.decode(docJson));
-          // Check if file still exists
-          if (await File(doc.filePath).exists()) {
-            documents.add(doc);
-          }
-        } catch (e) {
-          // Error loading a document - suppressed debug log
-        }
-      }
-
-      setState(() {
-        _combinedDocuments.clear();
-        _combinedDocuments.addAll(documents);
-      });
-    } catch (e) {
-      // Error loading combined documents - suppressed debug log
-    }
-  }
-
-  // Save combined documents to storage
-  Future<void> _saveCombinedDocuments() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final documentsJson =
-          _combinedDocuments.map((doc) => json.encode(doc.toJson())).toList();
-      await prefs.setStringList('combined_pdf_documents', documentsJson);
-    } catch (e) {
-      // Error saving combined documents - suppressed debug log
-    }
-  }
-
-  // Load and save view mode preference
+  // Load and save view mode preference (a view setting, not documents)
   Future<void> _loadViewModePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       setState(() {
-        _isViewMode = prefs.getBool('combine_pdf_list_view_mode') ?? false;
+        _isViewMode = prefs.getBool(_viewModeKey) ?? false;
       });
     } catch (e) {
-      // Error loading view mode preference - suppressed debug log
+      // The default is fine when preferences cannot be read.
     }
   }
 
   Future<void> _saveViewModePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('combine_pdf_list_view_mode', _isViewMode);
+      await prefs.setBool(_viewModeKey, _isViewMode);
     } catch (e) {
-      // Error saving view mode preference - suppressed debug log
+      // The choice still applies for this visit.
     }
   }
 
+  /// The localized text for a failure; [name] fills a file name where the
+  /// message has one.
+  String _failureMessage(CombinePdfFailure failure, {String? name}) {
+    final loc = _localization;
+    switch (failure) {
+      case CombinePdfFailure.signedOut:
+        return loc.translate('combineErrSignedOut');
+      case CombinePdfFailure.busy:
+        return loc.translate('combineErrBusy');
+      case CombinePdfFailure.cancelled:
+        return loc.translate('combineErrCancelled');
+      case CombinePdfFailure.accountChanged:
+        return loc.translate('combineErrAccountChanged');
+      case CombinePdfFailure.tooFewFiles:
+        return loc.translate('combineErrTooFew');
+      case CombinePdfFailure.noPages:
+        return loc.translate('combineErrNoPages');
+      case CombinePdfFailure.fileHasNoPages:
+        return loc
+            .translate('combineErrFileNoPages')
+            .replaceAll('{name}', name ?? '');
+      case CombinePdfFailure.missingSource:
+        return loc.translate('combineErrMissing');
+      case CombinePdfFailure.emptySource:
+        return loc.translate('combineErrEmpty');
+      case CombinePdfFailure.corruptSource:
+        return loc.translate('combineErrCorrupt');
+      case CombinePdfFailure.encryptedSource:
+        return loc.translate('combineErrEncrypted');
+      case CombinePdfFailure.signedSource:
+        return loc.translate('combineErrSigned');
+      case CombinePdfFailure.tooLargeSource:
+        return loc.translate('combineErrFileTooLarge');
+      case CombinePdfFailure.selectionTooLarge:
+        return loc.translate('combineErrSelectionTooLarge');
+      case CombinePdfFailure.sourceChanged:
+        return loc.translate('combineErrChanged');
+      case CombinePdfFailure.outputInvalid:
+        return loc.translate('combineErrOutputInvalid');
+      case CombinePdfFailure.mergeFailed:
+        return loc.translate('combineErrMerge');
+      case CombinePdfFailure.storageFull:
+        return loc.translate('combineErrStorageFull');
+      case CombinePdfFailure.writeFailed:
+        return loc.translate('combineErrWrite');
+      case CombinePdfFailure.notFound:
+        return loc.translate('combineErrNotFound');
+      case CombinePdfFailure.invalidName:
+        return loc.translate('combineErrInvalidName');
+      case CombinePdfFailure.nameInUse:
+        return loc.translate('combineErrNameInUse');
+      case CombinePdfFailure.fileMissing:
+        return loc.translate('documentFileNotFound');
+      case CombinePdfFailure.quotaBlocked:
+        return loc.translate('combineErrBusy');
+      case CombinePdfFailure.permissionDenied:
+        return loc.translate('combineErrPermission');
+      case CombinePdfFailure.exportFailed:
+        return loc.translate('combineErrExport');
+    }
+  }
+
+  // Failures a second attempt can fix (as opposed to a file that must change).
+  static const Set<CombinePdfFailure> _retryable = <CombinePdfFailure>{
+    CombinePdfFailure.mergeFailed,
+    CombinePdfFailure.outputInvalid,
+    CombinePdfFailure.writeFailed,
+    CombinePdfFailure.storageFull,
+  };
+
   // Delete a combined document
-  Future<void> _deleteCombinedDocument(CombinedPdfDocument document) async {
+  Future<void> _deleteCombinedDocument(CombinedPdf document) async {
     final localization = AppLocalizations.of(context);
 
     // Show confirmation dialog
@@ -187,21 +178,11 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     );
 
     if (shouldDelete == true) {
-      try {
-        // Delete the file
-        final file = File(document.filePath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-
-        // Remove from list and save
-        setState(() {
-          _combinedDocuments.removeWhere((doc) => doc.id == document.id);
-        });
-
-        await _saveCombinedDocuments();
+      final failed = await _vm.delete(<String>[document.id]);
+      if (!mounted) return;
+      if (failed.isEmpty) {
         _showToast(localization.translate('documentDeleted'), Colors.green);
-      } catch (e) {
+      } else {
         _showToast(
             localization.translate('failedToDeleteDocument'), Colors.red);
       }
@@ -209,143 +190,140 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
   }
 
   // Rename a combined document
-  Future<void> _renameCombinedDocument(CombinedPdfDocument document) async {
-    final localization = AppLocalizations.of(context);
+  Future<void> _renameCombinedDocument(CombinedPdf document) async {
     final controller = TextEditingController(text: document.name);
-
-    final newName = await showDialog<String>(
+    String? error;
+    final renamed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(localization.translate('renameDocument')),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            labelText: localization.translate('documentName'),
-            border: const OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(localization.translate('cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: Text(localization.translate('rename')),
-          ),
-        ],
-      ),
-    );
-
-    if (newName != null && newName.isNotEmpty && newName != document.name) {
-      try {
-        // Update the document name
-        final updatedDoc = CombinedPdfDocument(
-          id: document.id,
-          name: newName,
-          filePath: document.filePath,
-          createdAt: document.createdAt,
-          fileSize: document.fileSize,
-          pageCount: document.pageCount,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(_localization.translate('renameDocument')),
+              content: TextField(
+                controller: controller,
+                maxLength: 80,
+                decoration: InputDecoration(
+                  labelText: _localization.translate('documentName'),
+                  errorText: error,
+                  border: const OutlineInputBorder(),
+                  counterText: '',
+                ),
+                autofocus: true,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(_localization.translate('cancel')),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final failure =
+                        await _vm.rename(document.id, controller.text);
+                    if (failure == null) {
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop(true);
+                      }
+                      return;
+                    }
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() => error = _failureMessage(failure));
+                  },
+                  child: Text(_localization.translate('rename')),
+                ),
+              ],
+            );
+          },
         );
+      },
+    );
+    controller.dispose();
+    if (renamed == true && mounted) {
+      _showToast(_localization.translate('documentRenamed'), Colors.green);
+    }
+  }
 
-        setState(() {
-          final index =
-              _combinedDocuments.indexWhere((doc) => doc.id == document.id);
-          if (index != -1) {
-            _combinedDocuments[index] = updatedDoc;
-          }
-        });
-
-        await _saveCombinedDocuments();
-        _showToast(localization.translate('documentRenamed'), Colors.green);
-      } catch (e) {
+  // Share combined documents under their titles
+  Future<void> _shareDocuments(List<CombinedPdf> documents) async {
+    if (documents.isEmpty) return;
+    final localization = AppLocalizations.of(context);
+    try {
+      final preparation =
+          await _vm.prepareShare(documents.map((d) => d.id).toList());
+      if (!mounted) return;
+      if (!preparation.isShareable) {
         _showToast(
-            localization.translate('failedToRenameDocument'), Colors.red);
-      }
-    }
-  }
-
-  // Share a combined document
-  Future<void> _shareCombinedDocument(CombinedPdfDocument document) async {
-    try {
-      await ShareLive.sendFiles(context, [document.filePath]);
-    } catch (e) {
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToShareDocument'), Colors.red);
-    }
-  }
-
-  // Preview a combined document
-  void _previewCombinedDocument(CombinedPdfDocument document) {
-    try {
-      final file = File(document.filePath);
-      if (!file.existsSync()) {
-        final localization = AppLocalizations.of(context);
-        _showToast(localization.translate('documentFileNotFound'), Colors.red);
+          preparation.unavailable.isNotEmpty
+              ? localization.translate('documentFileNotFound')
+              : localization.translate('failedToShareDocuments'),
+          Colors.red,
+        );
         return;
       }
-
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => PdfViewerScreen(
-            localFile: file,
-            title: document.name,
-          ),
-        ),
+      await ShareLive.sendFiles(
+        context,
+        preparation.paths,
+        text: documents.length == 1
+            ? '${localization.translate('combinedDocument')}: ${documents.first.name}'
+            : localization
+                .translate('sharingDocuments')
+                .replaceAll('{count}', '${documents.length}'),
       );
     } catch (e) {
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToOpenDocument'), Colors.red);
+      if (mounted) {
+        _showToast(
+            localization.translate('failedToShareDocuments'), Colors.red);
+      }
     }
   }
 
-  // Selection mode methods
-  void _enterSelectionMode() {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedDocuments.clear();
-    });
+  Future<void> _shareCombinedDocument(CombinedPdf document) =>
+      _shareDocuments(<CombinedPdf>[document]);
+
+  // Preview a combined document in the PDF viewer
+  Future<void> _previewCombinedDocument(CombinedPdf document) async {
+    final file = await _vm.openableFile(document);
+    if (!mounted) return;
+    if (file == null) {
+      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PdfViewerScreen(
+          localFile: file,
+          title: document.name,
+        ),
+      ),
+    );
   }
 
-  void _exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedDocuments.clear();
-    });
-  }
-
-  void _toggleDocumentSelection(int index) {
-    setState(() {
-      if (_selectedDocuments.contains(index)) {
-        _selectedDocuments.remove(index);
-      } else {
-        _selectedDocuments.add(index);
-      }
-    });
+  // Preview a selected source file before combining
+  void _previewSource(CombineSource source) {
+    final file = File(source.path);
+    if (!file.existsSync()) {
+      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) =>
+            PdfViewerScreen(localFile: file, title: source.displayName),
+      ),
+    );
   }
 
   Future<void> _shareBulkDocuments() async {
-    try {
-      final selectedDocs =
-          _selectedDocuments.map((index) => _combinedDocuments[index]).toList();
-
-      await ShareLive.sendFiles(
-        context,
-        [for (final doc in selectedDocs) doc.filePath],
-      );
-
-      _exitSelectionMode();
-    } catch (e) {
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToShareDocuments'), Colors.red);
-    }
+    final selected = _vm.selectedDocuments;
+    await _shareDocuments(selected);
+    if (mounted) _vm.exitSelectionMode();
   }
 
   Future<void> _deleteBulkDocuments() async {
     final localization = AppLocalizations.of(context);
-    final count = _selectedDocuments.length;
+    final selected = _vm.selectedDocuments;
+    final count = selected.length;
+    if (count == 0) return;
 
     // Show confirmation dialog
     final shouldDelete = await showDialog<bool>(
@@ -391,525 +369,268 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     );
 
     if (shouldDelete == true) {
-      try {
-        // Delete files and remove from list
-        final indicesToRemove = _selectedDocuments.toList()
-          ..sort((a, b) => b.compareTo(a));
-
-        for (final index in indicesToRemove) {
-          final document = _combinedDocuments[index];
-          final file = File(document.filePath);
-
-          if (await file.exists()) {
-            await file.delete();
-          }
-
-          _combinedDocuments.removeAt(index);
-        }
-
-        await _saveCombinedDocuments();
-        _exitSelectionMode();
-
+      final failed = await _vm.delete(selected.map((d) => d.id).toList());
+      if (!mounted) return;
+      _vm.exitSelectionMode();
+      if (failed.isEmpty) {
         _showToast(
           '$count ${count == 1 ? localization.translate('documentDeleted') : localization.translate('documentsDeleted')}',
           Colors.green,
         );
-      } catch (e) {
+      } else {
         _showToast(
-            localization.translate('failedToDeleteDocuments'), Colors.red);
+          localization
+              .translate('combineErrDeleteSome')
+              .replaceAll('{count}', '${failed.length}'),
+          Colors.red,
+        );
       }
     }
   }
 
   Future<void> _pickPDFs() async {
-    final localization = AppLocalizations.of(context);
-    // _pickPDFs called (log removed)
-
-    try {
-      // Request storage permissions first using CleanPermissionService
-      final permissionService = CleanPermissionService();
-      final permissions =
-          await permissionService.requestStoragePermissions(context);
-
-      final hasPermission = permissions.values.any(
-        (status) => status.isGranted || status.isLimited,
-      );
-
-      if (!hasPermission) {
-        _showToast(
-          localization.translate('storagePermissionRequired'),
-          Colors.red,
-        );
-        return;
-      }
-
-      // Attempting to pick files... (log removed)
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-        allowMultiple: true,
-      );
-
-      // File picker result: $result (log removed)
-
-      if (result != null && result.files.isNotEmpty) {
-        // Found ${result.files.length} files (log removed)
-        final validPdfs = <File>[];
-
-        for (final file in result.files) {
-          if (file.path != null) {
-            final pdfFile = File(file.path!);
-            // Debug: checking file path (log suppressed)
-            // Validate file exists and is readable
-            if (await pdfFile.exists()) {
-              try {
-                await pdfFile.readAsBytes(); // Test readability
-                validPdfs.add(pdfFile);
-              } catch (e) {
-                // Cannot read file - suppressed debug log
-              }
-            } else {
-              // File does not exist - suppressed debug log
-            }
-          }
-        }
-
-        if (validPdfs.isNotEmpty) {
-          // Adding valid PDFs to selection (log suppressed)
-          setState(() {
-            _selectedPdfs.addAll(validPdfs);
-          });
-        } else {
-          // No valid PDF files found (log suppressed)
-          final localization = AppLocalizations.of(context);
-          _showToast(localization.translate('noValidPdfFiles'), Colors.orange);
-        }
-      } else {
-        // No files selected or result is null (log removed)
-      }
-    } catch (e) {
-      // Error in _pickPDFs: $e (log removed)
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToPickPdf'), Colors.red);
-    }
+    if (_vm.isBusy) return;
+    final outcome = await _vm.pickFiles();
+    if (!mounted) return;
+    await _reportAdded(outcome);
   }
 
-  String _sanitizeFileName(String fileName) {
-    return fileName.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+  Future<void> _reportAdded(AddFilesOutcome outcome) async {
+    final localization = AppLocalizations.of(context);
+    if (outcome.cancelled) return;
+    final failure = outcome.failure;
+    if (failure != null) {
+      _showToast(_failureMessage(failure), Colors.red);
+      return;
+    }
+    if (outcome.rejected.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(localization.translate('combineRejectedTitle')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (outcome.added > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(localization
+                        .translate('combineAddedSummary')
+                        .replaceAll('{count}', '${outcome.added}')),
+                  ),
+                for (final rejected in outcome.rejected)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(rejected.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        Text(_failureMessage(rejected.failure)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(localization.translate('ok')),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (outcome.duplicates > 0) {
+      _showToast(
+        localization
+            .translate('combineDuplicatesNote')
+            .replaceAll('{count}', '${outcome.duplicates}'),
+        Colors.orange,
+      );
+    }
   }
 
   Future<void> _combinePDFs() async {
+    if (_vm.isBusy) return;
     final localization = AppLocalizations.of(context);
-
-    if (_selectedPdfs.length < 2) {
-      _showToast(localization.translate('pleaseSelectAtLeast2'), Colors.orange);
-      return;
-    }
-
-    // QUOTA CHECK: Check if user can add more combined PDFs
-    final currentUserId =
-        RepositoryProvider.instance.authRepository.currentUserId;
-    if (currentUserId == null) {
-      _showToast(localization.translate('pleaseLoginFirst'), Colors.red);
-      return;
-    }
-
-    final canAdd = await QuotaHelper.checkAndWarnQuota(
-      context: context,
-      uid: currentUserId,
-      section: 'combinePdfs',
-      toolName: 'combinePdfs',
+    final outcome = await _vm.combine(
+      name: _fileNameController.text,
+      allowNewCombine: (uid) => (widget.usageGate ?? CombinePdfWiring.usageGate)
+          .allowNewCombine(context, uid),
     );
-
-    if (!canAdd) {
-      return; // User hit quota limit
-    }
-
-    setState(() {
-      _isProcessing = true;
-      _processingProgress = 0.0;
-      _currentProcessingStep = localization.translate('preparingFiles');
-    });
-
-    try {
-      // Create a list to store all PDF bytes
-      final List<Uint8List> pdfBytesList = [];
-
-      // Starting to combine ${_selectedPdfs.length} PDFs (log removed)
-
-      // Read all PDF files as bytes first
-      for (int i = 0; i < _selectedPdfs.length; i++) {
-        final file = _selectedPdfs[i];
-        final fileName = file.path.split(Platform.pathSeparator).last;
-
-        setState(() {
-          _processingProgress =
-              (i / _selectedPdfs.length) * 0.3; // 30% for reading files
-          _currentProcessingStep =
-              '${localization.translate('readingFile')} ${i + 1}/${_selectedPdfs.length}';
-        });
-
-        // Reading PDF ${i + 1}: $fileName (log removed)
-
-        try {
-          // Read the PDF file as bytes
-          final Uint8List pdfBytes = await file.readAsBytes();
-
-          // Validate that it's a valid PDF by trying to load it
-          final PdfDocument testDocument = PdfDocument(inputBytes: pdfBytes);
-          // Validation passed (debug log suppressed)
-          testDocument.dispose();
-
-          // Add to our list
-          pdfBytesList.add(pdfBytes);
-
-          // Small delay to allow UI updates
-          await Future.delayed(const Duration(milliseconds: 10));
-        } catch (e) {
-          // Error reading PDF (log suppressed)
-          // Continue with other files even if one fails
-          _showToast(
-              '${localization.translate('errorProcessingFile')} $fileName',
-              Colors.orange);
-          continue;
-        }
-      }
-
-      // Check if we have any valid PDFs
-      if (pdfBytesList.isEmpty) {
-        setState(() => _isProcessing = false);
-        _showToast(localization.translate('noValidPdfFiles'), Colors.red);
-        return;
-      }
-
-      setState(() {
-        _processingProgress = 0.4;
-        _currentProcessingStep = localization.translate('preparingCombination');
-      });
-
-      // Successfully read ${pdfBytesList.length} PDF files (log removed)
-
-      // Create a new combined PDF document
-      final PdfDocument combinedDocument = PdfDocument();
-      int totalPagesImported = 0;
-
-      // Process each PDF and add its pages to the combined document
-      for (int i = 0; i < pdfBytesList.length; i++) {
-        setState(() {
-          _processingProgress = 0.4 +
-              (i / pdfBytesList.length) * 0.5; // 40% to 90% for processing
-          _currentProcessingStep =
-              '${localization.translate('processingDocument')} ${i + 1}/${pdfBytesList.length}';
-        });
-        try {
-          final PdfDocument sourceDocument =
-              PdfDocument(inputBytes: pdfBytesList[i]);
-
-          // Processing source document (debug log suppressed)
-
-          // Manually copy each page to the combined document
-          for (int pageIndex = 0;
-              pageIndex < sourceDocument.pages.count;
-              pageIndex++) {
-            try {
-              // Get the page from the source document
-              final PdfPage sourcePage = sourceDocument.pages[pageIndex];
-
-              // Get the source page size to preserve original dimensions
-              final Size sourcePageSize = sourcePage.getClientSize();
-
-              // Add a new page to the combined document with the same size as source
-              final PdfPage newPage = combinedDocument.pages.add();
-
-              // Get the graphics object from the new page
-              final PdfGraphics graphics = newPage.graphics;
-
-              // Save graphics state
-              graphics.save();
-
-              // Calculate the drawing area to preserve original dimensions
-              final Size newPageSize = newPage.getClientSize();
-
-              // Determine if we need to scale the content
-              double scaleX = 1.0;
-              double scaleY = 1.0;
-
-              // If source page is larger than target page, scale down proportionally
-              if (sourcePageSize.width > newPageSize.width ||
-                  sourcePageSize.height > newPageSize.height) {
-                scaleX = newPageSize.width / sourcePageSize.width;
-                scaleY = newPageSize.height / sourcePageSize.height;
-                // Use the smaller scale to ensure content fits completely
-                final double scale = scaleX < scaleY ? scaleX : scaleY;
-                scaleX = scale;
-                scaleY = scale;
-              }
-
-              // Create a template from the source page
-              final PdfTemplate template = sourcePage.createTemplate();
-
-              // Calculate the drawing rectangle to center content if scaled
-              final double drawWidth = sourcePageSize.width * scaleX;
-              final double drawHeight = sourcePageSize.height * scaleY;
-              final double offsetX = (newPageSize.width - drawWidth) / 2;
-              final double offsetY = (newPageSize.height - drawHeight) / 2;
-
-              // Draw the template with proper scaling and positioning
-              final Rect drawingRect =
-                  Rect.fromLTWH(offsetX, offsetY, drawWidth, drawHeight);
-              graphics.drawPdfTemplate(
-                  template, Offset(offsetX, offsetY), drawingRect.size);
-
-              // Restore graphics state
-              graphics.restore();
-
-              totalPagesImported++;
-              // Imported page (debug log suppressed)
-            } catch (pageError) {
-              // Error importing page (log suppressed)
-              continue;
-            }
-          }
-
-          // Dispose the source document
-          sourceDocument.dispose();
-        } catch (e) {
-          // Error processing document (log suppressed)
-          continue;
-        }
-      }
-
-      // Check if we successfully imported any pages
-      if (totalPagesImported == 0) {
-        combinedDocument.dispose();
-        setState(() => _isProcessing = false);
-        _showToast(localization.translate('noValidPagesFound'), Colors.red);
-        return;
-      }
-
-      // Successfully combined pages (debug log suppressed)
-
-      setState(() {
-        _processingProgress = 0.95;
-        _currentProcessingStep = localization.translate('generatingPdf');
-      });
-
-      // Save the combined PDF
-      final List<int> bytes = await combinedDocument.save();
-      combinedDocument.dispose();
-
-      // Write to file with sanitized name
-      final output = await getApplicationDocumentsDirectory();
-      final sanitizedName = _sanitizeFileName(_fileNameController.text.trim());
-      final fileName = sanitizedName.isEmpty ? 'combined_pdfs' : sanitizedName;
-      final file = File('${output.path}/$fileName.pdf');
-      await file.writeAsBytes(bytes);
-
-      // Combined PDF saved to: ${file.path} (log removed)
-
-      setState(() {
-        _processingProgress = 1.0;
-        _currentProcessingStep = localization.translate('completed');
-        _isProcessing = false;
-      });
-
-      // Create and save the combined document record
-      final combinedDoc = CombinedPdfDocument(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: fileName,
-        filePath: file.path,
-        createdAt: DateTime.now(),
-        fileSize: bytes.length,
-        pageCount: totalPagesImported,
-      );
-
-      setState(() {
-        _combinedDocuments.insert(0, combinedDoc);
-      });
-
-      await _saveCombinedDocuments();
-
-      // Update quota count
-      await _incrementQuotaCount(currentUserId, 'combinePdfs');
-
-      _resetForm();
+    if (!mounted) return;
+    if (outcome.isDone) {
+      _fileNameController.text = _vm.suggestedName;
       _showToast(
           localization.translate('pdfsCombinedSuccessfully'), Colors.green);
-    } catch (e) {
-      setState(() => _isProcessing = false);
+      return;
+    }
+    final failure = outcome.failure!;
+    // The plan-limit dialog has already told the user why.
+    if (failure == CombinePdfFailure.quotaBlocked) return;
+    final message = _failureMessage(failure, name: outcome.sourceName);
+    if (failure == CombinePdfFailure.cancelled) {
+      _showToast(message, Colors.orange);
+      return;
+    }
+    if (_retryable.contains(failure)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: localization.translate('retry'),
+          onPressed: _combinePDFs,
+        ),
+      ));
+      return;
+    }
+    _showToast(message, Colors.red);
+  }
+
+  // Export a combined document to Downloads (Android) or Files (iPhone)
+  Future<void> _saveToDeviceStorage(CombinedPdf document) async {
+    try {
+      final result = await _vm.exportDocument(document.id);
+      if (!mounted || result.cancelled) return;
+      final key = result.destination == ScannerExportDestination.downloads
+          ? 'combineSavedToDownloads'
+          : 'combineSavedToFiles';
       _showToast(
-          '${localization.translate('failedToCombinePdfs')}: ${e.toString()}',
-          Colors.red);
-      // Error combining PDFs: $e (log removed)
-    }
-  }
-
-  Future<void> _incrementQuotaCount(String uid, String section) async {
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'counts': {section: FieldValue.increment(1)},
-        'lifetimeCreated': {section: FieldValue.increment(1)},
-      }, SetOptions(merge: true));
+        _localization
+            .translate(key)
+            .replaceAll('{name}', result.savedName ?? ''),
+        Colors.green,
+      );
+    } on CombinePdfException catch (e) {
+      if (mounted) _showToast(_failureMessage(e.kind), Colors.red);
     } catch (e) {
-      // Failed to update quota count: $e (log removed)
+      if (mounted) {
+        _showToast(_failureMessage(CombinePdfFailure.exportFailed), Colors.red);
+      }
     }
   }
 
-  AppLocalizations get _localization => AppLocalizations.of(context);
-
-  // Enhanced _saveToDeviceStorage method with proper Android 11+ support
-  Future<void> _saveToDeviceStorage(File pdfFile) async {
-    final localization = AppLocalizations.of(context);
-
-    try {
-      Directory? downloadsDirectory;
-      String locationName = 'Documents'; // Default value
-
-      if (Platform.isAndroid) {
-        final androidInfo = await DeviceInfoPlugin().androidInfo;
-        final sdkInt = androidInfo.version.sdkInt;
-
-        if (sdkInt >= 30) {
-          // Android 11+ (API 30+) - Use MediaStore for proper public Downloads saving
-          locationName = 'Downloads';
-          try {
-            final fileName = pdfFile.path.split('/').last;
-            final timestamp = DateTime.now().millisecondsSinceEpoch;
-            final nameWithoutExt = fileName.replaceAll('.pdf', '');
-            final uniqueFileName = '${nameWithoutExt}_$timestamp.pdf';
-            final fileBytes = await pdfFile.readAsBytes();
-
-            final result = await _channel.invokeMethod('saveFileToDownloads', {
-              'fileName': uniqueFileName,
-              'fileBytes': fileBytes,
-              'mimeType': 'application/pdf',
-            });
-
-            if (result['success'] == true) {
-              _showToast(
-                '${localization.translate('pdfSavedTo')} Downloads\nFile: $uniqueFileName\n(Accessible via Files app)',
-                Colors.green,
-              );
-              return; // Success, exit method
-            } else {
-              throw Exception('MediaStore save failed');
-            }
-          } catch (e) {
-            // Continue to fallback method below
-            final externalDir = await getExternalStorageDirectory();
-            if (externalDir != null) {
-              downloadsDirectory = Directory('${externalDir.path}/Downloads');
-              locationName = 'App Downloads';
-              if (!await downloadsDirectory.exists()) {
-                await downloadsDirectory.create(recursive: true);
-              }
-            } else {
-              downloadsDirectory = await getApplicationDocumentsDirectory();
-              locationName = 'App Documents';
-            }
-          }
-        } else {
-          // Android 10 and below - Request storage permission
-          locationName = 'Downloads';
-          final storageStatus = await Permission.storage.request();
-
-          if (storageStatus.isGranted) {
-            try {
-              downloadsDirectory = Directory('/storage/emulated/0/Download');
-              if (!await downloadsDirectory.exists()) {
-                // Fallback paths
-                final fallbackPaths = [
-                  '/sdcard/Download',
-                  '/storage/self/primary/Download',
-                ];
-
-                for (String path in fallbackPaths) {
-                  final testDir = Directory(path);
-                  if (await testDir.exists()) {
-                    downloadsDirectory = testDir;
-                    break;
-                  }
-                }
-
-                // Last resort - external storage
-                if (downloadsDirectory == null ||
-                    !await downloadsDirectory.exists()) {
-                  downloadsDirectory = await getExternalStorageDirectory();
-                  locationName = 'External Storage';
-                }
-              }
-            } catch (e) {
-              downloadsDirectory = await getExternalStorageDirectory();
-              locationName = 'External Storage';
-            }
-          } else {
-            _showToast(
-                localization.translate('storagePermissionDenied'), Colors.red);
-            return;
-          }
-        }
-      } else if (Platform.isIOS) {
-        downloadsDirectory = await getApplicationDocumentsDirectory();
-        locationName = 'Documents';
-      }
-
-      if (downloadsDirectory == null) {
-        _showToast(localization.translate('failedToAccessStorage'), Colors.red);
-        return;
-      }
-
-      // Create the destination file path with timestamp to avoid conflicts
-      final fileName = pdfFile.path.split('/').last;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final nameWithoutExt = fileName.replaceAll('.pdf', '');
-      final uniqueFileName = '${nameWithoutExt}_$timestamp.pdf';
-      final destinationPath = '${downloadsDirectory.path}/$uniqueFileName';
-
-      // Ensure the directory exists
-      await downloadsDirectory.create(recursive: true);
-
-      // Copy the file to the destination
-      final destinationFile = File(destinationPath);
-      await pdfFile.copy(destinationPath);
-
-      // Verify the file was created and get its actual size
-      if (await destinationFile.exists()) {
-        // Show success with actual path info
-        _showToast(
-          '${localization.translate('pdfSavedTo')} $locationName\nFile: $uniqueFileName',
-          Colors.green,
+  // Choose the first and last page to use from one file
+  Future<void> _selectPages(CombineSource source) async {
+    final loc = _localization;
+    final pages = _vm.plan.pagesOf(source.id).map((p) => p.pageIndex + 1);
+    final fromController = TextEditingController(
+        text: pages.isEmpty ? '1' : '${pages.reduce((a, b) => a < b ? a : b)}');
+    final toController = TextEditingController(
+        text: pages.isEmpty
+            ? '${source.pageCount}'
+            : '${pages.reduce((a, b) => a > b ? a : b)}');
+    String? error;
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(loc.translate('combineSelectPages')),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(source.displayName,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Text(
+                    loc
+                        .translate('combinePagesOfFile')
+                        .replaceAll(
+                            '{selected}', '${_vm.plan.selectedCount(source.id)}')
+                        .replaceAll('{total}', '${source.pageCount}'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: fromController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: loc.translate('combineFromPage'),
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: toController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: loc.translate('combineToPage'),
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(error!,
+                          style: const TextStyle(color: Colors.red)),
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _vm.useAllPages(source.id);
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: Text(loc.translate('combineUseAllPages')),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(loc.translate('cancel')),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final from = int.tryParse(fromController.text.trim());
+                    final to = int.tryParse(toController.text.trim());
+                    if (from == null ||
+                        to == null ||
+                        from < 1 ||
+                        to > source.pageCount ||
+                        from > to) {
+                      setDialogState(() => error = loc
+                          .translate('combineRangeInvalid')
+                          .replaceAll('{count}', '${source.pageCount}'));
+                      return;
+                    }
+                    _vm.selectRange(source.id, from, to);
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: Text(loc.translate('combineApply')),
+                ),
+              ],
+            );
+          },
         );
-
-        // Additional debug info
-        try {
-          final files = await downloadsDirectory.list().toList();
-          for (var file in files) {
-            if (file.path.contains('.pdf')) {}
-          }
-        } catch (e) {}
-      } else {
-        throw Exception(
-            'File was not created at destination: $destinationPath');
-      }
-    } catch (e) {
-      _showToast(
-          '${localization.translate('failedToSavePdf')}: ${e.toString()}',
-          Colors.red);
-    }
+      },
+    );
+    fromController.dispose();
+    toController.dispose();
+    if (applied != true) return;
   }
 
-  void _removePdf(int index) {
-    setState(() {
-      _selectedPdfs.removeAt(index);
-    });
-  }
-
-  void _resetForm() {
-    setState(() {
-      _selectedPdfs.clear();
-      _fileNameController.text =
-          'combined_pdfs_${DateTime.now().millisecondsSinceEpoch}';
-    });
+  void _openPageReview() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => CombinePagesScreen(viewModel: _vm),
+      ),
+    );
   }
 
   void _showToast(String message, Color bgColor) {
@@ -928,44 +649,42 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     final localization = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      backgroundColor: colors.surface,
-      extendBodyBehindAppBar: true,
-      resizeToAvoidBottomInset: false,
-      appBar: _buildAdvancedAppBar(localization, colors),
-      body: _buildBody(localization, colors),
-      floatingActionButton: _buildFloatingActionButton(localization),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    return ListenableBuilder(
+      listenable: _vm,
+      builder: (context, _) => Scaffold(
+        backgroundColor: colors.surface,
+        extendBodyBehindAppBar: true,
+        resizeToAvoidBottomInset: false,
+        appBar: _buildAdvancedAppBar(localization, colors),
+        body: _buildBody(localization, colors),
+        floatingActionButton: _buildFloatingActionButton(localization),
+        floatingActionButtonLocation:
+            FloatingActionButtonLocation.centerDocked,
+      ),
     );
   }
 
   PreferredSizeWidget _buildAdvancedAppBar(
       AppLocalizations localization, ColorScheme colors) {
     return AppBar(
+      // BackArrowButton pads itself by 16 px unless told otherwise; with zero
+      // padding and a 48 px leading slot the arrow sits on the content edge.
+      leadingWidth: 48,
       leading: const BackArrowButton(
         iconColor: Colors.white, // Set to white to match the orange gradient
+        iconSize: 24,
+        padding: EdgeInsets.zero,
         backgroundColor: Colors
             .transparent, // Make background transparent since we have gradient
         showBackground: false, // Disable the default background circle
       ),
-      title: Column(
-        children: [
-          Text(
-            _isSelectionMode
-                ? '${_selectedDocuments.length} ${localization.translate('selected')}'
-                : localization.translate('combinePdfs'),
-            style: AppTextStyles.appBarTitle
-                .copyWith(fontSize: 20, color: Colors.white),
-          ),
-          if (_combinedDocuments.isNotEmpty && !_isSelectionMode)
-            Text(
-              '${_combinedDocuments.length} ${localization.translate('documents')}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
-        ],
+      title: Text(
+        _vm.isSelectionMode
+            ? '${_vm.selectedCount} ${localization.translate('selected')}'
+            : localization.translate('combinePdfs'),
+        style: AppTextStyles.appBarTitle
+            .copyWith(fontSize: 20, color: Colors.white),
+        textAlign: TextAlign.center,
       ),
       centerTitle: true,
       backgroundColor: Colors.transparent,
@@ -984,52 +703,41 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
         ),
       ),
       actions: [
-        if (_isSelectionMode) ...[
+        if (_vm.isSelectionMode) ...[
           // Bulk actions when in selection mode
           IconButton(
             icon: const Icon(Icons.share, color: Colors.white),
             onPressed:
-                _selectedDocuments.isNotEmpty ? _shareBulkDocuments : null,
+                _vm.selectedCount > 0 ? _shareBulkDocuments : null,
             tooltip: localization.translate('shareSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
             onPressed:
-                _selectedDocuments.isNotEmpty ? _deleteBulkDocuments : null,
+                _vm.selectedCount > 0 ? _deleteBulkDocuments : null,
             tooltip: localization.translate('deleteSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: _exitSelectionMode,
+            onPressed: _vm.exitSelectionMode,
             tooltip: localization.translate('cancelSelection'),
           ),
         ] else ...[
-          if (_combinedDocuments.isNotEmpty) ...[
-            IconButton(
-              icon: Icon(
-                _isViewMode ? Icons.grid_view : Icons.view_list,
-                color: Colors.white,
-              ),
-              onPressed: () {
-                setState(() => _isViewMode = !_isViewMode);
-                _saveViewModePreference();
-              },
-              tooltip: _isViewMode
-                  ? localization.translate('gridView')
-                  : localization.translate('listView'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.checklist, color: Colors.white),
-              onPressed: _enterSelectionMode,
-              tooltip: localization.translate('selectDocuments'),
-            ),
-          ] else if (_selectedPdfs.isNotEmpty)
+          if (!_vm.plan.isEmpty)
             IconButton(
               icon: const Icon(Icons.clear_all, color: Colors.white),
-              onPressed: () => setState(() => _selectedPdfs.clear()),
+              onPressed: _vm.isMerging ? null : _vm.clearSelection,
               tooltip: localization.translate('clearAll'),
+            )
+          else if (_vm.documents.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.checklist, color: Colors.white),
+              onPressed: _vm.enterSelectionMode,
+              tooltip: localization.translate('selectDocuments'),
             ),
         ],
+        // The last icon's glyph ends on the same 16 px edge as the content.
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -1045,14 +753,30 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           child: _buildHeaderCard(localization, colors),
         ),
 
+        // Notices about the account's list
+        if (_vm.loadFailed)
+          SliverToBoxAdapter(
+            child: _buildNotice(
+                localization.translate('combineLoadFailed'), colors.error),
+          ),
+        if (_vm.legacyDocumentCount > 0 && _vm.plan.isEmpty)
+          SliverToBoxAdapter(
+            child: _buildNotice(
+              localization
+                  .translate('combineLegacyNotice')
+                  .replaceAll('{count}', '${_vm.legacyDocumentCount}'),
+              colors.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+
         // Processing indicator
-        if (_isProcessing)
+        if (_vm.isMerging)
           SliverToBoxAdapter(
             child: _buildProcessingIndicator(localization, colors),
           ),
 
         // Show creation interface when creating new PDFs
-        if (_selectedPdfs.isNotEmpty) ...[
+        if (!_vm.plan.isEmpty) ...[
           // File name input
           SliverToBoxAdapter(
             child: _buildFileNameInput(localization, colors),
@@ -1061,21 +785,19 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           SliverToBoxAdapter(
             child: _buildSelectedFilesHeader(localization),
           ),
+          // Total pages and the final order review
+          SliverToBoxAdapter(
+            child: _buildSelectionSummary(localization, colors),
+          ),
           // Selected files list
           SliverReorderableList(
-            itemCount: _selectedPdfs.length,
-            onReorder: (oldIndex, newIndex) {
-              setState(() {
-                if (newIndex > oldIndex) newIndex--;
-                final item = _selectedPdfs.removeAt(oldIndex);
-                _selectedPdfs.insert(newIndex, item);
-              });
-            },
+            itemCount: _vm.plan.sources.length,
+            onReorderItem: _vm.moveSource,
             itemBuilder: (context, index) {
               return _buildFileCard(index, colors, localization);
             },
           ),
-        ] else if (_combinedDocuments.isEmpty) ...[
+        ] else if (_vm.documents.isEmpty) ...[
           // Empty state when no documents exist
           SliverToBoxAdapter(
             child: _buildEmptyState(localization, colors),
@@ -1090,24 +812,28 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) => _buildCombinedDocumentCard(
-                    _combinedDocuments[index], index, colors, localization),
-                childCount: _combinedDocuments.length,
+                    _vm.documents[index], index, colors, localization),
+                childCount: _vm.documents.length,
               ),
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                // Same tile height as the scanner grid.
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
-                  childAspectRatio: 0.8,
+                  mainAxisExtent: 200 *
+                      (MediaQuery.textScalerOf(context).scale(14) / 14)
+                          .clamp(1.0, 1.6)
+                          .toDouble(),
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) => _buildCombinedDocumentGridCard(
-                      _combinedDocuments[index], index, colors, localization),
-                  childCount: _combinedDocuments.length,
+                      _vm.documents[index], index, colors, localization),
+                  childCount: _vm.documents.length,
                 ),
               ),
             ),
@@ -1181,6 +907,81 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     );
   }
 
+  Widget _buildNotice(String text, Color color) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Total pages of the pending combine and the way into the final order review.
+  Widget _buildSelectionSummary(
+      AppLocalizations localization, ColorScheme colors) {
+    final plan = _vm.plan;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF9800).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border:
+            Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.layers, size: 20, color: Color(0xFFFF9800)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  localization
+                      .translate('combineTotalPages')
+                      .replaceAll('{count}', '${plan.totalPages}'),
+                  style: AppTextStyles.bodyText.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFFF9800),
+                  ),
+                ),
+                Text(
+                  localization
+                      .translate('combineFilesAndPages')
+                      .replaceAll('{files}', '${plan.sources.length}')
+                      .replaceAll('{pages}', '${plan.totalPages}'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _vm.isMerging ? null : _openPageReview,
+            icon: const Icon(Icons.reorder, size: 18),
+            label: Text(localization.translate('combineReviewPages')),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFFF9800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // The combine reports no percentage: the PDF library gives no progress, so
+  // the card says what is happening and offers Cancel instead of a made-up bar.
   Widget _buildProcessingIndicator(
       AppLocalizations localization, ColorScheme colors) {
     return Container(
@@ -1202,11 +1003,13 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
         children: [
           Row(
             children: [
-              CircularProgressIndicator(
-                value: _processingProgress,
-                strokeWidth: 3,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
+              const SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -1214,16 +1017,19 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _currentProcessingStep,
+                      localization
+                          .translate('combineProcessing')
+                          .replaceAll('{pages}', '${_vm.plan.totalPages}'),
                       style: AppTextStyles.bodyText.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${(_processingProgress * 100).toInt()}% ${localization.translate('complete')}',
+                      localization.translate('combineProcessingNote'),
                       style: TextStyle(
                         color: colors.onSurface.withValues(alpha: 0.6),
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -1231,11 +1037,13 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: _processingProgress,
-            backgroundColor: colors.outline.withValues(alpha: 0.2),
-            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: _vm.cancelCombine,
+              child: Text(localization.translate('combineCancelButton')),
+            ),
           ),
         ],
       ),
@@ -1346,8 +1154,10 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
   }
 
   Widget _buildCombinedDocumentsHeader(AppLocalizations localization) {
+    // Right inset 4: the 48 px toggle's icon then ends on the 16 px edge,
+    // directly under the app bar's last icon.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
       child: Row(
         children: [
           Icon(
@@ -1357,31 +1167,35 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           ),
           const SizedBox(width: 8),
           Text(
-            '${localization.translate('combinedDocuments')} (${_combinedDocuments.length})',
+            '${localization.translate('combinedDocuments')} (${_vm.documents.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
               color: const Color(0xFFFF9800),
             ),
           ),
           const Spacer(),
-          if (_combinedDocuments.isNotEmpty)
-            Text(
-              _isViewMode
-                  ? localization.translate('listView')
-                  : localization.translate('gridView'),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+          if (_vm.documents.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                _isViewMode ? Icons.grid_view : Icons.view_list,
+                color: const Color(0xFFFF9800),
               ),
+              onPressed: () {
+                setState(() => _isViewMode = !_isViewMode);
+                _saveViewModePreference();
+              },
+              tooltip: _isViewMode
+                  ? localization.translate('gridView')
+                  : localization.translate('listView'),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildCombinedDocumentCard(CombinedPdfDocument document, int index,
+  Widget _buildCombinedDocumentCard(CombinedPdf document, int index,
       ColorScheme colors, AppLocalizations localization) {
-    final isSelected = _selectedDocuments.contains(index);
+    final isSelected = _vm.isSelected(document.id);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -1403,10 +1217,10 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: _isSelectionMode
+        leading: _vm.isSelectionMode
             ? Checkbox(
                 value: isSelected,
-                onChanged: (_) => _toggleDocumentSelection(index),
+                onChanged: (_) => _vm.toggleSelection(document.id),
                 activeColor: const Color(0xFFFF9800),
               )
             : Container(
@@ -1442,7 +1256,9 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               ),
               const SizedBox(width: 4),
               Text(
-                '${document.pageCount} ${localization.translate('pages')} • ${(document.fileSize / 1024).toStringAsFixed(1)} KB',
+                _vm.isMissing(document.id)
+                    ? localization.translate('combineFileMissingBadge')
+                    : '${document.pageCount} ${localization.translate('pages')} • ${(document.fileSize / 1024).toStringAsFixed(1)} KB',
                 style: TextStyle(
                   color: colors.onSurface.withValues(alpha: 0.6),
                   fontSize: 12,
@@ -1469,7 +1285,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                     _shareCombinedDocument(document);
                     break;
                   case 'download':
-                    _saveToDeviceStorage(File(document.filePath));
+                    _saveToDeviceStorage(document);
                     break;
                   case 'rename':
                     _renameCombinedDocument(document);
@@ -1525,8 +1341,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           ],
         ),
         onTap: () {
-          if (_isSelectionMode) {
-            _toggleDocumentSelection(index);
+          if (_vm.isSelectionMode) {
+            _vm.toggleSelection(document.id);
           } else {
             _previewCombinedDocument(document);
           }
@@ -1535,9 +1351,9 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     );
   }
 
-  Widget _buildCombinedDocumentGridCard(CombinedPdfDocument document, int index,
+  Widget _buildCombinedDocumentGridCard(CombinedPdf document, int index,
       ColorScheme colors, AppLocalizations localization) {
-    final isSelected = _selectedDocuments.contains(index);
+    final isSelected = _vm.isSelected(document.id);
     return Card(
       margin: const EdgeInsets.all(4),
       elevation: 3,
@@ -1552,15 +1368,15 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       ),
       child: InkWell(
         onTap: () {
-          if (_isSelectionMode) {
-            _toggleDocumentSelection(index);
+          if (_vm.isSelectionMode) {
+            _vm.toggleSelection(document.id);
           } else {
             _previewCombinedDocument(document);
           }
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(
@@ -1576,13 +1392,15 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top row with PDF icon and more options menu
-              Row(
+              SizedBox(
+                height: 28,
+                child: Row(
                 children: [
                   // Selection indicator or document type icon
-                  _isSelectionMode
+                  _vm.isSelectionMode
                       ? Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? const Color(0xFFFF9800)
@@ -1598,8 +1416,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                           ),
                         )
                       : Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color:
                                 const Color(0xFFFF9800).withValues(alpha: 0.15),
@@ -1608,7 +1426,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                           child: Icon(
                             Icons.picture_as_pdf,
                             color: const Color(0xFFFF9800),
-                            size: 18,
+                            size: 16,
                           ),
                         ),
 
@@ -1616,10 +1434,16 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
 
                   // More options menu
                   PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_vert,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
+                    // A sized child instead of the default icon button,
+                    // which would add 48 px of height to this row.
+                    child: SizedBox(
+                      width: 32,
+                      height: 28,
+                      child: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                     onSelected: (value) {
                       switch (value) {
@@ -1660,109 +1484,130 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                     ],
                   ),
                 ],
+                ),
               ),
 
               const SizedBox(height: 8),
 
-              // Document name
-              Text(
-                document.name,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: colors.onSurface,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              const SizedBox(height: 6),
-
-              // Document format and page count
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF9800).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFFFF9800).withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  '${document.pageCount} ${localization.translate('pages')} • PDF',
-                  style: TextStyle(
-                    color: const Color(0xFFFF9800),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 9,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              // Date and file size with fixed height
-              SizedBox(
-                height: 16, // Fixed height for date
-                child: Text(
-                  _formatDateTime(document.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                        fontSize: 10,
+              // Details: clipped, never overflowing, if text is scaled up.
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Document name
+                      Text(
+                        document.name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              height: 1.2,
+                              color: colors.onSurface,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                ),
-              ),
 
-              const SizedBox(height: 6),
+                      const SizedBox(height: 8),
 
-              // File size with fixed height
-              SizedBox(
-                height: 14, // Fixed height for file size row
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.folder,
-                      size: 10,
-                      color: colors.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${(document.fileSize / 1024).toStringAsFixed(1)} KB',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                      // Document format and page count
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9800).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFFFF9800).withValues(alpha: 0.3),
+                            width: 1,
                           ),
-                    ),
-                  ],
+                        ),
+                        child: Text(
+                          _vm.isMissing(document.id)
+                              ? localization.translate('combineFileMissingBadge')
+                              : '${document.pageCount} ${localization.translate('pages')} • PDF',
+                          style: TextStyle(
+                            color: const Color(0xFFFF9800),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 9,
+                            height: 1.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Date
+                      Text(
+                        _formatDateTime(document.createdAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 10,
+                              height: 1.2,
+                            ),
+                      ),
+
+                      const SizedBox(height: 4),
+
+                      // File size
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.folder,
+                            size: 10,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${(document.fileSize / 1024).toStringAsFixed(1)} KB',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                  fontSize: 10,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
-              // Fixed spacing instead of Spacer for consistent layout
               const SizedBox(height: 10),
 
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildGridActionButton(
-                    icon: Icons.visibility,
-                    onTap: () => _previewCombinedDocument(document),
-                    color: const Color(0xFFFF9800),
-                  ),
-                  Tooltip(
-                    message: AppLocalizations.of(context).translate('share'),
+                  Expanded(
                     child: _buildGridActionButton(
-                      icon: Icons.share,
-                      onTap: () => _shareCombinedDocument(document),
-                      color: Colors.blue,
+                      icon: Icons.visibility,
+                      onTap: () => _previewCombinedDocument(document),
+                      color: const Color(0xFFFF9800),
                     ),
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.download,
-                    onTap: () => _saveToDeviceStorage(File(document.filePath)),
-                    color: Colors.green,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Tooltip(
+                      message: AppLocalizations.of(context).translate('share'),
+                      child: _buildGridActionButton(
+                        icon: Icons.share,
+                        onTap: () => _shareCombinedDocument(document),
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildGridActionButton(
+                      icon: Icons.download,
+                      onTap: () => _saveToDeviceStorage(document),
+                      color: Colors.green,
+                    ),
                   ),
                 ],
               ),
@@ -1782,7 +1627,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.all(6),
+        height: 36,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
@@ -1812,7 +1658,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           ),
           const SizedBox(width: 8),
           Text(
-            '${localization.translate('selectedPdfs')} (${_selectedPdfs.length})',
+            '${localization.translate('selectedPdfs')} (${_vm.plan.sources.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
               color: const Color(0xFFFF9800),
@@ -1835,16 +1681,32 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
 
   Widget _buildFileCard(
       int index, ColorScheme colors, AppLocalizations localization) {
-    final file = _selectedPdfs[index];
-    final fileName = file.path.split(Platform.pathSeparator).last;
+    final source = _vm.plan.sources[index];
+    final selected = _vm.plan.selectedCount(source.id);
+    final notes = <String>[
+      if (source.features.hasFormFields)
+        localization.translate('combineNoteForms'),
+      if (source.features.hasAnnotations)
+        localization.translate('combineNoteAnnotations'),
+      if (source.features.hasBookmarks)
+        localization.translate('combineNoteBookmarks'),
+    ];
+    final mutedStyle = TextStyle(
+      color: colors.onSurface.withValues(alpha: 0.6),
+      fontSize: 12,
+    );
 
     return Container(
-      key: ValueKey(file.path),
+      key: ValueKey(source.id),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
+        border: Border.all(
+          color: selected == 0
+              ? colors.error
+              : colors.outline.withValues(alpha: 0.2),
+        ),
         boxShadow: [
           BoxShadow(
             color: colors.shadow.withValues(alpha: 0.05),
@@ -1868,7 +1730,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           ),
         ),
         title: Text(
-          fileName,
+          source.displayName,
           style: AppTextStyles.bodyText.copyWith(
             fontWeight: FontWeight.w600,
             fontSize: 15,
@@ -1876,14 +1738,12 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: FutureBuilder<int>(
-          future: file.length(),
-          builder: (context, snapshot) {
-            final size = snapshot.data ?? 0;
-            final sizeInKB = (size / 1024).toStringAsFixed(1);
-            return Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
                   Icon(
                     Icons.info_outline,
@@ -1891,17 +1751,48 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                     color: colors.onSurface.withValues(alpha: 0.6),
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    '${localization.translate('fileSize')}: $sizeInKB KB',
-                    style: TextStyle(
-                      color: colors.onSurface.withValues(alpha: 0.6),
-                      fontSize: 12,
+                  Expanded(
+                    child: Text(
+                      '${localization.translate('combinePagesOfFile').replaceAll('{selected}', '$selected').replaceAll('{total}', '${source.pageCount}')} • ${(source.size / 1024).toStringAsFixed(1)} KB',
+                      style: mutedStyle,
                     ),
                   ),
                 ],
               ),
-            );
-          },
+              for (final note in notes)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(note,
+                      style: mutedStyle.copyWith(color: Colors.orange[800])),
+                ),
+              Wrap(
+                spacing: 4,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _previewSource(source),
+                    icon: const Icon(Icons.visibility, size: 16),
+                    label: Text(localization.translate('combinePreviewFile')),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF9800),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed:
+                        _vm.isMerging ? null : () => _selectPages(source),
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: Text(localization.translate('combineSelectPages')),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF9800),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1923,14 +1814,19 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              Icons.drag_handle,
-              color: colors.onSurface.withValues(alpha: 0.4),
-              size: 20,
+            ReorderableDragStartListener(
+              index: index,
+              enabled: !_vm.isMerging,
+              child: Icon(
+                Icons.drag_handle,
+                color: colors.onSurface.withValues(alpha: 0.4),
+                size: 20,
+              ),
             ),
             IconButton(
               icon: Icon(Icons.close, color: colors.error, size: 20),
-              onPressed: () => _removePdf(index),
+              onPressed:
+                  _vm.isMerging ? null : () => _vm.removeSource(source.id),
               tooltip: localization.translate('remove'),
               visualDensity: VisualDensity.compact,
             ),
@@ -1943,13 +1839,13 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
   Widget _buildFloatingActionButton(AppLocalizations localization) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      child: _selectedPdfs.isNotEmpty
+      child: !_vm.plan.isEmpty
           ? FloatingActionButton.extended(
-              onPressed: _isProcessing ? null : _combinePDFs,
+              onPressed: _vm.isMerging ? null : _combinePDFs,
               backgroundColor: const Color(0xFFFF9800),
               foregroundColor: Colors.white,
               elevation: 8,
-              icon: _isProcessing
+              icon: _vm.isMerging
                   ? SizedBox(
                       width: 20,
                       height: 20,
@@ -1960,8 +1856,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                     )
                   : const Icon(Icons.merge_type),
               label: Text(
-                _isProcessing
-                    ? '${localization.translate('combining')} ${(_processingProgress * 100).toInt()}%'
+                _vm.isMerging
+                    ? localization.translate('combining')
                     : localization.translate('combinePdfsButton'),
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
@@ -1976,7 +1872,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               elevation: 8,
               icon: const Icon(Icons.add_circle_outline),
               label: Text(
-                _combinedDocuments.isEmpty
+                _vm.documents.isEmpty
                     ? localization.translate('createFirstPdf')
                     : localization.translate('createNewPdf'),
                 style: const TextStyle(

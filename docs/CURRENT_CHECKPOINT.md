@@ -13657,3 +13657,196 @@ NEXT — the Toolbox milestone continues with the owner's next tool; the Master 
 Final Production Checklist and Overview are refreshed only after the Toolbox milestone
 is owner-accepted. STOP — no push, hosted change, quota or subscription work,
 Phone Login/Signup (#8), or another Toolbox tool without a new instruction.
+
+## CHECKPOINT S2 — COMBINE PDFs PRODUCTION READINESS (2026-10-18)
+
+Status: **COMBINE_PDF_S2_COMMITTED_LOCAL — Samsung owner-reported PASS for the tested
+functionality; iPhone and commercial production readiness pending.** Branch
+`combine-pdfs-production-readiness`, built on Scanner S1 (`8d029006`) and the owner's
+later Scanner layout commit `adb6181a`. One local commit
+(`feat(combine-pdf): harden PDF merging and document privacy`); not pushed, not merged;
+no hosted Supabase, Worker, R2, secret or migration change; no new dependency; no native
+(Kotlin/Swift) change. This is not a claim that Combine PDFs is production-ready for
+release: iPhone is untested and the quota is not authoritative (below).
+
+**Samsung owner acceptance (2026-10-18).** The owner ran Combine PDFs on a physical
+Samsung phone and confirmed that it works properly. That is recorded as owner-reported
+PASS (VERIFIED_REAL_DEVICE) for the functionality the owner exercised. The report did not
+itemize the checklist below item by item, so no individual scenario (for example form or
+markup visibility after combining, the signed and protected refusals, WhatsApp share,
+second-account isolation, cancel) is separately claimed here beyond that report. The
+Samsung result does not cover iPhone, the iOS backup exclusion or the iPhone Files export.
+
+### Findings confirmed against the repository (before the change)
+
+1. Every page was redrawn onto a default A4 page and shrunk to fit, so any other page
+   size, orientation or rotation was rescaled and re-centred.
+2. A page or a whole file that failed was skipped (`continue`) and the combine still
+   reported success with fewer pages; only an unreadable file raised a toast.
+3. Nothing read the output back: no page count, order or readability check.
+4. The result was written to `<app documents>/<name>.pdf`, replacing any earlier file of
+   that name; the name filter used `\w` (ASCII), so an Arabic name became
+   `combined_pdfs`.
+5. All accounts shared one `combined_pdf_documents` SharedPreferences list and the app's
+   documents folder; rename and delete worked on list indexes.
+6. The drag handle on a selected file had no drag listener, so reordering files did
+   nothing.
+7. A fake progress bar (hand-set 30/40/90/95/100 %) and 10 ms delays; the whole screen
+   parsed the PDFs on the UI thread, reading each file twice.
+8. Photos / Storage / All-files permission prompts before the picker, which needs none.
+9. Android 11+ Download passed the whole document through the channel; Android 10-
+   hard-coded `/storage/emulated/0/Download`; the bulk-delete failure toast used a
+   message key that does not exist (`failedToDeleteDocuments`).
+10. Combined files sat in the documents root and were backup-eligible.
+
+### What changed
+
+New, under `lib/src/`: `services/combine_pdf/` — `combine_models.dart` (failures,
+sources, page refs, stored record, naming, limits), `combine_plan.dart` (pure edit
+logic), `combine_pdf_engine.dart` (check one file, combine, verify), `combine_executor.dart`
+(worker isolate with cancel; inline for tests), `combine_pdf_store.dart` (account-scoped,
+journaled store after the Scanner's), `combine_pdf_platform.dart` (picker, exporter,
+share preparer), `combine_usage_gate.dart` (the one quota boundary), `combine_wiring.dart`;
+`viewmodels/combine_pdf/combine_pdf_viewmodel.dart`; `views/.../Toolkit/combine_pages_screen.dart`
+(final page order). Changed: `combine_pdfs_view.dart` (logic replaced; the existing layout,
+colours and cards kept), `scanner_platform.dart` (`exportFile(...)` added; `export` delegates,
+Scanner behaviour unchanged), both ARB files (58 messages), `backup_rules.xml` and
+`data_extraction_rules.xml`, and one Scanner guard test (Combine left `saveFileToDownloads`).
+
+### Behaviour now
+
+- **Pick**: the system picker, no permission. Every file is read on a worker isolate and
+  must be a parseable PDF with at least one readable page. Missing, empty, damaged,
+  truncated, password-protected, signed and oversized files are refused by name with a
+  localized reason in a list; none is dropped silently. A file already selected is
+  reported, not added twice. Limits (memory, not policy): 80 MB per file, 200 MB and 1,500
+  pages and 30 files per combine.
+- **Page edits**: per file, a page range ("From/To") and "use all pages"; a final-order
+  screen lists every page (`file · page n`), with drag to reorder (also between files),
+  rotate 90° and remove; total pages shown on the main screen and the review screen. A file
+  whose pages were all removed blocks the combine and names the file. Moving a file moves
+  its pages as a block and regroups the plan by file (an arrangement that interleaved two
+  files is regrouped when a file is moved).
+- **Preview**: each selected file opens in the established PDF viewer (`Preview file`);
+  the combined PDF opens there from the list. There is no preview of the not-yet-created
+  result (the PDF library cannot render pages to images here, and none was added); the
+  final-order list is the pre-processing review.
+- **Combine**: all or nothing. Each source is re-checked as it is opened (same size, same
+  page count, not encrypted, not signed); a page missing from its source ends the combine.
+  The file is written only when complete, read back and checked (page count, every page's
+  size and rotation, and the text of each page against its source page, which proves
+  order), then copied into the store, read back again and only then listed. Any failure,
+  or a cancel, removes the output and stores and counts nothing. The sources are never
+  written to (bytes and modified time asserted). One combined PDF = one usage unit,
+  recorded once after it was stored.
+- **Progress**: honest. An indeterminate indicator, "Combining N pages…", a note and a
+  Cancel button (the worker isolate is stopped). The "combine" button is disabled while
+  running; a second tap, pick or plan edit is ignored. Failures that a second attempt can
+  fix (combine, output check, write, storage full) offer Retry.
+- **Storage**: `<app documents>/combine_pdfs/<account>/` with `files/<uuid>.pdf`,
+  `index.json` (temp + rename), `work/`. Titles are metadata (Arabic kept; separators,
+  control and bidi characters removed; unique per account with "(2)"); stored files are
+  internal ids. Save, rename, delete, bulk delete, interrupted-operation recovery, damaged
+  index handling and "File missing" listing follow the Scanner's store (tests repeat them).
+- **Accounts**: the view model binds to `AuthRepository.currentUserId`. A pick, a combine
+  or a share finishing after an account switch (or after the screen was left) is dropped and
+  stores nothing. The selection is cleared on a switch. An auth-stream error is not a
+  sign-out. **Legacy documents** (the old global list and the files it names in the
+  documents root) are not migrated, shown or deleted; the screen shows only a count.
+  Whose they are is an owner decision.
+- **Export / Share**: Export reuses the Scanner's route (MediaStore Downloads with
+  `IS_PENDING` on Android 10+, legacy permission only on 9-, the Files save sheet on
+  iPhone); the real saved name is reported. Share goes through `ShareLive.sendFiles` with
+  copies named by title in a folder swept an hour later; the receiving app never sees an
+  internal id. The PDF viewer's own share already used the title.
+- **Backup**: `app_flutter/combine_pdfs` is excluded from Android cloud backup and device
+  transfer (XML) and marked excluded on iPhone through the Scanner's guard. Combined PDFs
+  therefore do not restore onto a new phone; Export/Share keeps a copy. They are **not
+  encrypted at rest**. Account deletion does not purge them (as for scans).
+
+### PDF content preservation (Syncfusion `createTemplate`, real fixtures)
+
+| Property | Result in the combined file | Evidence |
+| --- | --- | --- |
+| Text | Preserved as page content: selectable and searchable | extracted text of every page equals the source |
+| Fonts | Embedded TrueType program preserved (`FontFile2` present in source and output); standard fonts fine | embedded Noto Sans fixture |
+| Page size, orientation, /Rotate | Preserved per page (the old route forced A4) | A4, landscape, 300x500 rotated, 1000x1500 |
+| CropBox | Visible area and text position preserved (0 and 90) | hand-written CropBox PDF, text bounds compared |
+| Form fields and values | Flattened: values stay as page text, fields are gone. Done by flatten, **save, reload** (flattening in memory is not carried by a template; first attempt lost the values and a test caught it). Disclosed on the file's card. | "filled value" extracted from output; 0 fields |
+| Annotations (comments, markup) | Flattened the same way; annotation objects are gone. The picture of non-text markup is not machine-verified (no renderer in tests) | annotation count 0; **owner check on a phone** |
+| Links | NOT preserved (a page template carries no annotations); disclosed | link annotation count 0 |
+| Bookmarks | NOT preserved; disclosed | bookmark count 0 |
+| Digital signatures | **Refused** (signed signature field). A combined copy cannot carry a valid signature | signed fixture made with a throwaway certificate |
+| Encryption | **Refused**, with a user password, and also an owner-only file that opens without a password (copying its pages would drop the protection). Passwords are not asked for or stored | both fixtures |
+| XFA forms, portfolios, attachments, tagged structure | Not examined or carried; not detected | limitation |
+
+### Evidence
+
+| Area | Evidence | Level |
+| --- | --- | --- |
+| Plan edits, engine (check, combine, verification, cancel, isolate), store, view model (accounts, quota, cancel, lifecycle), view widgets (EN, AR/RTL, dark), source guards | `flutter test test/combine_pdf`: 108/108 PASS (plan 12, engine 26, store 17, view model 28, view 10, guards 15) | CODE_PROVEN (agent-run as the checkpoint prompt asked; not an owner run) |
+| Shared Scanner / export regressions | `flutter test test/scanner` 169/169 and `test/share/share_source_guards_test.dart` 64/64 (the Scanner count includes the one guard changed here) | CODE_PROVEN (agent-run) |
+| Mutations | removing the order check and making a missing page `continue` both turned tests red; file restored byte for byte | CODE_PROVEN |
+| Scoped analyzer | `flutter analyze` on `services/combine_pdf`, `viewmodels/combine_pdf`, the two Combine screens, `scanner_platform.dart` and `test/combine_pdf`: No issues found | CODE_PROVEN (agent-run) |
+| `git diff --check` | clean | — |
+| Android build | not run: no Kotlin, manifest or Gradle change; the two backup XML files were parsed | NOT RUN |
+| iOS compile / iPhone runtime / any real device | not run | NOT RUN |
+
+### Quota (classified, not replaced)
+
+Checked once before work starts, counted once after the combined PDF is stored, through
+`CombineUsageGate`. It still reads and writes the legacy Firestore `users/{uid}` document
+(`combinePdfs`): client-writable, not authoritative for a Supabase account, fail-open.
+**Server-authoritative quota is a release dependency**; replace
+`combine_usage_gate.dart` when it exists. No RevenueCat or entitlement work was done.
+
+### Limits and blockers
+
+- Samsung: owner-reported PASS for the tested functionality (above, not itemized).
+  iPhone compile and device testing are NOT RUN; the iOS backup exclusion and the iPhone
+  Files export stay subject to real iOS verification.
+- The PDF engine loads whole documents: large files are bounded by the limits above, and a
+  combine runs on one worker isolate. The iPhone Files export passes the document's bytes to
+  the picker (its API takes bytes).
+- No page thumbnails: rendering needs a renderer (`pdfrx` is in `pubspec.yaml` but unused
+  and untested here); adding one is a dependency decision for the owner.
+- Links, bookmarks, XFA and tagged structure are not carried; signed and protected PDFs are
+  refused. OCR and encryption at rest are not offered.
+- A combine killed with the app leaves a file in `work/`, swept at the next load.
+- The legacy ownerless documents and their backup eligibility (they sit in the documents
+  root) remain an owner decision, as for the Scanner.
+
+### Samsung acceptance checklist (owner; the owner's PASS above was not itemized)
+
+1. Pick two PDFs (3 and 2 pages), Combine: 5 pages, opens in the viewer, in order.
+2. Pick a landscape PDF and a portrait PDF: sizes/orientation unchanged in the viewer.
+3. Drag the second file above the first, combine: order follows.
+4. "Select pages" 2-3 on one file, remove a page and rotate one in "Review page order":
+   the total updates and the result matches the review list.
+5. A PDF with a filled form field and one with a highlight/comment: values and markup are
+   visible in the result (note on the card says they are merged in).
+6. A password-protected PDF and a signed PDF: refused by name with a clear message.
+7. Rename (Arabic too), Share to WhatsApp (the receiver shows the title), Download
+   ("Saved to Downloads"; twice does not replace), Delete one, bulk delete.
+8. Tap Combine twice quickly: one result. Cancel a large combine: nothing saved.
+9. Sign in as a second account: empty list; back: yours. Close from Recents: list intact.
+10. Airplane mode: everything still works. No storage permission prompt appears.
+
+### Limitations that stand after acceptance
+
+- iOS compile and iPhone runtime: NOT RUN. The iOS backup exclusion and the Files export
+  need real iOS verification.
+- The quota is the legacy Firestore document: fail-open, client-writable, not
+  production-authoritative. Server-authoritative quota is a release dependency.
+- Legacy ownerless combined PDFs are preserved on the phone and isolated from every
+  account (counted, never shown, migrated or deleted); attribution and their backup
+  eligibility remain an owner decision.
+- Links and bookmarks are not preserved when merging. Form fields and annotations may be
+  flattened into the page; signed and encrypted PDFs are refused.
+- No page thumbnails. Encryption at rest is not implemented.
+
+NOW — the Combine PDF S2 commit is local only; push or merge only when the owner decides.
+NEXT — the Toolbox milestone continues with the owner's next tool; the Master Context, Final
+Production Checklist and Overview are refreshed only after the Toolbox milestone is
+owner-accepted. STOP — no push, hosted change, quota or subscription work, Signature or
+Images-to-PDF work, or another Toolbox tool without a new instruction.

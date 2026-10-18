@@ -27,4 +27,7 @@
          working copies stay on this phone (see docs/DECISIONS.md). -->
     <exclude domain="root" path="app_flutter/scanner" />
     <exclude domain="file" path="mlkit_docscan_ui_client" />
+    <!-- Combine PDFs: the account folders of combined documents stay on this
+         phone (see docs/DECISIONS.md). -->
+    <exclude domain="root" path="app_flutter/combine_pdfs" />
 </full-backup-content>

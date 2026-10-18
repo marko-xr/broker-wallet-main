@@ -1,272 +1,182 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:broker_wallet/src/services/clean_media_service.dart';
-import 'package:broker_wallet/src/services/clean_permission_service.dart';
-import 'package:broker_wallet/src/services/quota_helper.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
-import 'dart:io';
-import 'package:image/image.dart' as img;
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_engine.dart';
+import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';
+import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_usage_gate.dart';
+import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_wiring.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/viewmodels/image_to_pdf/image_pdf_viewmodel.dart';
 
-// Model for converted PDF documents
-class ConvertedPdfDocument {
-  final String id;
-  final String name;
-  final String filePath;
-  final DateTime createdAt;
-  final int fileSize;
-  final int imageCount;
+enum _ReviewAction { preview, save, discard }
 
-  ConvertedPdfDocument({
-    required this.id,
-    required this.name,
-    required this.filePath,
-    required this.createdAt,
-    required this.fileSize,
-    required this.imageCount,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'filePath': filePath,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'fileSize': fileSize,
-      'imageCount': imageCount,
-    };
-  }
-
-  factory ConvertedPdfDocument.fromJson(Map<String, dynamic> json) {
-    return ConvertedPdfDocument(
-      id: json['id'],
-      name: json['name'],
-      filePath: json['filePath'],
-      createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt']),
-      fileSize: json['fileSize'],
-      imageCount: json['imageCount'],
-    );
-  }
-}
-
-// Enhanced enums for professional PDF creation
-enum PdfPageSize { a4, letter, legal, a3, a5, custom }
-
-enum PdfOrientation { portrait, landscape, auto }
-
-enum ImageQuality { low, medium, high, ultra }
-
-enum PdfLayout { fitToPage, originalSize, centerFit, tileMultiple }
-
-enum CompressionLevel { none, low, medium, high, maximum }
-
-// Professional image processing result
-class ProcessedImageData {
-  final Uint8List imageBytes;
-  final int originalSize;
-  final int compressedSize;
-  final int width;
-  final int height;
-  final double compressionRatio;
-
-  ProcessedImageData({
-    required this.imageBytes,
-    required this.originalSize,
-    required this.compressedSize,
-    required this.width,
-    required this.height,
-    required this.compressionRatio,
-  });
-}
-
+/// The Images to PDF tool: pick or photograph images, arrange them, choose the
+/// page layout, make the PDF and review it, then keep it in the signed-in
+/// account's private list to preview, rename, share, export and delete. The
+/// logic lives in [ImagePdfViewModel]; this file is the screen.
 class ImageToPdfView extends StatefulWidget {
-  const ImageToPdfView({Key? key}) : super(key: key);
+  const ImageToPdfView({Key? key, this.viewModel, this.usageGate})
+      : super(key: key);
+
+  /// A ready view model, for tests. The app builds its own.
+  final ImagePdfViewModel? viewModel;
+
+  /// The plan-limit check, for tests. The app uses [ImagePdfWiring.usageGate].
+  final ImagePdfUsageGate? usageGate;
 
   @override
   _ImageToPdfViewState createState() => _ImageToPdfViewState();
 }
 
-class _ImageToPdfViewState extends State<ImageToPdfView>
-    with TickerProviderStateMixin {
-  final List<File> _selectedImages = [];
-  final List<ProcessedImageData> _processedImages = [];
-  final List<ConvertedPdfDocument> _convertedDocuments = [];
-  final ImagePicker _picker = ImagePicker();
+class _ImageToPdfViewState extends State<ImageToPdfView> {
+  static const String _viewModeKey = 'image_pdf_list_view_mode';
+  static const Color _green = Color(0xFF4CAF50);
+
+  late final ImagePdfViewModel _vm;
+  late final bool _ownsViewModel;
   final TextEditingController _fileNameController = TextEditingController();
-  final PageController _previewPageController = PageController();
-
-  // Processing state
-  bool _isProcessing = false;
-  double _processingProgress = 0.0;
-  String _currentProcessingStep = '';
   bool _isViewMode = false; // true for list view, false for grid view
-
-  // Selection mode state
-  bool _isSelectionMode = false;
-  Set<int> _selectedDocuments = {};
-
-  // Advanced settings
-  PdfPageSize _pageSize = PdfPageSize.a4;
-  PdfOrientation _orientation = PdfOrientation.auto;
-  ImageQuality _imageQuality = ImageQuality.high;
-  PdfLayout _layout = PdfLayout.fitToPage;
-  CompressionLevel _compression = CompressionLevel.medium;
-  bool _addPageNumbers = false;
-  bool _addTimestamp = false;
-  bool _addWatermark = false;
-  bool _protectWithPassword = false;
-  String _password = '';
-  double _margin = 20.0;
-
-  // UI state
-  bool _showPreview = false;
-  bool _showSettings = false;
-  int _currentPreviewIndex = 0;
-
-  // Animation controllers
-  late AnimationController _fabController;
-  late AnimationController _settingsController;
-  late Animation<double> _fabAnimation;
-  late Animation<Offset> _settingsAnimation;
-
-  // Platform channel for MediaStore operations
-  static const MethodChannel _channel = MethodChannel('file_saver');
+  bool _reviewing = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeAnimations();
-    _generateFileName();
-    _loadConvertedDocuments();
+    _ownsViewModel = widget.viewModel == null;
+    _vm = widget.viewModel ?? ImagePdfWiring.createViewModel();
+    _fileNameController.text = _vm.suggestedName;
     _loadViewModePreference();
+    _vm.start().then((_) => _recoverLostPicks());
   }
 
-  void _initializeAnimations() {
-    _fabController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _settingsController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-
-    _fabAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _fabController, curve: Curves.elasticOut),
-    );
-    _settingsAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _settingsController,
-      curve: Curves.easeOutBack,
-    ));
-
-    _fabController.forward();
+  /// Pictures picked just before Android stopped the app come back here.
+  Future<void> _recoverLostPicks() async {
+    if (!mounted) return;
+    final outcome = await _vm.recoverLostPicks();
+    if (!mounted || outcome == null) return;
+    if (outcome.added > 0) {
+      _showToast(
+        _localization
+            .translate('i2pRecovered')
+            .replaceAll('{count}', '${outcome.added}'),
+        Colors.green,
+      );
+    }
+    if (mounted) await _reportAdded(outcome);
   }
 
   @override
   void dispose() {
-    _fabController.dispose();
-    _settingsController.dispose();
-    _previewPageController.dispose();
     _fileNameController.dispose();
-    // Clear the lists to free memory
-    _selectedImages.clear();
-    _processedImages.clear();
+    if (_ownsViewModel) _vm.dispose();
     super.dispose();
   }
 
-  void _generateFileName() {
-    final now = DateTime.now();
-    final timestamp =
-        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-    _fileNameController.text = 'PDF_Document_$timestamp';
-  }
+  AppLocalizations get _localization => AppLocalizations.of(context);
 
-  String _sanitizeFileName(String fileName) {
-    return fileName.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-  }
-
-  // Load converted documents from storage
-  Future<void> _loadConvertedDocuments() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final documentsJson =
-          prefs.getStringList('converted_pdf_documents') ?? [];
-
-      final documents = <ConvertedPdfDocument>[];
-      for (final docJson in documentsJson) {
-        try {
-          final doc = ConvertedPdfDocument.fromJson(json.decode(docJson));
-          // Check if file still exists
-          if (await File(doc.filePath).exists()) {
-            documents.add(doc);
-          }
-        } catch (e) {}
-      }
-
-      setState(() {
-        _convertedDocuments.clear();
-        _convertedDocuments.addAll(documents);
-      });
-    } catch (e) {
-      // Error loading converted documents: $e (log removed)
-    }
-  }
-
-  // Save converted documents to storage
-  Future<void> _saveConvertedDocuments() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final documentsJson =
-          _convertedDocuments.map((doc) => json.encode(doc.toJson())).toList();
-      await prefs.setStringList('converted_pdf_documents', documentsJson);
-    } catch (e) {
-      // Error saving converted documents: $e (log removed)
-    }
-  }
-
-  // Load and save view mode preference
+  // Load and save view mode preference (a view setting, not documents)
   Future<void> _loadViewModePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       setState(() {
-        _isViewMode = prefs.getBool('image_pdf_list_view_mode') ?? false;
+        _isViewMode = prefs.getBool(_viewModeKey) ?? false;
       });
     } catch (e) {
-      // Error loading view mode preference: $e (log removed)
+      // The default is fine when preferences cannot be read.
     }
   }
 
   Future<void> _saveViewModePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('image_pdf_list_view_mode', _isViewMode);
+      await prefs.setBool(_viewModeKey, _isViewMode);
     } catch (e) {
-      // Error saving view mode preference: $e (log removed)
+      // The choice still applies for this visit.
     }
   }
 
-  AppLocalizations get _localization => AppLocalizations.of(context);
+  /// The localized text for a failure.
+  String _failureMessage(ImagePdfFailure failure) {
+    final loc = _localization;
+    switch (failure) {
+      case ImagePdfFailure.signedOut:
+        return loc.translate('i2pErrSignedOut');
+      case ImagePdfFailure.busy:
+        return loc.translate('i2pErrBusy');
+      case ImagePdfFailure.cancelled:
+        return loc.translate('i2pErrCancelled');
+      case ImagePdfFailure.accountChanged:
+        return loc.translate('i2pErrAccountChanged');
+      case ImagePdfFailure.noImages:
+        return loc.translate('pleaseSelectImagesFirst');
+      case ImagePdfFailure.tooManyImages:
+        return loc.translate('i2pErrTooMany');
+      case ImagePdfFailure.imagesNotReady:
+        return loc.translate('i2pErrNotReady');
+      case ImagePdfFailure.missingSource:
+        return loc.translate('i2pErrMissing');
+      case ImagePdfFailure.emptySource:
+        return loc.translate('i2pErrEmpty');
+      case ImagePdfFailure.corruptSource:
+        return loc.translate('i2pErrCorrupt');
+      case ImagePdfFailure.unsupportedFormat:
+        return loc.translate('i2pErrUnsupported');
+      case ImagePdfFailure.tooLargeSource:
+        return loc.translate('i2pErrFileTooLarge');
+      case ImagePdfFailure.tooManyPixels:
+        return loc.translate('i2pErrPixels');
+      case ImagePdfFailure.sourceChanged:
+        return loc.translate('i2pErrChanged');
+      case ImagePdfFailure.invalidSettings:
+        return loc.translate('i2pErrSettings');
+      case ImagePdfFailure.invalidPassword:
+        return loc.translate('i2pErrPassword');
+      case ImagePdfFailure.outputInvalid:
+        return loc.translate('i2pErrOutputInvalid');
+      case ImagePdfFailure.buildFailed:
+        return loc.translate('i2pErrBuild');
+      case ImagePdfFailure.outputTooLarge:
+        return loc.translate('i2pErrOutputTooLarge');
+      case ImagePdfFailure.storageFull:
+        return loc.translate('i2pErrStorageFull');
+      case ImagePdfFailure.writeFailed:
+        return loc.translate('i2pErrWrite');
+      case ImagePdfFailure.notFound:
+        return loc.translate('i2pErrNotFound');
+      case ImagePdfFailure.invalidName:
+        return loc.translate('i2pErrInvalidName');
+      case ImagePdfFailure.nameInUse:
+        return loc.translate('i2pErrNameInUse');
+      case ImagePdfFailure.fileMissing:
+        return loc.translate('documentFileNotFound');
+      case ImagePdfFailure.quotaBlocked:
+        return loc.translate('i2pErrBusy');
+      case ImagePdfFailure.permissionDenied:
+        return loc.translate('i2pErrPermission');
+      case ImagePdfFailure.pickerFailed:
+        return loc.translate('i2pErrPicker');
+      case ImagePdfFailure.exportFailed:
+        return loc.translate('i2pErrExport');
+    }
+  }
+
+  // Failures a second attempt can fix (as opposed to a picture that must change).
+  static const Set<ImagePdfFailure> _retryable = <ImagePdfFailure>{
+    ImagePdfFailure.buildFailed,
+    ImagePdfFailure.outputInvalid,
+    ImagePdfFailure.writeFailed,
+    ImagePdfFailure.storageFull,
+  };
 
   // Delete a converted document
-  Future<void> _deleteConvertedDocument(ConvertedPdfDocument document) async {
+  Future<void> _deleteConvertedDocument(ImagePdfDocument document) async {
     final localization = AppLocalizations.of(context);
 
     // Show confirmation dialog
@@ -283,6 +193,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: Text(localization.translate('delete')),
           ),
         ],
@@ -290,21 +201,11 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     );
 
     if (shouldDelete == true) {
-      try {
-        // Delete the file
-        final file = File(document.filePath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-
-        // Remove from list and save
-        setState(() {
-          _convertedDocuments.removeWhere((doc) => doc.id == document.id);
-        });
-
-        await _saveConvertedDocuments();
+      final failed = await _vm.delete(<String>[document.id]);
+      if (!mounted) return;
+      if (failed.isEmpty) {
         _showToast(localization.translate('documentDeleted'), Colors.green);
-      } catch (e) {
+      } else {
         _showToast(
             localization.translate('failedToDeleteDocument'), Colors.red);
       }
@@ -312,145 +213,86 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   }
 
   // Rename a converted document
-  Future<void> _renameConvertedDocument(ConvertedPdfDocument document) async {
-    final localization = AppLocalizations.of(context);
-    final controller = TextEditingController(text: document.name);
-
-    final newName = await showDialog<String>(
+  Future<void> _renameConvertedDocument(ImagePdfDocument document) async {
+    final renamed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(localization.translate('renameDocument')),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            labelText: localization.translate('documentName'),
-            border: const OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(localization.translate('cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: Text(localization.translate('rename')),
-          ),
-        ],
+      builder: (dialogContext) => _RenameDialog(
+        initialName: document.name,
+        rename: (name) => _vm.rename(document.id, name),
+        messageFor: _failureMessage,
       ),
     );
+    if (renamed == true && mounted) {
+      _showToast(_localization.translate('documentRenamed'), Colors.green);
+    }
+  }
 
-    if (newName != null && newName.isNotEmpty && newName != document.name) {
-      try {
-        // Update the document name
-        final updatedDoc = ConvertedPdfDocument(
-          id: document.id,
-          name: newName,
-          filePath: document.filePath,
-          createdAt: document.createdAt,
-          fileSize: document.fileSize,
-          imageCount: document.imageCount,
+  // Share converted documents under their titles
+  Future<void> _shareDocuments(List<ImagePdfDocument> documents) async {
+    if (documents.isEmpty) return;
+    final localization = AppLocalizations.of(context);
+    try {
+      final preparation =
+          await _vm.prepareShare(documents.map((d) => d.id).toList());
+      if (!mounted) return;
+      if (!preparation.isShareable) {
+        _showToast(
+          preparation.unavailable.isNotEmpty
+              ? localization.translate('documentFileNotFound')
+              : localization.translate('failedToShareDocuments'),
+          Colors.red,
         );
-
-        setState(() {
-          final index =
-              _convertedDocuments.indexWhere((doc) => doc.id == document.id);
-          if (index != -1) {
-            _convertedDocuments[index] = updatedDoc;
-          }
-        });
-
-        await _saveConvertedDocuments();
-        _showToast(localization.translate('documentRenamed'), Colors.green);
-      } catch (e) {
-        _showToast(
-            localization.translate('failedToRenameDocument'), Colors.red);
-      }
-    }
-  }
-
-  // Share a converted document
-  Future<void> _shareConvertedDocument(ConvertedPdfDocument document) async {
-    try {
-      await ShareLive.sendFiles(context, [document.filePath]);
-    } catch (e) {
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToShareDocument'), Colors.red);
-    }
-  }
-
-  // Preview a converted document
-  void _previewConvertedDocument(ConvertedPdfDocument document) {
-    try {
-      final file = File(document.filePath);
-      if (!file.existsSync()) {
-        _showToast(
-            AppLocalizations.of(context).translate('documentFileNotFound'),
-            Colors.red);
         return;
       }
-
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => PdfViewerScreen(
-            localFile: file,
-            title: document.name,
-          ),
-        ),
+      await ShareLive.sendFiles(
+        context,
+        preparation.paths,
+        text: documents.length == 1
+            ? documents.first.name
+            : localization
+                .translate('sharingDocuments')
+                .replaceAll('{count}', '${documents.length}'),
       );
     } catch (e) {
-      _showToast(AppLocalizations.of(context).translate('failedToOpenDocument'),
-          Colors.red);
+      if (mounted) {
+        _showToast(
+            localization.translate('failedToShareDocuments'), Colors.red);
+      }
     }
   }
 
-  // Selection mode methods
-  void _enterSelectionMode() {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedDocuments.clear();
-    });
-  }
+  Future<void> _shareConvertedDocument(ImagePdfDocument document) =>
+      _shareDocuments(<ImagePdfDocument>[document]);
 
-  void _exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedDocuments.clear();
-    });
-  }
-
-  void _toggleDocumentSelection(int index) {
-    setState(() {
-      if (_selectedDocuments.contains(index)) {
-        _selectedDocuments.remove(index);
-      } else {
-        _selectedDocuments.add(index);
-      }
-    });
+  // Preview a converted document in the PDF viewer
+  Future<void> _previewConvertedDocument(ImagePdfDocument document) async {
+    final file = await _vm.openableFile(document);
+    if (!mounted) return;
+    if (file == null) {
+      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PdfViewerScreen(
+          localFile: file,
+          title: document.name,
+        ),
+      ),
+    );
   }
 
   Future<void> _shareBulkDocuments() async {
-    try {
-      final selectedDocs = _selectedDocuments
-          .map((index) => _convertedDocuments[index])
-          .toList();
-
-      await ShareLive.sendFiles(
-        context,
-        [for (final doc in selectedDocs) doc.filePath],
-      );
-
-      _exitSelectionMode();
-    } catch (e) {
-      final localization = AppLocalizations.of(context);
-      _showToast(localization.translate('failedToShareDocuments'), Colors.red);
-    }
+    final selected = _vm.selectedDocuments;
+    await _shareDocuments(selected);
+    if (mounted) _vm.exitSelectionMode();
   }
 
   Future<void> _deleteBulkDocuments() async {
     final localization = AppLocalizations.of(context);
-    final count = _selectedDocuments.length;
+    final selected = _vm.selectedDocuments;
+    final count = selected.length;
+    if (count == 0) return;
 
     // Show confirmation dialog
     final shouldDelete = await showDialog<bool>(
@@ -496,890 +338,297 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     );
 
     if (shouldDelete == true) {
-      try {
-        // Delete files and remove from list
-        final indicesToRemove = _selectedDocuments.toList()
-          ..sort((a, b) => b.compareTo(a));
-
-        for (final index in indicesToRemove) {
-          final document = _convertedDocuments[index];
-          final file = File(document.filePath);
-
-          if (await file.exists()) {
-            await file.delete();
-          }
-
-          _convertedDocuments.removeAt(index);
-        }
-
-        await _saveConvertedDocuments();
-        _exitSelectionMode();
-
+      final failed = await _vm.delete(selected.map((d) => d.id).toList());
+      if (!mounted) return;
+      _vm.exitSelectionMode();
+      if (failed.isEmpty) {
         _showToast(
           '$count ${count == 1 ? localization.translate('documentDeleted') : localization.translate('documentsDeleted')}',
           Colors.green,
         );
-      } catch (e) {
+      } else {
         _showToast(
-            localization.translate('failedToDeleteDocuments'), Colors.red);
+          localization
+              .translate('i2pErrDeleteSome')
+              .replaceAll('{count}', '${failed.length}'),
+          Colors.red,
+        );
       }
     }
   }
 
-  // Professional image processing with advanced options
-  static Future<ProcessedImageData> _processImageAdvanced({
-    required String imagePath,
-    required ImageQuality quality,
-    required CompressionLevel compression,
-    required PdfOrientation orientation,
-  }) async {
-    try {
-      final File imageFile = File(imagePath);
-      final Uint8List originalBytes = await imageFile.readAsBytes();
-      final int originalSize = originalBytes.length;
-
-      img.Image? image = img.decodeImage(originalBytes);
-      if (image == null) {
-        throw Exception('Failed to decode image');
-      }
-
-      final int originalWidth = image.width;
-      final int originalHeight = image.height;
-
-      // Auto-rotation based on orientation setting
-      if (orientation == PdfOrientation.auto) {
-        // Auto-detect orientation and rotate if needed - fix the logic
-        if (originalWidth < originalHeight &&
-            orientation == PdfOrientation.auto) {
-          // Keep portrait as is
-        }
-      } else if (orientation == PdfOrientation.landscape &&
-          originalHeight > originalWidth) {
-        image = img.copyRotate(image, angle: 90);
-      }
-
-      // Quality-based resizing
-      int targetMaxDimension;
-      switch (quality) {
-        case ImageQuality.low:
-          targetMaxDimension = 800;
-          break;
-        case ImageQuality.medium:
-          targetMaxDimension = 1200;
-          break;
-        case ImageQuality.high:
-          targetMaxDimension = 1800;
-          break;
-        case ImageQuality.ultra:
-          targetMaxDimension = 2400;
-          break;
-      }
-
-      // Resize if needed
-      if (image.width > targetMaxDimension ||
-          image.height > targetMaxDimension) {
-        if (image.width > image.height) {
-          image = img.copyResize(image, width: targetMaxDimension);
-        } else {
-          image = img.copyResize(image, height: targetMaxDimension);
-        }
-      }
-
-      // Remove the enhancement that might be causing issues
-      // image = _enhanceImage(image);
-
-      // Compression-based encoding
-      int jpegQuality;
-      switch (compression) {
-        case CompressionLevel.none:
-          jpegQuality = 100;
-          break;
-        case CompressionLevel.low:
-          jpegQuality = 95;
-          break;
-        case CompressionLevel.medium:
-          jpegQuality = 85;
-          break;
-        case CompressionLevel.high:
-          jpegQuality = 75;
-          break;
-        case CompressionLevel.maximum:
-          jpegQuality = 60;
-          break;
-      }
-
-      final Uint8List processedBytes =
-          Uint8List.fromList(img.encodeJpg(image, quality: jpegQuality));
-
-      return ProcessedImageData(
-        imageBytes: processedBytes,
-        originalSize: originalSize,
-        compressedSize: processedBytes.length,
-        width: image.width,
-        height: image.height,
-        compressionRatio: (1 - processedBytes.length / originalSize) * 100,
-      );
-    } catch (e) {
-      // Error in _processImageAdvanced: $e (log removed)
-      throw Exception('Failed to process image: $e');
-    }
-  }
-
-  // Simple image processing fallback method
-  static Future<ProcessedImageData> _processImageSimple(
-      String imagePath) async {
-    try {
-      final File imageFile = File(imagePath);
-      final Uint8List originalBytes = await imageFile.readAsBytes();
-      final int originalSize = originalBytes.length;
-
-      // Try to get image dimensions, fallback to defaults if it fails
-      int width = 800;
-      int height = 600;
-
-      try {
-        img.Image? image = img.decodeImage(originalBytes);
-        if (image != null) {
-          width = image.width;
-          height = image.height;
-        }
-      } catch (e) {
-        // Use original bytes and default dimensions
-      }
-
-      return ProcessedImageData(
-        imageBytes: originalBytes,
-        originalSize: originalSize,
-        compressedSize: originalBytes.length,
-        width: width,
-        height: height,
-        compressionRatio: 0.0,
-      );
-    } catch (e) {
-      // Error in _processImageSimple: $e (log removed)
-      throw Exception('Failed to process image: $e');
-    }
-  }
+  // ---------------------------------------------------------- selecting images
 
   Future<void> _pickImages() async {
-    final localization = AppLocalizations.of(context);
-    try {
-      final cleanMediaService = CleanMediaService();
-      final images =
-          await cleanMediaService.pickMultipleImagesFromGallery(context);
-
-      if (images != null && images.isNotEmpty) {
-        setState(() {
-          _selectedImages.addAll(images);
-        });
-
-        // Auto-process images for preview
-        await _preprocessImages();
-      }
-    } catch (e) {
-      _showToast(localization.translate('failedToPickImages'), Colors.red);
-    }
+    if (_vm.isBusy) return;
+    final outcome = await _vm.pickFromGallery();
+    if (!mounted) return;
+    await _reportAdded(outcome);
   }
 
   Future<void> _takePhoto() async {
-    final localization = AppLocalizations.of(context);
-    try {
-      final cleanMediaService = CleanMediaService();
-      final image = await cleanMediaService.pickImageFromCamera(context);
-
-      if (image != null) {
-        setState(() {
-          _selectedImages.add(image);
-        });
-
-        await _preprocessImages();
-      }
-    } catch (e) {
-      _showToast(localization.translate('failedToCapturePhoto'), Colors.red);
-    }
-  } // Preprocess images for preview and size calculation
-
-  Future<void> _preprocessImages() async {
-    if (_selectedImages.isEmpty) return;
-
-    final localization = AppLocalizations.of(context);
-    setState(() {
-      _isProcessing = true;
-      _processingProgress = 0.0;
-      _currentProcessingStep = localization.translate('preprocessingImages');
-    });
-
-    try {
-      _processedImages.clear();
-
-      for (int i = 0; i < _selectedImages.length; i++) {
-        setState(() {
-          _processingProgress = i / _selectedImages.length;
-          _currentProcessingStep =
-              '${localization.translate('processingImage').replaceAll('{current}', '${i + 1}').replaceAll('{total}', '${_selectedImages.length}')}';
-        });
-
-        try {
-          final processedData = await _processImageAdvanced(
-            imagePath: _selectedImages[i].path,
-            quality: _imageQuality,
-            compression: _compression,
-            orientation: _orientation,
-          );
-          _processedImages.add(processedData);
-        } catch (e) {
-          // Fallback to simple processing
-          final processedData =
-              await _processImageSimple(_selectedImages[i].path);
-          _processedImages.add(processedData);
-        }
-
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-
-      setState(() {
-        _isProcessing = false;
-        _processingProgress = 1.0;
-        _currentProcessingStep = localization.translate('readyForConversion');
-      });
-    } catch (e) {
-      setState(() => _isProcessing = false);
-      _showToast(
-          localization.translate('failedToPreprocessImages'), Colors.red);
-    }
+    if (_vm.isBusy) return;
+    final outcome = await _vm.captureFromCamera();
+    if (!mounted) return;
+    await _reportAdded(outcome);
   }
 
-  PdfPageFormat _getPdfPageFormat() {
-    switch (_pageSize) {
-      case PdfPageSize.a4:
-        return _orientation == PdfOrientation.landscape
-            ? PdfPageFormat.a4.landscape
-            : PdfPageFormat.a4;
-      case PdfPageSize.letter:
-        return _orientation == PdfOrientation.landscape
-            ? PdfPageFormat.letter.landscape
-            : PdfPageFormat.letter;
-      case PdfPageSize.legal:
-        return _orientation == PdfOrientation.landscape
-            ? PdfPageFormat.legal.landscape
-            : PdfPageFormat.legal;
-      case PdfPageSize.a3:
-        return _orientation == PdfOrientation.landscape
-            ? PdfPageFormat.a3.landscape
-            : PdfPageFormat.a3;
-      case PdfPageSize.a5:
-        return _orientation == PdfOrientation.landscape
-            ? PdfPageFormat.a5.landscape
-            : PdfPageFormat.a5;
-      default:
-        return PdfPageFormat.a4;
-    }
-  }
-
-  // Professional PDF generation with advanced features
-  Future<void> _convertToPDF() async {
+  Future<void> _reportAdded(AddImagesOutcome outcome) async {
     final localization = AppLocalizations.of(context);
-    if (_selectedImages.isEmpty) {
+    if (outcome.cancelled) return;
+    final failure = outcome.failure;
+    if (failure != null) {
       _showToast(
-          localization.translate('pleaseSelectImagesFirst'), Colors.orange);
+          failure == ImagePdfFailure.permissionDenied
+              ? localization.translate('i2pErrCamera')
+              : _failureMessage(failure),
+          Colors.red);
       return;
     }
-
-    // QUOTA CHECK: Check if user can add more image-to-pdf documents
-    final currentUserId =
-        RepositoryProvider.instance.authRepository.currentUserId;
-    if (currentUserId == null) {
-      _showToast(localization.translate('pleaseLoginFirst'), Colors.red);
-      return;
-    }
-
-    final canAdd = await QuotaHelper.checkAndWarnQuota(
-      context: context,
-      uid: currentUserId,
-      section: 'imageToPdf',
-      toolName: 'imageToPdf',
-    );
-
-    if (!canAdd) {
-      return; // User hit quota limit
-    }
-
-    setState(() {
-      _isProcessing = true;
-      _processingProgress = 0.0;
-      _currentProcessingStep =
-          localization.translate('initializingPdfCreation');
-    });
-
-    try {
-      // Create PDF document with metadata
-      final pdf = pw.Document(
-        title: _fileNameController.text.trim(),
-        author: 'Broker Wallet Pro',
-        creator: 'JPG to PDF Converter',
-        subject: 'Converted Images to PDF',
-        keywords: 'images, pdf, conversion, professional',
-      );
-
-      final pageFormat = _getPdfPageFormat();
-      final int totalImages = _selectedImages.length;
-
-      // Add cover page if enabled
-      if (_addTimestamp || _addWatermark) {
-        pdf.addPage(
-          pw.Page(
-            pageFormat: pageFormat,
-            margin: pw.EdgeInsets.all(_margin.toDouble()),
-            build: (pw.Context context) => _buildCoverPage(),
-          ),
-        );
-      }
-
-      // Process and add each image
-      for (int i = 0; i < _selectedImages.length; i++) {
-        setState(() {
-          _processingProgress = (i / totalImages) * 0.8;
-          _currentProcessingStep = localization
-              .translate('convertingImage')
-              .replaceAll('{current}', '${i + 1}')
-              .replaceAll('{total}', '$totalImages');
-        });
-
-        ProcessedImageData processedData;
-        if (i < _processedImages.length) {
-          processedData = _processedImages[i];
-        } else {
-          // Try advanced processing, fallback to simple processing
-          try {
-            processedData = await _processImageAdvanced(
-              imagePath: _selectedImages[i].path,
-              quality: _imageQuality,
-              compression: _compression,
-              orientation: _orientation,
-            );
-          } catch (e) {
-            // Fallback to simple processing
-            processedData = await _processImageSimple(_selectedImages[i].path);
-          }
-        }
-
-        final image = pw.MemoryImage(processedData.imageBytes);
-
-        pdf.addPage(
-          pw.Page(
-            pageFormat: pageFormat,
-            margin: pw.EdgeInsets.all(_margin.toDouble()),
-            build: (pw.Context context) => _buildImagePage(
-              image,
-              i + 1,
-              totalImages,
-              processedData,
-            ),
-          ),
-        );
-
-        await Future.delayed(const Duration(milliseconds: 10));
-      }
-
-      setState(() {
-        _processingProgress = 0.9;
-        _currentProcessingStep = localization.translate('finalizingPdf');
-      });
-
-      // Save PDF
-      final output = await getApplicationDocumentsDirectory();
-      final sanitizedName = _sanitizeFileName(_fileNameController.text.trim());
-      final fileName =
-          sanitizedName.isEmpty ? 'converted_images' : sanitizedName;
-      final file = File('${output.path}/$fileName.pdf');
-
-      final pdfBytes = await pdf.save();
-      await file.writeAsBytes(pdfBytes);
-
-      setState(() {
-        _processingProgress = 1.0;
-        _currentProcessingStep = 'PDF created successfully!';
-        _isProcessing = false;
-      });
-
-      // Create and save the converted document record
-      final convertedDoc = ConvertedPdfDocument(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: fileName,
-        filePath: file.path,
-        createdAt: DateTime.now(),
-        fileSize: pdfBytes.length,
-        imageCount: _selectedImages.length,
-      );
-
-      setState(() {
-        _convertedDocuments.insert(0, convertedDoc);
-      });
-
-      await _saveConvertedDocuments();
-
-      // Update quota count
-      await _incrementQuotaCount(currentUserId, 'imageToPdf');
-
-      _resetForm();
-
-      // Show success toast instead of dialog
-      _showToast(
-        '${localization.translate('pdfCreatedSuccessfully')} "${fileName}.pdf"',
-        Colors.green,
-      );
-    } catch (e) {
-      setState(() => _isProcessing = false);
-      _showToast(localization.translate('failedToCreatePdf'), Colors.red);
-    }
-  }
-
-  Future<void> _incrementQuotaCount(String uid, String section) async {
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'counts': {section: FieldValue.increment(1)},
-        'lifetimeCreated': {section: FieldValue.increment(1)},
-      }, SetOptions(merge: true));
-    } catch (e) {}
-  }
-
-  // Build cover page with professional layout
-  pw.Widget _buildCoverPage() {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Header(
-          level: 0,
-          child: pw.Text(
-            'PDF Document',
-            style: pw.TextStyle(fontSize: 32, fontWeight: pw.FontWeight.bold),
-          ),
-        ),
-        pw.SizedBox(height: 40),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(20),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey400),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text('Document Information',
-                  style: pw.TextStyle(
-                      fontSize: 18, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 16),
-              pw.Text('Title: ${_fileNameController.text.trim()}'),
-              pw.Text('Total Images: ${_selectedImages.length}'),
-              pw.Text('Page Size: ${_pageSize.name.toUpperCase()}'),
-              pw.Text('Orientation: ${_orientation.name.toUpperCase()}'),
-              pw.Text('Quality: ${_imageQuality.name.toUpperCase()}'),
-              if (_addTimestamp)
-                pw.Text('Created: ${DateTime.now().toString().split('.')[0]}'),
-              pw.Text('Generated by: Broker Wallet Pro'),
-            ],
-          ),
-        ),
-        pw.Spacer(),
-        if (_addWatermark)
-          pw.Center(
-            child: pw.Opacity(
-              opacity: 0.1,
-              child: pw.Text(
-                'BROKER WALLET PRO',
-                style:
-                    pw.TextStyle(fontSize: 48, fontWeight: pw.FontWeight.bold),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  // Build individual image page with advanced layout
-  pw.Widget _buildImagePage(
-    pw.MemoryImage image,
-    int pageNumber,
-    int totalPages,
-    ProcessedImageData data,
-  ) {
-    pw.Widget imageWidget;
-
-    switch (_layout) {
-      case PdfLayout.fitToPage:
-        imageWidget = pw.Expanded(
-          child: pw.Center(
-            child: pw.Image(image, fit: pw.BoxFit.contain),
-          ),
-        );
-        break;
-      case PdfLayout.originalSize:
-        imageWidget = pw.Center(
-          child: pw.Image(image),
-        );
-        break;
-      case PdfLayout.centerFit:
-        imageWidget = pw.Expanded(
-          child: pw.Center(
-            child: pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300),
-              ),
-              child: pw.Image(image, fit: pw.BoxFit.cover),
-            ),
-          ),
-        );
-        break;
-      case PdfLayout.tileMultiple:
-        imageWidget = pw.Expanded(
-          child: pw.Image(image, fit: pw.BoxFit.cover),
-        );
-        break;
-    }
-
-    return pw.Column(
-      children: [
-        imageWidget,
-        if (_addPageNumbers || _addTimestamp)
-          pw.Container(
-            margin: const pw.EdgeInsets.only(top: 10),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+    if (outcome.rejected.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(localization.translate('i2pRejectedTitle')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_addPageNumbers)
-                  pw.Text(
-                    'Page $pageNumber of $totalPages',
-                    style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                if (outcome.added > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(localization
+                        .translate('i2pAddedSummary')
+                        .replaceAll('{count}', '${outcome.added}')),
                   ),
-                if (_addTimestamp)
-                  pw.Text(
-                    'Size: ${data.width}×${data.height} | ${(data.compressedSize / 1024).toStringAsFixed(1)}KB',
-                    style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                for (final rejected in outcome.rejected)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(rejected.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        Text(_failureMessage(rejected.failure)),
+                      ],
+                    ),
                   ),
               ],
             ),
           ),
-        if (_addWatermark)
-          pw.Positioned(
-            right: 20,
-            bottom: 20,
-            child: pw.Opacity(
-              opacity: 0.3,
-              child: pw.Text(
-                'Broker Wallet',
-                style: pw.TextStyle(fontSize: 12, color: PdfColors.grey),
-              ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(localization.translate('ok')),
             ),
-          ),
+          ],
+        ),
+      );
+    }
+    if (outcome.possibleDuplicates > 0 && mounted) {
+      _showToast(
+        localization
+            .translate('i2pDuplicatesNote')
+            .replaceAll('{count}', '${outcome.possibleDuplicates}'),
+        Colors.orange,
+      );
+    }
+  }
+
+  // ------------------------------------------------------------- making the PDF
+
+  ImagePdfTexts _coverTexts(String title) {
+    final loc = _localization;
+    final count = _vm.items.length;
+    return ImagePdfTexts(
+      coverTitle: title,
+      coverLines: <String>[
+        '$count ${count == 1 ? loc.translate('image') : loc.translate('images')}',
       ],
     );
   }
 
-  void _resetForm() {
-    setState(() {
-      _selectedImages.clear();
-      _processedImages.clear();
-      _currentPreviewIndex = 0;
-    });
-    _generateFileName();
-  }
-
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-      if (index < _processedImages.length) {
-        _processedImages.removeAt(index);
-      }
-    });
-  }
-
-  void _reorderImages(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) newIndex--;
-      final item = _selectedImages.removeAt(oldIndex);
-      _selectedImages.insert(newIndex, item);
-
-      if (oldIndex < _processedImages.length &&
-          newIndex < _processedImages.length) {
-        final processedItem = _processedImages.removeAt(oldIndex);
-        _processedImages.insert(newIndex, processedItem);
-      }
-    });
-  }
-
-  void _showSettingsBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _AdvancedSettingsSheet(
-        pageSize: _pageSize,
-        orientation: _orientation,
-        imageQuality: _imageQuality,
-        layout: _layout,
-        compression: _compression,
-        addPageNumbers: _addPageNumbers,
-        addTimestamp: _addTimestamp,
-        addWatermark: _addWatermark,
-        margin: _margin,
-        onSettingsChanged: (settings) {
-          setState(() {
-            _pageSize = settings['pageSize'] ?? _pageSize;
-            _orientation = settings['orientation'] ?? _orientation;
-            _imageQuality = settings['imageQuality'] ?? _imageQuality;
-            _layout = settings['layout'] ?? _layout;
-            _compression = settings['compression'] ?? _compression;
-            _addPageNumbers = settings['addPageNumbers'] ?? _addPageNumbers;
-            _addTimestamp = settings['addTimestamp'] ?? _addTimestamp;
-            _addWatermark = settings['addWatermark'] ?? _addWatermark;
-            _margin = settings['margin'] ?? _margin;
-          });
-
-          // Reprocess images with new settings
-          if (_selectedImages.isNotEmpty) {
-            _preprocessImages();
-          }
-        },
-      ),
-    );
-  }
-
-  void _showPreviewDialog() {
-    if (_processedImages.isEmpty) return;
-
+  /// Makes (or reuses) the draft and reports any failure. Null when there is
+  /// no draft to show.
+  Future<ImagePdfDraft?> _ensureDraft() async {
+    if (_vm.isBusy) return null;
     final localization = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          height: MediaQuery.of(context).size.height * 0.8,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Text(
-                      localization.translate('pdfPreview'),
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: PageView.builder(
-                  controller: _previewPageController,
-                  itemCount: _processedImages.length,
-                  onPageChanged: (index) {
-                    setState(() => _currentPreviewIndex = index);
-                  },
-                  itemBuilder: (context, index) {
-                    return Container(
-                      margin: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Image.memory(
-                        _processedImages[index].imageBytes,
-                        fit: BoxFit.contain,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(localization
-                        .translate('pageOf')
-                        .replaceAll('{current}', '${_currentPreviewIndex + 1}')
-                        .replaceAll('{total}', '${_processedImages.length}')),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios),
-                          onPressed: _currentPreviewIndex > 0
-                              ? () => _previewPageController.previousPage(
-                                    duration: const Duration(milliseconds: 300),
-                                    curve: Curves.easeInOut,
-                                  )
-                              : null,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_forward_ios),
-                          onPressed: _currentPreviewIndex <
-                                  _processedImages.length - 1
-                              ? () => _previewPageController.nextPage(
-                                    duration: const Duration(milliseconds: 300),
-                                    curve: Curves.easeInOut,
-                                  )
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+    final title =
+        ImagePdfNaming.sanitizeDisplayName(_fileNameController.text) ??
+            _vm.suggestedName;
+    final outcome = await _vm.prepareDraft(
+      title: title,
+      coverTexts: _coverTexts(title),
+      allowNewConversion: (uid) =>
+          (widget.usageGate ?? ImagePdfWiring.usageGate)
+              .allowNewConversion(context, uid),
+    );
+    if (!mounted) return null;
+    if (outcome.isDone) return outcome.draft;
+    final failure = outcome.failure!;
+    // The plan-limit dialog has already told the user why.
+    if (failure == ImagePdfFailure.quotaBlocked) return null;
+    var message = _failureMessage(failure);
+    if (outcome.sourceName != null) {
+      message = '${outcome.sourceName}: $message';
+    }
+    if (failure == ImagePdfFailure.cancelled) {
+      _showToast(message, Colors.orange);
+      return null;
+    }
+    if (_retryable.contains(failure)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: localization.translate('retry'),
+          onPressed: _convertToPDF,
+        ),
+      ));
+      return null;
+    }
+    _showToast(message, Colors.red);
+    return null;
+  }
+
+  Future<void> _previewDraft() async {
+    final draft = await _ensureDraft();
+    if (draft == null || !mounted) return;
+    await _openDraftViewer();
+  }
+
+  Future<void> _openDraftViewer() async {
+    final file = _vm.draftFile;
+    if (file == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PdfViewerScreen(
+          localFile: file,
+          title: _fileNameController.text.trim().isEmpty
+              ? _vm.suggestedName
+              : _fileNameController.text.trim(),
         ),
       ),
     );
   }
 
-// Enhanced _saveToDeviceStorage method with proper Android 11+ support
-  Future<void> _saveToDeviceStorage(File pdfFile) async {
-    final localization = AppLocalizations.of(context);
+  Future<void> _convertToPDF() async {
+    if (_reviewing) return;
+    final draft = await _ensureDraft();
+    if (draft == null || !mounted) return;
+    await _review(draft);
+  }
 
+  /// Shows the finished PDF (pages, size) with Preview, Save and Discard.
+  Future<void> _review(ImagePdfDraft first) async {
+    _reviewing = true;
     try {
-      Directory? downloadsDirectory;
-      String locationName = 'Documents'; // Default value
-
-      if (Platform.isAndroid) {
-        final androidInfo = await DeviceInfoPlugin().androidInfo;
-        final sdkInt = androidInfo.version.sdkInt;
-
-        if (sdkInt >= 30) {
-          // Android 11+ (API 30+) - Use MediaStore for proper public Downloads saving
-          locationName = 'Downloads';
-          try {
-            final fileName = pdfFile.path.split('/').last;
-            final timestamp = DateTime.now().millisecondsSinceEpoch;
-            final nameWithoutExt = fileName.replaceAll('.pdf', '');
-            final uniqueFileName = '${nameWithoutExt}_$timestamp.pdf';
-            final fileBytes = await pdfFile.readAsBytes();
-
-            final result = await _channel.invokeMethod('saveFileToDownloads', {
-              'fileName': uniqueFileName,
-              'fileBytes': fileBytes,
-              'mimeType': 'application/pdf',
-            });
-
-            if (result['success'] == true) {
-              _showToast(
-                '${localization.translate('pdfSavedTo')} Downloads\nFile: $uniqueFileName\n(Accessible via Files app)',
-                Colors.green,
-              );
-              return; // Success, exit method
-            } else {
-              throw Exception('MediaStore save failed');
-            }
-          } catch (e) {
-            // Continue to fallback method below
-            final externalDir = await getExternalStorageDirectory();
-            if (externalDir != null) {
-              downloadsDirectory = Directory('${externalDir.path}/Downloads');
-              locationName = 'App Downloads';
-              if (!await downloadsDirectory.exists()) {
-                await downloadsDirectory.create(recursive: true);
-              }
-            } else {
-              downloadsDirectory = await getApplicationDocumentsDirectory();
-              locationName = 'App Documents';
-            }
-          }
-        } else {
-          // Android 10 and below - Request storage permission
-          locationName = 'Downloads';
-          final cleanPermissionService = CleanPermissionService();
-          final storagePermissions =
-              await cleanPermissionService.requestStoragePermissions(context);
-          final hasStorageAccess =
-              storagePermissions.values.any((s) => s.isGranted || s.isLimited);
-
-          if (hasStorageAccess) {
-            try {
-              downloadsDirectory = Directory('/storage/emulated/0/Download');
-              if (!await downloadsDirectory.exists()) {
-                // Fallback paths
-                final fallbackPaths = [
-                  '/sdcard/Download',
-                  '/storage/self/primary/Download',
-                ];
-
-                for (String path in fallbackPaths) {
-                  final testDir = Directory(path);
-                  if (await testDir.exists()) {
-                    downloadsDirectory = testDir;
-                    break;
-                  }
-                }
-
-                // Last resort - external storage
-                if (downloadsDirectory == null ||
-                    !await downloadsDirectory.exists()) {
-                  downloadsDirectory = await getExternalStorageDirectory();
-                  locationName = 'External Storage';
-                }
-              }
-            } catch (e) {
-              downloadsDirectory = await getExternalStorageDirectory();
-              locationName = 'External Storage';
-            }
-          } else {
-            _showToast(
-                localization.translate('storagePermissionDenied'), Colors.red);
-            return;
-          }
+      while (mounted) {
+        final draft = _vm.draft ?? first;
+        final action = await showModalBottomSheet<_ReviewAction>(
+          context: context,
+          isScrollControlled: true,
+          builder: (sheetContext) => _ReviewSheet(
+            draft: draft,
+            title: _fileNameController.text.trim().isEmpty
+                ? _vm.suggestedName
+                : _fileNameController.text.trim(),
+            formatSize: _formatFileSize,
+          ),
+        );
+        if (!mounted) return;
+        switch (action) {
+          case _ReviewAction.preview:
+            await _openDraftViewer();
+            continue;
+          case _ReviewAction.save:
+            await _saveDraft();
+          case _ReviewAction.discard:
+            _vm.discardDraft();
+          case null:
+            // Closed without a choice: the draft is kept until something it
+            // was made from changes.
+            break;
         }
-      } else if (Platform.isIOS) {
-        downloadsDirectory = await getApplicationDocumentsDirectory();
-        locationName = 'Documents';
-      }
-
-      if (downloadsDirectory == null) {
-        _showToast(localization.translate('failedToAccessStorage'), Colors.red);
         return;
       }
-
-      // Create the destination file path with timestamp to avoid conflicts
-      final fileName = pdfFile.path.split('/').last;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final nameWithoutExt = fileName.replaceAll('.pdf', '');
-      final uniqueFileName = '${nameWithoutExt}_$timestamp.pdf';
-      final destinationPath = '${downloadsDirectory.path}/$uniqueFileName';
-
-      // Ensure the directory exists
-      await downloadsDirectory.create(recursive: true);
-
-      // Copy the file to the destination
-      final destinationFile = File(destinationPath);
-      await pdfFile.copy(destinationPath);
-
-      // Verify the file was created and get its actual size
-      if (await destinationFile.exists()) {
-        // Show success with actual path info
-        _showToast(
-          '${localization.translate('pdfSavedTo')} $locationName\nFile: $uniqueFileName',
-          Colors.green,
-        );
-
-        // Additional debug info
-        try {
-          final files = await downloadsDirectory.list().toList();
-          for (var file in files) {
-            if (file.path.contains('.pdf')) {}
-          }
-        } catch (e) {}
-      } else {
-        throw Exception(
-            'File was not created at destination: $destinationPath');
-      }
-    } catch (e) {
-      _showToast(
-          '${localization.translate('failedToSavePdf')}: ${e.toString()}',
-          Colors.red);
+    } finally {
+      _reviewing = false;
     }
+  }
+
+  Future<void> _saveDraft() async {
+    final localization = AppLocalizations.of(context);
+    final outcome = await _vm.saveDraft(name: _fileNameController.text);
+    if (!mounted) return;
+    if (outcome.isDone) {
+      _fileNameController.text = _vm.suggestedName;
+      _showToast(
+        localization
+            .translate('i2pSaved')
+            .replaceAll('{name}', outcome.document!.name),
+        Colors.green,
+      );
+      return;
+    }
+    final failure = outcome.failure!;
+    final message = _failureMessage(failure);
+    if (_retryable.contains(failure)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: localization.translate('retry'),
+          onPressed: _saveDraft,
+        ),
+      ));
+      return;
+    }
+    _showToast(message, Colors.red);
+  }
+
+  // Export a converted document to Downloads (Android) or Files (iPhone)
+  Future<void> _saveToDeviceStorage(ImagePdfDocument document) async {
+    try {
+      final result = await _vm.exportDocument(document.id);
+      if (!mounted || result.cancelled) return;
+      final key = result.destination == ScannerExportDestination.downloads
+          ? 'i2pSavedToDownloads'
+          : 'i2pSavedToFiles';
+      _showToast(
+        _localization
+            .translate(key)
+            .replaceAll('{name}', result.savedName ?? ''),
+        Colors.green,
+      );
+    } on ImagePdfException catch (e) {
+      if (mounted) _showToast(_failureMessage(e.kind), Colors.red);
+    } catch (e) {
+      if (mounted) {
+        _showToast(_failureMessage(ImagePdfFailure.exportFailed), Colors.red);
+      }
+    }
+  }
+
+  void _showSettingsBottomSheet() {
+    if (_vm.isBuilding || _vm.isSaving) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ImagePdfSettingsSheet(
+        settings: _vm.settings,
+        hasPassword: _vm.hasPassword,
+        onApply: (result) {
+          _vm.updateSettings(result.settings);
+          if (result.settings.passwordProtect && result.password.isNotEmpty) {
+            _vm.setPassword(result.password);
+          }
+        },
+      ),
+    );
   }
 
   void _showToast(String message, Color bgColor) {
@@ -1411,44 +660,48 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  /// "4 images • 4 pages • 1.2 MB"; parts that are unknown are left out.
+  String _documentMeta(ImagePdfDocument document, AppLocalizations loc) {
+    final parts = <String>[
+      if (document.imageCount > 0)
+        '${document.imageCount} ${document.imageCount == 1 ? loc.translate('image') : loc.translate('images')}',
+      if (document.pageCount > 0)
+        loc
+            .translate('i2pPagesCount')
+            .replaceAll('{count}', '${document.pageCount}'),
+      _formatFileSize(document.fileSize),
+    ];
+    return parts.join(' • ');
   }
 
   PreferredSizeWidget _buildAdvancedAppBar(
       AppLocalizations localization, ColorScheme colors) {
+    final hasItems = _vm.items.isNotEmpty;
     return AppBar(
+      // BackArrowButton pads itself by 16 px unless told otherwise; with zero
+      // padding and a 48 px leading slot the arrow sits on the content edge.
+      leadingWidth: 48,
       leading: const BackArrowButton(
         iconColor: Colors.white, // Set to white to match the green gradient
+        iconSize: 24,
+        padding: EdgeInsets.zero,
         backgroundColor: Colors
             .transparent, // Make background transparent since we have gradient
         showBackground: false, // Disable the default background circle
       ),
-      title: Column(
-        children: [
-          Text(
-            _isSelectionMode
-                ? '${_selectedDocuments.length} ${localization.translate('selected')}'
-                : localization.translate('imageToPdf'),
-            style: AppTextStyles.appBarTitle
-                .copyWith(fontSize: 20, color: Colors.white),
-          ),
-          if (_convertedDocuments.isNotEmpty && !_isSelectionMode)
-            Text(
-              '${_convertedDocuments.length} ${localization.translate('documents')}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
-          if (_selectedImages.isNotEmpty && !_isSelectionMode)
-            Text(
-              '${_selectedImages.length} ${_selectedImages.length == 1 ? localization.translate('image') : localization.translate('images')}',
-              style: TextStyle(
-                  fontSize: 12, color: colors.onSurface.withValues(alpha: 0.7)),
-            ),
-        ],
+      title: Text(
+        _vm.isSelectionMode
+            ? '${_vm.selectedCount} ${localization.translate('selected')}'
+            : localization.translate('imageToPdf'),
+        style: AppTextStyles.appBarTitle
+            .copyWith(fontSize: 20, color: Colors.white),
+        textAlign: TextAlign.center,
       ),
       centerTitle: true,
       backgroundColor: Colors.transparent,
@@ -1467,66 +720,51 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
         ),
       ),
       actions: [
-        if (_isSelectionMode) ...[
+        if (_vm.isSelectionMode) ...[
           // Bulk actions when in selection mode
           IconButton(
             icon: const Icon(Icons.share, color: Colors.white),
-            onPressed:
-                _selectedDocuments.isNotEmpty ? _shareBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0 ? _shareBulkDocuments : null,
             tooltip: localization.translate('shareSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
-            onPressed:
-                _selectedDocuments.isNotEmpty ? _deleteBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0 ? _deleteBulkDocuments : null,
             tooltip: localization.translate('deleteSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: _exitSelectionMode,
+            onPressed: _vm.exitSelectionMode,
             tooltip: localization.translate('cancelSelection'),
           ),
-        ] else ...[
-          if (_convertedDocuments.isNotEmpty) ...[
-            IconButton(
-              icon: Icon(
-                _isViewMode ? Icons.grid_view : Icons.view_list,
-                color: Colors.white,
-              ),
-              onPressed: () {
-                setState(() => _isViewMode = !_isViewMode);
-                _saveViewModePreference();
-              },
-              tooltip: _isViewMode
-                  ? localization.translate('gridView')
-                  : localization.translate('listView'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.checklist, color: Colors.white),
-              onPressed: _enterSelectionMode,
-              tooltip: localization.translate('selectDocuments'),
-            ),
-          ] else if (_selectedImages.isNotEmpty && !_isProcessing) ...[
-            IconButton(
-              icon: const Icon(Icons.settings, color: Colors.white),
-              onPressed: _showSettingsBottomSheet,
-              tooltip: localization.translate('settings'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.clear_all, color: Colors.white),
-              onPressed: () => setState(() {
-                _selectedImages.clear();
-                _processedImages.clear();
-              }),
-              tooltip: localization.translate('clearAll'),
-            ),
-          ],
-        ],
+        ] else if (hasItems) ...[
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: _vm.isBuilding || _vm.isSaving
+                ? null
+                : _showSettingsBottomSheet,
+            tooltip: localization.translate('settings'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.clear_all, color: Colors.white),
+            onPressed:
+                _vm.isBuilding || _vm.isSaving ? null : _vm.clearSelection,
+            tooltip: localization.translate('clearAll'),
+          ),
+        ] else if (_vm.documents.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.checklist, color: Colors.white),
+            onPressed: _vm.enterSelectionMode,
+            tooltip: localization.translate('selectDocuments'),
+          ),
+        // The last icon's glyph ends on the same 16 px edge as the content.
+        const SizedBox(width: 4),
       ],
     );
   }
 
   Widget _buildBody(AppLocalizations localization, ColorScheme colors) {
+    final hasItems = _vm.items.isNotEmpty;
     return CustomScrollView(
       slivers: [
         // Header space for transparent app bar
@@ -1537,14 +775,18 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           child: _buildHeaderCard(localization, colors),
         ),
 
-        // Processing indicator
-        if (_isProcessing)
+        // Progress of the work in hand
+        if (_vm.isBuilding || _vm.isSaving)
           SliverToBoxAdapter(
             child: _buildProcessingIndicator(localization, colors),
+          )
+        else if (_vm.isChecking)
+          SliverToBoxAdapter(
+            child: _buildCheckingIndicator(localization, colors),
           ),
 
         // Show creation interface when creating new PDFs
-        if (_selectedImages.isNotEmpty) ...[
+        if (hasItems) ...[
           // File name input
           SliverToBoxAdapter(
             child: _buildFileNameInput(localization, colors),
@@ -1553,19 +795,32 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           SliverToBoxAdapter(
             child: _buildSelectedImagesHeader(localization),
           ),
+          SliverToBoxAdapter(child: _buildPlanSummary(localization, colors)),
           // Selected images list
           SliverReorderableList(
-            itemCount: _selectedImages.length,
-            onReorder: _reorderImages,
+            itemCount: _vm.items.length,
+            onReorderItem: _vm.moveItem,
             itemBuilder: (context, index) {
               return _buildImageCard(index, colors, localization);
             },
           ),
-        ] else if (_convertedDocuments.isEmpty) ...[
+        ] else if (_vm.documents.isEmpty) ...[
+          if (_vm.loadFailed)
+            SliverToBoxAdapter(
+              child: _buildLoadFailed(localization, colors),
+            ),
           // Empty state when no documents exist
           SliverToBoxAdapter(
             child: _buildEmptyState(localization, colors),
           ),
+          if (_vm.legacyDocumentCount > 0)
+            SliverToBoxAdapter(
+              child: _buildNotice(
+                  localization
+                      .translate('i2pLegacyNote')
+                      .replaceAll('{count}', '${_vm.legacyDocumentCount}'),
+                  colors.onSurface.withValues(alpha: 0.6)),
+            ),
         ] else ...[
           // Converted documents header
           SliverToBoxAdapter(
@@ -1577,32 +832,41 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   return _buildConvertedDocumentCard(
-                      _convertedDocuments[index], index, colors, localization);
+                      _vm.documents[index], colors, localization);
                 },
-                childCount: _convertedDocuments.length,
+                childCount: _vm.documents.length,
               ),
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                // Same tile height as the scanner grid.
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  childAspectRatio: 0.8,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
+                  mainAxisExtent: 200 *
+                      (MediaQuery.textScalerOf(context).scale(14) / 14)
+                          .clamp(1.0, 1.6)
+                          .toDouble(),
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     return _buildConvertedDocumentGridCard(
-                        _convertedDocuments[index],
-                        index,
-                        colors,
-                        localization);
+                        _vm.documents[index], colors, localization);
                   },
-                  childCount: _convertedDocuments.length,
+                  childCount: _vm.documents.length,
                 ),
               ),
+            ),
+          if (_vm.legacyDocumentCount > 0)
+            SliverToBoxAdapter(
+              child: _buildNotice(
+                  localization
+                      .translate('i2pLegacyNote')
+                      .replaceAll('{count}', '${_vm.legacyDocumentCount}'),
+                  colors.onSurface.withValues(alpha: 0.6)),
             ),
         ],
 
@@ -1674,8 +938,45 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     );
   }
 
+  Widget _buildNotice(String text, Color color) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadFailed(AppLocalizations localization, ColorScheme colors) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: colors.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(localization.translate('i2pErrLoad'))),
+          TextButton(
+            onPressed: _vm.refresh,
+            child: Text(localization.translate('retry')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Making the PDF reports no percentage: the libraries give no progress, so
+  /// the card says what is happening and offers Cancel instead of a made-up bar.
   Widget _buildProcessingIndicator(
       AppLocalizations localization, ColorScheme colors) {
+    final saving = _vm.isSaving;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(20),
@@ -1695,23 +996,37 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
         children: [
           Row(
             children: [
-              const CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(_green),
+                ),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _currentProcessingStep,
+                      saving
+                          ? localization.translate('i2pSaving')
+                          : localization
+                              .translate('i2pBuilding')
+                              .replaceAll('{count}', '${_vm.items.length}'),
                       style: AppTextStyles.bodyText.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${(_processingProgress * 100).toInt()}% ${localization.translate('complete')}',
-                      style: AppTextStyles.bodyText.copyWith(
-                        color: colors.onSurface.withValues(alpha: 0.7),
+                      saving
+                          ? localization.translate('i2pSavingNote')
+                          : localization.translate('i2pBuildingNote'),
+                      style: TextStyle(
+                        color: colors.onSurface.withValues(alpha: 0.6),
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -1719,11 +1034,51 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          if (!saving) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton(
+                onPressed: _vm.cancelBuild,
+                child: Text(localization.translate('cancel')),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Each picture is opened completely when it is added; the bar is the real
+  /// count of pictures already checked.
+  Widget _buildCheckingIndicator(
+      AppLocalizations localization, ColorScheme colors) {
+    final items = _vm.items;
+    final pending = items.where((i) => !i.isReady && i.failure == null).length;
+    final done = items.length - pending;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            localization
+                .translate('i2pChecking')
+                .replaceAll('{done}', '$done')
+                .replaceAll('{total}', '${items.length}'),
+            style: AppTextStyles.bodyText.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: _processingProgress,
+            value: items.isEmpty ? null : done / items.length,
             backgroundColor: colors.outline.withValues(alpha: 0.2),
-            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+            valueColor: const AlwaysStoppedAnimation<Color>(_green),
           ),
         ],
       ),
@@ -1752,13 +1107,13 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
         children: [
           Row(
             children: [
-              Icon(Icons.edit, size: 20, color: const Color(0xFF4CAF50)),
+              const Icon(Icons.edit, size: 20, color: _green),
               const SizedBox(width: 8),
               Text(
                 localization.translate('fileName'),
                 style: AppTextStyles.bodyText.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF4CAF50),
+                  color: _green,
                 ),
               ),
             ],
@@ -1766,9 +1121,11 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           const SizedBox(height: 12),
           TextField(
             controller: _fileNameController,
+            maxLength: 80,
             decoration: InputDecoration(
               hintText: localization.translate('enterFileName'),
               suffixText: '.pdf',
+              counterText: '',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -1791,13 +1148,13 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+              color: _green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Icon(
               Icons.photo_library_outlined,
               size: 64,
-              color: Color(0xFF4CAF50),
+              color: _green,
             ),
           ),
           const SizedBox(height: 24),
@@ -1823,6 +1180,8 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   }
 
   Widget _buildSelectedImagesHeader(AppLocalizations localization) {
+    final busy = _vm.isBusy;
+    final canPreview = !busy && !_vm.isChecking && !_vm.hasFailedItems;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -1831,21 +1190,21 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           // Title and settings button row
           Row(
             children: [
-              Text(
-                '${localization.translate('selectedImages')} (${_selectedImages.length})',
-                style: AppTextStyles.bodyText.copyWith(
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  '${localization.translate('selectedImages')} (${_vm.items.length})',
+                  style: AppTextStyles.bodyText.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const Spacer(),
               IconButton(
-                onPressed: _showSettingsBottomSheet,
+                onPressed: busy ? null : _showSettingsBottomSheet,
                 icon: const Icon(Icons.tune),
-                tooltip: localization.translate('pdfSettings'),
+                tooltip: localization.translate('advancedPdfSettings'),
                 style: IconButton.styleFrom(
-                  backgroundColor:
-                      const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                  foregroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: _green.withValues(alpha: 0.1),
+                  foregroundColor: _green,
                 ),
               ),
             ],
@@ -1857,11 +1216,11 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
               // Camera button
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _takePhoto,
+                  onPressed: busy ? null : _takePhoto,
                   icon: const Icon(Icons.camera_alt, size: 18),
                   label: Text(localization.translate('camera')),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4CAF50),
+                    backgroundColor: _green,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -1874,12 +1233,12 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
               // Add images button
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _pickImages,
+                  onPressed: busy ? null : _pickImages,
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(localization.translate('add')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.tilePrimary,
-                    foregroundColor: const Color(0xFF4CAF50),
+                    foregroundColor: _green,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1888,20 +1247,17 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                 ),
               ),
               const SizedBox(width: 8),
-              // Preview button
+              // Preview button: makes the real PDF and opens it
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed:
-                      _processedImages.isNotEmpty ? _showPreviewDialog : null,
+                  onPressed: canPreview ? _previewDraft : null,
                   icon: const Icon(Icons.preview, size: 18),
                   label: Text(localization.translate('preview')),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _processedImages.isNotEmpty
+                    backgroundColor: canPreview
                         ? AppColors.tilePrimary
                         : Colors.grey.withValues(alpha: 0.2),
-                    foregroundColor: _processedImages.isNotEmpty
-                        ? const Color(0xFF4CAF50)
-                        : Colors.grey,
+                    foregroundColor: canPreview ? _green : Colors.grey,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1916,17 +1272,110 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     );
   }
 
+  /// The pages the PDF will have and the page format, from the same plan the
+  /// engine builds with; plus what the chosen options mean for the user.
+  Widget _buildPlanSummary(AppLocalizations localization, ColorScheme colors) {
+    final s = _vm.settings;
+    final pages = _vm.plannedPageCount;
+    final size = s.pageSize == PdfPageSize.custom
+        ? '${s.customWidthMm.round()} × ${s.customHeightMm.round()} mm'
+        : s.pageSize.name.toUpperCase();
+    final notes = <String>[
+      if (s.passwordProtect) localization.translate('i2pProtectedNote'),
+    ];
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _green.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.layers, size: 20, color: _green),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  pages == null
+                      ? size
+                      : '${localization.translate('i2pPagesCount').replaceAll('{count}', '$pages')} • $size',
+                  style: AppTextStyles.bodyText.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: _green,
+                  ),
+                ),
+              ),
+              if (s.passwordProtect)
+                const Icon(Icons.lock, size: 18, color: _green),
+            ],
+          ),
+          for (final note in notes)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                note,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageCard(
       int index, ColorScheme colors, AppLocalizations localization) {
-    final file = _selectedImages[index];
+    final item = _vm.items[index];
+    final locked = _vm.isBuilding || _vm.isSaving;
+    final Widget thumbnail;
+    switch (item.status) {
+      case ImageItemStatus.ready:
+        thumbnail = Image.memory(
+          item.analysis!.thumbnail,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        );
+      case ImageItemStatus.checking:
+        thumbnail = const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      case ImageItemStatus.failed:
+        thumbnail = Center(
+          child: Icon(Icons.broken_image_outlined, color: colors.error),
+        );
+    }
+    final String detail;
+    switch (item.status) {
+      case ImageItemStatus.ready:
+        detail =
+            '${item.analysis!.width} × ${item.analysis!.height} px • ${_formatFileSize(item.size)}';
+      case ImageItemStatus.checking:
+        detail = localization.translate('i2pCheckingOne');
+      case ImageItemStatus.failed:
+        detail = _failureMessage(item.failure ?? ImagePdfFailure.corruptSource);
+    }
 
     return Container(
-      key: ValueKey(file.path),
+      key: ValueKey(item.id),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
+        border: Border.all(
+          color: item.status == ImageItemStatus.failed
+              ? colors.error.withValues(alpha: 0.6)
+              : colors.outline.withValues(alpha: 0.2),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -1946,10 +1395,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.file(
-              file,
-              fit: BoxFit.cover,
-            ),
+            child: thumbnail,
           ),
         ),
         title: Text(
@@ -1962,30 +1408,60 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            localization
-                .translate('positionOf')
-                .replaceAll('{position}', '${index + 1}')
-                .replaceAll('{total}', '${_selectedImages.length}'),
-            style: AppTextStyles.bodyText.copyWith(
-              color: colors.onSurface.withValues(alpha: 0.6),
-              fontSize: 12,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                localization
+                    .translate('positionOf')
+                    .replaceAll('{position}', '${index + 1}')
+                    .replaceAll('{total}', '${_vm.items.length}'),
+                style: AppTextStyles.bodyText.copyWith(
+                  color: colors.onSurface.withValues(alpha: 0.6),
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                detail,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: item.status == ImageItemStatus.failed
+                      ? colors.error
+                      : colors.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              if (item.possibleDuplicate)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    localization.translate('i2pDuplicate'),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: colors.outline.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.drag_handle,
-                color: colors.onSurface.withValues(alpha: 0.6),
-                size: 16,
+            ReorderableDragStartListener(
+              index: index,
+              enabled: !locked,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colors.outline.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.drag_handle,
+                  color: colors.onSurface.withValues(alpha: 0.6),
+                  size: 16,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1995,8 +1471,8 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                 color: colors.error,
                 size: 20,
               ),
-              onPressed: () => _removeImage(index),
-              tooltip: localization.translate('removeImage'),
+              onPressed: locked ? null : () => _vm.removeItem(item.id),
+              tooltip: localization.translate('i2pRemoveImage'),
               style: IconButton.styleFrom(
                 backgroundColor: colors.error.withValues(alpha: 0.1),
                 foregroundColor: colors.error,
@@ -2009,58 +1485,62 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   }
 
   Widget _buildConvertedDocumentsHeader(AppLocalizations localization) {
+    // Right inset 4: the 48 px toggle's icon then ends on the 16 px edge,
+    // directly under the app bar's last icon.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+              color: _green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.picture_as_pdf,
-              color: const Color(0xFF4CAF50),
+              color: _green,
               size: 20,
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            '${localization.translate('convertedDocuments')} (${_convertedDocuments.length})',
+            '${localization.translate('convertedDocuments')} (${_vm.documents.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF4CAF50),
+              color: _green,
             ),
           ),
           const Spacer(),
-          if (_convertedDocuments.isNotEmpty)
-            Text(
-              _isViewMode
-                  ? localization.translate('gridView')
-                  : localization.translate('listView'),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+          IconButton(
+            icon: Icon(
+              _isViewMode ? Icons.grid_view : Icons.view_list,
+              color: _green,
             ),
+            onPressed: () {
+              setState(() => _isViewMode = !_isViewMode);
+              _saveViewModePreference();
+            },
+            tooltip: _isViewMode
+                ? localization.translate('gridView')
+                : localization.translate('listView'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildConvertedDocumentCard(ConvertedPdfDocument document, int index,
+  Widget _buildConvertedDocumentCard(ImagePdfDocument document,
       ColorScheme colors, AppLocalizations localization) {
-    final isSelected = _selectedDocuments.contains(index);
+    final isSelected = _vm.isSelected(document.id);
+    final missing = _vm.isMissing(document.id);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSelected
-              ? const Color(0xFF4CAF50)
-              : colors.outline.withValues(alpha: 0.2),
+          color: isSelected ? _green : colors.outline.withValues(alpha: 0.2),
           width: isSelected ? 2 : 1,
         ),
         boxShadow: [
@@ -2073,21 +1553,21 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: _isSelectionMode
+        leading: _vm.isSelectionMode
             ? Checkbox(
                 value: isSelected,
-                onChanged: (_) => _toggleDocumentSelection(index),
-                activeColor: const Color(0xFF4CAF50),
+                onChanged: (_) => _vm.toggleSelection(document.id),
+                activeColor: _green,
               )
             : Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                  color: _green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  Icons.picture_as_pdf,
-                  color: const Color(0xFF4CAF50),
+                  document.encrypted ? Icons.lock : Icons.picture_as_pdf,
+                  color: _green,
                   size: 24,
                 ),
               ),
@@ -2106,16 +1586,26 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           child: Row(
             children: [
               Icon(
-                Icons.info_outline,
+                missing ? Icons.warning_amber_rounded : Icons.info_outline,
                 size: 14,
-                color: colors.onSurface.withValues(alpha: 0.6),
+                color: missing
+                    ? colors.error
+                    : colors.onSurface.withValues(alpha: 0.6),
               ),
               const SizedBox(width: 4),
-              Text(
-                '${document.imageCount} ${localization.translate('images')} • ${_formatFileSize(document.fileSize)}',
-                style: TextStyle(
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  fontSize: 12,
+              Expanded(
+                child: Text(
+                  missing
+                      ? localization.translate('documentFileNotFound')
+                      : _documentMeta(document, localization),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: missing
+                        ? colors.error
+                        : colors.onSurface.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
@@ -2125,7 +1615,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: Icon(Icons.visibility, color: Color(0xFF4CAF50), size: 20),
+              icon: const Icon(Icons.visibility, color: _green, size: 20),
               onPressed: () => _previewConvertedDocument(document),
               tooltip: localization.translate('preview'),
               visualDensity: VisualDensity.compact,
@@ -2139,7 +1629,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                     _shareConvertedDocument(document);
                     break;
                   case 'download':
-                    _saveToDeviceStorage(File(document.filePath));
+                    _saveToDeviceStorage(document);
                     break;
                   case 'rename':
                     _renameConvertedDocument(document);
@@ -2198,8 +1688,8 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
           ],
         ),
         onTap: () {
-          if (_isSelectionMode) {
-            _toggleDocumentSelection(index);
+          if (_vm.isSelectionMode) {
+            _vm.toggleSelection(document.id);
           } else {
             _previewConvertedDocument(document);
           }
@@ -2208,32 +1698,31 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     );
   }
 
-  Widget _buildConvertedDocumentGridCard(ConvertedPdfDocument document,
-      int index, ColorScheme colors, AppLocalizations localization) {
-    final isSelected = _selectedDocuments.contains(index);
+  Widget _buildConvertedDocumentGridCard(ImagePdfDocument document,
+      ColorScheme colors, AppLocalizations localization) {
+    final isSelected = _vm.isSelected(document.id);
+    final missing = _vm.isMissing(document.id);
     return Card(
-      margin: const EdgeInsets.all(2),
+      margin: const EdgeInsets.all(4),
       elevation: 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: isSelected
-              ? const Color(0xFF4CAF50)
-              : const Color(0xFF4CAF50).withValues(alpha: 0.2),
+          color: isSelected ? _green : _green.withValues(alpha: 0.2),
           width: isSelected ? 3 : 1,
         ),
       ),
       child: InkWell(
         onTap: () {
-          if (_isSelectionMode) {
-            _toggleDocumentSelection(index);
+          if (_vm.isSelectionMode) {
+            _vm.toggleSelection(document.id);
           } else {
             _previewConvertedDocument(document);
           }
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(
@@ -2241,7 +1730,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
               end: Alignment.bottomRight,
               colors: [
                 Colors.white,
-                const Color(0xFF4CAF50).withValues(alpha: 0.02),
+                _green.withValues(alpha: 0.02),
               ],
             ),
           ),
@@ -2249,16 +1738,18 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top row with PDF icon and more options menu
-              Row(
+              SizedBox(
+                height: 28,
+                child: Row(
                 children: [
                   // Selection indicator or document type icon
-                  _isSelectionMode
+                  _vm.isSelectionMode
                       ? Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? const Color(0xFF4CAF50)
+                                ? _green
                                 : Colors.grey.withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -2271,17 +1762,18 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                           ),
                         )
                       : Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF4CAF50).withValues(alpha: 0.15),
+                            color: _green.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
-                            Icons.picture_as_pdf,
-                            color: const Color(0xFF4CAF50),
-                            size: 18,
+                            document.encrypted
+                                ? Icons.lock
+                                : Icons.picture_as_pdf,
+                            color: _green,
+                            size: 16,
                           ),
                         ),
 
@@ -2289,22 +1781,19 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
 
                   // More options menu
                   PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_vert,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
+                    // A sized child instead of the default icon button,
+                    // which would add 48 px of height to this row.
+                    child: SizedBox(
+                      width: 32,
+                      height: 28,
+                      child: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                     onSelected: (value) {
                       switch (value) {
-                        case 'preview':
-                          _previewConvertedDocument(document);
-                          break;
-                        case 'share':
-                          _shareConvertedDocument(document);
-                          break;
-                        case 'download':
-                          _saveToDeviceStorage(File(document.filePath));
-                          break;
                         case 'rename':
                           _renameConvertedDocument(document);
                           break;
@@ -2342,110 +1831,135 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                     ],
                   ),
                 ],
+                ),
               ),
 
               const SizedBox(height: 8),
 
-              // Document name
-              Text(
-                document.name,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: colors.onSurface,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              const SizedBox(height: 6),
-
-              // Document format and image count
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  '${document.imageCount} ${localization.translate('images')} • PDF',
-                  style: TextStyle(
-                    color: const Color(0xFF4CAF50),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 9,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              // Date and file size with fixed height
-              SizedBox(
-                height: 14, // Fixed height for date
-                child: Text(
-                  _formatDateTime(document.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                        fontSize: 10,
+              // Details: clipped, never overflowing, if text is scaled up.
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Document name
+                      Text(
+                        document.name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              height: 1.2,
+                              color: colors.onSurface,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                ),
-              ),
 
-              const SizedBox(height: 6),
+                      const SizedBox(height: 8),
 
-              // File size with fixed height
-              SizedBox(
-                height: 12, // Fixed height for file size row
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.folder,
-                      size: 10,
-                      color: colors.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      _formatFileSize(document.fileSize),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                      // Document format and image count
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (missing ? colors.error : _green)
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: (missing ? colors.error : _green)
+                                .withValues(alpha: 0.3),
+                            width: 1,
                           ),
-                    ),
-                  ],
+                        ),
+                        child: Text(
+                          missing
+                              ? localization.translate('documentFileNotFound')
+                              : document.imageCount > 0
+                                  ? '${document.imageCount} ${localization.translate('images')} • PDF'
+                                  : 'PDF',
+                          style: TextStyle(
+                            color: missing ? colors.error : _green,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 9,
+                            height: 1.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Date
+                      Text(
+                        _formatDateTime(document.createdAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 10,
+                              height: 1.2,
+                            ),
+                      ),
+
+                      const SizedBox(height: 4),
+
+                      // File size
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.folder,
+                            size: 10,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            _formatFileSize(document.fileSize),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                  fontSize: 10,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
-              // Fixed spacing instead of Spacer for consistent layout
               const SizedBox(height: 10),
 
               // Quick action buttons
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildGridActionButton(
-                    icon: Icons.visibility,
-                    onTap: () => _previewConvertedDocument(document),
-                    color: const Color(0xFF4CAF50),
-                  ),
-                  Tooltip(
-                    message: AppLocalizations.of(context).translate('share'),
+                  Expanded(
                     child: _buildGridActionButton(
-                      icon: Icons.share,
-                      onTap: () => _shareConvertedDocument(document),
-                      color: Colors.blue,
+                      icon: Icons.visibility,
+                      onTap: () => _previewConvertedDocument(document),
+                      color: _green,
                     ),
                   ),
-                  _buildGridActionButton(
-                    icon: Icons.download,
-                    onTap: () => _saveToDeviceStorage(File(document.filePath)),
-                    color: Colors.green,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Tooltip(
+                      message: AppLocalizations.of(context).translate('share'),
+                      child: _buildGridActionButton(
+                        icon: Icons.share,
+                        onTap: () => _shareConvertedDocument(document),
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildGridActionButton(
+                      icon: Icons.download,
+                      onTap: () => _saveToDeviceStorage(document),
+                      color: Colors.green,
+                    ),
                   ),
                 ],
               ),
@@ -2465,7 +1979,8 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.all(6),
+        height: 36,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
@@ -2484,12 +1999,14 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
   }
 
   Widget _buildFloatingActionButton(AppLocalizations localization) {
+    final working = _vm.isBuilding || _vm.isSaving;
+    final canConvert = !_vm.isBusy && !_vm.isChecking && !_vm.hasFailedItems;
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      child: _selectedImages.isNotEmpty
+      child: _vm.items.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: _isProcessing ? null : _convertToPDF,
-              icon: _isProcessing
+              onPressed: canConvert ? _convertToPDF : null,
+              icon: working
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -2499,18 +2016,17 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
                       ),
                     )
                   : const Icon(Icons.picture_as_pdf),
-              label: Text(_isProcessing
-                  ? '${localization.translate('converting')} ${(_processingProgress * 100).toInt()}%'
+              label: Text(working
+                  ? localization.translate('converting')
                   : localization.translate('convertToPdf')),
-              backgroundColor:
-                  _isProcessing ? Colors.grey : const Color(0xFF4CAF50),
+              backgroundColor: canConvert || working ? _green : Colors.grey,
               foregroundColor: Colors.white,
             )
           : FloatingActionButton.extended(
-              onPressed: _pickImages,
+              onPressed: _vm.isBusy ? null : _pickImages,
               icon: const Icon(Icons.add_photo_alternate),
               label: Text(localization.translate('selectImages')),
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: _green,
               foregroundColor: Colors.white,
             ),
     );
@@ -2521,514 +2037,222 @@ class _ImageToPdfViewState extends State<ImageToPdfView>
     final localization = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: false, // Prevent keyboard from moving the form
-      backgroundColor: colors.surface,
-      extendBodyBehindAppBar: true,
-      appBar: _buildAdvancedAppBar(localization, colors),
-      body: _buildBody(localization, colors),
-      floatingActionButton: _buildFloatingActionButton(localization),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    return ListenableBuilder(
+      listenable: _vm,
+      builder: (context, _) => Scaffold(
+        resizeToAvoidBottomInset:
+            false, // Prevent keyboard from moving the form
+        backgroundColor: colors.surface,
+        extendBodyBehindAppBar: true,
+        appBar: _buildAdvancedAppBar(localization, colors),
+        body: _buildBody(localization, colors),
+        floatingActionButton: _buildFloatingActionButton(localization),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      ),
     );
   }
 }
 
-// Advanced Settings Sheet Widget for professional PDF configuration
-class _AdvancedSettingsSheet extends StatefulWidget {
-  final PdfPageSize pageSize;
-  final PdfOrientation orientation;
-  final ImageQuality imageQuality;
-  final PdfLayout layout;
-  final CompressionLevel compression;
-  final bool addPageNumbers;
-  final bool addTimestamp;
-  final bool addWatermark;
-  final double margin;
-  final Function(Map<String, dynamic>) onSettingsChanged;
-
-  const _AdvancedSettingsSheet({
-    required this.pageSize,
-    required this.orientation,
-    required this.imageQuality,
-    required this.layout,
-    required this.compression,
-    required this.addPageNumbers,
-    required this.addTimestamp,
-    required this.addWatermark,
-    required this.margin,
-    required this.onSettingsChanged,
+/// The finished PDF, before it is saved: its real page count and size, and the
+/// three things to do with it.
+class _ReviewSheet extends StatelessWidget {
+  const _ReviewSheet({
+    required this.draft,
+    required this.title,
+    required this.formatSize,
   });
 
-  @override
-  State<_AdvancedSettingsSheet> createState() => _AdvancedSettingsSheetState();
-}
-
-class _AdvancedSettingsSheetState extends State<_AdvancedSettingsSheet> {
-  late PdfPageSize _pageSize;
-  late PdfOrientation _orientation;
-  late ImageQuality _imageQuality;
-  late PdfLayout _layout;
-  late CompressionLevel _compression;
-  late bool _addPageNumbers;
-  late bool _addTimestamp;
-  late bool _addWatermark;
-  late double _margin;
-
-  @override
-  void initState() {
-    super.initState();
-    _pageSize = widget.pageSize;
-    _orientation = widget.orientation;
-    _imageQuality = widget.imageQuality;
-    _layout = widget.layout;
-    _compression = widget.compression;
-    _addPageNumbers = widget.addPageNumbers;
-    _addTimestamp = widget.addTimestamp;
-    _addWatermark = widget.addWatermark;
-    _margin = widget.margin;
-  }
-
-  void _applySettings() {
-    widget.onSettingsChanged({
-      'pageSize': _pageSize,
-      'orientation': _orientation,
-      'imageQuality': _imageQuality,
-      'layout': _layout,
-      'compression': _compression,
-      'addPageNumbers': _addPageNumbers,
-      'addTimestamp': _addTimestamp,
-      'addWatermark': _addWatermark,
-      'margin': _margin,
-    });
-    Navigator.of(context).pop();
-  }
+  final ImagePdfDraft draft;
+  final String title;
+  final String Function(int bytes) formatSize;
 
   @override
   Widget build(BuildContext context) {
-    final localization = AppLocalizations.of(context);
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF4CAF50),
-                  const Color(0xFF4CAF50).withValues(alpha: 0.8)
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+    const green = Color(0xFF4CAF50);
+    final notes = <String>[
+      if (draft.lowResolutionImages > 0)
+        loc
+            .translate('i2pLowResNote')
+            .replaceAll('{count}', '${draft.lowResolutionImages}'),
+      if (draft.encrypted) loc.translate('i2pProtectedNote'),
+    ];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                const Icon(Icons.settings, color: AppColors.white, size: 28),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    draft.encrypted ? Icons.lock : Icons.picture_as_pdf,
+                    color: green,
+                  ),
+                ),
                 const SizedBox(width: 12),
-                Text(
-                  localization.translate('advancedPdfSettings'),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.white,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppColors.white),
-                ),
-              ],
-            ),
-          ),
-
-          // Settings content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Page Format Section
-                  _buildSectionHeader(
-                      localization.translate('pageFormat'), Icons.aspect_ratio),
-                  const SizedBox(height: 12),
-                  _buildDropdownField<PdfPageSize>(
-                    localization.translate('pageSize'),
-                    _pageSize,
-                    PdfPageSize.values,
-                    (value) => setState(() => _pageSize = value!),
-                    (size) => size.name.toUpperCase(),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField<PdfOrientation>(
-                    localization.translate('orientation'),
-                    _orientation,
-                    PdfOrientation.values,
-                    (value) => setState(() => _orientation = value!),
-                    (orientation) {
-                      switch (orientation) {
-                        case PdfOrientation.portrait:
-                          return localization.translate('portrait');
-                        case PdfOrientation.landscape:
-                          return localization.translate('landscape');
-                        case PdfOrientation.auto:
-                          return localization.translate('auto');
-                      }
-                    },
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Image Quality Section
-                  _buildSectionHeader(localization.translate('imageProcessing'),
-                      Icons.photo_filter),
-                  const SizedBox(height: 12),
-                  _buildDropdownField<ImageQuality>(
-                    localization.translate('imageQuality'),
-                    _imageQuality,
-                    ImageQuality.values,
-                    (value) => setState(() => _imageQuality = value!),
-                    (quality) {
-                      switch (quality) {
-                        case ImageQuality.low:
-                          return localization.translate('low');
-                        case ImageQuality.medium:
-                          return localization.translate('medium');
-                        case ImageQuality.high:
-                          return localization.translate('high');
-                        case ImageQuality.ultra:
-                          return localization.translate('ultra');
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField<CompressionLevel>(
-                    localization.translate('compression'),
-                    _compression,
-                    CompressionLevel.values,
-                    (value) => setState(() => _compression = value!),
-                    (compression) {
-                      switch (compression) {
-                        case CompressionLevel.none:
-                          return localization.translate('none');
-                        case CompressionLevel.low:
-                          return localization.translate('low');
-                        case CompressionLevel.medium:
-                          return localization.translate('medium');
-                        case CompressionLevel.high:
-                          return localization.translate('high');
-                        case CompressionLevel.maximum:
-                          return localization.translate('maximum');
-                      }
-                    },
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Layout Section
-                  _buildSectionHeader(localization.translate('layoutAndDesign'),
-                      Icons.design_services),
-                  const SizedBox(height: 12),
-                  _buildDropdownField<PdfLayout>(
-                    localization.translate('layoutStyle'),
-                    _layout,
-                    PdfLayout.values,
-                    (value) => setState(() => _layout = value!),
-                    (layout) {
-                      switch (layout) {
-                        case PdfLayout.fitToPage:
-                          return localization.translate('fitToPage');
-                        case PdfLayout.originalSize:
-                          return localization.translate('originalSize');
-                        case PdfLayout.centerFit:
-                          return localization.translate('centerFit');
-                        case PdfLayout.tileMultiple:
-                          return localization.translate('tileMultiple');
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSliderField(
-                    localization.translate('pageMargin'),
-                    _margin,
-                    0.0,
-                    50.0,
-                    (value) => setState(() => _margin = value),
-                    '${_margin.toInt()}px',
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Professional Features Section
-                  _buildSectionHeader(
-                      localization.translate('professionalFeatures'),
-                      Icons.business_center),
-                  const SizedBox(height: 12),
-                  _buildSwitchTile(
-                    localization.translate('addPageNumbers'),
-                    localization.translate('includePageNumbersBottom'),
-                    _addPageNumbers,
-                    (value) => setState(() => _addPageNumbers = value),
-                    Icons.format_list_numbered,
-                  ),
-                  _buildSwitchTile(
-                    localization.translate('addTimestamp'),
-                    localization.translate('includeCreationDateTime'),
-                    _addTimestamp,
-                    (value) => setState(() => _addTimestamp = value),
-                    Icons.access_time,
-                  ),
-                  _buildSwitchTile(
-                    localization.translate('addWatermark'),
-                    localization.translate('includeAppWatermark'),
-                    _addWatermark,
-                    (value) => setState(() => _addWatermark = value),
-                    Icons.branding_watermark,
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // Action buttons
-                  Row(
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.cancel),
-                          label: Text(localization.translate('cancel')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.card,
-                            foregroundColor: AppColors.textSecondary,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
+                      Text(
+                        loc.translate('i2pReviewTitle'),
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _applySettings,
-                          icon: const Icon(Icons.check),
-                          label: Text(localization.translate('applySettings')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4CAF50),
-                            foregroundColor: AppColors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: colors.onSurface.withValues(alpha: 0.7)),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppColors.tilePrimary,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: const Color(0xFF4CAF50), size: 20),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDropdownField<T>(
-    String label,
-    T value,
-    List<T> options,
-    ValueChanged<T?> onChanged,
-    String Function(T) displayText,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.card),
-            borderRadius: BorderRadius.circular(8),
-            color: AppColors.surface,
-          ),
-          child: DropdownButton<T>(
-            value: value,
-            onChanged: onChanged,
-            isExpanded: true,
-            underline: const SizedBox(),
-            dropdownColor: AppColors.surface,
-            items: options.map((option) {
-              return DropdownMenuItem<T>(
-                value: option,
-                child: Text(
-                  displayText(option),
-                  style: TextStyle(color: AppColors.textPrimary),
                 ),
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSliderField(
-    String label,
-    double value,
-    double min,
-    double max,
-    ValueChanged<double> onChanged,
-    String displayValue,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
+              ],
+            ),
+            const SizedBox(height: 16),
             Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              '${loc.translate('i2pPagesCount').replaceAll('{count}', '${draft.pageCount}')} • ${formatSize(draft.size)}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                displayValue,
-                style: const TextStyle(
-                  color: Color(0xFF4CAF50),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+            for (final note in notes)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16,
+                        color: colors.onSurface.withValues(alpha: 0.6)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        note,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_ReviewAction.preview),
+                    icon: const Icon(Icons.visibility),
+                    label: Text(loc.translate('i2pReviewPreview')),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_ReviewAction.save),
+                    icon: const Icon(Icons.check),
+                    label: Text(loc.translate('i2pReviewSave')),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(_ReviewAction.discard),
+                child: Text(loc.translate('i2pReviewDiscard')),
               ),
             ),
           ],
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            activeTrackColor: const Color(0xFF4CAF50),
-            inactiveTrackColor: AppColors.card,
-            thumbColor: const Color(0xFF4CAF50),
-          ),
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: ((max - min) / 5).round(),
-            onChanged: onChanged,
-          ),
-        ),
-      ],
+      ),
     );
   }
+}
 
-  Widget _buildSwitchTile(
-    String title,
-    String subtitle,
-    bool value,
-    ValueChanged<bool> onChanged,
-    IconData icon,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(
-            color: value
-                ? const Color(0xFF4CAF50).withValues(alpha: 0.3)
-                : AppColors.card),
-        borderRadius: BorderRadius.circular(12),
-        color: value
-            ? const Color(0xFF4CAF50).withValues(alpha: 0.05)
-            : AppColors.surface,
+/// The rename dialog. It owns its text controller, which is only released when
+/// the dialog's route is gone: disposing it right after `showDialog` returns
+/// would still be in use by the closing animation.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({
+    required this.initialName,
+    required this.rename,
+    required this.messageFor,
+  });
+
+  final String initialName;
+  final Future<ImagePdfFailure?> Function(String name) rename;
+  final String Function(ImagePdfFailure failure) messageFor;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialName);
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final failure = await widget.rename(_controller.text);
+    if (!mounted) return;
+    if (failure == null) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() => _error = widget.messageFor(failure));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(loc.translate('renameDocument')),
+      content: TextField(
+        controller: _controller,
+        maxLength: 80,
+        decoration: InputDecoration(
+          labelText: loc.translate('documentName'),
+          errorText: _error,
+          border: const OutlineInputBorder(),
+          counterText: '',
+        ),
+        autofocus: true,
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: value
-                  ? const Color(0xFF4CAF50).withValues(alpha: 0.1)
-                  : AppColors.card,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              color: value ? const Color(0xFF4CAF50) : AppColors.textSecondary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeTrackColor: const Color(0xFF4CAF50).withValues(alpha: 0.5),
-            thumbColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return const Color(0xFF4CAF50).withValues(alpha: 0.8);
-              }
-              return Colors.grey.shade400;
-            }),
-          ),
-        ],
-      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(loc.translate('cancel')),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text(loc.translate('rename')),
+        ),
+      ],
     );
   }
 }

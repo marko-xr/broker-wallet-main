@@ -89,6 +89,52 @@ class MediaPickOrigin {
   int get hashCode => Object.hash(accountId, parent, recordId, formSessionId);
 }
 
+/// The origin of a picker opened by a Toolbox tool that has no Offer/Owner
+/// record (Images to PDF): the signed-in account and the tool's own name. It
+/// shares the single "pending" slot with [MediaPickOrigin] (Android keeps only
+/// one lost result), but is a different shape, so neither kind of origin can
+/// ever claim the other's result.
+@immutable
+class ToolPickOrigin {
+  const ToolPickOrigin._(this.accountId, this.tool);
+
+  /// Null when nobody is signed in: then nothing is recorded, and nothing
+  /// recovered.
+  static ToolPickOrigin? of(
+      {required String? accountId, required String tool}) {
+    final account = accountId?.trim() ?? '';
+    final name = tool.trim();
+    if (account.isEmpty || name.isEmpty) return null;
+    return ToolPickOrigin._(account, name);
+  }
+
+  final String accountId;
+  final String tool;
+
+  Map<String, Object> toJson() => {'account': accountId, 'tool': tool};
+
+  /// Reads a persisted origin; null for anything malformed or for an
+  /// Offer/Owner origin (which has a `parent`).
+  static ToolPickOrigin? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final account = json['account'];
+    final tool = json['tool'];
+    if (json.containsKey('parent') || json.containsKey('record')) return null;
+    if (account is! String || account.isEmpty) return null;
+    if (tool is! String || tool.isEmpty) return null;
+    return ToolPickOrigin._(account, tool);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ToolPickOrigin &&
+      other.accountId == accountId &&
+      other.tool == tool;
+
+  @override
+  int get hashCode => Object.hash(accountId, tool);
+}
+
 /// Keeps what Android hands back after it stopped the app while a picker was
 /// open with the form that picker was opened from — and only that form.
 ///
@@ -170,6 +216,14 @@ class MediaPickRecovery {
         await prefs.remove(pendingOriginKey);
       }
       if (paths.isEmpty) return;
+      final tool = _decodeToolOrigin(pendingRaw);
+      if (tool != null) {
+        await prefs.setString(
+          keptResultKey,
+          jsonEncode({'origin': tool.toJson(), 'files': paths}),
+        );
+        return;
+      }
       final pending = _decodeOrigin(pendingRaw);
       if (pending == null || pending.recordId == null) return;
       await prefs.setString(
@@ -208,6 +262,26 @@ class MediaPickRecovery {
     }
   }
 
+  /// A picker is about to open for the tool [origin] (null: nobody signed in,
+  /// whose pick is then never adopted after a restart).
+  Future<void> beginToolPick(ToolPickOrigin? origin) async {
+    try {
+      await reconcile().timeout(reconcileWait);
+    } catch (_) {
+      // Opening the picker must not depend on it.
+    }
+    try {
+      final prefs = await _preferences();
+      if (origin == null) {
+        await prefs.remove(pendingOriginKey);
+      } else {
+        await prefs.setString(pendingOriginKey, jsonEncode(origin.toJson()));
+      }
+    } catch (_) {
+      // Unrecorded, a lost pick is not adopted: the safe side.
+    }
+  }
+
   /// The picker returned in this process: nothing is pending any more.
   Future<void> endPick() async {
     try {
@@ -228,6 +302,51 @@ class MediaPickRecovery {
       return [for (final path in kept.paths) File(path)];
     } catch (_) {
       return const <File>[];
+    }
+  }
+
+  /// The files Android handed back for exactly the tool [origin] (same
+  /// account, same tool), once. Empty for any other origin, which keeps them.
+  Future<List<File>> takeTool(ToolPickOrigin? origin) async {
+    if (origin == null) return const <File>[];
+    await reconcile();
+    try {
+      final prefs = await _preferences();
+      final kept = _decodeKeptTool(prefs.getString(keptResultKey));
+      if (kept == null || kept.origin != origin) return const <File>[];
+      await prefs.remove(keptResultKey);
+      return [for (final path in kept.paths) File(path)];
+    } catch (_) {
+      return const <File>[];
+    }
+  }
+
+  static ToolPickOrigin? _decodeToolOrigin(String? raw) {
+    if (raw == null) return null;
+    try {
+      return ToolPickOrigin.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static ({ToolPickOrigin origin, List<String> paths})? _decodeKeptTool(
+    String? raw,
+  ) {
+    if (raw == null) return null;
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map) return null;
+      final origin = ToolPickOrigin.fromJson(json['origin']);
+      final files = json['files'];
+      if (origin == null || files is! List) return null;
+      final paths = <String>[
+        for (final file in files)
+          if (file is String && file.isNotEmpty) file,
+      ];
+      return paths.isEmpty ? null : (origin: origin, paths: paths);
+    } catch (_) {
+      return null;
     }
   }
 

@@ -156,7 +156,6 @@ void main() {
       expect(kotlin, contains('call.argument<ByteArray>("fileBytes")'));
       expect(kotlin, contains('"success" to true'));
       for (final path in <String>[
-        '$toolkitFolder/image_to_pdf_view.dart',
         '$toolkitFolder/signature/signature_view.dart',
       ]) {
         final source = read(path);
@@ -173,6 +172,18 @@ void main() {
       expect(view.contains('saveFileToDownloads'), isFalse);
       expect(view.contains('fileBytes'), isFalse);
       final platform = read('lib/src/services/combine_pdf/combine_pdf_platform.dart');
+      expect(platform, contains('exportFile('));
+    });
+
+    test('Images to PDF moved to the streaming route and no longer uses it', () {
+      // Images to PDF exports through the same file-based route as the Scanner
+      // (Images to PDF S3), so it must not pass whole documents through the
+      // channel any more.
+      final view = read('$toolkitFolder/image_to_pdf_view.dart');
+      expect(view.contains('saveFileToDownloads'), isFalse);
+      expect(view.contains('fileBytes'), isFalse);
+      final platform =
+          read('lib/src/services/image_to_pdf/image_pdf_platform.dart');
       expect(platform, contains('exportFile('));
     });
 

@@ -30,4 +30,8 @@
     <!-- Combine PDFs: the account folders of combined documents stay on this
          phone (see docs/DECISIONS.md). -->
     <exclude domain="root" path="app_flutter/combine_pdfs" />
+    <!-- Images to PDF: the account folders of converted PDFs, their drafts
+         and the private copies of selected pictures stay on this phone (see
+         docs/DECISIONS.md). -->
+    <exclude domain="root" path="app_flutter/image_to_pdf" />
 </full-backup-content>

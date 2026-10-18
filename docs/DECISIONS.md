@@ -591,3 +591,51 @@
     and from iPhone backup; combined PDFs are not restored onto a new phone and are not
     encrypted at rest.
   - No page thumbnails: none were added because that needs a renderer dependency.
+- Images to PDF production readiness (decided 2026-10-18, branch
+  `images-to-pdfs-production-readiness`, source only; device acceptance pending):
+  - The picture pipeline is pure Dart (`package:image`) on worker isolates, the PDF is built,
+    read back and encrypted with Syncfusion (already in use). Nothing is resized or recompressed
+    at pick time (the old `imageQuality: 85, maxWidth: 1920` is gone). Every picture is opened
+    completely when it is added, so a damaged one is found then; none is ever skipped or
+    replaced by a fallback.
+  - **Quality** means print resolution at the placed size (96/150/200/300 dpi), never above the
+    picture's own pixels. **Compression None never recompresses with loss**: an upright baseline
+    JPEG keeps its data byte for byte (metadata removed), anything that must change is stored
+    losslessly (large). Low/Medium/High/Maximum are JPEG 92/85/75/60; PNG sources stay lossless
+    at None and Low. The UI states the tradeoff for small print, stamps and plans.
+  - EXIF orientation is applied exactly once (the JPEG decoder applies it; the raw bytes are only
+    read to decide whether a file may be kept). Transparency is flattened to white. All metadata
+    (EXIF/GPS/XMP/ICC/comments/thumbnails/trailing data) is removed on every path. HEIC/HEIF is
+    converted to JPEG by the phone's own decoder at selection; where unavailable it is refused
+    by name.
+  - Layouts never crop or distort. Margins are millimetres. Tile Multiple is a real 2/4/6 grid,
+    reading order left to right then top to bottom. One timestamp is captured per PDF and
+    printed as `yyyy-MM-dd HH:mm`; page numbers are `n / total` of the PDF's pages (the cover is
+    page 1 and unnumbered). Text on a PDF is Latin (standard font) or Arabic (bundled Noto Naskh
+    Arabic); other scripts are refused. A cover page exists only when asked for.
+  - **Draft first**: the PDF is made once as a verified draft; Preview opens that file; Save stores
+    that file; any change to the pictures, order or settings discards it. One stored PDF is one
+    usage unit, recorded once after it was stored, through `image_pdf_usage_gate.dart` (legacy
+    Firestore, fail-open, not authoritative; replacing that class is the whole
+    server-authoritative-quota change).
+  - **Password protection** is AES-256 (revision 6) on the finished PDF, proven both ways before it
+    is accepted. The ASCII password lives in memory only (never stored, logged or part of the
+    settings) and has no recovery. Combine PDFs refuses protected PDFs (S2); the UI says so. No
+    other algorithm is offered; RC4 and AES-128 are not used.
+  - Converted PDFs are stored per signed-in account in `<app documents>/image_to_pdf/<account>/`
+    with the Scanner's journaled store design (a PDF-only store of the same shape, with drafts and
+    private picture copies). The old device-wide `converted_pdf_documents` list and its files are
+    not migrated, shown or deleted; the screen shows a count. Attributing them is an owner decision.
+  - Export reuses the Scanner's file-based route; Share uses `ShareLive` with title-named copies.
+    `saveFileToDownloads` is now used only by Signature. The system pickers need no permission,
+    so none is requested; the camera is the phone's own app via `image_picker`.
+  - `app_flutter/image_to_pdf` is excluded from Android cloud backup and device transfer and from
+    iPhone backup; converted PDFs are not restored onto a new phone and are not encrypted at rest.
+  - Limits (memory, not policy): 100 pictures, 100 MB per file, 50.5 MP per picture, 300 MB of
+    picture data per PDF.
+  - A pick lost when Android kills the app is recovered through the existing shared
+    `MediaPickRecovery` (one result slot, read at start-up), extended with a `ToolPickOrigin`
+    (account + tool): recorded before the picker opens, cleared when it returns, taken once by the same
+    account only, in pick order, and never by an Offer/Owner form (nor the reverse). Recovery adds
+    pictures through the ordinary add; it never converts, saves or counts. The gallery uses the system
+    Photo Picker explicitly. No broad picker redesign was needed.

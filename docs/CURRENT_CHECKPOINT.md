@@ -13850,3 +13850,311 @@ NEXT — the Toolbox milestone continues with the owner's next tool; the Master 
 Production Checklist and Overview are refreshed only after the Toolbox milestone is
 owner-accepted. STOP — no push, hosted change, quota or subscription work, Signature or
 Images-to-PDF work, or another Toolbox tool without a new instruction.
+
+---
+
+## CHECKPOINT S3 — IMAGES TO PDF PRODUCTION READINESS (2026-10-18)
+
+Status: **IMAGES_TO_PDF_S3_COMMITTED_LOCAL — Samsung owner-reported PASS for the tested
+functionality; iPhone and commercial production readiness pending.** One local commit
+(`feat(image-to-pdf): harden image conversion and document privacy`); not pushed, not merged.
+(Pre-device correction applied before the Samsung test: Android lost-picker recovery, backup-scope
+verification and an Android ARM64 debug build; see the bullets marked "correction".) Branch `images-to-pdfs-production-readiness` (the prompt named
+`images-to-pdf-production-readiness`; the parent is the Combine PDF S2 commit `59f45f1`, which
+is what mattered, and the tree was clean at the start). No hosted Supabase, Worker, R2, secret
+or migration change; no new dependency; no Kotlin/Swift/Gradle/manifest change (two backup XML
+files only; the correction touched Dart only). This is not a claim that Images to PDF is production-ready for release: iPhone is
+untested and the quota is not authoritative (below).
+
+**Samsung owner acceptance (2026-10-18).** The owner tested the updated Images to PDF tool (the build
+with the pre-device correction) on a physical Samsung Android phone and confirmed that it works
+properly. That is recorded as owner-reported PASS (VERIFIED_REAL_DEVICE) for the functionality the owner
+exercised. The report did not itemize the checklist below item by item, so no individual scenario (for
+example HEIC, very large photographs, password-protected PDFs in another app, WhatsApp share,
+second-account isolation, cancel, or the interrupted-picker recovery) is separately claimed here beyond
+that report. The Samsung result does not cover iPhone, the iOS backup exclusion or the iPhone Files
+export. Lost-picker recovery stays **source-tested only** (fakes of the plugin and SharedPreferences): its
+exceptional lifecycle scenario (Android killing the app while a picker is open) is not labelled
+real-device verified.
+
+### Findings confirmed against the repository (before the change)
+
+1. **The pick shrank and recompressed every picture.** `CleanMediaService` called
+   `pickMultiImage(imageQuality: 85, maxWidth: 1920, maxHeight: 1920)` (and the same for the
+   camera), so "Ultra" could never exceed 1920 px, and it asked for Storage and Camera
+   permissions that the system pickers do not need.
+2. **A damaged or unsupported picture became corrupt content.** When processing failed, a
+   fallback (`_processImageSimple`) embedded the raw bytes with an invented 800x600 size; the
+   PDF was written regardless. Nothing read the result back.
+3. **EXIF orientation was never applied; transparency went black; "None" was lossy.** PNG alpha
+   went through `encodeJpg`; `none` compression re-encoded JPEG at quality 100; "quality" was a
+   fixed pixel cap (800-2400) unrelated to the page; GPS and camera EXIF stayed inside the
+   embedded JPEG data.
+4. **Layouts did not do what they said.** `custom` page size was A4; Auto orientation did
+   nothing; Center Fit and Tile Multiple used `BoxFit.cover` (cropping), and Tile Multiple put
+   ONE picture on each page; the margin slider said "px" but is PDF points.
+5. **Timestamp and cover were wrong.** The Timestamp option printed `Size: WxH | nKB`; enabling
+   Timestamp or Watermark silently added a cover page (so the page count changed); the
+   watermark was a corner label on picture pages only.
+6. **Password protection did not exist.** `_protectWithPassword` and `_password` were never
+   wired to any UI or export.
+7. **Storage, accounts and export.** The PDF was written to `<app documents>/<name>.pdf`
+   replacing an earlier file of that name; the name filter used `\w` (an Arabic name became
+   `converted_images`); every account shared one `converted_pdf_documents` SharedPreferences
+   list; rename and delete worked on list indexes; progress was hand-set with 10-50 ms delays;
+   "Preview" showed the processed pictures, not the PDF; Download passed whole files through
+   the channel or fell back to app folders and called it "saved"; the view wrote the legacy
+   Firestore counter itself; the reorder drag handle had no drag listener (reordering did
+   nothing); the tooltips `pdfSettings` and `removeImage` have no message in either ARB file.
+8. Converted PDFs sat in the documents root and were backup-eligible.
+
+### What changed
+
+New, under `lib/src/`: `services/image_to_pdf/` - `image_pdf_models.dart` (enums, failures,
+settings, limits, text rules, stored record, naming), `image_pdf_layout.dart` (pure page
+geometry), `image_pdf_processor.dart` (format sniffing, decode check, metadata stripping,
+resample and encode), `image_pdf_engine.dart` (build, verify, read back), `image_pdf_executor.dart`
+(worker isolates with cancel; inline for tests), `image_pdf_store.dart` (account-scoped,
+journaled store after the Scanner's and Combine's), `image_pdf_platform.dart` (pickers, HEIC
+converter, exporter, share preparer), `image_pdf_usage_gate.dart` (the one quota boundary),
+`image_pdf_wiring.dart`; `viewmodels/image_to_pdf/image_pdf_viewmodel.dart`;
+`views/.../Toolkit/image_pdf_settings_sheet.dart`. Replaced: `image_to_pdf_view.dart` (logic
+replaced; the existing layout, colours, cards, grid/list and AppBar kept). Changed: both ARB
+files (86 messages, `i2p...`), `backup_rules.xml` and `data_extraction_rules.xml`, and one Scanner
+guard test (Images to PDF left `saveFileToDownloads`). Tests: `test/image_to_pdf/`.
+
+### Behaviour now
+
+- **Pick**: the Android Photo Picker / iOS picker and the phone's own camera app, no permission
+  requested by the tool, **no resizing or recompression** (originals arrive). Each picture is
+  copied into the account's private `staging/` folder (the picker's own temporary copy is
+  deleted when it is in the app's temp folder; a file elsewhere is never touched) and opened
+  completely on a worker isolate, one at a time: damaged, cut-off, empty, unsupported (by the
+  file's bytes, not its name), too large (100 MB) or too many pixels (50.5 MP) pictures are
+  shown as failed in the list, by name, with a reason, and block the PDF until removed. Thumbnails
+  are made from the decoded, upright picture. Progress while checking is the real count of
+  pictures already checked. Exact duplicates (same bytes) are flagged "Possible duplicate"
+  and kept. At most 100 pictures. HEIC/HEIF is converted to JPEG by the phone's own decoder
+  at selection (`flutter_image_compress`, already a dependency); where the phone cannot, the
+  picture is refused by name.
+- **Lost pick recovery (correction)**: `image_picker` 1.2.3 / `image_picker_android` 0.8.13+19 keep ONE
+  lost result (`retrieveLostData`) that Android returns once after it stopped the app mid-pick. The
+  existing shared `MediaPickRecovery` already owns that single slot (it reads it at start-up, in
+  `main.dart`), routes it by origin and, before this correction, discarded any pick that was not an
+  Offer/Owner record's. It now also knows a **`ToolPickOrigin`** (account + tool name, a shape that
+  cannot be mistaken for an Offer/Owner origin). Before the gallery or the camera opens,
+  `SystemImagePdfPicker` records `{account, tool: image_to_pdf}` as the pending pick; the record is
+  cleared when the picker returns in the same process (a pick, a cancel or an error), so nothing stale
+  survives. After a restart the result is kept only if that record was pending, and only the same
+  account opening Images to PDF takes it: once, in the order picked (the plugin returns the pick's
+  order). Another account, another tool, an Offer/Owner form, no account, an unreadable record or
+  no pending record take nothing and use nothing up. The screen adds the pictures through the ordinary
+  add (private copy, full check, duplicate flag, the picker's own temp copy deleted when it is in the app's
+  cache), skips a file it already added, and shows "N images ... were restored". **Nothing is converted,
+  saved or counted by recovery.** Recovery is Android only (iOS pickers do not lose results) and
+  runs only when the tool is idle. The gallery now opens the system Photo Picker explicitly (the plugin's
+  default is the older document chooser), as the Offer picker does.
+- **Arrange**: drag handle (now wired), remove, add more (gallery or camera). Any change to the
+  pictures, their order or any setting discards the draft.
+- **Settings sheet** (new file, same visual language): page size A4/A3/A5/Letter/Legal/Custom
+  (millimetres or inches, 50-1000 mm, validated), orientation Portrait/Landscape/Auto (per
+  picture), quality Low/Medium/High/Ultra, compression None/Low/Medium/High/Maximum, layout
+  Fit to Page / Original Size / Center Fit / Tile Multiple (2, 4 or 6 per page), margin 0-30 mm,
+  page numbers, date and time, watermark (default "Broker Wallet" or typed text), cover
+  page (explicit), password protection (typed twice). Each choice has a one-line explanation;
+  nothing applies until Apply.
+- **Quality** is a print resolution at the size the picture is placed: 96 / 150 / 200 / 300 dpi.
+  A picture is **never enlarged** and is left alone when within 2 % of its target. Tile
+  layouts therefore ask for fewer pixels than a full page.
+- **Compression**: None = no lossy compression: an upright baseline JPEG keeps its own data
+  byte for byte (only metadata removed); a picture that has to change (resized, rotated) or
+  any PNG is stored losslessly (larger file). Low = JPEG 92 (PNG sources stay lossless);
+  Medium 85; High 75 (4:2:0); Maximum 60 (4:2:0). For a JPEG, re-encoding is used only when
+  it makes the data smaller. The sheet says plainly that Maximum can blur small print, stamps
+  and plan lines and that None/Low suit floor plans and stamped documents.
+- **EXIF orientation** is applied once. (The `image` package's JPEG decoder applies it itself and
+  then forgets it; the orientation is read from the raw bytes only to decide whether a file's own
+  data is upright and may be kept.) The output carries none, so a viewer cannot rotate it again.
+- **Transparency** becomes the white page, never black (flattened at the final size).
+- **Metadata**: EXIF (camera, GPS, time), XMP, ICC, comments, JFIF thumbnails and anything
+  appended after the image (motion-photo video) are removed on every path: JPEGs that are kept
+  are rewritten to their tables, frame and scan only; re-encoded pictures start from clean
+  data. The PDF's own creator is "Broker Wallet" and its creation date is the document's.
+- **Layout** (one pure planner, also what the screen's page count uses): pictures are
+  contained, centred and never cropped or distorted; Fit may enlarge to the printable area;
+  Original Size uses the picture's own resolution (JFIF/pHYs, else 96 dpi) and shrinks only if
+  it would not fit; Center Fit adds a thin frame; Tile Multiple is a real grid (2: stacked
+  or side by side, 4: 2x2, 6: 2x3 or 3x2), left to right then top to bottom, last page
+  partly filled, and with Auto orientation each sheet turns whichever way shows its pictures
+  larger. A footer strip is reserved when page numbers or the date are on, so a footer never
+  covers a picture. The margin is in millimetres (converted to points) and capped so the
+  content keeps 40 % of the page's short side.
+- **Page numbers** read `n / total` where total is the PDF's pages (tiles count pages, the cover
+  counts as page 1 and carries no number), so they match the viewer. The **date** is one real
+  `yyyy-MM-dd HH:mm` captured when the PDF is made and shown on every page (and the cover). The
+  footer text is Latin digits only, so it reads the same in every language. The **watermark** is
+  diagonal, 14 % opacity, on every picture page (never the cover); typed text may be Latin or
+  Arabic (up to 40 characters). The **cover page** is a separate switch (title, picture count,
+  date) and never appears because the date or watermark is on.
+- **Password protection** is genuine: AES-256 (revision 6) on the finished PDF with
+  Syncfusion's encryption (already in use). The password is ASCII, 6-64 characters, typed twice,
+  held in memory only, never stored, logged or part of the settings value, and dropped after Save,
+  Clear all or leaving the screen. The engine proves the result both ways before accepting it
+  (refuses to open with no password, opens with it and reports encrypted), and the store keeps
+  and re-checks the "protected" mark. There is no recovery for a forgotten password. **Combine PDFs
+  refuses encrypted PDFs** (S2): the review sheet and the settings sheet say so, and the
+  in-app viewer asks for the password when a protected PDF is opened.
+- **Make, review, save**: "Convert to PDF" makes the real PDF once as a **draft** in the account's
+  `work/` folder on a worker isolate (honest indeterminate progress, Cancel kills the isolate),
+  reads it back (page count, every page size, footer numbers, date, protection) and shows a review
+  sheet with the real page count and size and Preview / Save / Discard. **Preview opens that exact
+  file** in the existing PDF viewer; **Save stores that exact file**. The "Preview" button on the
+  list builds and opens the same draft. All or nothing: a picture that vanished or changed since
+  it was checked, a full disk or a failed check removes the output and stores and counts nothing.
+- **Storage**: `<app documents>/image_to_pdf/<account>/` with `files/<uuid>.pdf`, `index.json`
+  (temp + rename), `work/` (drafts) and `staging/` (private copies of selected pictures, swept when the
+  tool opens). Titles are metadata (Arabic kept; separators, control and bidi characters
+  removed; unique per account with "(2)"). Save, rename, delete, bulk delete,
+  interrupted-operation recovery, damaged index handling and "File missing" listing follow
+  the Scanner's and Combine's stores (tests repeat them).
+- **Accounts**: the view model binds to `AuthRepository.currentUserId`. A pick, a conversion or a
+  save finishing after an account switch (or after the screen was left) is dropped. The selection,
+  draft, private copies and password are cleared on a switch. An auth-stream error is not a
+  sign-out. **Legacy documents** (the old global `converted_pdf_documents` list and the files it
+  names in the documents root) are not migrated, shown or deleted; the screen shows a count.
+  Whose they are is an owner decision.
+- **Export / Share**: Export reuses the Scanner's route (MediaStore Downloads with `IS_PENDING` on
+  Android 10+, legacy permission only on 9-, the Files save sheet on iPhone) and reports the real
+  saved name; `saveFileToDownloads` is no longer used by this tool (Signature still uses it).
+  Share goes through `ShareLive.sendFiles` with copies named by title in a folder swept an
+  hour later.
+- **Backup**: `app_flutter/image_to_pdf` is excluded from Android cloud backup and device
+  transfer (XML) and marked excluded on iPhone through the Scanner's guard. Converted PDFs
+  therefore do not restore onto a new phone; Export/Share keeps a copy. They are **not encrypted
+  at rest** (only a PDF the user protected with a password is).
+- **Lifecycle / memory**: decoding runs on worker isolates, one picture at a time; a rotated photograph
+  is held about twice while it is decoded (about 300 MB at the 50.5 MP limit); the PDF being built is
+  limited to 300 MB of picture data. Closing the screen cancels work and removes the draft and
+  copies. A conversion killed with the app leaves files in `work/` / `staging/`, swept at the next
+  open.
+
+### Library facts found while building (keep; they cost tests to learn)
+
+- `package:image`'s JPEG decoder already applies EXIF orientation: applying it again double
+  rotates; its truncated-file decode returns partial content without an error, so completeness is
+  checked on the JPEG structure (every scan reaches its end marker).
+- Syncfusion's `PdfBitmap` embeds the whole JPEG file (EXIF and GPS included) and rotates by EXIF
+  itself; only metadata-free JPEGs are ever handed to it.
+- Syncfusion `drawString` draws **nothing** when the bounds are shorter than one line (Noto Naskh
+  Arabic needs about 1.7 times its size); bounds are taken from `measureString`.
+- Syncfusion writes the creation date with a local offset of wrong minutes; the date is written in
+  UTC.
+- A `TextEditingController` disposed right after `showDialog` returns is still used by the closing
+  animation (assertion). The rename dialog here owns its controller. **Backlog:** the same pattern
+  is in `combine_pdfs_view.dart` (`_renameCombinedDocument`) and the Scanner screen; not changed
+  here (no Scanner/Combine rework).
+
+### Evidence
+
+| Area | Evidence | Level |
+| --- | --- | --- |
+| Layout: sizes, units, orientation, margins, Fit/Original/Center, Tile grids and order, cover, footer band, resolution targets | `test/image_to_pdf/image_pdf_layout_test.dart` | CODE_PROVEN |
+| Picture processing: formats by bytes, decode check, damaged/cut-off/empty/unsupported/oversized, EXIF 1-8 corner positions, no double rotation, metadata removed on every path and level, transparency to white, quality/compression/lossless behaviour, originals never written | `image_pdf_processor_test.dart` | CODE_PROVEN |
+| Engine: page count, order (by decoded colours), exact page sizes, drawn rectangles equal the plan, tile order, page numbers, date, watermark (Latin and Arabic font), cover, password round trip (right/wrong/none), encrypted data, Combine interoperability, all-or-nothing, cancel, quality widths, size ordering, 24 MP photo | `image_pdf_engine_test.dart` | CODE_PROVEN |
+| Store: journaled save, recovery, isolation, naming, protected records, drafts and staging sweeps | `image_pdf_store_test.dart` | CODE_PROVEN |
+| View model: selection, checking, duplicates, HEIC route, draft reuse and invalidation, save/discard/cancel/double tap, quota once, accounts, legacy count, library actions, lifecycle | `image_pdf_viewmodel_test.dart` | CODE_PROVEN |
+| Screen: empty state, picking, progress, failures, review sheet, settings (custom size, password), rename/delete, drag reorder, Arabic RTL, dark, leaving mid-conversion | `image_pdf_view_test.dart` | CODE_PROVEN |
+| Source guards (no network/logging/permissions, backup rules, password never stored, no fake progress, quota boundary, localization parity) | `image_pdf_source_guards_test.dart` | CODE_PROVEN |
+| Targeted run | `flutter test test/image_to_pdf`: 257/257 PASS (238 before the correction) | CODE_PROVEN (agent-run as the prompt asked; not an owner run) |
+| Regressions | `test/combine_pdf` 108/108, `test/scanner` 170/170 (includes the one guard changed here), `test/share/share_source_guards_test.dart` 64/64 | CODE_PROVEN (agent-run) |
+| Independent reader | Sample PDFs (Fit, Tile 4, Arabic cover and watermark, protected) were rendered with pdf.js 3.11 in a desktop browser: EXIF 6 and 3 photographs upright, tiles in reading order, footers and diagonal watermark, Arabic title and watermark shaped and ordered correctly, the AES-256 file asked for a password (none, wrong) and opened with the right one | desktop reader, not a phone |
+| Mutations | keeping EXIF when a JPEG is rewritten, tiling column by column, transparent pixels to black, a reorder that keeps the old draft and counting usage before the PDF is stored each turned tests red; files restored byte for byte | CODE_PROVEN |
+| Scoped analyzer | `flutter analyze` on `services/image_to_pdf`, `viewmodels/image_to_pdf`, the view, the settings sheet, `lib/app.dart`, `test/image_to_pdf` and the changed Scanner guard: No issues found | CODE_PROVEN (agent-run) |
+| `git diff --check` | clean | - |
+| Android build (correction) | `flutter build apk --debug --target-platform android-arm64`: exit code 0, app-debug.apk built (Gradle assembleDebug 181 s; only Flutter's own notices about future Gradle/AGP/Kotlin minimums) | BUILD VERIFICATION (agent-run; not a runtime result) |
+| Backup scope (correction) | Android: `app_flutter/image_to_pdf` (files, work, staging) is excluded in `backup_rules.xml` and in both sections of `data_extraction_rules.xml`, and the manifest uses both files; `image_picker_android` keeps camera photos and picked copies in `getCacheDir()`, and share copies are in the cache too (cache is never backed up). iPhone: the native `excludeFromBackup` handler marks any path it is given (not limited to Scanner paths) and the view model marks the `image_to_pdf` root before use, so the folders inside inherit it; `tmp`/`Caches` are not backed up. No change was needed; guard tests pin it | CODE_PROVEN (Android rules compiled into the build; iOS NOT RUN) |
+| Lost-pick recovery (correction) | `image_pdf_pick_recovery_test.dart` (shared recovery, picker, screen logic) plus the existing `test/offers/media_pick_recovery_test.dart` | CODE_PROVEN |
+| iOS compile / iPhone runtime / any real device | not run | NOT RUN |
+
+### Quota (classified, not replaced)
+
+Checked when a new draft is made (the plan-limit dialog), counted **once, after the PDF was stored**,
+through `ImagePdfUsageGate`. A draft, a preview, a discard, a cancel or a failure never counts.
+It still reads and writes the legacy Firestore `users/{uid}` document (`imageToPdf`):
+client-writable, not authoritative for a Supabase account, **fail-open**. Legacy Firestore
+counters are NOT production-authoritative; **server-authoritative quota is a release
+dependency**; replace `image_pdf_usage_gate.dart` when it exists. No RevenueCat or entitlement work.
+
+### Limits and blockers
+
+- Nothing ran on a phone. HEIC conversion (`flutter_image_compress` on Android 9+/iOS), the Photo Picker,
+  camera capture, Downloads export, the viewer's password prompt and decode speed/memory of
+  large photographs are device checks.
+- Pictures are decoded in pure Dart: slower than a native codec. Rough cost is a few seconds
+  per 12 MP photograph, once when it is added and once when the PDF is made; a 50 MP photograph
+  needs about 300 MB. Larger pictures (over 50.5 MP, for example 108/200 MP camera modes) are
+  refused with a message.
+- A **pick** lost when Android kills the app is recovered (see "Lost pick recovery"), for the same account
+  only. A pick Android did not hand back, or a selection already made before the app was stopped, is not
+  restored: the selection is not kept across a restart. Recovery is proven against fakes of the plugin
+  and SharedPreferences, not on a phone.
+- Tile reading order is left to right, then top to bottom in every language.
+- The PDF has no page thumbnails in the list (no renderer dependency), as in Combine PDFs.
+- Text inside a PDF supports Latin and Arabic only (no other scripts, no emoji).
+- Encryption at rest is not implemented. Passwords have no recovery. Combine PDFs refuses
+  protected files by design.
+- The legacy ownerless converted PDFs and their backup eligibility (they sit in the documents root)
+  remain an owner decision, as for the Scanner and Combine PDFs.
+- Arabic count words use one plural form ("1 صفحات").
+
+### Samsung acceptance checklist (owner; the owner's PASS above was not itemized)
+
+1. Add 3 photos from the gallery (one portrait, one landscape, one taken sideways) and 1 with
+   the camera: all appear with thumbnails the right way up; Convert, Preview: pages upright,
+   in the order shown, sizes plausible.
+2. Drag an image's handle to change the order; remove one; add one: the page count under the
+   list follows; convert: the PDF matches.
+3. Settings: A4/Letter/Custom (e.g. 100 x 150 mm), Landscape, Tile Multiple 4 per page, margin 10 mm,
+   page numbers + date + watermark: Preview shows exactly that; numbers read "n / total"; the date
+   is the time of conversion; no cover page appeared.
+4. Turn on Cover page and give an Arabic file name: title page present, Arabic readable.
+5. Quality Ultra + compression None on a floor plan or stamped document: sharp; Maximum: visibly
+   softer and the file much smaller.
+6. A PNG with a transparent background: white behind it, not black.
+7. A HEIC photo (if the phone makes them): added and converted; or refused by name.
+8. A deliberately damaged image (rename a text file to .jpg): listed as failed with a reason; the PDF is
+   blocked until removed.
+9. Password protection: Convert, Save; open it in the in-app viewer (asks for the password; wrong
+   one refused) and in another PDF app; share to WhatsApp (the receiver shows the title); Combine PDFs
+   refuses it with a clear message.
+10. Rename (Arabic too), Download ("Saved to Downloads"; twice does not replace), Delete one, bulk delete.
+11. Tap Convert twice quickly: one result. Cancel a large conversion: nothing saved, nothing counted.
+12. Sign in as a second account: empty list, empty selection; back: yours. Close from Recents
+    mid-way, reopen: no leftover selection. No storage or camera-settings prompt other than the camera
+    app's own.
+13. Airplane mode: everything still works.
+
+### Limitations that stand after this checkpoint
+
+- Samsung: owner-reported PASS for the tested functionality (above, not itemized). iOS compile and
+  iPhone runtime are NOT RUN; the iOS backup exclusion and the iPhone Files export need real iOS
+  verification.
+- The quota is the legacy Firestore document: fail-open, client-writable, not production-authoritative.
+- Legacy ownerless converted PDFs (the historical `converted_pdf_documents` records and files) are
+  preserved on the phone and isolated from every account; attribution and their backup eligibility stay an
+  owner decision.
+- Files are not encrypted at rest. A password-protected PDF has no password-recovery mechanism.
+- HEIC conversion, performance and memory with extreme-size photographs, and the interrupted-picker
+  recovery have only the evidence actually obtained: the tests and desktop renders above, plus whatever the
+  owner exercised on the Samsung phone (not itemized). Lost-picker recovery is source-tested, not
+  real-device verified. Only a pick lost mid-picker is recovered; an arranged selection is not kept across a
+  restart.
+- Backlog, not changed here: the rename-dialog controller disposal pattern in the Scanner and Combine PDFs
+  screens (a `TextEditingController` disposed right after `showDialog` returns).
+
+NOW - the Images to PDF S3 commit is local only on `images-to-pdfs-production-readiness`; push or merge only
+when the owner decides.
+NEXT - the Toolbox milestone continues with the owner's next tool; the Master Context, Final Production
+Checklist and Overview are refreshed only after the Toolbox milestone is owner-accepted.
+STOP - no push, merge, hosted change, quota or subscription work, Signature or UAE Links work, Phone
+Auth, or another Toolbox tool without a new instruction.

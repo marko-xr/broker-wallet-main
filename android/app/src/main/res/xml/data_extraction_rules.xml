@@ -24,6 +24,7 @@
         <exclude domain="root" path="app_flutter/scanner" />
         <exclude domain="root" path="app_flutter/combine_pdfs" />
         <exclude domain="root" path="app_flutter/image_to_pdf" />
+        <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
     </cloud-backup>
     <device-transfer>
@@ -33,6 +34,7 @@
         <exclude domain="root" path="app_flutter/scanner" />
         <exclude domain="root" path="app_flutter/combine_pdfs" />
         <exclude domain="root" path="app_flutter/image_to_pdf" />
+        <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
     </device-transfer>
 </data-extraction-rules>

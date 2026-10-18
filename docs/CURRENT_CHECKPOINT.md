@@ -14158,3 +14158,330 @@ NEXT - the Toolbox milestone continues with the owner's next tool; the Master Co
 Checklist and Overview are refreshed only after the Toolbox milestone is owner-accepted.
 STOP - no push, merge, hosted change, quota or subscription work, Signature or UAE Links work, Phone
 Auth, or another Toolbox tool without a new instruction.
+
+## CHECKPOINT S4 — DOCUMENT SIGNATURE PRODUCTION READINESS (2026-10-18)
+
+Status: **SIGNATURE_S4_COMMITTED_LOCAL** (one local commit, `feat(signature): harden PDF signing and
+document privacy`). Branch `document-signature-production-readiness`, parent `66ea37f` (Images to PDF S3).
+Evidence: `test/signature` 306/306 PASS, Scanner/Share guards 97/97 PASS, scoped analyzer CLEAN, formatting
+CLEAN; the Android ARM64 debug build PASSED before the final auth-stream correction and was NOT rerun
+afterwards. The owner reports that, after that correction, Document Signature works on a physical Samsung
+phone (PDF import and opening succeeded); the individual checklist scenarios below were not itemised by the
+owner, so they are not claimed as verified on a device. iOS compile and iPhone testing are NOT RUN. Not
+pushed, not merged. No hosted Supabase, Worker, R2, secret, migration or dependency change; no
+Kotlin/Swift/Gradle change (two backup XML files only). This is not a claim that Document Signature is
+production-ready: the quota is not authoritative (below) and real-device evidence covers only what the
+owner tested.
+
+### What the tool is, and is not
+
+The tool places **visible** marks on a PDF: a drawn signature, drawn or typed initials, a date and a short
+text. It is **not a certificate-based digital signature**, does not identify or verify the signer, and
+does not claim UAE accreditation, legal certification or non-repudiation; the preview says so before
+Save. No certificate issuance, UAE PASS or trust infrastructure was built.
+
+### Findings confirmed against the repository (before the change)
+
+1. **Placement used assumptions, not geometry.** The overlay assumed `flutter_pdfview` draws the page
+   aspect-fit and centred, read the page size from Syncfusion's `PdfPage.size` (which ignores `/Rotate`,
+   mixes CropBox and MediaBox by a heuristic and has no origin) and waited 100 ms after a render. Rotated
+   pages, CropBox pages and pages with an origin were placed wrongly.
+2. **Signatures were stretched on every page that is not square.** The height was stored as
+   `0.25 / imageAspect` of the page *height*, but the width as 0.25 of the page *width*; on A4 the picture
+   came out about 1.4 times too tall, in the preview and in the export alike.
+3. **Syncfusion draws a loaded page in a coordinate system of its own** (a translation chosen by four
+   different branches on MediaBox/CropBox values) and ignores `/Rotate`; the old export used it
+   unmodified.
+4. **Editing a signature did not restore it** (the pad could not load a PNG; its Confirm button was live
+   over a blank pad), a pen colour change made a new controller and lost the history, and the pad's
+   messages were hard-coded English.
+5. **Storage was shared by every account**: one `signed_documents_list` SharedPreferences list and one
+   `signed_documents/` folder; the file was written in place (no atomic save, no read-back), a failed index
+   write was swallowed (`catch (e) {}`), so a document could be written yet never listed.
+6. **Export and permissions**: the upload asked for Photos/All-files storage permission (the picker
+   needs none); Download passed the whole file through the channel, fell back to app folders and called
+   them "saved", and used a hard-coded `/storage/emulated/0/Download`; names carried a timestamp, not the
+   title.
+7. **A PDF that already carries a digital signature was accepted** and silently written over; an encrypted
+   one was not recognised as such.
+8. **Share** used `ShareLive` but sent files under their internal names; the Pin/Unpin entries in the
+   options text had no control (an unused `isPinned` field).
+9. Not a defect, but proven by reading the library: Syncfusion saves a loaded document as an **incremental
+   update** by default (original bytes kept, changed objects appended), so links, forms and annotations
+   survive; flattening and page templates (which drop them) are not used.
+
+### What changed
+
+New, under `lib/src/`:
+- `services/signature/`: `signature_models.dart` (failures, features, analysis, stamp assets, placements,
+  drawing, stored record, naming, text and date rules, limits), `signature_geometry.dart` (page geometry,
+  viewport, move/resize/clamp), `signature_pdf_engine.dart` (analysis, write, verify, PNG helpers),
+  `signature_executor.dart` (worker isolate, inline for tests), `signature_store.dart` (account-scoped
+  journaled store), `signature_platform.dart` (picker, exporter, share preparer),
+  `signature_usage_gate.dart` (the one quota boundary), `signature_wiring.dart`,
+  `signature_stamp_renderer.dart` (drawing and text to transparent PNG), `signature_page_renderer.dart`
+  (PDFium through the already-declared `pdfrx` for the editor's page bitmaps).
+- `viewmodels/signature/signature_library_viewmodel.dart` (account, library, open) and
+  `signature_editor_viewmodel.dart` (items, history, draft, save).
+- Views (`views/Screens/home/Toolkit/signature/`): `signature_page_canvas.dart`,
+  `signature_preview_screen.dart`, `signature_stamp_dialogs.dart`, `signature_ui_support.dart`.
+
+Rewritten (logic replaced, layout, colours, grid/list, AppBar, FABs kept): `signature_view.dart`,
+`document_view.dart`, `signature_pad_view.dart`, `signed_documents_storage.dart` (now only the view-mode
+preference, size formatting and the share helper). Changed: both ARB files (84 messages, `sig...`),
+`backup_rules.xml` and `data_extraction_rules.xml`, and one Scanner guard
+(`test/scanner/scanner_source_guards_test.dart`: Signature no longer uses `saveFileToDownloads`, so the
+guard that required it now requires the streaming route). Tests: `test/signature/`.
+
+### Placement architecture (the highest priority)
+
+- **One model.** A placement is a rectangle in the **visible page's own points** (top-left origin, y down).
+  `PageGeometry` is read from the page's own dictionary (inherited from the page tree): MediaBox, CropBox
+  (clipped to the MediaBox, ignored when it has no area) and `/Rotate` (any multiple of 90, negative
+  allowed). It turns a visible point into user space (`visibleToUser`) and back, for the four rotations,
+  with origins and reversed corners. A CropBox that shares nothing with the MediaBox, or a page with no
+  MediaBox, is refused instead of guessed.
+- **One frame on the screen.** The editor draws the page as a PDFium bitmap and puts the items in the
+  **same box inside the same `InteractiveViewer`**. An item is drawn at `points x scale`; a finger is turned
+  back into points through the box's own `globalToLocal`. Zoom, pan, orientation and pixel density
+  therefore cannot move an item; there is no assumed offset and no render delay. `flutter_pdfview` is no
+  longer used by Signature. The shared `PdfViewerScreen` and the Syncfusion viewer are untouched.
+- **A check that the two agree.** The renderer's page sizes must equal the file's geometry within 1 point on
+  every page, otherwise the file is refused (`geometryUnsupported`) rather than risk a placement that lands
+  elsewhere than shown.
+- **Gestures.** An item owns a gesture recognizer that wins on the first touch (`_EagerScaleRecognizer`): one
+  finger moves, two fingers resize about the centre; four corner handles resize about the opposite corner
+  keeping the proportions; everything is clamped inside the page and above a minimum size. A drag that starts
+  on the page itself zooms and pans. Items have a finger-sized hit area.
+- **Export.** The engine writes the stamp in the page's plain user space: it reads the translation the library
+  set up for that page (`PdfGraphicsHelper.matrix`), cancels it, and draws an axis-aligned image at
+  `geometry.userRectOf(rect)`. For a rotated page the stamp's pixels are turned the other way first
+  (`stampPngForPageRotation`), so no rotation matrix is needed. Matrix numbers are written with two decimals
+  (about 0.005 pt).
+- **Proportions.** A stamp is a PNG; its pixel size fixes its aspect ratio and the rectangle always keeps it
+  (the old stretching defect is gone).
+
+### Behaviour now
+
+- **Library** (same look): grid or list, selection, bulk share/delete, rename, delete, preview (the existing
+  PDF viewer), Share, Download. Everything works by document id.
+- **Open**: the system picker (no permission). The file is analysed on a worker isolate: empty, missing,
+  cloud-only (no local copy), damaged, **password protected** (refused: Broker Wallet does not open protected
+  PDFs and never asks for or bypasses a password), **already digitally signed** (refused: anything added after a
+  signature could invalidate it; detected from the signature fields and from a raw `/ByteRange`), over 50 MB or
+  1000 pages, or with unusable page boxes. Forms, links and annotations are counted and left alone.
+- **Editor**: one page at a time, page buttons and "go to page", zoom buttons and pinch; Add opens a sheet: draw
+  a signature, draw or type initials, add a date, add a text; signatures and initials made in this session can
+  be used again (session only). Each item can be moved, resized, edited (the pad reopens with the strokes and
+  the colour), applied to other pages (explicit ticks only: nothing is ticked for the user, pages that already
+  carry the image are skipped) and deleted; Undo and Redo (50 steps) cover every change; leaving with unsaved
+  items asks first.
+- **Pad**: smooth round strokes, colours, three thicknesses, undo, redo, clear (one undo step), a dot is not a
+  signature, the colour changes keep the strokes and the history, the image is made at 3x with a transparent
+  background (the `signature` package still captures; it was not upgraded or replaced).
+- **Text, initials, date**: made with the phone's own text engine (Noto Sans / Noto Naskh Arabic, RTL decided by
+  the first strong letter) into a transparent PNG at 4x, so the preview and the saved page show the same thing.
+  The date is digits (`dd/MM/yyyy`) or day, month name, year (English or Arabic names), today or any day.
+- **Save**: Save does not store. It writes the signed copy as a **draft** in the account's private `work/`
+  folder (indeterminate progress, Cancel stops the isolate), reads it back, and opens the **preview** (the
+  draft rendered by PDFium, the "visible marks, not a digital signature" note, a name field). **The preview's
+  Save stores that exact file**: copied, compared byte for byte and read back as a PDF before it is listed. Any
+  change to the items discards the draft. A refused plan limit, a failure or a cancel stores and counts
+  nothing.
+- **Integrity**: the output is verified before it is accepted: it opens, is not encrypted or signed, has the
+  same page count, the same boxes and rotation on every page, the same form-field count and the same
+  annotation count on every page. Whether it is the source's bytes plus an appended update is recorded
+  (`appendedOnly`); the tests require it for their fixtures. The source file is never written. The engine
+  never reads the form of the document it saves (reading it can make the library rewrite it).
+- **Storage**: `<app documents>/signature_pdfs/<account>/` with `files/<uuid>.pdf`, `index.json` (temp +
+  rename), `work/` (drafts), the Scanner's journaled store (pending/ready/deleting, recovery on load, damaged
+  index set aside and rebuilt, missing files listed as missing). Titles are metadata (Arabic kept, separators
+  and bidi controls removed, unique per account); the stored name is an internal id. A document rebuilt from
+  files after a lost index has a generic title and unknown (zero) counts.
+- **Accounts**: bound to `AuthRepository.currentUserId`; a result finishing after a switch is dropped; the
+  open editor closes with a message when the account changes; an auth-stream error is not a sign-out.
+  **Legacy documents** (the old `signed_documents_list` preference and the files in `signed_documents/`) are not
+  migrated, shown, moved or deleted; the library only counts the preference entries. Whose they are is an
+  owner decision.
+- **Export / Share**: Export reuses the Scanner's route (MediaStore Downloads with `IS_PENDING` on Android 10+,
+  legacy permission only on Android 9-, the Files save sheet on iPhone; never replaces a file; says where it
+  went only when the platform did). Share goes through `ShareLive.sendFiles` with copies named by title (never
+  an id or a path) in a folder swept an hour later; only intact stored files are shared. No storage permission is
+  requested by the tool any more. `saveFileToDownloads` is no longer used by any Toolkit tool (the native method
+  stays for contract).
+- **Backup**: `app_flutter/signature_pdfs` is excluded from Android cloud backup and device transfer (XML) and
+  from iPhone backup through the Scanner's guard. Signed documents therefore do not restore onto a new phone and
+  are **not encrypted at rest**; the legacy `signed_documents/` folder is not listed (owner decision, as for the
+  Scanner).
+- **Reusable signature**: **session-only**, in memory. Persisting a signature image needs encrypted,
+  account-isolated storage with a deletion path; that was not built, so nothing is stored. Signature images are
+  never written to disk except inside the saved PDF.
+
+### Library facts found while building (keep)
+
+- Syncfusion's loaded-page graphics: `initializeCoordinates` translates by `(cropX, cropH)`, `(0, H)` or
+  `(0, mediaBoxTop)` depending on the boxes; `translateTransform(x, y)` writes `cm` with `(x, -y)`; `drawImage`
+  places an image at `y = -(top)`; the library wraps the original content in `q ... Q` first, so a stamp starts
+  from a clean graphics state. All of that is why the engine reads the translation back instead of copying the
+  branches.
+- Syncfusion writes `cm` numbers with two decimals.
+- An extension is not applied through a prefixed import (`pdfrx`'s `createImage`).
+- `Image.copyRotate(angle: 90)` turns clockwise.
+- A `TextEditingController` disposed right after `showDialog` returns is used by the closing animation; the
+  dialogs here own their controllers (the Scanner and Combine screens still have the pattern: backlog).
+
+### Evidence
+
+| Area | Evidence | Level |
+| --- | --- | --- |
+| Geometry: sizes, rotations, boxes, round trips, viewport at every zoom/density, move/resize/clamp, carry to another page, first placement | `test/signature/signature_geometry_test.dart` | PASS |
+| Models: drawing, ink, text and bidi rules, date, stored record, names, every failure has an EN and AR message, no certificate claims | `signature_models_test.dart` | PASS |
+| Engine: analysis (sizes, rotations, CropBox with origin, inherited boxes, forms, links, signed, protected, damaged), exact exported coordinates read back from the saved content streams for every rotation/size/CropBox, stamp turned for the page, appended-only, source untouched, links/forms/text kept, refusals, cancel, tamper detection | `signature_engine_test.dart` | PASS |
+| Store: journaled save, byte-for-byte copy check, recovery, isolation, legacy untouched, rename, delete, bulk | `signature_store_test.dart` | PASS |
+| Editor view model: place/move/resize/delete, undo/redo, explicit pages, draft reuse and discard, cancel, stale draft, account change, save/quota once after storing, double tap | `signature_editor_viewmodel_test.dart` | PASS |
+| Library view model: open outcomes, accounts, selection by id, rename/delete/bulk, share names, export | `signature_library_viewmodel_test.dart` | PASS |
+| Stamp renderer (transparent PNG, colour, margin, resolution, size cap, Arabic/English) | `signature_stamp_renderer_test.dart` | PASS |
+| Pad (draw, undo/redo/clear, pen, restore, RTL, dark, disposal) | `signature_pad_test.dart` | PASS |
+| Screens (library, editor gestures at 1x and zoomed, handles, pinch, orientation and density independence, other pages, leaving, preview and save, failures) | `signature_screens_test.dart` | PASS |
+| Source guards (no storage permissions, no pdfview, no network, one quota boundary, source never written, backup, localization) | `signature_source_guards_test.dart` | PASS |
+| `flutter test test/signature` (all of the above) | 306 passed, 0 failed (2026-10-19, after the phone finding) | PASS |
+| Scanner and Share source guards | `scanner_source_guards_test.dart`, `share_source_guards_test.dart`: 97 passed | PASS |
+| Scoped analyzer | `flutter analyze` on the S4 library, view-model, view and test folders: no issues | PASS |
+| Android ARM64 debug build | `flutter build apk --debug --target-platform android-arm64` built `app-debug.apk` (only the known Gradle/AGP/Kotlin upgrade notices); run before the final auth-stream correction and NOT rerun after it | PASS (before final correction) |
+| Format | `dart format --output=none --set-exit-if-changed` on the S4 folders: 0 changed | PASS |
+| Real device, Samsung Android | owner-reported: after the auth-stream correction the feature works (PDF import and opening succeeded); scenarios not itemised | OWNER_REPORTED (tested functionality only) |
+| Real device, iOS | not run | NOT RUN |
+
+### Verification record (what the first owner runs found, and what was changed)
+
+- Run 1 (`flutter test test/signature`): 229 passed, 74 failed. About 65 were
+  `Found 0 widgets with text "open"`: a harness defect, the localization delegates load asynchronously and the
+  helpers tapped before one frame had passed (`openEditor`, `openPad`). Fixed by pumping before the tap.
+- Run 2 (`signature_screens_test.dart`): 12 passed, 46 failed, `tap() ... add-button ... would not hit test`,
+  then `Found 0 widgets with key add-date`. Root cause, measured with a temporary hit-test dump: the add button
+  is the Scaffold's floating button, which scales in after the editor is ready; its box was 0 x 0 (scale 0.0)
+  when the test tapped. Not a layout defect: the production button is reachable. `add-date`/`add-text`/... were
+  downstream. The helper now settles the route and the button's entrance animation before tapping.
+- Genuine implementation defects found by the same runs (fixed in the product, not in the tests):
+  the library's document-count header row overflowed (the title now shrinks with an ellipsis); the list tile sat
+  inside a coloured box and hid its own ink (it now has its own transparent `Material`); the grid tile used a
+  width-based ratio and overflowed by 6 px on a 360 dp phone (fixed height 232, scaled with the text size, as in
+  the Scanner and Combine grids); the pad's colour and thickness rows overflowed on a narrow screen or a long
+  translation (they wrap); the corner handles of a small item overlapped the item (they sit outside its
+  corners).
+- Test defects: two tests asserted before the frame that applies a state change (`Save cannot be pressed
+  twice`, `a change of account closes the editor` used a zero-length pump through a route exit animation);
+  a layout guard still named the old grid ratio.
+
+### First phone run (Samsung SM-S928B, 2026-10-19): Upload did not work
+
+- Symptom: after choosing a PDF the toast said the file could not be found, and the Upload button stayed off
+  from then on (earlier it also showed "Loading").
+- Cause, reproduced by a test and read from the phone's log (no Dart error was printed; the failure was
+  swallowed): the real auth repository's `authStateChanges` is a single-subscription stream. The library view
+  model listens to it, and every editing session listened again, which throws `Bad state: Stream has already
+  been listened to`. The library's blanket `catch` reported that as "file not found", and because it had already
+  set its "editing" flag, the Upload button stayed disabled for good. The tests missed it because their
+  stand-in auth stream was a broadcast stream.
+- Fix: the library view model shares the account stream (`asBroadcastStream` when it is not broadcast); a
+  session is built before the library counts as editing, and a build that fails is reported as the new
+  `unexpected` failure (EN and AR message) instead of blaming the file; only the picker's own failure still
+  means "file not found". The test harness now defaults to a single-subscription auth stream, so a second
+  listen fails a test; two new tests pin the fix.
+- Outcome: the owner retested on the Samsung after this correction and reports that Document Signature works;
+  PDF import and opening succeeded, so the misleading "file not found" message and the stuck Loading/Upload
+  state are gone. The owner did not itemise the acceptance checklist, so no other scenario (rotated or
+  cropped PDFs, Arabic text, share and export, bulk delete, a second account, airplane mode) is recorded as
+  verified on a device.
+
+### Quota (classified, not replaced)
+
+Asked when the preview's Save is pressed (the plan-limit dialog), counted **once, after the signed
+document was stored and verified**, through `SignatureUsageGate` (section `signature`, as before). A draft, a
+preview, a discard, a cancel or a failure never counts. It still reads and writes the legacy Firestore
+`users/{uid}` document: client-writable, **not authoritative** for a Supabase account, **fail-open**. Legacy
+Firestore counters are not production-authoritative; **server-authoritative quota is a release dependency**
+for the later checklist milestone; replace `signature_usage_gate.dart` when it exists. No RevenueCat, billing
+or replacement quota system.
+
+### Limits and blockers
+
+- Verified by tests, analyzer and an Android debug build, plus the owner-reported Samsung run described above
+  (tested functionality only). The riskiest assumptions are listed below; the checklist scenarios the owner did
+  not itemise remain unverified on a device.
+- **Syncfusion internals.** The engine imports four `src/` files (`PdfPageHelper`, `PdfGraphicsHelper`,
+  `PdfCrossTable`, the primitives) and depends on the library keeping its translation in
+  `PdfGraphicsHelper.matrix`. The exported-coordinate tests read the saved content streams back and fail if
+  that stops being true; a Syncfusion upgrade needs them re-run.
+- **PDFium (pdfrx) in the editor.** `pdfrx` was already a dependency but unused. The editor needs
+  `pdfrxFlutterInitialize()` and PDFium on the phone; first use is on the owner's device. Page rendering is
+  checked only against fakes (the widget tests draw no PDF page); the build only proves it links.
+- **Page sizes must match.** PDFium and the file's own geometry must agree within 1 point; a PDF where they
+  do not is refused with a message. UserUnit is not honoured.
+- Text, date and initials are **images** in the PDF (not selectable or searchable text); the drawn ink is a
+  raster. A very small stamp scaled up is limited by its 3x/4x resolution.
+- Signed PDFs are refused, not stamped; there is no "add anyway" path. A PDF whose signature the library does
+  not list and whose bytes do not contain `/ByteRange` (for example a signature hidden in a compressed object
+  stream the library fails to list) would not be detected.
+- Protected PDFs are refused; opening with a user password is not offered.
+- A stamp is drawn on top of the page: it hides what is under it and is not an editable annotation.
+- Limits (memory, not policy): 50 MB and 1000 pages per PDF, 100 items per document, 4 MB / 4096 px per stamp.
+- Not encrypted at rest; not restored onto a new phone.
+- iOS compile and iPhone behaviour are NOT RUN. The Samsung acceptance is pending.
+- Arabic count words use one plural form.
+
+### Commands to repeat the verification (PowerShell, from the repository root)
+
+```powershell
+flutter test test/signature
+flutter test test/scanner/scanner_source_guards_test.dart test/share/share_source_guards_test.dart
+dart format --output=none --set-exit-if-changed lib/src/services/signature lib/src/viewmodels/signature lib/src/views/Screens/home/Toolkit/signature test/signature
+flutter analyze lib/src/services/signature lib/src/viewmodels/signature lib/src/views/Screens/home/Toolkit/signature test/signature lib/app.dart
+git diff --check
+# optional, after the tests pass:
+flutter build apk --debug --target-platform android-arm64
+```
+
+No `flutter pub get` is needed (no pubspec change).
+
+### Samsung acceptance checklist (owner)
+
+1. Open a 3-page PDF from Files: pages appear sharp; pinch zoom and the +/- buttons work; the page number jumps.
+2. Draw a signature (change the colour and the thickness, undo, redo, clear then undo): it lands in the middle
+   of the page; drag it, resize it by a corner and by pinching; it cannot leave the page.
+3. Edit the signature: the pad reopens with the strokes and the colour. Use the same signature on page 3 (it
+   is offered under "Use again"); apply it to page 2 only through the tick list; delete one copy; Undo.
+4. Add initials (drawn and typed), a date (today, another day, with the month name) and a text in Arabic and in
+   English: Arabic reads right to left and is shaped correctly.
+5. Rotate the phone, change the font size: items stay where they were on the page.
+6. Use a landscape PDF, a rotated page (scan upside down) and, if you have one, a cropped PDF (a PDF exported
+   with a crop box): the preview and the saved file show each stamp at the same place and size.
+7. Save: the preview opens with the note; change the name (Arabic too); Save; the list shows 1 document with
+   the right page count and signature count; open it in the in-app viewer and in another PDF app
+   (links, form fields and selectable text of the original still work).
+8. Tap Save twice quickly: one document, counted once. Cancel while "Preparing" shows: nothing saved.
+9. Open an already digitally signed PDF and a password protected PDF: both refused with a clear message.
+10. Rename, Download ("Saved to Downloads", twice does not replace), Share to WhatsApp (the receiver shows the
+    title), Delete one, bulk delete.
+11. Sign in as a second account: the list is empty; back: yours. Close the app mid-edit: no leftover draft.
+12. Airplane mode: everything still works. No storage permission prompt appears.
+
+### Limitations that stand after this checkpoint
+
+- Verified by `flutter test`, the scoped analyzer and an Android ARM64 debug build (run before the final
+  auth-stream correction, not rerun after it). Real-device evidence is the owner-reported Samsung run only, for
+  the functionality the owner tested. iOS compile and iPhone testing are NOT RUN.
+- This is visual signature placement, not a certificate-based digital signature. Existing digitally signed
+  PDFs and password-protected PDFs are refused.
+- Text, date and initials stamps are rasterised images, not selectable PDF text.
+- The PDF UserUnit limitation and the signature-detection limitation (Limits and blockers) stand.
+- The quota is the legacy Firestore document: fail-open, client-writable, not production-authoritative.
+- Legacy ownerless signed documents (`signed_documents_list`, `signed_documents/`) are preserved and isolated
+  from every account; attribution and their backup eligibility stay an owner decision.
+- Signed documents are not encrypted at rest; the reusable signature is session-only.
+
+NOW - S4 is committed locally. The owner decides push and merge; iOS compile and iPhone testing stay pending.
+NEXT - the Master Context, Final Production Checklist and Overview are refreshed only after the Toolbox
+milestone is owner-accepted.
+STOP - no push, merge, hosted change, quota or subscription work, certificate or UAE PASS signing,
+Phone Auth, or another Toolbox tool without a new instruction.

@@ -639,3 +639,50 @@
     account only, in pick order, and never by an Offer/Owner form (nor the reverse). Recovery adds
     pictures through the ordinary add; it never converts, saves or counts. The gallery uses the system
     Photo Picker explicitly. No broad picker redesign was needed.
+- Document Signature production readiness (decided 2026-10-18, branch
+  `document-signature-production-readiness`, source only; owner verification pending):
+  - The tool places **visible** marks (drawn signature, initials, date, text). It is not a
+    certificate-based digital signature and never claims signer identity, UAE accreditation, legal
+    certification or non-repudiation; the preview says so. No certificate, UAE PASS or trust
+    infrastructure is part of this tool.
+  - **Geometry is one model.** A placement is a rectangle in the visible page's own points. The visible
+    page is the CropBox clipped to the MediaBox (the MediaBox when there is no usable CropBox) turned by
+    `/Rotate`, all read from the page's own dictionary (inherited from the page tree), never from
+    Syncfusion's `PdfPage.size`. Pages whose boxes cannot give a page, or whose size PDFium and the file
+    disagree on by more than a point, are refused rather than guessed.
+  - **The editor draws the page as a bitmap and the items in the same box inside the same
+    zoom-and-pan transform**, converting fingers with the box's own `globalToLocal`. It replaces
+    `flutter_pdfview` for Signature (its overlay could not track the page); the shared PDF viewer is
+    untouched. PDFium comes through `pdfrx`, already a dependency.
+  - **The export writes in user space, not in the library's drawing space.** The engine reads back the
+    translation Syncfusion sets up for a loaded page, cancels it, and draws an axis-aligned image at the
+    geometry's user rectangle; for a rotated page it turns the image's pixels instead of using a rotation
+    matrix. Stamps are transparent PNGs (drawn ink at 3x, text at 4x), so a placed item keeps its
+    proportions and the preview and the file show the same picture. Text, dates and initials are therefore
+    images, not selectable text.
+  - **The original is never rewritten.** Syncfusion's incremental save keeps the original bytes and appends
+    the changes, so links, forms, annotations and unrelated pages are untouched; flattening and page
+    templates (which lose them) are not used, and the form of the document being saved is never read. The
+    copy is verified (pages, boxes, rotation, form-field and annotation counts, no encryption or signature)
+    before it is accepted. A PDF that already carries a digital signature (signature field or `/ByteRange`)
+    is **refused**, and a protected PDF is **refused**; neither is ever opened with a bypass.
+  - **Draft first.** Save writes a verified draft in the account's `work/` folder and opens the preview of
+    that file; the preview's Save stores those bytes (compared byte for byte); any change to the items
+    discards the draft. One stored document is one usage unit, recorded once after it was stored, through
+    `signature_usage_gate.dart` (legacy Firestore, section `signature`, fail-open, not authoritative;
+    replacing that class is the whole server-authoritative-quota change).
+  - Signed documents are stored per signed-in account in `<app documents>/signature_pdfs/<account>/` with the
+    Scanner's journaled store design. The old device-wide `signed_documents_list` preference and the
+    `signed_documents/` files carry no owner: they are not migrated, shown, moved or deleted; the screen
+    counts them. Attributing them, and whether they should leave backup, is an owner decision.
+  - Export reuses the Scanner's file-based route; Share uses `ShareLive` with title-named copies. The
+    system picker needs no permission, so none is requested. No Toolkit tool uses `saveFileToDownloads`
+    any more (the native method stays for contract).
+  - `app_flutter/signature_pdfs` is excluded from Android cloud backup and device transfer and from iPhone
+    backup; signed documents are not restored onto a new phone and are not encrypted at rest.
+  - The reusable signature is **session-only**; a persisted one would need encrypted, account-isolated
+    storage with a deletion path, which was not built. Signature images are never written to disk except
+    inside the saved PDF.
+  - Items are placed by gesture on a recognizer that wins on the first touch (one finger moves, two
+    resize, corner handles resize), so zoom and pan around them do not compete; the page itself zooms and
+    pans. Limits (memory, not policy): 50 MB, 1000 pages, 100 items, 4 MB and 4096 px per stamp.

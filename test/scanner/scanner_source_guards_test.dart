@@ -155,13 +155,21 @@ void main() {
       expect(kotlin, contains('"saveFileToDownloads" -> saveBytes'));
       expect(kotlin, contains('call.argument<ByteArray>("fileBytes")'));
       expect(kotlin, contains('"success" to true'));
-      for (final path in <String>[
-        '$toolkitFolder/signature/signature_view.dart',
-      ]) {
-        final source = read(path);
-        expect(source, contains("'saveFileToDownloads'"), reason: path);
-        expect(source, contains("'fileBytes'"), reason: path);
-      }
+      // Every Toolkit tool has now moved to the streaming route, so the old
+      // route is kept only as the native contract above, for no caller.
+    });
+
+    test('Document Signature moved to the streaming route and no longer uses it',
+        () {
+      // Document Signature exports through the same file-based route as the
+      // Scanner (Signature S4), so it must not pass whole documents through the
+      // channel or ask for storage permissions of its own any more.
+      final view = read('$toolkitFolder/signature/signature_view.dart');
+      expect(view.contains('saveFileToDownloads'), isFalse);
+      expect(view.contains('fileBytes'), isFalse);
+      expect(view.contains('Permission.storage'), isFalse);
+      final platform = read('lib/src/services/signature/signature_platform.dart');
+      expect(platform, contains('exportFile('));
     });
 
     test('Combine PDFs moved to the streaming route and no longer uses it', () {

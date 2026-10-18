@@ -34,4 +34,10 @@
          and the private copies of selected pictures stay on this phone (see
          docs/DECISIONS.md). -->
     <exclude domain="root" path="app_flutter/image_to_pdf" />
+    <!-- Document Signature: the account folders of signed documents and their
+         unsaved drafts stay on this phone (see docs/DECISIONS.md). The folder
+         an earlier version used (app_flutter/signed_documents) is not listed:
+         its files carry no owner and what happens to them is the owner's
+         decision. -->
+    <exclude domain="root" path="app_flutter/signature_pdfs" />
 </full-backup-content>

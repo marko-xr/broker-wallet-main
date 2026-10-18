@@ -662,8 +662,13 @@ class _ScannerViewState extends State<ScannerView> {
     final documents = _vm.documents;
     final selecting = _vm.isSelectionMode;
     return AppBar(
+      // BackArrowButton pads itself by 16 px unless told otherwise; with zero
+      // padding and a 48 px leading slot the arrow sits on the content edge.
+      leadingWidth: 48,
       leading: const BackArrowButton(
         iconColor: Colors.white, // Set to white to match the primary gradient
+        iconSize: 24,
+        padding: EdgeInsets.zero,
         backgroundColor: Colors.transparent,
         showBackground: false,
       ),
@@ -722,6 +727,8 @@ class _ScannerViewState extends State<ScannerView> {
             tooltip: _localization.translate('scanSettings'),
           ),
         ],
+        // The last icon's glyph ends on the same 16 px edge as the content.
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -746,7 +753,7 @@ class _ScannerViewState extends State<ScannerView> {
           ),
           _isGridView
               ? SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   sliver: SliverGrid(
                     // A fixed height sized to the tile's content (grows with
                     // the system text size) instead of a width-based ratio,
@@ -755,7 +762,7 @@ class _ScannerViewState extends State<ScannerView> {
                       crossAxisCount: 2,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
-                      mainAxisExtent: 184 *
+                      mainAxisExtent: 200 *
                           (MediaQuery.textScalerOf(context).scale(14) / 14)
                               .clamp(1.0, 1.6)
                               .toDouble(),
@@ -1036,8 +1043,10 @@ class _ScannerViewState extends State<ScannerView> {
   }
 
   Widget _buildScannedDocumentsHeader(AppLocalizations localization) {
+    // Right inset 4: the 48 px toggle's icon then ends on the 16 px edge,
+    // directly under the app bar's last icon.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
       child: Row(
         children: [
           Icon(
@@ -1056,7 +1065,6 @@ class _ScannerViewState extends State<ScannerView> {
           const Spacer(),
           // Shows the view the tap switches to; replaces the old text label.
           IconButton(
-            visualDensity: VisualDensity.compact,
             icon: Icon(
               _isGridView ? Icons.view_list : Icons.grid_view,
               color: AppColors.primary,
@@ -1313,7 +1321,7 @@ class _ScannerViewState extends State<ScannerView> {
         onLongPress: () => _onCardLongPress(document),
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: Theme.of(context).colorScheme.surface,
@@ -1419,7 +1427,7 @@ class _ScannerViewState extends State<ScannerView> {
                 ),
               ),
 
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
 
               // Details: clipped, never overflowing, if text is scaled up.
               Flexible(
@@ -1439,7 +1447,7 @@ class _ScannerViewState extends State<ScannerView> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 2),
@@ -1463,7 +1471,7 @@ class _ScannerViewState extends State<ScannerView> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Text(
                         _formatDateTime(document.createdAt),
                         maxLines: 1,
@@ -1475,7 +1483,7 @@ class _ScannerViewState extends State<ScannerView> {
                               height: 1.2,
                             ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       if (missing)
                         _buildMissingBadge()
                       else
@@ -1509,7 +1517,7 @@ class _ScannerViewState extends State<ScannerView> {
                 ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
 
               Row(
                 children: [
@@ -1557,7 +1565,7 @@ class _ScannerViewState extends State<ScannerView> {
       onTap: _vm.isSelectionMode ? null : onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 34,
+        height: 36,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),

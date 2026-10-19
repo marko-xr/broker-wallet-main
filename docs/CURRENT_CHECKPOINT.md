@@ -14485,3 +14485,66 @@ NEXT - the Master Context, Final Production Checklist and Overview are refreshed
 milestone is owner-accepted.
 STOP - no push, merge, hosted change, quota or subscription work, certificate or UAE PASS signing,
 Phone Auth, or another Toolbox tool without a new instruction.
+
+
+## CHECKPOINT S5 — UAE USEFUL LINKS PRODUCTION READINESS (2026-10-19)
+
+Status: **S5 implementation completed; the owner authorized the final local commit (2026-10-19).** Verification is
+PARTIAL: 89 of 97 entries are VERIFIED_OFFICIAL and 8 need a manual check on the official site (see the register). Branch `uae-useful-links-production-readiness`, parent
+`e07cce7` (the committed S4 Signature commit), working tree clean at the start. Committed locally as one commit
+(`feat(uae-links): modernize official real estate services directory`); not pushed, not merged.
+
+What changed
+- `UAELinksData` is now one curated catalogue of **97** official entries (`uae_links_catalogue.dart`) with stable ids,
+  Arabic and English titles, descriptions and authority, emirate(s), task tags, service type, canonical URL and
+  domain, sign-in flag, last-verified date, verification status and evidence. The old directory's ARB keys are no longer used (left in place, not removed);
+  the screen's UI strings are `ulx*` keys in both ARB files.
+- Corrected: Tasdeeq is an **Ajman** service (it was filed under Sharjah). Five dead, generic or replaced legacy addresses
+  were replaced or removed (Dubai rental index, Ajman eServices, RAK legacy portal, UAQ `md.uaq.ae`, Sharjah
+  `sercatid=48`); moved pages use their canonical address. The full table is in
+  `docs/toolbox/uae-links-verification.md`.
+- Screen: pinned search (Arabic and English names, agencies, aliases such as Ejari / إيجاري, Tasdeeq / تصديق,
+  Tawtheeq / توثيق, Aqari / عقاري, DLD, RERA, SRERD), emirate chips (plus UAE-wide, which stays visible under any
+  emirate), task chips (12 broker tasks), reset, result count, empty state, compact cards that name the authority,
+  the service type, sign-in, and "check on the official site" where the destination is not fully confirmed.
+- Opening: only through `UaeLinkLauncher` and `UaeLinkUrlPolicy` (HTTPS, official-domain allow-list on whole
+  labels, no userinfo, odd ports, IPs or punycode), always in the phone's external browser. Nothing is appended to
+  an address; a success message is never shown for opening; a failed launch shows an error.
+- "Report a problem": a sheet builds a fixed seven-line text (service, id, authority, URL, issue, UTC time). The
+  user copies it or shares it through the system sheet; nothing is sent from the app and it holds nothing personal.
+
+Verification
+- Live check 2026-10-19 of all 97 URLs: 94 HTTP 200, DEWA (2) 403 to automated requests (read in a browser),
+  one transient timeout that returned 200 on three retries. Page titles/headings were read for the HTTP-checked
+  entries; script-only sites (SRERD, TAMM, DEWA, Fujairah, UAQ, ADREC services) were read in a browser.
+- 89 entries VERIFIED_OFFICIAL, 8 OFFICIAL_MANUAL_CHECK_REQUIRED (Oqood, Noqodi, SRERD gates, Digital Sharjah/Aqari,
+  SEWA e-services, Ajman e-services, RAK Digital, Ejaar PDF guide). Authenticated transactions, UAE PASS sign-in and
+  payments were not tested.
+- `flutter test test/uae_links`: 74 passed (catalogue integrity, URL policy, search and aliases, grouping,
+  launcher, report, screen with fakes in English/Arabic/RTL/320 px/dark/large text, source guards). Scoped analyzer:
+  no issues. `dart format` check on the new/rewritten files: clean. `git diff --check`: clean. Android build: NOT RUN
+  (no platform or dependency change). Samsung and iOS: pending.
+
+Results as previously reported (not rerun when committing)
+- 97 active entries; 89 VERIFIED_OFFICIAL; 8 OFFICIAL_MANUAL_CHECK_REQUIRED (Oqood / My DLD sign-in, Noqodi
+  ownership, SRERD sign-in gates, Digital Sharjah / Aqari sign-in, SEWA e-services, Ajman script-rendered
+  e-services, RAK Digital, Fujairah Ejaar PDF guide). None was promoted.
+- Targeted UAE Links tests 74/74 PASS; scoped analyzer CLEAN; formatting and `git diff --check` CLEAN.
+- Android build NOT RUN (no platform or dependency change). iOS NOT RUN.
+- Government transaction, sign-in, UAE PASS and payment workflows NOT TESTED; only the public/landing pages and
+  page content were checked, on 2026-10-19. No fresh link check was made for the commit.
+- Samsung real-device acceptance: PENDING. No owner-reported device result exists for S5; the commit
+  authorization is not an acceptance result.
+
+Limits that stand
+- A catalogue is a snapshot: government sites move pages. Re-verify with the register's procedure.
+- No public Aqari address, Sharjah tenancy deep link, UAQ land/lease-attestation service or Dubai Municipality
+  service page could be confirmed, so none is published (reasons in the register).
+- Fees, documents and times are not copied into the app.
+
+NOW - S5 is committed locally. Samsung acceptance of the UAE Links screen (search, filters, open, copy, report,
+Arabic/RTL, dark mode, large text) is still owed by the owner.
+NEXT - the owner decides push and merge; resolve the 8 manual-check entries when the sites can be checked with
+sign-in, and re-verify the catalogue periodically (government sites move pages).
+STOP - no commit, push, merge, hosted change, Master Context / Production Checklist edits, or another Toolbox tool
+without a new instruction.

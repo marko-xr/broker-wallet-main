@@ -1,206 +1,165 @@
-class UAELinkItem {
-  final String label;
-  final String url;
-  final String? description;
+/// The emirate (or the whole country) a directory entry belongs to.
+///
+/// An entry only claims [uae] when the service really is federal. A service
+/// that one emirate delivers names that emirate, so the directory never implies
+/// a local service is nationwide.
+enum UaeLinkEmirate {
+  uae('ulxUaeWide'),
+  dubai('dubai'),
+  abuDhabi('abuDhabi'),
+  sharjah('sharjah'),
+  ajman('ajman'),
+  rasAlKhaimah('rasAlKhaimah'),
+  ummAlQuwain('ummAlQuwain'),
+  fujairah('fujairah');
 
-  UAELinkItem({
-    required this.label,
+  const UaeLinkEmirate(this.labelKey);
+
+  /// Localization key of the emirate's name.
+  final String labelKey;
+}
+
+/// What a broker is trying to get done; one entry can serve several tasks.
+enum UaeLinkTask {
+  tenancy('ulxTaskTenancy'),
+  renewalCancellation('ulxTaskRenewalCancellation'),
+  salesTitle('ulxTaskSalesTitle'),
+  verification('ulxTaskVerification'),
+  brokerPermits('ulxTaskBrokerPermits'),
+  developersOffPlan('ulxTaskDevelopersOffPlan'),
+  valuationIndex('ulxTaskValuationIndex'),
+  planningPermits('ulxTaskPlanningPermits'),
+  feesPayments('ulxTaskFeesPayments'),
+  utilities('ulxTaskUtilities'),
+  disputesLegal('ulxTaskDisputesLegal'),
+  digitalIdentity('ulxTaskDigitalIdentity');
+
+  const UaeLinkTask(this.labelKey);
+
+  /// Localization key of the task's name.
+  final String labelKey;
+}
+
+/// What opening the link gives the user, so an online application is never
+/// mistaken for general information.
+enum UaeLinkType {
+  /// An online application or transaction (normally behind a login).
+  action('ulxTypeAction'),
+
+  /// A public look-up or verification tool.
+  verification('ulxTypeVerification'),
+
+  /// An official page that explains a service or a rule.
+  information('ulxTypeInformation'),
+
+  /// A landing page or directory of an authority's services.
+  portal('ulxTypePortal'),
+
+  /// A payment platform (not a regulator or a government department).
+  payment('ulxTypePayment');
+
+  const UaeLinkType(this.labelKey);
+
+  final String labelKey;
+}
+
+/// How far an entry's destination has been checked against official evidence.
+enum UaeLinkVerification {
+  /// The authority, the URL and the page content were all observed and match.
+  verifiedOfficial,
+
+  /// The authority and URL are established, but the destination could not be
+  /// fully confirmed (script-only page, login wall, bot blocking); the user is
+  /// told to check the details on the site.
+  officialManualCheckRequired,
+
+  /// Not checked. Never published.
+  unverified,
+
+  /// Known dead or replaced. Never published.
+  retired;
+
+  /// Only these two reach the user.
+  bool get isPublishable =>
+      this == verifiedOfficial || this == officialManualCheckRequired;
+}
+
+/// One curated official service or portal.
+///
+/// The Arabic and English texts live here, in the catalogue, instead of in the
+/// ARB files: they are directory content that is reviewed together with the URL
+/// and the evidence, not screen chrome.
+class UaeLinkEntry {
+  const UaeLinkEntry({
+    required this.id,
+    required this.emirates,
+    required this.tasks,
+    required this.type,
     required this.url,
-    this.description,
+    required this.titleEn,
+    required this.titleAr,
+    required this.descriptionEn,
+    required this.descriptionAr,
+    required this.authorityEn,
+    required this.authorityAr,
+    required this.verification,
+    required this.lastVerified,
+    required this.evidence,
+    this.requiresLogin = false,
+    this.keywords = const <String>[],
+    this.alternativeUrl,
   });
-}
 
-class UAELinkCategory {
-  final String title;
-  final List<UAELinkItem> items;
+  /// Stable, unique, never reused.
+  final String id;
 
-  UAELinkCategory({
-    required this.title,
-    required this.items,
-  });
-}
+  /// The emirate(s) the service applies to; [UaeLinkEmirate.uae] only for
+  /// federal services.
+  final Set<UaeLinkEmirate> emirates;
 
-class UAELinksData {
-  static List<UAELinkCategory> getCategories(
-      String Function(String) translate) {
-    return [
-      UAELinkCategory(
-        title: translate('uaeEssentials'),
-        items: [
-          UAELinkItem(
-            label: translate('uaePass'),
-            url: 'https://uaepass.ae/',
-            description: translate('uaePassDescription'),
-          ),
-          UAELinkItem(
-            label: translate('noqodiPayments'),
-            url: 'https://www.noqodi.com/',
-            description: translate('noqodiPaymentsDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('dubaiDldRera'),
-        items: [
-          UAELinkItem(
-            label: translate('dldHome'),
-            url: 'https://dubailand.gov.ae/en/',
-            description: translate('dldHomeDescription'),
-          ),
-          UAELinkItem(
-            label: translate('dubaiRest'),
-            url: 'https://dubailand.gov.ae/en/eservices/dubai-rest/',
-            description: translate('dubaiRestDescription'),
-          ),
-          UAELinkItem(
-            label: translate('reraRentalCalculator'),
-            url:
-                'https://dubailand.gov.ae/en/eservices/rental-index-form-landing/',
-            description: translate('reraRentalCalculatorDescription'),
-          ),
-          UAELinkItem(
-            label: translate('advertisementPermit'),
-            url:
-                'https://dubailand.gov.ae/en/eservices/request-a-real-estate-permit/',
-            description: translate('advertisementPermitDescription'),
-          ),
-          UAELinkItem(
-            label: translate('validateLicensesPermits'),
-            url:
-                'https://dubailand.gov.ae/en/eservices/validate-real-estate-licenses-and-permits/',
-            description: translate('validateLicensesPermitsDescription'),
-          ),
-          UAELinkItem(
-            label: translate('mollakJop'),
-            url: 'https://mollak.dubailand.gov.ae/',
-            description: translate('mollakJopDescription'),
-          ),
-          UAELinkItem(
-            label: translate('oqoodOffPlan'),
-            url: 'https://oqood.dubailand.gov.ae/',
-            description: translate('oqoodOffPlanDescription'),
-          ),
-          UAELinkItem(
-            label: translate('rentalDisputesCenter'),
-            url: 'https://rdc.gov.ae/',
-            description: translate('rentalDisputesCenterDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('abuDhabi'),
-        items: [
-          UAELinkItem(
-            label: translate('dariMain'),
-            url: 'https://www.dari.ae/',
-            description: translate('dariMainDescription'),
-          ),
-          UAELinkItem(
-            label: translate('dariServices'),
-            url: 'https://services.dari.ae/services/',
-            description: translate('dariServicesDescription'),
-          ),
-          UAELinkItem(
-            label: translate('adrec'),
-            url: 'https://adrec.gov.ae/en',
-            description: translate('adrecDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('sharjah'),
-        items: [
-          UAELinkItem(
-            label: translate('sharjahMunicipalitySmartServices'),
-            url: 'https://portal.shjmun.gov.ae/en/',
-            description:
-                translate('sharjahMunicipalitySmartServicesDescription'),
-          ),
-          UAELinkItem(
-            label: translate('renewTenancyResidential'),
-            url:
-                'https://portal.shjmun.gov.ae/en/eservices/pages/services.aspx?sercatid=48',
-            description: translate('renewTenancyResidentialDescription'),
-          ),
-          UAELinkItem(
-            label: translate('tenancyContractDetails'),
-            url:
-                'https://portal.shjmun.gov.ae/en/eservices/Pages/GetTenancyContractInfo.aspx',
-            description: translate('tenancyContractDetailsDescription'),
-          ),
-          UAELinkItem(
-            label: translate('tasdeeqAttestation'),
-            url: 'https://tasdeeq.am.gov.ae/en/index.html',
-            description: translate('tasdeeqAttestationDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('ajman'),
-        items: [
-          UAELinkItem(
-            label: translate('deptLandRealEstateHome'),
-            url: 'https://ajmanre.gov.ae/en/',
-            description: translate('deptLandRealEstateHomeDescription'),
-          ),
-          UAELinkItem(
-            label: translate('eServicesPortal'),
-            url: 'https://ajmanre.gov.ae/en/services/eservices/',
-            description: translate('eServicesPortalDescription'),
-          ),
-          UAELinkItem(
-            label: translate('registerLongTermLease'),
-            url:
-                'https://ajmanre.gov.ae/en/our-services/registration-of-a-long-term-lease/',
-            description: translate('registerLongTermLeaseDescription'),
-          ),
-          UAELinkItem(
-            label: translate('serviceDirectory'),
-            url:
-                'https://www.ajman.ae/en/servicecatalog/service_categories/department-land-real-estate-regulation',
-            description: translate('serviceDirectoryDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('rasAlKhaimah'),
-        items: [
-          UAELinkItem(
-            label: translate('registerTenancyContract'),
-            url:
-                'https://www.rak.ae/wps/portal/rak/e-services/govt/!/z/tenancy',
-            description: translate('registerTenancyContractDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('ummAlQuwain'),
-        items: [
-          UAELinkItem(
-            label: translate('municipalityServicesLeaseContracts'),
-            url: 'https://md.uaq.ae/service.php',
-            description:
-                translate('municipalityServicesLeaseContractsDescription'),
-          ),
-        ],
-      ),
-      UAELinkCategory(
-        title: translate('fujairah'),
-        items: [
-          UAELinkItem(
-            label: translate('municipalityRentalContract'),
-            url:
-                'https://portal.fujmun.gov.ae/OnlineEservices/default.aspx?lang=en',
-            description: translate('municipalityRentalContractDescription'),
-          ),
-          UAELinkItem(
-            label: translate('ejaarUserGuidePdf'),
-            url:
-                'https://ejaar.fujmun.gov.ae/Ejaar/assets/files/EJAAR%20User%20Guide_English.pdf',
-            description: translate('ejaarUserGuidePdfDescription'),
-          ),
-        ],
-      ),
-    ];
-  }
+  /// Every task the service helps with (one catalogue row, several tags).
+  final Set<UaeLinkTask> tasks;
+  final UaeLinkType type;
+
+  /// The canonical destination. HTTPS, on [domain].
+  final String url;
+  final String titleEn;
+  final String titleAr;
+  final String descriptionEn;
+  final String descriptionAr;
+
+  /// The government body (or the payment platform) that runs the service.
+  final String authorityEn;
+  final String authorityAr;
+  final UaeLinkVerification verification;
+
+  /// ISO date (`yyyy-MM-dd`) the destination was last checked.
+  final String lastVerified;
+
+  /// Short, non-localized note of what was observed and how.
+  final String evidence;
+
+  /// Opening the service asks the user to sign in (for example with UAE PASS).
+  final bool requiresLogin;
+
+  /// Aliases people search by, in Arabic and Latin spelling.
+  final List<String> keywords;
+
+  /// A second official entry point, used only when it was itself verified.
+  final String? alternativeUrl;
+
+  /// The host of [url]: the official destination domain.
+  String get domain => Uri.parse(url).host;
+
+  bool get isFederal => emirates.contains(UaeLinkEmirate.uae);
+
+  String title(String languageCode) => languageCode == 'ar' ? titleAr : titleEn;
+
+  String description(String languageCode) =>
+      languageCode == 'ar' ? descriptionAr : descriptionEn;
+
+  String authority(String languageCode) =>
+      languageCode == 'ar' ? authorityAr : authorityEn;
+
+  DateTime get lastVerifiedDate => DateTime.parse(lastVerified);
 }

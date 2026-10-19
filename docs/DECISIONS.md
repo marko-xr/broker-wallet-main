@@ -686,3 +686,23 @@
   - Items are placed by gesture on a recognizer that wins on the first touch (one finger moves, two
     resize, corner handles resize), so zoom and pan around them do not compete; the page itself zooms and
     pans. Limits (memory, not policy): 50 MB, 1000 pages, 100 items, 4 MB and 4096 px per stamp.
+
+- UAE Useful Links production readiness (decided 2026-10-19, branch `uae-useful-links-production-readiness`):
+  - **One curated catalogue, bilingual content in Dart.** `UAELinksData.entries` holds each service once, with
+    emirate set, task tags, type, URL, authority, Arabic/English text, last-verified date, status and evidence.
+    Directory content is reviewed together with its evidence, so it is not split across ARB files; screen chrome
+    stays in ARB (`ulx*`). No remote CMS, database or backend.
+  - **Publishing rule.** Only `verifiedOfficial` and `officialManualCheckRequired` entries are shown; a
+    `.gov.ae` domain or an HTTP 200 alone never earns VERIFIED. Entries whose destination could not be confirmed
+    say so on the card. No commercial portals, classifieds, shorteners or referral links; a private payment
+    platform (Noqodi) is labelled as a payment platform and is not classed as government.
+  - **Safe opening.** Addresses open only through `UaeLinkLauncher` after `UaeLinkUrlPolicy` (HTTPS, official
+    domain on whole labels, no userinfo/odd port/IP/punycode), in the external browser. No WebView, proxy,
+    scraping, credential entry, or identifiers appended to a URL; opening a site is never reported as a completed
+    service.
+  - **Broken-link report is copy/share only.** The text is built from fixed fields and shared by the user
+    through the system sheet; no silent sending, no invented support address.
+  - **Emirate assignment follows the operating authority** (Tasdeeq is Ajman). UAE-wide means federal only; the
+    UAE-wide group stays visible under any emirate filter.
+  - The verification register is `docs/toolbox/uae-links-verification.md`; the catalogue test enforces ids,
+    domains, coverage, language completeness and metadata.

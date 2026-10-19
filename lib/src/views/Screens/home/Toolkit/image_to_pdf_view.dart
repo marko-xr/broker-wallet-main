@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
@@ -877,64 +878,11 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
   }
 
   Widget _buildHeaderCard(AppLocalizations localization, ColorScheme colors) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.picture_as_pdf,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  localization.translate('imageToPdfConverter'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  localization.translate('convertYourImages'),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ToolHeaderCard(
+      icon: Icons.picture_as_pdf,
+      title: localization.translate('imageToPdfConverter'),
+      subtitle: localization.translate('convertYourImages'),
+      gradient: const [Color(0xFF4CAF50), Color(0xFF2E7D32)],
     );
   }
 

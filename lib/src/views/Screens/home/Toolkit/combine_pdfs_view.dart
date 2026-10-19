@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pages_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
@@ -846,64 +847,11 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
   }
 
   Widget _buildHeaderCard(AppLocalizations localization, ColorScheme colors) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFF9800), Color(0xFFFF6F00)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF9800).withValues(alpha: 0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.merge_type,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  localization.translate('combineMultiplePdfs'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  localization.translate('combineDescription'),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ToolHeaderCard(
+      icon: Icons.merge_type,
+      title: localization.translate('combineMultiplePdfs'),
+      subtitle: localization.translate('combineDescription'),
+      gradient: const [Color(0xFFFF9800), Color(0xFFFF6F00)],
     );
   }
 

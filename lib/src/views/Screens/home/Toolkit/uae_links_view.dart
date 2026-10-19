@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/data/models/uae_links_catalogue.dart';
@@ -194,55 +195,55 @@ class _UAELinksViewState extends State<UAELinksView> {
     final colors = Theme.of(context).colorScheme;
     final rows = _buildRows(l);
 
+    // The bar floats over the page like the other tools: its gradient fades
+    // out, and the content starts below the status bar and toolbar.
+    final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
+
     return Scaffold(
       backgroundColor: colors.surface,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        // BackArrowButton pads itself by 16 px unless told otherwise; with zero
+        // padding and a 48 px leading slot the arrow sits on the content edge.
+        leadingWidth: 48,
         leading: const BackArrowButton(
           iconColor: Colors.white,
+          iconSize: 24,
+          padding: EdgeInsets.zero,
           backgroundColor: Colors.transparent,
           showBackground: false,
         ),
-        title: Column(
-          children: [
-            Text(
-              l.translate('uaeLinks'),
-              style: AppTextStyles.appBarTitle.copyWith(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              l.translate('govPortalsAndServices'),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
-          ],
+        title: Text(
+          l.translate('uaeLinks'),
+          style: AppTextStyles.appBarTitle
+              .copyWith(fontSize: 20, color: Colors.white),
+          textAlign: TextAlign.center,
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
-        flexibleSpace: const DecoratedBox(
+        flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [_brand, _brandDark],
+              colors: [
+                _brand.withValues(alpha: 0.9),
+                _brandDark.withValues(alpha: 0.7),
+                Colors.transparent,
+              ],
             ),
           ),
         ),
-        toolbarHeight: 72,
       ),
       body: SafeArea(
         top: false,
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 4),
               child: _searchField(l),
             ),
             Expanded(
@@ -259,10 +260,8 @@ class _UAELinksViewState extends State<UAELinksView> {
   }
 
   List<Widget> _buildRows(AppLocalizations l) {
-    final colors = Theme.of(context).colorScheme;
     final rows = <Widget>[
       _header(l),
-      const SizedBox(height: 12),
       const SizedBox(height: 12),
       _chipRow<UaeLinkEmirate?>(
         rowKey: const Key('uaeLinksEmirateChips'),
@@ -295,13 +294,20 @@ class _UAELinksViewState extends State<UAELinksView> {
           padding: const EdgeInsets.only(top: 12, bottom: 4),
           child: Semantics(
             header: true,
-            child: Text(
-              '${l.translate(group.emirate.labelKey)} (${group.entries.length})',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: colors.onSurface,
-              ),
+            child: Row(
+              children: [
+                const Icon(Icons.place_outlined, size: 20, color: _brand),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${l.translate(group.emirate.labelKey)} (${group.entries.length})',
+                    style: AppTextStyles.bodyText.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: _brand,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ));
@@ -358,53 +364,13 @@ class _UAELinksViewState extends State<UAELinksView> {
   }
 
   Widget _header(AppLocalizations l) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [_brand, _brandDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l.translate('ulxHeaderTitle'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l.translate('ulxHeaderBody'),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.verified_rounded,
-                color: Colors.white, size: 26),
-          ),
-        ],
-      ),
+    return ToolHeaderCard(
+      icon: Icons.verified_rounded,
+      title: l.translate('ulxHeaderTitle'),
+      subtitle: l.translate('ulxHeaderBody'),
+      gradient: const [_brand, _brandDark],
+      // The list around it already pads the sides.
+      margin: EdgeInsets.zero,
     );
   }
 
@@ -575,10 +541,10 @@ class _ServiceCard extends StatelessWidget {
 
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 1,
+      elevation: 3,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: colors.outline.withValues(alpha: 0.15)),
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: _brand.withValues(alpha: 0.2)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),

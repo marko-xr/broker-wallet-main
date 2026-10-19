@@ -1,6 +1,7 @@
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/document_view.dart';
@@ -329,64 +330,11 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
   Widget _buildHeaderCard() {
     final localization = AppLocalizations.of(context);
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [redLight, redDarker],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.draw,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  localization.translate('documentSignature'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  localization.translate('uploadAndSignDocuments'),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ToolHeaderCard(
+      icon: Icons.draw,
+      title: localization.translate('documentSignature'),
+      subtitle: localization.translate('uploadAndSignDocuments'),
+      gradient: const [redLight, redDarker],
     );
   }
 

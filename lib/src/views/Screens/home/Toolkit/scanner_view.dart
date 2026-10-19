@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_review_screen.dart';
@@ -813,74 +814,15 @@ class _ScannerViewState extends State<ScannerView> {
 
   Widget _buildModeIndicator(
       AppLocalizations localization, ColorScheme colors) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.primary.withValues(alpha: 0.1),
-            AppColors.primary.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              _getScanModeIcon(_vm.scanMode),
-              color: AppColors.primary,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _localization.translate('scanModeLabel').replaceAll(
-                      '{mode}', _getScanTypeLabel(_vm.scanMode).toUpperCase()),
-                  style: AppTextStyles.sectionLabel.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _getScanModeDescription(_vm.scanMode),
-                  style: AppTextStyles.bodyText.copyWith(
-                    color: colors.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildFeatureChip(
-                      _localization.translate('exportFormat'),
-                      _getFormatLabel(_vm.exportFormat),
-                    ),
-                    _buildInfoChip(
-                      _localization
-                          .translate('scannerMaxPagesChip')
-                          .replaceAll('{count}', '${_vm.maxPages}'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ToolHeaderCard(
+      icon: _getScanModeIcon(_vm.scanMode),
+      title: _localization.translate('scanModeLabel').replaceAll(
+          '{mode}', _getScanTypeLabel(_vm.scanMode).toUpperCase()),
+      subtitle: _getScanModeDescription(_vm.scanMode),
+      gradient: [
+        AppColors.primary,
+        Color.lerp(AppColors.primary, Colors.black, 0.25)!,
+      ],
     );
   }
 
@@ -890,28 +832,6 @@ class _ScannerViewState extends State<ScannerView> {
       child: _buildNote(_localization
           .translate('scannerLegacyNotice')
           .replaceAll('{count}', '${_vm.legacyDocumentCount}')),
-    );
-  }
-
-  Widget _buildFeatureChip(String label, String value) =>
-      _buildInfoChip('$label: $value');
-
-  Widget _buildInfoChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
-      ),
     );
   }
 

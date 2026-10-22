@@ -873,7 +873,7 @@
   "perMonth": "per month",
   "perYear": "per year",
   "personalInformation": "Personal Information",
-  "phoneHint": "05X XXX XXXX",
+  "phoneHint": "5X XXX XXXX",
   "phoneNumber": "Phone Number",
   "phoneNumberCopied": "Phone number copied to clipboard",
   "phoneNumberMustStartWith05": "Phone number must start with 05",

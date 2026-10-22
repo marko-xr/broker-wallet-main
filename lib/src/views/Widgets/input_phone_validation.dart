@@ -1,12 +1,15 @@
-﻿import 'package:broker_wallet/src/common/utils/rtl_utils.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:broker_wallet/src/common/utils/svg_icon.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:broker_wallet/src/common/utils/uae_phone_input.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
-// Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
+/// Fixed-prefix UAE phone field.
+///
+/// Always paints `[ +971 | 5X XXX XXXX ]` left to right, in Arabic and English,
+/// while the surrounding screen keeps its own direction. The field shows only
+/// the 9-digit national number; [value] and [onChanged] keep the established
+/// local trunk form (`05XXXXXXXX`), so callers are unaffected.
 class PhoneInputWidget extends StatefulWidget {
   final String countryCode;
   final String value;
@@ -39,9 +42,7 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
   void initState() {
     super.initState();
     _controller = TextEditingController(
-      text: widget.value.isNotEmpty
-          ? PhoneInputService.formatPhoneNumber(widget.value)
-          : '',
+      text: UaePhoneInput.displayFor(widget.value),
     );
     if (widget.validateInternally) {
       _validatePhone(widget.value);
@@ -52,9 +53,7 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
   void didUpdateWidget(PhoneInputWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value) {
-      final formatted = widget.value.isNotEmpty
-          ? PhoneInputService.formatPhoneNumber(widget.value)
-          : '';
+      final formatted = UaePhoneInput.displayFor(widget.value);
       if (_controller.text != formatted) {
         _controller.text = formatted;
       }
@@ -71,18 +70,18 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
   }
 
   void _onTextChanged(String value) {
-    final cleanPhone = PhoneInputService.getCleanPhoneNumber(value);
+    final localPhone = UaePhoneInput.toLocalTrunk(value);
     if (widget.validateInternally) {
-      _validatePhone(cleanPhone);
+      _validatePhone(localPhone);
     }
-    widget.onChanged(cleanPhone);
+    widget.onChanged(localPhone);
   }
 
   void _validatePhone(String phone) {
     if (!widget.validateInternally) return;
     setState(() {
       _internalError = PhoneInputService.getValidationError(
-        phone,
+        UaePhoneInput.toLocalTrunk(UaePhoneInput.displayFor(phone)),
         widget.localization.translate,
       );
     });
@@ -91,7 +90,7 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isRTL = Directionality.of(context) == TextDirection.rtl;
+    final countryDigits = widget.countryCode.replaceAll(RegExp(r'[^0-9]'), '');
 
     final errorToShow =
         widget.validateInternally ? _internalError : widget.phoneError;
@@ -109,53 +108,43 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
                 hasError ? Border.all(color: colors.error, width: 1.5) : null,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            children: [
-              // UAE Flag
-              SizedBox(
-                width: 25,
-                height: 25,
-                child: SvgPicture.asset(
-                  SvgIcon.flagArab,
-                  width: 25,
-                  height: 25,
+          // Only this row is forced LTR; the screen and its label keep the
+          // app direction.
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Row(
+              children: [
+                // Country Code (fixed, not editable)
+                Text(
+                  '+$countryDigits',
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.left,
+                  style: AppTextStyles.bodyText.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.primary,
+                    height: 1.25, // avoid clipping
+                  ),
+                  strutStyle:
+                      const StrutStyle(height: 1.25, forceStrutHeight: true),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-              // Country Code
-              Text(
-                "(${widget.countryCode})",
-                style: AppTextStyles.bodyText.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.primary,
-                  height: 1.25, // avoid clipping
+                // Divider
+                Container(
+                  width: 1.2,
+                  height: 32,
+                  color: colors.outline.withValues(alpha: 0.3),
                 ),
-                strutStyle:
-                    const StrutStyle(height: 1.25, forceStrutHeight: true),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 12),
 
-              // Divider
-              Container(
-                width: 1.2,
-                height: 32,
-                color: colors.outline.withValues(alpha: 0.3),
-              ),
-              const SizedBox(width: 12),
-
-              // Phone Input
-              Expanded(
-                child: ForceDirectionality(
-                  direction: TextDirection.ltr, // digits flow LTR
+                // Phone Input
+                Expanded(
                   child: TextField(
                     controller: _controller,
                     keyboardType: TextInputType.phone,
-                    inputFormatters: [UAEPhoneInputFormatter()],
-                    // IMPORTANT:
-                    // In RTL screens we right-align the LTR field so the hint/caret
-                    // sits next to the divider; in LTR screens we keep standard left align.
-                    textAlign: isRTL ? TextAlign.end : TextAlign.start,
+                    inputFormatters: [UaeNationalPhoneInputFormatter()],
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.left,
                     textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(
                       border: InputBorder.none,
@@ -171,8 +160,8 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
                     onChanged: _onTextChanged,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         if (hasError) ...[

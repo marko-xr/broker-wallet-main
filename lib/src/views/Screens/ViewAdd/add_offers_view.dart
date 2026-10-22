@@ -14,6 +14,7 @@ import 'package:broker_wallet/src/Views/Widgets/plan_attachment_selection.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/app_control_sizes.dart';
+import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/viewmodels/AddScreens/add_offers_viewmodel.dart';
@@ -109,6 +110,7 @@ class AddOffersView extends StatelessWidget {
                             localization: localization,
                             phoneError: vm.phoneError,
                             showError: vm.phone.isNotEmpty,
+                            outlined: true,
                           ),
                           const SizedBox(height: 18),
                           _Label(localization.translate('priceRange')),
@@ -443,7 +445,8 @@ class _LocationInput extends StatefulWidget {
   State<_LocationInput> createState() => _LocationInputState();
 }
 
-class _LocationInputState extends State<_LocationInput> {
+class _LocationInputState extends State<_LocationInput>
+    with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -474,22 +477,32 @@ class _LocationInputState extends State<_LocationInput> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.location_on_outlined,
-            color: Color(0xFF8B959A),
+            color: AppInputStyle.icon(
+              Theme.of(context).colorScheme,
+              focused: inputFocused,
+            ),
             size: 25,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: _controller,
+              focusNode: inputFocusNode,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: widget.hint,
-                hintStyle: AppTextStyles.hintText,
+                hintStyle: AppTextStyles.hintText.copyWith(
+                  color: AppInputStyle.hint(Theme.of(context).colorScheme),
+                ),
               ),
               style: AppTextStyles.bodyText,
               onChanged: widget.onChanged,
@@ -531,7 +544,8 @@ class _SquareFootageBox extends StatefulWidget {
   State<_SquareFootageBox> createState() => _SquareFootageBoxState();
 }
 
-class _SquareFootageBoxState extends State<_SquareFootageBox> {
+class _SquareFootageBoxState extends State<_SquareFootageBox>
+    with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -562,18 +576,26 @@ class _SquareFootageBoxState extends State<_SquareFootageBox> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           Icon(
             Icons.square_foot,
             size: 22,
-            color: Theme.of(context).colorScheme.primary,
+            color: AppInputStyle.icon(
+              Theme.of(context).colorScheme,
+              focused: inputFocused,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
               controller: _controller,
+              focusNode: inputFocusNode,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
@@ -582,7 +604,9 @@ class _SquareFootageBoxState extends State<_SquareFootageBox> {
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: widget.hint,
-                hintStyle: AppTextStyles.hintText,
+                hintStyle: AppTextStyles.hintText.copyWith(
+                  color: AppInputStyle.hint(Theme.of(context).colorScheme),
+                ),
               ),
               style: AppTextStyles.bodyText,
               onChanged: widget.onChanged,
@@ -600,7 +624,7 @@ class _SquareFootageBoxState extends State<_SquareFootageBox> {
   }
 }
 
-class _PriceBoxState extends State<_PriceBox> {
+class _PriceBoxState extends State<_PriceBox> with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -631,6 +655,10 @@ class _PriceBoxState extends State<_PriceBox> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
@@ -638,17 +666,23 @@ class _PriceBoxState extends State<_PriceBox> {
             AppImages.uaeDirham,
             width: 18,
             height: 18,
-            color: Theme.of(context).colorScheme.primary,
+            color: AppInputStyle.icon(
+              Theme.of(context).colorScheme,
+              focused: inputFocused,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
               controller: _controller,
+              focusNode: inputFocusNode,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: widget.hint,
-                hintStyle: AppTextStyles.hintText,
+                hintStyle: AppTextStyles.hintText.copyWith(
+                  color: AppInputStyle.hint(Theme.of(context).colorScheme),
+                ),
               ),
               style: AppTextStyles.bodyText,
               onChanged: widget.onChanged,
@@ -675,7 +709,7 @@ class _NotesBox extends StatefulWidget {
   State<_NotesBox> createState() => _NotesBoxState();
 }
 
-class _NotesBoxState extends State<_NotesBox> {
+class _NotesBoxState extends State<_NotesBox> with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -707,13 +741,20 @@ class _NotesBoxState extends State<_NotesBox> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       child: TextField(
         controller: _controller,
+        focusNode: inputFocusNode,
         minLines: 3,
         maxLines: 7,
         decoration: InputDecoration.collapsed(
           hintText: widget.hint,
-          hintStyle: AppTextStyles.hintText,
+          hintStyle: AppTextStyles.hintText.copyWith(
+            color: AppInputStyle.hint(Theme.of(context).colorScheme),
+          ),
         ),
         style: AppTextStyles.bodyText,
         onChanged: widget.onChanged,

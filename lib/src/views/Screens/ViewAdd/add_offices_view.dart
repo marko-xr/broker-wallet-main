@@ -5,6 +5,7 @@ import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
 import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
 import 'package:provider/provider.dart';
+import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/enums/add_offices_mode.dart';
@@ -130,6 +131,7 @@ class AddOfficesView extends StatelessWidget {
                             localization: localization,
                             phoneError: vm.phoneError,
                             showError: vm.phone.isNotEmpty,
+                            outlined: true,
                           ),
                           const SizedBox(height: 18),
                           _Label(localization.translate('officeLocation')),
@@ -217,7 +219,8 @@ class _TextFieldIcon extends StatefulWidget {
   State<_TextFieldIcon> createState() => _TextFieldIconState();
 }
 
-class _TextFieldIconState extends State<_TextFieldIcon> {
+class _TextFieldIconState extends State<_TextFieldIcon>
+    with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -249,6 +252,10 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
@@ -258,7 +265,7 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
               width: 24,
               height: 24,
               colorFilter: ColorFilter.mode(
-                colors.primary,
+                AppInputStyle.icon(colors, focused: inputFocused),
                 BlendMode.srcIn,
               ),
             ),
@@ -266,10 +273,13 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
           Expanded(
             child: TextField(
               controller: _controller,
+              focusNode: inputFocusNode,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: widget.hint,
-                hintStyle: AppTextStyles.hintText,
+                hintStyle: AppTextStyles.hintText.copyWith(
+                  color: AppInputStyle.hint(Theme.of(context).colorScheme),
+                ),
               ),
               style: AppTextStyles.bodyText,
               onChanged: widget.onChanged,
@@ -296,7 +306,7 @@ class _NotesBox extends StatefulWidget {
   State<_NotesBox> createState() => _NotesBoxState();
 }
 
-class _NotesBoxState extends State<_NotesBox> {
+class _NotesBoxState extends State<_NotesBox> with InputFocusOutlineMixin {
   late TextEditingController _controller;
 
   @override
@@ -328,13 +338,20 @@ class _NotesBoxState extends State<_NotesBox> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      foregroundDecoration: AppInputStyle.outline(
+        Theme.of(context).colorScheme,
+        focused: inputFocused,
+      ),
       child: TextField(
         controller: _controller,
+        focusNode: inputFocusNode,
         minLines: 3,
         maxLines: 7,
         decoration: InputDecoration.collapsed(
           hintText: widget.hint,
-          hintStyle: AppTextStyles.hintText,
+          hintStyle: AppTextStyles.hintText.copyWith(
+            color: AppInputStyle.hint(Theme.of(context).colorScheme),
+          ),
         ),
         style: AppTextStyles.bodyText,
         onChanged: widget.onChanged,

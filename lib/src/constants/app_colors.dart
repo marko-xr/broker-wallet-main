@@ -21,27 +21,29 @@ class AppColors {
   static const Color boxDecoration = Color(0xFFF0F0F0);
   static const Color boxDecorationDark = Color(0xFF22292F);
 
-  // Login / Signup input fields only (read through AuthInputStyle).
-  // Contrast is measured against the field fill (surface / darkSurface):
-  // borders and icons >= 3:1, hint and label text >= 4.5:1.
-  static const Color authInputBorder = Color(0xFF7F8A86);
-  static const Color authInputBorderDark = Color(0xFF76817C);
-  static const Color authInputFocusedBorder = primary;
-  static const Color authInputIcon = Color(0xFF6B7773);
-  static const Color authInputIconDark = Color(0xFF8E9994);
-  static const Color authInputFocusedIcon = primary;
-  static const Color authInputHint = Color(0xFF66726D);
-  static const Color authInputHintDark = Color(0xFF9AA5A0);
-  static const Color authInputLabel = Color(0xFF55655F);
-  static const Color authInputLabelDark = Color(0xFFEBEFEF);
+  // Approved text-field styling, shared by Login / Signup and the entity forms
+  // (read through AppInputStyle). Contrast is measured against the field fill
+  // (surface / darkSurface): borders and icons >= 3:1, hint and label text
+  // >= 4.5:1.
+  static const Color inputBorder = Color(0xFF7F8A86);
+  static const Color inputBorderDark = Color(0xFF76817C);
+  static const Color inputFocusedBorder = primary;
+  static const Color inputIcon = Color(0xFF6B7773);
+  static const Color inputIconDark = Color(0xFF8E9994);
+  static const Color inputFocusedIcon = primary;
+  static const Color inputHint = Color(0xFF66726D);
+  static const Color inputHintDark = Color(0xFF9AA5A0);
+  static const Color inputLabel = Color(0xFF55655F);
+  static const Color inputLabelDark = Color(0xFFEBEFEF);
 }
 
-/// Resolves the Login / Signup field colors and border width for the current
+/// Resolves the approved text-field colors and border width for the current
 /// theme. Style values only: it adds no widget and changes no layout.
-class AuthInputStyle {
-  const AuthInputStyle._();
+class AppInputStyle {
+  const AppInputStyle._();
 
   static const double borderWidth = 1.0;
+  static const double fieldRadius = 10;
 
   static bool _isDark(ColorScheme colors) =>
       colors.brightness == Brightness.dark;
@@ -49,31 +51,92 @@ class AuthInputStyle {
   static Color border(
     ColorScheme colors, {
     required bool focused,
-    required bool hasError,
+    bool hasError = false,
   }) {
     if (hasError) return colors.error;
-    if (focused) return AppColors.authInputFocusedBorder;
-    return _isDark(colors)
-        ? AppColors.authInputBorderDark
-        : AppColors.authInputBorder;
+    if (focused) return AppColors.inputFocusedBorder;
+    return _isDark(colors) ? AppColors.inputBorderDark : AppColors.inputBorder;
   }
 
   static Color icon(
     ColorScheme colors, {
     required bool focused,
-    required bool hasError,
+    bool hasError = false,
   }) {
     if (hasError) return colors.error;
-    if (focused) return AppColors.authInputFocusedIcon;
-    return _isDark(colors)
-        ? AppColors.authInputIconDark
-        : AppColors.authInputIcon;
+    if (focused) return AppColors.inputFocusedIcon;
+    return _isDark(colors) ? AppColors.inputIconDark : AppColors.inputIcon;
   }
 
   static Color hint(ColorScheme colors) =>
-      _isDark(colors) ? AppColors.authInputHintDark : AppColors.authInputHint;
+      _isDark(colors) ? AppColors.inputHintDark : AppColors.inputHint;
 
-  static Color label(ColorScheme colors) => _isDark(colors)
-      ? AppColors.authInputLabelDark
-      : AppColors.authInputLabel;
+  static Color label(ColorScheme colors) =>
+      _isDark(colors) ? AppColors.inputLabelDark : AppColors.inputLabel;
+
+  /// The single field outline. Use it as a `foregroundDecoration` on the
+  /// field's existing box: it paints over that box, so it adds no size.
+  static BoxDecoration outline(
+    ColorScheme colors, {
+    required bool focused,
+    bool hasError = false,
+  }) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(fieldRadius),
+      border: Border.all(
+        color: border(colors, focused: focused, hasError: hasError),
+        width: borderWidth,
+      ),
+    );
+  }
+}
+
+/// Lets a field's State repaint its [AppInputStyle.outline] when it gains or
+/// loses focus. Pass [inputFocusNode] to the field's TextField; it only
+/// observes focus and changes no focus behaviour.
+mixin InputFocusOutlineMixin<T extends StatefulWidget> on State<T> {
+  final FocusNode inputFocusNode = FocusNode();
+
+  bool get inputFocused => inputFocusNode.hasFocus;
+
+  @override
+  void initState() {
+    super.initState();
+    inputFocusNode.addListener(_repaintOutline);
+  }
+
+  void _repaintOutline() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    inputFocusNode.dispose();
+    super.dispose();
+  }
+}
+
+/// Login / Signup entry point to [AppInputStyle]; the values are the same.
+class AuthInputStyle {
+  const AuthInputStyle._();
+
+  static const double borderWidth = AppInputStyle.borderWidth;
+
+  static Color border(
+    ColorScheme colors, {
+    required bool focused,
+    required bool hasError,
+  }) =>
+      AppInputStyle.border(colors, focused: focused, hasError: hasError);
+
+  static Color icon(
+    ColorScheme colors, {
+    required bool focused,
+    required bool hasError,
+  }) =>
+      AppInputStyle.icon(colors, focused: focused, hasError: hasError);
+
+  static Color hint(ColorScheme colors) => AppInputStyle.hint(colors);
+
+  static Color label(ColorScheme colors) => AppInputStyle.label(colors);
 }

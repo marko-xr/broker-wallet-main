@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
+import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 
 // Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
@@ -243,7 +244,7 @@ class _SignUpViewState extends State<SignUpView> {
                   // Sign Up Button
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: AppControlSizes.standardButtonHeight,
                     child: ElevatedButton(
                       onPressed: (vm.isLoading || authVM.isLoading)
                           ? null
@@ -257,20 +258,20 @@ class _SignUpViewState extends State<SignUpView> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: colors.primary,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(32),
                         ),
-                        elevation: 0,
+                        padding: EdgeInsets.zero,
                       ),
                       child: (vm.isLoading || authVM.isLoading)
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? const _ButtonSpinner()
                           : Text(
                               vm.signupMethod == SignupMethod.phone
                                   ? localization.translate('sendOTP')
                                   : localization.translate('signUp'),
-                              style: AppTextStyles.buttonText.copyWith(
-                                color: Colors.white,
-                                fontSize: 16,
-                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.buttonText
+                                  .copyWith(color: Colors.white),
                             ),
                     ),
                   ),
@@ -279,32 +280,51 @@ class _SignUpViewState extends State<SignUpView> {
                   if (vm.signupMethod == SignupMethod.email) ...[
                     const SizedBox(height: 24),
 
-                    // Or sign in with
-                    Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 60,
+                    // Or sign in with. Same divider as the date headings in the
+                    // Offers, Requests and Owners lists: a line that fades out
+                    // toward the outer edge on each side of the label.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
                             height: 1,
-                            color: colors.onSurface.withValues(alpha: 0.2),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              localization.translate('orSignInWith'),
-                              style: AppTextStyles.bodyText.copyWith(
-                                color: colors.onSurface.withValues(alpha: 0.6),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  colors.onSurface.withValues(alpha: 0.2),
+                                ],
+                                begin: AlignmentDirectional.centerStart,
+                                end: AlignmentDirectional.centerEnd,
                               ),
                             ),
                           ),
-                          Container(
-                            width: 60,
-                            height: 1,
-                            color: colors.onSurface.withValues(alpha: 0.2),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            localization.translate('orSignInWith'),
+                            style: AppTextStyles.bodyText.copyWith(
+                              color: colors.onSurface.withValues(alpha: 0.6),
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  colors.onSurface.withValues(alpha: 0.2),
+                                  Colors.transparent,
+                                ],
+                                begin: AlignmentDirectional.centerStart,
+                                end: AlignmentDirectional.centerEnd,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
 
                     const SizedBox(height: 24),
@@ -362,13 +382,13 @@ class _SignUpViewState extends State<SignUpView> {
     ColorScheme colors,
   ) {
     return Container(
-      height: 56,
+      height: AppControlSizes.standardButtonHeight,
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: colors.outline.withValues(alpha: 0.3)),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(32),
           ),
         ),
         child: Row(
@@ -394,6 +414,24 @@ class _SignUpViewState extends State<SignUpView> {
 }
 
 // --- Atomic Widgets (reuse from AddOfficesView) ---
+
+/// The progress indicator the app's large buttons show in place of the label
+/// (as the Save button does).
+class _ButtonSpinner extends StatelessWidget {
+  const _ButtonSpinner();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 20,
+      width: 20,
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+      ),
+    );
+  }
+}
 
 class _Label extends StatelessWidget {
   final String text;

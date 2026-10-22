@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/login_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
@@ -89,6 +90,7 @@ class _SignInViewState extends State<SignInView> {
                       phoneError: vm.phoneError,
                       showError: vm.phoneError != null,
                       validateInternally: false,
+                      outlined: true,
                     ),
                     const SizedBox(height: 280),
                     SizedBox(
@@ -149,6 +151,7 @@ class _SignInViewState extends State<SignInView> {
                       onChanged: vm.setEmail,
                       keyboardType: TextInputType.emailAddress,
                       forceLTR: true,
+                      hasError: vm.emailError != null,
                     ),
                     if (vm.emailError != null) ...[
                       const SizedBox(height: 4),
@@ -168,6 +171,7 @@ class _SignInViewState extends State<SignInView> {
                       value: vm.passwordController.text,
                       onChanged: vm.setPassword,
                       obscureText: !vm.showPassword,
+                      hasError: vm.passwordError != null,
                       suffixIcon: IconButton(
                         icon: SvgPicture.asset(
                           vm.showPassword
@@ -352,7 +356,12 @@ class _Label extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsetsDirectional.only(bottom: 8, start: 4),
-      child: Text(text, style: AppTextStyles.sectionLabel),
+      child: Text(
+        text,
+        style: AppTextStyles.sectionLabel.copyWith(
+          color: AuthInputStyle.label(Theme.of(context).colorScheme),
+        ),
+      ),
     );
   }
 }
@@ -366,6 +375,7 @@ class _TextFieldIcon extends StatefulWidget {
   final Widget? suffixIcon;
   final TextInputType keyboardType;
   final bool forceLTR;
+  final bool hasError;
 
   const _TextFieldIcon({
     this.iconAsset,
@@ -376,6 +386,7 @@ class _TextFieldIcon extends StatefulWidget {
     this.suffixIcon,
     this.keyboardType = TextInputType.text,
     this.forceLTR = false,
+    this.hasError = false,
     Key? key,
   }) : super(key: key);
 
@@ -385,12 +396,17 @@ class _TextFieldIcon extends StatefulWidget {
 
 class _TextFieldIconState extends State<_TextFieldIcon> {
   late final TextEditingController _controller;
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.value);
+    _focusNode.addListener(_onFocusChanged);
   }
+
+  // Only repaints the field outline; focus behaviour itself is untouched.
+  void _onFocusChanged() => setState(() {});
 
   @override
   void didUpdateWidget(covariant _TextFieldIcon old) {
@@ -411,6 +427,7 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -428,8 +445,11 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
 
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
+    final focused = _focusNode.hasFocus;
+
     final textField = TextField(
       controller: _controller,
+      focusNode: _focusNode,
       keyboardType: widget.keyboardType,
       obscureText: widget.obscureText,
       textAlign: shouldForceLTR
@@ -439,7 +459,10 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
       decoration: InputDecoration(
         border: InputBorder.none,
         hintText: widget.hint,
-        hintStyle: AppTextStyles.hintText.copyWith(height: 1.3),
+        hintStyle: AppTextStyles.hintText.copyWith(
+          color: AuthInputStyle.hint(colors),
+          height: 1.3,
+        ),
         isCollapsed: true, // prevents odd vertical shifts
         contentPadding: EdgeInsets.zero, // keeps hint snug near icon
       ),
@@ -454,6 +477,19 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
       ),
+      // Painted over the existing box, so it is the single field boundary and
+      // adds no layout size or padding.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AuthInputStyle.border(
+            colors,
+            focused: focused,
+            hasError: widget.hasError,
+          ),
+          width: AuthInputStyle.borderWidth,
+        ),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
@@ -462,7 +498,14 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
               widget.iconAsset!,
               width: 24,
               height: 24,
-              colorFilter: ColorFilter.mode(colors.primary, BlendMode.srcIn),
+              colorFilter: ColorFilter.mode(
+                AuthInputStyle.icon(
+                  colors,
+                  focused: focused,
+                  hasError: widget.hasError,
+                ),
+                BlendMode.srcIn,
+              ),
             ),
           const SizedBox(width: 12),
           Expanded(

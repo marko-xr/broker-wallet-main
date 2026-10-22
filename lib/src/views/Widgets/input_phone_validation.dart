@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/common/utils/uae_phone_input.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
@@ -19,6 +20,11 @@ class PhoneInputWidget extends StatefulWidget {
   final bool showError; // Control when to show error
   final bool validateInternally; // Whether to validate internally
 
+  /// Opt-in Login/Signup styling: one [AuthInputStyle] outline painted over the
+  /// existing box and the auth hint color. Off by default, so every other
+  /// screen keeps its current look.
+  final bool outlined;
+
   const PhoneInputWidget({
     Key? key,
     required this.countryCode,
@@ -28,6 +34,7 @@ class PhoneInputWidget extends StatefulWidget {
     this.phoneError,
     this.showError = false,
     this.validateInternally = true,
+    this.outlined = false,
   }) : super(key: key);
 
   @override
@@ -37,10 +44,12 @@ class PhoneInputWidget extends StatefulWidget {
 class _PhoneInputWidgetState extends State<PhoneInputWidget> {
   late TextEditingController _controller;
   String? _internalError;
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
+    _focusNode.addListener(_onFocusChanged);
     _controller = TextEditingController(
       text: UaePhoneInput.displayFor(widget.value),
     );
@@ -63,8 +72,14 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
     }
   }
 
+  // Only repaints the outlined border; focus behaviour itself is untouched.
+  void _onFocusChanged() {
+    if (widget.outlined && mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -104,9 +119,23 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
           decoration: BoxDecoration(
             color: colors.surface,
             borderRadius: BorderRadius.circular(10),
-            border:
-                hasError ? Border.all(color: colors.error, width: 1.5) : null,
+            border: !widget.outlined && hasError
+                ? Border.all(color: colors.error, width: 1.5)
+                : null,
           ),
+          foregroundDecoration: widget.outlined
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AuthInputStyle.border(
+                      colors,
+                      focused: _focusNode.hasFocus,
+                      hasError: hasError,
+                    ),
+                    width: AuthInputStyle.borderWidth,
+                  ),
+                )
+              : null,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           // Only this row is forced LTR; the screen and its label keep the
           // app direction.
@@ -141,6 +170,7 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
+                    focusNode: _focusNode,
                     keyboardType: TextInputType.phone,
                     inputFormatters: [UaeNationalPhoneInputFormatter()],
                     textDirection: TextDirection.ltr,
@@ -149,7 +179,12 @@ class _PhoneInputWidgetState extends State<PhoneInputWidget> {
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       hintText: widget.localization.translate('phoneHint'),
-                      hintStyle: AppTextStyles.hintText.copyWith(height: 1.3),
+                      hintStyle: AppTextStyles.hintText.copyWith(
+                        color: widget.outlined
+                            ? AuthInputStyle.hint(colors)
+                            : null,
+                        height: 1.3,
+                      ),
                       counterText: '',
                       isCollapsed: true, // tighter, relies on container height
                       contentPadding: EdgeInsets.zero,

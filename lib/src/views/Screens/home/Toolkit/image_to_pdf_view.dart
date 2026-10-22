@@ -15,6 +15,7 @@ import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_usage_gate.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_wiring.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
 import 'package:broker_wallet/src/viewmodels/image_to_pdf/image_pdf_viewmodel.dart';
 
 /// The Images to PDF tool: pick or photograph images, arrange them, choose the
@@ -229,6 +230,22 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
     }
   }
 
+  /// Why a document could not be opened, shared or exported: the phone could
+  /// not fetch it from the account (a connection problem, or no room), or its
+  /// file is simply not there.
+  String _openFailureMessage() {
+    switch (_vm.lastOpenFailure) {
+      case ToolkitEnsureResult.unavailable:
+        return _localization.translate('toolkitDocumentUnavailable');
+      case ToolkitEnsureResult.storageFull:
+        return _localization.translate('i2pErrStorageFull');
+      case ToolkitEnsureResult.gone:
+      case ToolkitEnsureResult.ready:
+      case null:
+        return _localization.translate('documentFileNotFound');
+    }
+  }
+
   // Share converted documents under their titles
   Future<void> _shareDocuments(List<ImagePdfDocument> documents) async {
     if (documents.isEmpty) return;
@@ -240,7 +257,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
       if (!preparation.isShareable) {
         _showToast(
           preparation.unavailable.isNotEmpty
-              ? localization.translate('documentFileNotFound')
+              ? _openFailureMessage()
               : localization.translate('failedToShareDocuments'),
           Colors.red,
         );
@@ -271,7 +288,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
     final file = await _vm.openableFile(document);
     if (!mounted) return;
     if (file == null) {
-      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      _showToast(_openFailureMessage(), Colors.red);
       return;
     }
     await Navigator.of(context).push(
@@ -570,7 +587,14 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
         Colors.green,
       );
     } on ImagePdfException catch (e) {
-      if (mounted) _showToast(_failureMessage(e.kind), Colors.red);
+      if (mounted) {
+        _showToast(
+          e.kind == ImagePdfFailure.fileMissing && _vm.lastOpenFailure != null
+              ? _openFailureMessage()
+              : _failureMessage(e.kind),
+          Colors.red,
+        );
+      }
     } catch (e) {
       if (mounted) {
         _showToast(_failureMessage(ImagePdfFailure.exportFailed), Colors.red);
@@ -768,14 +792,23 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
             },
           ),
         ] else if (_vm.documents.isEmpty) ...[
-          if (_vm.loadFailed)
+          // The library is only called empty once it has really been read.
+          if (_vm.isWaitingForAccount)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else if (_vm.loadFailed)
             SliverToBoxAdapter(
               child: _buildLoadFailed(localization, colors),
+            )
+          else
+            // Empty state when no documents exist
+            SliverToBoxAdapter(
+              child: _buildEmptyState(localization, colors),
             ),
-          // Empty state when no documents exist
-          SliverToBoxAdapter(
-            child: _buildEmptyState(localization, colors),
-          ),
           if (_vm.legacyDocumentCount > 0)
             SliverToBoxAdapter(
               child: _buildNotice(
@@ -1885,7 +1918,10 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
                   message: localization.translate('i2pConverting'),
                   accent: _green,
                 ),
-              ),
+              )
+            else if (_vm.isFetchingCloud)
+              // A document of the account is being opened: the spinner alone.
+              Positioned.fill(child: ToolProgressOverlay(accent: _green)),
           ],
         );
       },

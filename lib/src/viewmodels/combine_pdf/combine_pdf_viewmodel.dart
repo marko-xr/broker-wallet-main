@@ -16,6 +16,7 @@ import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_library.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_diagnostics.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_download_service.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sync_journal.dart';
@@ -181,6 +182,8 @@ class CombinePdfViewModel extends ChangeNotifier {
   StreamSubscription<String>? _cloudDeletions;
   Timer? _cloudTimer;
   bool _reconciling = false;
+  bool _reconcileAgain = false;
+  ToolkitRemoteStatus _remoteStatus = ToolkitRemoteStatus.notAsked;
   bool _cloudUnreachable = false;
   ToolkitFailure? _cloudFailure;
   Map<String, ToolkitDocumentSyncState> _cloudStates =
@@ -220,8 +223,27 @@ class CombinePdfViewModel extends ChangeNotifier {
 
   CombinePlan get plan => _plan;
   List<CombinedPdf> get documents => _documents;
+
   bool get isLoading => _loading;
-  bool get loadFailed => _loadFailed;
+
+  /// Nothing is listed yet and the account has not answered, so "no documents"
+  /// would be a guess: the screen waits instead of calling the library empty.
+  bool get isWaitingForAccount =>
+      !_loading &&
+      _documents.isEmpty &&
+      _cloud != null &&
+      _remoteStatus == ToolkitRemoteStatus.notAsked;
+
+  /// The library could not be read: the phone's list failed, or there is no
+  /// document to show and the account's list could not be read.
+  bool get loadFailed => _loadFailed || libraryUnavailable;
+
+  /// Nothing is listed and the account could not be asked, so "no documents"
+  /// would be a guess.
+  bool get libraryUnavailable =>
+      _documents.isEmpty &&
+      _cloud != null &&
+      _remoteStatus == ToolkitRemoteStatus.unavailable;
 
   /// Files are being picked or checked. The selection is locked meanwhile.
   bool get isChecking => _checking;
@@ -383,6 +405,8 @@ class CombinePdfViewModel extends ChangeNotifier {
     final cloud = _cloud;
     _cloud = null;
     _reconciling = false;
+    _reconcileAgain = false;
+    _remoteStatus = ToolkitRemoteStatus.notAsked;
     _cloudUnreachable = false;
     _cloudFailure = null;
     _cloudStates = const <String, ToolkitDocumentSyncState>{};
@@ -409,7 +433,31 @@ class CombinePdfViewModel extends ChangeNotifier {
     _cloudTimer = Timer.periodic(_cloudSyncInterval, (_) {
       if (!_disposed && epoch == _epoch) unawaited(cloud.syncDue());
     });
-    unawaited(cloud.start());
+    final started = cloud.start();
+    unawaited(started);
+    // The cards of the account's last list appear before it answers (after the
+    // journal is read, so a delete that is waiting for the server stays hidden).
+    _track(started.then((_) => _showCachedRemote(cloud, epoch)));
+  }
+
+  /// Lists the account's documents from the copy of its last list, unless the
+  /// account has already answered. A copy that cannot be read is no copy.
+  Future<void> _showCachedRemote(ToolkitCloudLibrary cloud, int epoch) async {
+    final cached = await cloud.cachedRemote(ToolkitDocumentType.combinePdfs);
+    if (_disposed ||
+        epoch != _epoch ||
+        cached.isEmpty ||
+        _remoteStatus == ToolkitRemoteStatus.loaded) {
+      return;
+    }
+    _remoteById = <String, ToolkitDocumentMetadata>{
+      for (final m in cached) m.documentId: m,
+    };
+    _remoteOnly = <CombinedPdf>[
+      for (final m in cached) _listedFromCloud(m),
+    ];
+    _merge();
+    _notify();
   }
 
   void _track(Future<void> work) {
@@ -554,7 +602,7 @@ class CombinePdfViewModel extends ChangeNotifier {
     final localIds = <String>{for (final d in _localDocuments) d.id};
     final onlyCloud = <CombinedPdf>[
       for (final d in _remoteOnly)
-        if (!localIds.contains(d.id)) d,
+        if (!localIds.contains(d.id) && !_isDeleting(cloud, d.id)) d,
     ];
     _remoteOnlyIds = <String>{for (final d in onlyCloud) d.id};
     final merged = <CombinedPdf>[...listed, ...onlyCloud]..sort((a, b) {
@@ -586,7 +634,13 @@ class CombinePdfViewModel extends ChangeNotifier {
   /// keeps what was shown and says the cloud could not be reached.
   Future<void> _reconcile(int epoch) async {
     final cloud = _cloud;
-    if (cloud == null || _reconciling) return;
+    if (cloud == null) return;
+    if (_reconciling) {
+      // Asked again while a comparison runs (the phone's list changed): it runs
+      // once more when this one ends, never silently dropped.
+      _reconcileAgain = true;
+      return;
+    }
     _reconciling = true;
     try {
       final result = await cloud.reconcile(
@@ -611,19 +665,35 @@ class CombinePdfViewModel extends ChangeNotifier {
       ];
       _cloudUnreachable = false;
       _cloudFailure = null;
+      _remoteStatus = ToolkitRemoteStatus.loaded;
     } on ToolkitDocumentException catch (error) {
       if (_disposed || epoch != _epoch) return;
+      // The library has already named the step that failed. A list that fails
+      // after an earlier one succeeded keeps that answer (an account with no
+      // documents stays an empty library, not an error).
       _cloudUnreachable = true;
       _cloudFailure = error.failure;
-    } catch (_) {
+      if (_remoteStatus != ToolkitRemoteStatus.loaded) {
+        _remoteStatus = ToolkitRemoteStatus.unavailable;
+      }
+    } catch (error) {
       if (_disposed || epoch != _epoch) return;
       _cloudUnreachable = true;
       _cloudFailure = ToolkitFailure.unavailable;
+      if (_remoteStatus != ToolkitRemoteStatus.loaded) {
+        _remoteStatus = ToolkitRemoteStatus.unavailable;
+      }
+      ToolkitDiagnostics.report('sync-failed',
+          type: ToolkitDocumentType.combinePdfs, error: error);
     } finally {
       _reconciling = false;
     }
     _merge();
     _notify();
+    if (_reconcileAgain && !_disposed && epoch == _epoch) {
+      _reconcileAgain = false;
+      _track(_reconcile(epoch));
+    }
   }
 
   /// Asks the cloud again now (a pull to refresh, or coming back to the screen).
@@ -1040,16 +1110,37 @@ class CombinePdfViewModel extends ChangeNotifier {
       await refresh();
       return true;
     } on ToolkitDocumentException catch (error) {
+      ToolkitDiagnostics.report('open-failed',
+          type: ToolkitDocumentType.combinePdfs, documentId: id, error: error);
+      if (error.failure == ToolkitFailure.documentDeleted ||
+          error.failure == ToolkitFailure.documentNotFound) {
+        // The account no longer holds it (deleted elsewhere): not listed any more.
+        _remoteOnly = <CombinedPdf>[
+          for (final d in _remoteOnly)
+            if (d.id != id) d,
+        ];
+        _remoteById = <String, ToolkitDocumentMetadata>{
+          for (final e in _remoteById.entries)
+            if (e.key != id) e.key: e.value,
+        };
+        _merge();
+        _openFailure = CombinePdfFailure.notFound;
+        return false;
+      }
       _openFailure = error.failure == ToolkitFailure.insufficientStorage
           ? CombinePdfFailure.storageFull
           : CombinePdfFailure.cloudUnavailable;
       return false;
     } on CombinePdfException catch (error) {
+      ToolkitDiagnostics.report('open-not-stored',
+          type: ToolkitDocumentType.combinePdfs, documentId: id, error: error);
       _openFailure = error.kind == CombinePdfFailure.storageFull
           ? CombinePdfFailure.storageFull
           : CombinePdfFailure.cloudUnavailable;
       return false;
-    } catch (_) {
+    } catch (error) {
+      ToolkitDiagnostics.report('open-failed',
+          type: ToolkitDocumentType.combinePdfs, documentId: id, error: error);
       _openFailure = CombinePdfFailure.cloudUnavailable;
       return false;
     } finally {

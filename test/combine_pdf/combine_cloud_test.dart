@@ -15,6 +15,7 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_libra
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sync_journal.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_transport.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_remote_cache.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_sha256.dart';
 
 import '../toolkit_documents/toolkit_fakes.dart';
@@ -45,6 +46,7 @@ void main() {
     FakeToolkitTransport transport, {
     String user = accountA,
     List<DefaultToolkitCloudLibrary>? libraries,
+    ToolkitRemoteCache? cache,
   }) {
     late CombineHarness harness;
     var counter = 0;
@@ -60,6 +62,7 @@ void main() {
           files: files,
           currentAccountId: () => harness.user,
           clock: () => now,
+          remoteCache: cache,
         );
         libraries?.add(library);
         return library;
@@ -171,6 +174,61 @@ void main() {
               .openableFile(second.viewModel.documentById(listed.id)!),
           isNotNull);
       expect(transport.downloadCalls, 1);
+    });
+
+    test('a list that could not be read is not shown as an empty library',
+        () async {
+      final transport = FakeToolkitTransport(accountA)
+        ..failNext('listPage', ToolkitFailure.unavailable);
+      final h = make(transport);
+      await h.viewModel.start();
+      await waitFor(() => h.viewModel.libraryUnavailable,
+          what: 'the failed list');
+      expect(h.viewModel.documents, isEmpty);
+      expect(h.viewModel.isLoading, isFalse);
+      expect(h.viewModel.loadFailed, isTrue);
+
+      // The screen's retry, with the account reachable again.
+      await h.viewModel.refresh();
+      await waitFor(() => !h.viewModel.libraryUnavailable, what: 'the retry');
+      expect(h.viewModel.loadFailed, isFalse);
+    });
+
+    test('the last list is shown before the account answers, and stays',
+        () async {
+      final cache = InMemoryToolkitRemoteCache();
+      final transport = FakeToolkitTransport(accountA);
+      final first = make(transport, cache: cache);
+      await first.viewModel.start();
+      final original = await combineOne(first);
+      await waitFor(() => saved(first, original.id));
+      // A comparison that ran after the upload wrote the list to the cache.
+      for (var i = 0;
+          i < 500 &&
+              (await cache.read(ToolkitDocumentType.combinePdfs)).isEmpty;
+          i++) {
+        await first.viewModel.refresh();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(await cache.read(ToolkitDocumentType.combinePdfs), hasLength(1));
+
+      // The reinstalled app, offline: the account cannot be asked at all.
+      final offline = FakeToolkitTransport(accountA)
+        ..failNext('listPage', ToolkitFailure.unavailable, times: 50);
+      final second = make(offline, cache: cache);
+      await second.viewModel.start();
+      await waitFor(
+        () => second.viewModel.documents.any((d) => d.id == original.id),
+        what: 'the cached card',
+      );
+      await waitFor(() => second.viewModel.cloudUnreachable,
+          what: 'the failed list');
+      final listed = second.viewModel.documents.single;
+      expect(listed.name, 'Lease pack');
+      expect(second.viewModel.libraryUnavailable, isFalse,
+          reason: 'cards are shown, so the library is not "unavailable"');
+      expect(second.viewModel.cloudStateOf(listed.id),
+          ToolkitDocumentSyncState.downloadRequired);
     });
 
     test('a corrupted download stores nothing and leaves it listed', () async {

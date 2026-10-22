@@ -2,6 +2,7 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/document_view.dart';
@@ -220,7 +221,10 @@ class _SignatureScreenState extends State<SignatureScreen> {
     final file = await _vm.openableFile(document);
     if (!mounted) return;
     if (file == null) {
-      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      _showToast(
+        signatureOpenFailureMessage(_localization, _vm.lastOpenFailure),
+        Colors.red,
+      );
       return;
     }
     await Navigator.of(context).push(
@@ -252,7 +256,12 @@ class _SignatureScreenState extends State<SignatureScreen> {
       );
     } on SignatureException catch (e) {
       if (mounted) {
-        _showToast(signatureFailureMessage(localization, e.kind), Colors.red);
+        _showToast(
+          e.kind == SignatureFailure.fileMissing && _vm.lastOpenFailure != null
+              ? signatureOpenFailureMessage(localization, _vm.lastOpenFailure)
+              : signatureFailureMessage(localization, e.kind),
+          Colors.red,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -836,7 +845,40 @@ class _SignatureScreenState extends State<SignatureScreen> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _vm,
-      builder: (context, _) => _buildScaffold(context),
+      builder: (context, _) => Stack(
+        children: [
+          _buildScaffold(context),
+          // A document of the account is being opened: the spinner alone, and
+          // the taps wait for it.
+          if (_vm.isFetchingCloud)
+            const Positioned.fill(child: ToolProgressOverlay()),
+        ],
+      ),
+    );
+  }
+
+  /// The library could not be read (the account could not be asked and the
+  /// phone holds nothing to show): an ordinary message with a retry, never an
+  /// empty library.
+  Widget _buildLoadFailed(AppLocalizations localization, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          Icon(Icons.error_outline, size: 56, color: theme.colorScheme.error),
+          const SizedBox(height: 12),
+          Text(
+            localization.translate('toolkitLibraryUnavailable'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: _vm.refresh,
+            child: Text(localization.translate('retry')),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1011,6 +1053,16 @@ class _SignatureScreenState extends State<SignatureScreen> {
                   ),
                 ),
               ),
+          ] else if (_vm.isWaitingForAccount) ...[
+            // The library is called empty only once it has really been read.
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          ] else if (_vm.loadFailed) ...[
+            SliverToBoxAdapter(child: _buildLoadFailed(localization, theme)),
           ] else ...[
             // Empty state
             SliverToBoxAdapter(

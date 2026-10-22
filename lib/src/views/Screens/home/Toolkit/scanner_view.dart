@@ -3,6 +3,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_review_screen.dart';
@@ -14,6 +15,7 @@ import 'package:broker_wallet/src/services/scanner/scan_models.dart';
 import 'package:broker_wallet/src/services/scanner/scan_result.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_wiring.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 
 /// The document Scanner: scan with the phone's own scanner, review, save to the
@@ -202,7 +204,7 @@ class _ScannerViewState extends State<ScannerView> {
     final file = await _vm.openableFile(document);
     if (!mounted) return;
     if (file == null) {
-      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      _showToast(_openFailureMessage(), Colors.red);
       return;
     }
     final Widget screen = document.format == ExportFormat.pdf
@@ -211,6 +213,22 @@ class _ScannerViewState extends State<ScannerView> {
     await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => screen,
     ));
+  }
+
+  /// Why a document could not be opened, shared or exported: the phone could
+  /// not fetch it from the account (a connection problem, or no room), or its
+  /// file is simply not there.
+  String _openFailureMessage() {
+    switch (_vm.lastOpenFailure) {
+      case ToolkitEnsureResult.unavailable:
+        return _localization.translate('toolkitDocumentUnavailable');
+      case ToolkitEnsureResult.storageFull:
+        return _localization.translate('scannerErrStorageFull');
+      case ToolkitEnsureResult.gone:
+      case ToolkitEnsureResult.ready:
+      case null:
+        return _localization.translate('documentFileNotFound');
+    }
   }
 
   Future<void> _shareDocuments(List<ScannerDocument> documents) async {
@@ -222,7 +240,7 @@ class _ScannerViewState extends State<ScannerView> {
       if (!preparation.isShareable) {
         _showToast(
           preparation.unavailable.isNotEmpty
-              ? _localization.translate('documentFileNotFound')
+              ? _openFailureMessage()
               : _localization.translate('failedToShareDocuments'),
           Colors.red,
         );
@@ -264,7 +282,14 @@ class _ScannerViewState extends State<ScannerView> {
         Colors.green,
       );
     } on ScannerException catch (e) {
-      if (mounted) _showToast(_failureMessage(e.kind), Colors.red);
+      if (mounted) {
+        _showToast(
+          e.kind == ScannerFailure.fileMissing && _vm.lastOpenFailure != null
+              ? _openFailureMessage()
+              : _failureMessage(e.kind),
+          Colors.red,
+        );
+      }
     } catch (e) {
       if (mounted) {
         _showToast(_failureMessage(ScannerFailure.exportFailed), Colors.red);
@@ -644,15 +669,23 @@ class _ScannerViewState extends State<ScannerView> {
     return ListenableBuilder(
       listenable: _vm,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: colors.surface,
-          extendBodyBehindAppBar: true,
-          resizeToAvoidBottomInset: false,
-          appBar: _buildAdvancedAppBar(localization, colors),
-          body: _buildBody(localization, colors),
-          floatingActionButton: _buildAdvancedFAB(localization),
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerDocked,
+        return Stack(
+          children: [
+            Scaffold(
+              backgroundColor: colors.surface,
+              extendBodyBehindAppBar: true,
+              resizeToAvoidBottomInset: false,
+              appBar: _buildAdvancedAppBar(localization, colors),
+              body: _buildBody(localization, colors),
+              floatingActionButton: _buildAdvancedFAB(localization),
+              floatingActionButtonLocation:
+                  FloatingActionButtonLocation.centerDocked,
+            ),
+            // A document of the account is being opened: the spinner alone,
+            // and the taps wait for it.
+            if (_vm.isFetchingCloud)
+              const Positioned.fill(child: ToolProgressOverlay()),
+          ],
         );
       },
     );
@@ -792,7 +825,7 @@ class _ScannerViewState extends State<ScannerView> {
                     childCount: documents.length,
                   ),
                 ),
-        ] else if (_vm.isLoading)
+        ] else if (_vm.isLoading || _vm.isWaitingForAccount)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(40),

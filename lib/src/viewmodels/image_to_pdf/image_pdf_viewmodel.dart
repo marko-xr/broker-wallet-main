@@ -20,6 +20,7 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_libra
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_download_service.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_transport.dart';
 
 /// Builds the cloud library of one signed-in account for Images to PDF, or
 /// returns null when this build keeps the tool local. [files] finds the stored
@@ -254,6 +255,11 @@ class ImagePdfViewModel extends ChangeNotifier {
   // whose delete the user asked for and the server has not confirmed yet.
   List<ImagePdfDocument> _visible = const <ImagePdfDocument>[];
 
+  // What the screen lists: the phone's documents plus the ones only the account
+  // holds, shown from their metadata (their file is fetched when one is opened).
+  List<ImagePdfDocument> _listed = const <ImagePdfDocument>[];
+  ToolkitEnsureResult? _openFailure;
+
   final List<ImagePdfItem> _items = <ImagePdfItem>[];
   ImagePdfSettings _settings = const ImagePdfSettings();
   String _password = '';
@@ -279,13 +285,43 @@ class ImagePdfViewModel extends ChangeNotifier {
   List<ImagePdfItem> get items => List<ImagePdfItem>.unmodifiable(_items);
   ImagePdfSettings get settings => _settings;
   ImagePdfDraft? get draft => _draft;
-  List<ImagePdfDocument> get documents => _visible;
+  List<ImagePdfDocument> get documents => _listed;
 
-  /// The state of the documents in the user's account, for the status line.
+  /// The state of the documents in the user's account.
   ToolkitCloudSummary get cloudSummary =>
       _cloud?.summary() ?? ToolkitCloudSummary.off;
+
   bool get isLoading => _loading;
-  bool get loadFailed => _loadFailed;
+
+  /// Nothing is listed yet and the account has not answered, so "no documents"
+  /// would be a guess: the screen waits instead of calling the library empty.
+  bool get isWaitingForAccount =>
+      !_loading &&
+      _listed.isEmpty &&
+      _cloud != null &&
+      _cloud!.remoteStatus == ToolkitRemoteStatus.notAsked;
+
+  /// The library could not be read: the phone's list failed, or there is no
+  /// document to show and the account's list could not be read.
+  bool get loadFailed => _loadFailed || libraryUnavailable;
+
+  /// Nothing is listed and the account could not be asked, so "no documents"
+  /// would be a guess.
+  bool get libraryUnavailable =>
+      _listed.isEmpty &&
+      _cloud != null &&
+      _cloud!.remoteStatus == ToolkitRemoteStatus.unavailable;
+
+  /// [id] is a document of the account that is not on the phone yet; opening,
+  /// sharing or exporting it fetches it.
+  bool isCloudOnly(String id) => _cloud?.isRemoteOnly(id) ?? false;
+
+  /// A document is being fetched from the account for the user.
+  bool get isFetchingCloud => _cloud?.isFetching ?? false;
+
+  /// Why the last open, share or export could not bring a document of the
+  /// account onto the phone; null when it did not try or worked.
+  ToolkitEnsureResult? get lastOpenFailure => _openFailure;
 
   /// Pictures are being picked or copied.
   bool get isAdding => _adding;
@@ -315,7 +351,7 @@ class ImagePdfViewModel extends ChangeNotifier {
   int get selectedCount => _selected.length;
 
   List<ImagePdfDocument> get selectedDocuments => <ImagePdfDocument>[
-        for (final d in _documents)
+        for (final d in _listed)
           if (_selected.contains(d.id)) d
       ];
 
@@ -402,6 +438,8 @@ class ImagePdfViewModel extends ChangeNotifier {
     _detachCloud();
     _visible = const <ImagePdfDocument>[];
     _documents = const <ImagePdfDocument>[];
+    _listed = const <ImagePdfDocument>[];
+    _openFailure = null;
     _missing = const <String>{};
     _selected.clear();
     _selectionMode = false;
@@ -457,7 +495,7 @@ class ImagePdfViewModel extends ChangeNotifier {
       _missing = library.missingIds;
       _loadFailed = false;
       _rebuildVisible();
-      final ids = _documents.map((d) => d.id).toSet();
+      final ids = _listed.map((d) => d.id).toSet();
       _selected.removeWhere((id) => !ids.contains(id));
     } catch (_) {
       if (_disposed || epoch != _epoch) return;
@@ -478,7 +516,29 @@ class ImagePdfViewModel extends ChangeNotifier {
             for (final d in _documents)
               if (!cloud.isDeleting(d.id)) d,
           ];
+    _listed = cloud == null
+        ? _visible
+        : mergeToolkitDocuments<ImagePdfDocument>(
+            local: _visible,
+            remote: cloud.remoteOnly,
+            idOf: (d) => d.id,
+            createdAtOf: (d) => d.createdAt,
+            fromRemote: _listedFromAccount,
+          );
   }
+
+  /// The card of a document only the account holds, from its metadata. The count
+  /// of pictures it was made from is not kept in the account (shown as unknown).
+  ImagePdfDocument _listedFromAccount(ToolkitDocumentMetadata m) =>
+      ImagePdfDocument(
+        id: m.documentId,
+        fileName: '${m.documentId}.pdf',
+        name: m.title,
+        createdAt: m.sourceCreatedAt,
+        fileSize: m.sizeBytes,
+        pageCount: m.pageCount ?? 0,
+        imageCount: 0,
+      );
 
   void _attachCloud(String uid, int epoch) {
     final makeCloud = _cloudFactory;
@@ -550,14 +610,38 @@ class ImagePdfViewModel extends ChangeNotifier {
       } catch (_) {}
       return false;
     }
-    await store.restoreFromCloud(
-      id: document.documentId,
-      source: target,
-      name: document.title,
-      createdAt: document.sourceCreatedAt,
-      expectedSize: document.sizeBytes,
-    );
+    try {
+      await store.restoreFromCloud(
+        id: document.documentId,
+        source: target,
+        name: document.title,
+        createdAt: document.sourceCreatedAt,
+        expectedSize: document.sizeBytes,
+      );
+    } on ImagePdfException catch (error) {
+      if (error.kind == ImagePdfFailure.storageFull) {
+        throw const ToolkitDocumentException(
+            ToolkitFailure.insufficientStorage);
+      }
+      rethrow;
+    }
     return true;
+  }
+
+  /// Brings the account's copy of [document] onto the phone when the phone does
+  /// not list it. True when the document is on the phone afterwards; false sets
+  /// [lastOpenFailure]. Never touches a document the phone already holds.
+  Future<bool> _ensureLocal(ImagePdfDocument document) async {
+    final cloud = _cloud;
+    if (cloud == null || !cloud.isRemoteOnly(document.id)) return true;
+    final epoch = _epoch;
+    final result = await cloud.ensureLocal(document.id);
+    if (_disposed || epoch != _epoch) return false;
+    if (result == ToolkitEnsureResult.ready) return true;
+    _openFailure = result;
+    _rebuildVisible();
+    _notify();
+    return false;
   }
 
   /// A delete that waited for the network was confirmed by the server: the
@@ -1196,25 +1280,30 @@ class ImagePdfViewModel extends ChangeNotifier {
   }
 
   void toggleSelection(String id) {
-    if (!_documents.any((d) => d.id == id)) return;
+    if (!_listed.any((d) => d.id == id)) return;
     if (!_selected.remove(id)) _selected.add(id);
     _notify();
   }
 
   ImagePdfDocument? documentById(String id) {
-    for (final d in _documents) {
+    for (final d in _listed) {
       if (d.id == id) return d;
     }
     return null;
   }
 
   /// The stored file of [document] when it is the complete file that was saved,
-  /// otherwise null (the caller reports it missing).
+  /// otherwise null (the caller reports it missing, or says why it could not be
+  /// fetched: [lastOpenFailure]). A document only the account holds is fetched,
+  /// verified and stored first; from then on it is an ordinary local document.
   Future<File?> openableFile(ImagePdfDocument document) async {
     final store = _store;
     if (store == null || _userId == null) return null;
     final epoch = _epoch;
-    final intact = await store.isIntact(document);
+    _openFailure = null;
+    if (!await _ensureLocal(document)) return null;
+    final current = documentById(document.id) ?? document;
+    final intact = await store.isIntact(current);
     if (_disposed || epoch != _epoch) return null;
     if (!intact) {
       if (!_missing.contains(document.id)) {
@@ -1223,7 +1312,7 @@ class ImagePdfViewModel extends ChangeNotifier {
       }
       return null;
     }
-    return store.fileOf(document);
+    return store.fileOf(current);
   }
 
   /// The draft's file when it is still the current draft, for the PDF viewer.
@@ -1238,6 +1327,22 @@ class ImagePdfViewModel extends ChangeNotifier {
     _working = true;
     _notify();
     try {
+      final cloud = _cloud;
+      if (cloud != null && cloud.isRemoteOnly(id)) {
+        // Only the account holds it: the title is changed there.
+        final name = ImagePdfNaming.sanitizeDisplayName(newName);
+        if (name == null) return ImagePdfFailure.invalidName;
+        final clash = _listed.any(
+            (d) => d.id != id && d.name.toLowerCase() == name.toLowerCase());
+        if (clash) return ImagePdfFailure.nameInUse;
+        final renamed = await cloud.renameRemoteOnly(id, name);
+        if (_disposed || epoch != _epoch) {
+          return ImagePdfFailure.accountChanged;
+        }
+        if (!renamed) return ImagePdfFailure.writeFailed;
+        _rebuildVisible();
+        return null;
+      }
       final updated = await store.rename(id, newName);
       if (_disposed || epoch != _epoch) return ImagePdfFailure.accountChanged;
       // The phone's title is the user's; the account copy follows, and a failure
@@ -1271,12 +1376,24 @@ class ImagePdfViewModel extends ChangeNotifier {
       // file is removed when the confirmation arrives.
       var onPhone = wanted;
       var notDeletedInCloud = const <String>[];
+      final goneFromAccount = <String>{};
       final cloud = _cloud;
       if (cloud != null) {
+        // A document only the account holds has no file to remove: once the
+        // account has deleted it, it simply stops being listed.
+        final onlyAccount = <String>{
+          for (final id in wanted)
+            if (cloud.isRemoteOnly(id)) id,
+        };
         final split = await cloud.deleteFirst(wanted);
         if (_disposed || epoch != _epoch) return const <String>[];
-        onPhone = split.deleteLocally;
+        goneFromAccount.addAll(split.deleteLocally.where(onlyAccount.contains));
+        onPhone = <String>[
+          for (final id in split.deleteLocally)
+            if (!onlyAccount.contains(id)) id,
+        ];
         notDeletedInCloud = split.failed;
+        cloud.removeRemoteOnly(goneFromAccount);
       }
       final outcome = onPhone.isEmpty
           ? const ImagePdfDeleteOutcome(
@@ -1284,6 +1401,7 @@ class ImagePdfViewModel extends ChangeNotifier {
           : await store.delete(onPhone);
       if (_disposed || epoch != _epoch) return const <String>[];
       _selected.removeAll(outcome.deleted);
+      _selected.removeAll(goneFromAccount);
       await refresh();
       return <String>[
         ...outcome.failed,
@@ -1307,12 +1425,20 @@ class ImagePdfViewModel extends ChangeNotifier {
     final epoch = _epoch;
     final files = <({ImagePdfDocument document, File file})>[];
     final unavailable = <String>[];
+    _openFailure = null;
     for (final id in ids) {
-      final document = documentById(id);
+      var document = documentById(id);
       if (document == null) {
         unavailable.add(id);
         continue;
       }
+      // Sharing always uses a verified file on the phone, never a cloud link.
+      if (!await _ensureLocal(document)) {
+        unavailable.add(id);
+        continue;
+      }
+      if (_disposed || epoch != _epoch) return nothing;
+      document = documentById(id) ?? document;
       if (await store.isIntact(document)) {
         files.add((document: document, file: store.fileOf(document)));
       } else {
@@ -1336,7 +1462,7 @@ class ImagePdfViewModel extends ChangeNotifier {
   /// Throws an [ImagePdfException] when it did not work.
   Future<ScannerExportResult> exportDocument(String id) async {
     final store = _store;
-    final document = documentById(id);
+    var document = documentById(id);
     if (store == null || document == null) {
       throw const ImagePdfException(ImagePdfFailure.notFound);
     }
@@ -1345,8 +1471,16 @@ class ImagePdfViewModel extends ChangeNotifier {
     }
     final epoch = _epoch;
     _working = true;
+    _openFailure = null;
     _notify();
     try {
+      if (!await _ensureLocal(document)) {
+        throw const ImagePdfException(ImagePdfFailure.fileMissing);
+      }
+      if (_disposed || epoch != _epoch) {
+        throw const ImagePdfException(ImagePdfFailure.accountChanged);
+      }
+      document = documentById(id) ?? document;
       if (!await store.isIntact(document)) {
         _missing = <String>{..._missing, id};
         throw const ImagePdfException(ImagePdfFailure.fileMissing);

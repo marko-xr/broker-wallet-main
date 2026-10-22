@@ -417,6 +417,24 @@ class ToolkitDocumentMetadata {
 
   static final RegExp _sha256 = RegExp(r'^[0-9a-f]{64}$');
 
+  /// The Worker's own spelling of this document, so a copy kept on the phone
+  /// (see `ToolkitRemoteCache`) is read back by the same strict
+  /// [ToolkitDocumentMetadata.fromWorkerJson] and can never be looser than the
+  /// server's contract.
+  Map<String, Object?> toWorkerJson() => <String, Object?>{
+        'documentId': documentId,
+        'documentType': type.wireName,
+        'contentType': contentType.mime,
+        'title': title,
+        'sizeBytes': sizeBytes,
+        'pageCount': pageCount,
+        'contentSha256': contentSha256,
+        'sha256Verified': sha256Verified,
+        'sourceCreatedAt': sourceCreatedAt.toUtc().toIso8601String(),
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        'version': version,
+      };
+
   ToolkitDocumentMetadata copyWith({String? title, int? version}) =>
       ToolkitDocumentMetadata(
         documentId: documentId,

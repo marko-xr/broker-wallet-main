@@ -25,19 +25,22 @@ void main() {
 
   group('inactive in the app', () {
     // The four tools are wired to the cloud, each through its wiring and its
-    // list view model (Combine PDFs also through its screen, which shows the
-    // state of a document), and the one status line widget. Every other file
-    // stays free of the foundation.
+    // list view model. Three screens name the one result type that says why a
+    // document of the account could not be opened (to pick the message), and
+    // the one status line widget is kept, unused. Every other file stays free of
+    // the foundation.
     const wired = <String>{
       'lib/src/services/combine_pdf/combine_wiring.dart',
       'lib/src/viewmodels/combine_pdf/combine_pdf_viewmodel.dart',
-      'lib/src/views/Screens/home/Toolkit/combine_pdfs_view.dart',
       'lib/src/services/scanner/scanner_wiring.dart',
       'lib/src/viewmodels/scanner/scanner_viewmodel.dart',
+      'lib/src/views/Screens/home/Toolkit/scanner_view.dart',
       'lib/src/services/image_to_pdf/image_pdf_wiring.dart',
       'lib/src/viewmodels/image_to_pdf/image_pdf_viewmodel.dart',
+      'lib/src/views/Screens/home/Toolkit/image_to_pdf_view.dart',
       'lib/src/services/signature/signature_wiring.dart',
       'lib/src/viewmodels/signature/signature_library_viewmodel.dart',
+      'lib/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart',
       'lib/src/views/Widgets/toolkit_cloud_status_line.dart',
     };
 

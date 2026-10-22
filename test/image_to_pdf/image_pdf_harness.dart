@@ -171,6 +171,7 @@ class ImagePdfHarness {
     ImagePdfFileCopier? copier,
     Future<int> Function()? legacyCount,
     bool pickerCopiesInTemp = false,
+    ImagePdfCloudFactory? cloudFactory,
   })  : base = makeTempDir('base'),
         temp = makeTempDir('temp'),
         inputs = makeTempDir('in'),
@@ -198,6 +199,7 @@ class ImagePdfHarness {
       clock: clock ?? () => DateTime(2026, 10, 18, 9, 30),
       idGenerator: () => 'id${counter++}',
       copier: copier,
+      cloudFactory: cloudFactory,
     );
   }
 

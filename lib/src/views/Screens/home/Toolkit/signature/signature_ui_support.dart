@@ -3,6 +3,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
 
 /// The Document Signature tool's accent colours (the same reds the screens have
 /// always used).
@@ -77,6 +78,23 @@ String signatureFailureMessage(
     AppLocalizations localization, SignatureFailure failure) {
   return localization
       .translate(kSignatureFailureKeys[failure] ?? 'sigErrWrite');
+}
+
+/// Why a document of the account could not be opened, shared or exported: the
+/// phone could not fetch it (a connection problem, or no room), or its file is
+/// simply not there. [failure] is the library's `lastOpenFailure`.
+String signatureOpenFailureMessage(
+    AppLocalizations localization, ToolkitEnsureResult? failure) {
+  switch (failure) {
+    case ToolkitEnsureResult.unavailable:
+      return localization.translate('toolkitDocumentUnavailable');
+    case ToolkitEnsureResult.storageFull:
+      return localization.translate('sigErrStorageFull');
+    case ToolkitEnsureResult.gone:
+    case ToolkitEnsureResult.ready:
+    case null:
+      return localization.translate('documentFileNotFound');
+  }
 }
 
 /// Failures a second attempt can fix (as opposed to a file that must change).

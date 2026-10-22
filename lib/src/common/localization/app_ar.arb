@@ -3257,5 +3257,7 @@
   "toolkitCloudSignIn": "سجّل الدخول مرة أخرى لحفظ مستنداتك في حسابك",
   "toolkitCloudServerNotReady": "الحفظ في حسابك غير متاح على هذا الخادم بعد. تبقى مستنداتك على هذا الهاتف",
   "toolkitCloudOverLimit": "بعض المستندات تتجاوز حد التخزين في حسابك وتبقى على هذا الهاتف",
-  "toolkitCloudAttention": "تعذر حفظ بعض المستندات في حسابك وتبقى على هذا الهاتف",  "toolkitCloudTryAgain": "حاول مرة أخرى"
+  "toolkitCloudAttention": "تعذر حفظ بعض المستندات في حسابك وتبقى على هذا الهاتف",  "toolkitCloudTryAgain": "حاول مرة أخرى",
+  "toolkitDocumentUnavailable": "تعذر فتح هذا المستند الآن. تحقق من الاتصال وحاول مرة أخرى.",
+  "toolkitLibraryUnavailable": "تعذر تحميل مستنداتك. تحقق من الاتصال وحاول مرة أخرى."
 }

@@ -12,11 +12,13 @@ import 'package:flutter/material.dart';
 class ToolProgressOverlay extends StatelessWidget {
   const ToolProgressOverlay({
     super.key,
-    required this.message,
+    this.message,
     this.accent,
   });
 
-  final String message;
+  /// The one short line, or null for the spinner alone (for waiting that has
+  /// nothing worth saying, such as opening a document).
+  final String? message;
 
   /// The tool's color for the spinner; the theme's primary if null.
   final Color? accent;
@@ -34,7 +36,8 @@ class ToolProgressOverlay extends StatelessWidget {
         ),
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
+            constraints: BoxConstraints(
+                minWidth: message == null ? 0 : 220, maxWidth: 300),
             child: Material(
               color: colors.surface,
               borderRadius: BorderRadius.circular(16),
@@ -45,15 +48,17 @@ class ToolProgressOverlay extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      message,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
+                    if (message != null) ...[
+                      Text(
+                        message!,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     SizedBox(
                       width: 26,
                       height: 26,

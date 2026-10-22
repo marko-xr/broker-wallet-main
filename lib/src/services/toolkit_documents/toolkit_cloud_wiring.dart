@@ -23,6 +23,7 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_libra
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sync_journal.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_upload_coordinator.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_remote_cache.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_sha256.dart';
 
 abstract final class ToolkitCloudWiring {
@@ -61,6 +62,12 @@ abstract final class ToolkitCloudWiring {
         files: files,
         currentAccountId: currentAccountId,
         hasher: hashOffUiThread,
+        // The last list of the account's documents, so a tool's cards appear
+        // when its screen opens (metadata only, replaced by the next list).
+        remoteCache: FileToolkitRemoteCache(
+          directory: directory,
+          accountId: accountId,
+        ),
         shared: true,
       ),
     );

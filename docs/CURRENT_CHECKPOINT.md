@@ -15134,3 +15134,34 @@ NOW - owner: build a normal app (no dart-defines), sign in with a test account, 
 listed. Then tell the agent: a read-only SELECT shows the `ready` row in `broker-wallet-media`. Also run `flutter analyze --no-pub` and the Toolkit tests.
 NEXT - Privacy Policy / Terms / store disclosures before a store release; commit when the owner decides.
 STOP - no commit or push.
+
+## CHECKPOINT C3.6 — TOOLKIT LIBRARY: CARDS FROM METADATA, THE FILE ON OPEN (2026-10-22)
+
+Status: **SOURCE_CHANGED_UNVERIFIED — nothing was run.** The agent ran no analyzer, test, build, app or adb (only `dart format --output=none` parse checks, and `dart format` on the five NEW files). No hosted write, no Worker deployment, no R2 or SQL write, no commit. The eight `ready` documents (2 per tool, production bucket `broker-wallet-media`) were not touched and no replacement document was made.
+
+Owner decision applied (2026-10-22): a signed-in user opens Scanner, Signature, Combine PDFs or Images to PDF and sees the documents saved under the account, also after a reinstall; no cloud / restore / sync wording on the tool screens.
+
+Source causes found (from the code; the failing step on the phone is still unproven, and the Worker list/download code matches the Dart parser):
+- Scanner, Images to PDF, Signature: a card existed only after `ToolkitCloudSync._restore` had downloaded, verified AND stored the file (`library.download` then `store.restoreFromCloud`). Any failing step left the screen on the empty-library state with no trace (the failure was swallowed, three in a row stopped the pass).
+- Combine PDFs already listed from metadata, but a failed list only set a flag nothing showed (the screen said "no documents"), a comparison requested while another ran was dropped, the cards carried technical labels ("Saved to your account", "In your account, not on this phone yet"), a "Back up now" menu item and a "Downloading from your account…" overlay.
+- `DefaultToolkitCloudLibrary.reconcile`: a failing status lookup (for phone documents the list did not contain) threw away the account's listing too.
+- A card could be renamed or deleted before the first list of a session without reaching the account (the library did not know it yet).
+
+Done:
+- One metadata-first model for all four tools. `ToolkitCloudSync` (Scanner, Images to PDF, Signature) no longer downloads anything by itself: it keeps `remoteOnly` (the account's documents the phone lacks), `remoteStatus` (`notAsked | loaded | unavailable`) and `ensureLocal(id)` (download, verify, hand to the tool's store, once per id, classified result `ready | unavailable | storageFull | gone`). Combine PDFs keeps its own list path with the same status and fixes.
+- `ToolkitRemoteCache` (`toolkit_remote_cache.dart`): the last successful list of each tool and account, metadata only, in the tool's account folder (already excluded from backup), read back through the strict `fromWorkerJson`; shows the cards at once on the next visit and offline; replaced by every successful list; never an authority (opening still needs an authorized download). `DefaultToolkitCloudLibrary.cachedRemote` also lets rename/delete of such a card reach the account.
+- `reconcile`: a failed status lookup no longer hides the account's documents (the phone's documents are simply not queued that time).
+- Views: a card of the account opens, shares, exports, renames and deletes like any other (the view model fetches the file first; share/export never use a link). While the file is fetched: the existing progress overlay, spinner only (`ToolProgressOverlay.message` is optional now). A list that could not be read and has nothing to show is the tool's ordinary load-failed state with Retry (`toolkitLibraryUnavailable`, en + ar), never the empty state; the empty state appears only after the library was really read. A failed open is one ordinary toast (`toolkitDocumentUnavailable`, en + ar, or the tool's storage-full text).
+- Removed from the Combine PDFs card: the per-card cloud label and the "Back up now" menu item (the owner's rule: no technical cloud text, no backup workflow); the VM methods stay.
+- Internal diagnostics: `ToolkitDiagnostics` (`developer.log` name `toolkit-docs`, debug builds only): library step, tool, masked document id (last 6), failure category, HTTP status, Worker stable code. Never a URL, key, path, title, account id or raw error text.
+- Unused and untouched: `toolkit_cloud_status_line.dart` and the `toolkitCloud*` strings (the status line is not shown on any screen).
+
+Tests written, NOT run: `toolkit_cloud_sync_test.dart` (listing, open once, shared download, failed/unverified download, deleted elsewhere, unreachable list, cached list offline, delete/rename of a listed card, merge order), `toolkit_remote_cache_test.dart` (cache file + diagnostics masking), `scanner_cloud_test.dart`, `combine_cloud_test.dart`, new `image_pdf_cloud_test.dart` and `signature_cloud_test.dart`; the C1 source guard now lists the three views that name `ToolkitEnsureResult`.
+
+NOT verified: everything on the phone. The old restore's failing step is unidentified; the new code makes the next failure findable (`flutter run` prints `[toolkit-docs] step=list-ok|list-failed|open-failed ... failure=<category> status=<code> code=<worker code>`).
+
+NOW - owner: `flutter analyze --no-pub` on the touched files and `flutter test test/toolkit_documents test/combine_pdf test/scanner test/image_to_pdf test/signature`; then an in-place Debug update and the Samsung checks with the eight existing documents (no uninstall, no new documents).
+NEXT - after those pass: the uninstall / reinstall proof, then the legal text (Privacy Policy / Terms / store disclosures) before a store release.
+STOP - no commit or push; no hosted change.
+
+Owner update 2026-10-22: Samsung document listing in all four tools is OWNER VERIFIED (the previously saved documents appear). NOT separately confirmed: every download/open, clean uninstall-reinstall recovery, and production acceptance tests.

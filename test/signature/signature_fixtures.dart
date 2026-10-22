@@ -474,6 +474,7 @@ class SignatureHarness {
     Future<int> Function()? legacyCount,
     bool singleSubscriptionAuth = true,
     Stream<String?>? authStream,
+    SignatureCloudFactory? cloudFactory,
   })  : base = makeTempDir('sig_base'),
         temp = makeTempDir('sig_temp'),
         inputs = makeTempDir('sig_in'),
@@ -504,6 +505,7 @@ class SignatureHarness {
       idGenerator: () => 'id${counter++}',
       copier: copier,
       legacyDocumentCount: legacyCount,
+      cloudFactory: cloudFactory,
     );
   }
 

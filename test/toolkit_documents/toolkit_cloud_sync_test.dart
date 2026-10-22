@@ -15,13 +15,14 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_do
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sync_journal.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_transport.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_remote_cache.dart';
 
 import 'toolkit_fakes.dart';
 
 /// One tool's phone side (a list of documents and their files) wired to the
 /// account copy.
 class Rig {
-  Rig(this.transport) {
+  Rig(this.transport, {ToolkitRemoteCache? cache}) {
     dir = Directory.systemTemp.createTempSync('toolkit_sync_rig_');
     library = DefaultToolkitCloudLibrary(
       accountId: accountA,
@@ -30,6 +31,7 @@ class Rig {
       files: TempLocalFiles(dir),
       currentAccountId: () => accountA,
       clock: () => now,
+      remoteCache: cache,
     );
     sync = ToolkitCloudSync(
       type: ToolkitDocumentType.scanner,
@@ -119,8 +121,8 @@ class Rig {
 
 void main() {
   final rigs = <Rig>[];
-  Rig newRig([FakeToolkitTransport? transport]) {
-    final rig = Rig(transport ?? FakeToolkitTransport(accountA));
+  Rig newRig([FakeToolkitTransport? transport, ToolkitRemoteCache? cache]) {
+    final rig = Rig(transport ?? FakeToolkitTransport(accountA), cache: cache);
     rigs.add(rig);
     return rig;
   }
@@ -192,66 +194,313 @@ void main() {
     });
   });
 
-  group('restoring after a reinstall', () {
-    test('brings back what the account holds and the phone lacks', () async {
+  group('listing and opening after a reinstall', () {
+    test('lists what the account holds without downloading anything', () async {
       final rig = newRig();
-      final bytes = rig.holdInAccount(doc1, title: 'Passport');
+      rig.holdInAccount(doc1, title: 'Passport');
       expect(rig.local, isEmpty);
 
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.notAsked);
       await rig.run();
 
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded);
+      final listed = rig.sync.remoteOnly;
+      expect(listed.single.documentId, doc1);
+      expect(listed.single.title, 'Passport');
+      expect(rig.sync.isRemoteOnly(doc1), isTrue);
+      // The card needs no file: nothing was fetched or stored.
+      expect(rig.restored, isEmpty);
+      expect(rig.local, isEmpty);
+      expect(rig.transport.callCount('downloadTicket'), 0);
+      expect(rig.transport.callCount('downloadToFile'), 0);
+    });
+
+    test('opening a listed document downloads, verifies and stores it once',
+        () async {
+      final rig = newRig();
+      final bytes = rig.holdInAccount(doc1, title: 'Passport');
+      await rig.run();
+
+      final result = await rig.sync.ensureLocal(doc1);
+
+      expect(result, ToolkitEnsureResult.ready);
       expect(rig.restored, [doc1]);
       expect(rig.local.single.title, 'Passport');
       expect(File('${rig.dir.path}/$doc1').readAsBytesSync(), bytes);
-      expect(rig.sync.isRestoring, isFalse);
-      // The restored document is then recorded and confirmed as already held.
+      expect(rig.sync.isFetching, isFalse);
+      // It is an ordinary phone document now, and no longer a listed-only one.
+      expect(rig.sync.isRemoteOnly(doc1), isFalse);
+      expect(rig.sync.remoteOnly, isEmpty);
+      // The next pass records it and the server confirms it as already held.
+      await rig.run();
+      await rig.run();
       expect(rig.sync.summary().saved, 1);
-      expect(rig.transport.callCount('downloadToFile'), 1);
-    });
-
-    test('a document is restored once, however often the account is asked',
-        () async {
-      final rig = newRig();
-      rig.holdInAccount(doc1);
-      await rig.run();
-      await rig.run();
-      await rig.run();
       expect(rig.restored, [doc1]);
       expect(rig.transport.callCount('downloadToFile'), 1);
     });
 
-    test('brings the newest document back first', () async {
+    test('two requests for one document share one download', () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1);
+      await rig.run();
+      final results = await Future.wait(<Future<ToolkitEnsureResult>>[
+        rig.sync.ensureLocal(doc1),
+        rig.sync.ensureLocal(doc1),
+      ]);
+      expect(results, everyElement(ToolkitEnsureResult.ready));
+      expect(rig.restored, [doc1]);
+      expect(rig.transport.callCount('downloadToFile'), 1);
+    });
+
+    test('lists the newest document first', () async {
       final rig = newRig();
       rig.holdInAccount(doc1, title: 'Old');
       rig.holdInAccount(doc2, title: 'New');
       rig.transport.server[doc1]!.created = DateTime.utc(2026, 10, 1);
       rig.transport.server[doc2]!.created = DateTime.utc(2026, 10, 15);
       await rig.run();
-      expect(rig.restored, [doc2, doc1]);
+      expect(rig.sync.remoteOnly.map((d) => d.documentId), [doc2, doc1]);
     });
 
-    test('a document that was deleted on another phone is not brought back',
+    test('a failed download keeps the document listed and opening retries',
         () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1);
+      await rig.run();
+      rig.transport.failNext('downloadToFile', ToolkitFailure.unavailable);
+
+      expect(await rig.sync.ensureLocal(doc1), ToolkitEnsureResult.unavailable);
+      expect(rig.sync.isRemoteOnly(doc1), isTrue, reason: 'still listed');
+      expect(rig.restored, isEmpty);
+      expect(rig.local, isEmpty);
+
+      expect(await rig.sync.ensureLocal(doc1), ToolkitEnsureResult.ready);
+      expect(rig.restored, [doc1]);
+    });
+
+    test('a download that does not verify is never stored', () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1);
+      await rig.run();
+      final tampered = Uint8List.fromList(pdfBytes(128));
+      tampered[40] ^= 1;
+      rig.transport.downloadOverride = tampered;
+
+      expect(await rig.sync.ensureLocal(doc1), ToolkitEnsureResult.unavailable);
+      expect(rig.restored, isEmpty);
+      expect(rig.sync.isRemoteOnly(doc1), isTrue);
+    });
+
+    test('a document deleted on another phone drops off when it is opened',
+        () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1);
+      await rig.run();
+      rig.transport.server[doc1]!.status = 'deleted';
+
+      expect(await rig.sync.ensureLocal(doc1), ToolkitEnsureResult.gone);
+      expect(rig.sync.isRemoteOnly(doc1), isFalse);
+      expect(rig.sync.remoteOnly, isEmpty);
+      expect(rig.restored, isEmpty);
+    });
+
+    test('a document deleted on another phone is not listed at all', () async {
       final rig = newRig();
       rig.holdInAccount(doc1);
       rig.transport.server[doc1]!.status = 'deleted';
       await rig.run();
-      expect(rig.restored, isEmpty);
-      expect(rig.local, isEmpty);
+      expect(rig.sync.remoteOnly, isEmpty);
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded);
     });
 
-    test('an unreachable account is reported, and nothing is invented',
+    test('an unreachable account is "unavailable", never an empty library',
         () async {
       final rig = newRig();
       rig.holdInAccount(doc1);
       rig.transport.failNext('listPage', ToolkitFailure.unavailable);
       await rig.run();
-      expect(rig.restored, isEmpty);
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.unavailable);
+      expect(rig.sync.remoteOnly, isEmpty);
       expect(rig.sync.summary().notice, ToolkitCloudNotice.offline);
-      // The next pass, with the account reachable again, restores it.
+      // The next pass, with the account reachable again, lists it.
       await rig.run();
-      expect(rig.restored, [doc1]);
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded);
+      expect(rig.sync.remoteOnly.single.documentId, doc1);
       expect(rig.sync.summary().unreachable, isFalse);
+    });
+
+    test('a list that fails after a good one keeps an empty account empty',
+        () async {
+      final rig = newRig();
+      await rig.run();
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded);
+      expect(rig.sync.remoteOnly, isEmpty);
+
+      rig.transport.failNext('listPage', ToolkitFailure.unavailable);
+      await rig.run();
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded,
+          reason: 'the last answer was "nothing", and it is still the answer');
+      expect(rig.sync.summary().unreachable, isTrue);
+    });
+
+    test('the last list is shown at once and stays when the account is down',
+        () async {
+      final cache = InMemoryToolkitRemoteCache();
+      final first = newRig(null, cache);
+      first.holdInAccount(doc1, title: 'Passport');
+      await first.run();
+      expect((await cache.read(ToolkitDocumentType.scanner)).single.title,
+          'Passport');
+
+      // A later visit (or the reinstalled app's second launch) with no network.
+      final transport = FakeToolkitTransport(accountA)
+        ..failNext('listPage', ToolkitFailure.unavailable, times: 3);
+      final second = newRig(transport, cache);
+      second.sync.start();
+      await second.sync.settle();
+      expect(second.sync.remoteStatus, ToolkitRemoteStatus.notAsked);
+      expect(second.sync.remoteOnly.single.title, 'Passport');
+
+      await second.run();
+      expect(second.sync.remoteStatus, ToolkitRemoteStatus.unavailable);
+      expect(second.sync.remoteOnly.single.title, 'Passport',
+          reason: 'a failed list never empties the cards already shown');
+    });
+
+    test('a card shown from the last list can still be deleted for real',
+        () async {
+      final cache = InMemoryToolkitRemoteCache();
+      final first = newRig(null, cache);
+      final transport = first.transport;
+      first.holdInAccount(doc1);
+      await first.run();
+
+      // Same account and server, a new screen that has not listed yet.
+      final second = Rig(transport, cache: cache);
+      rigs.add(second);
+      second.sync.start();
+      await second.sync.settle();
+      expect(second.sync.remoteOnly.single.documentId, doc1);
+
+      final split = await second.sync.deleteFirst(<String>[doc1]);
+      expect(split.deleteLocally, [doc1]);
+      expect(transport.server[doc1]!.status, 'deleted');
+    });
+
+    test('a failed status lookup does not hide the account\'s documents',
+        () async {
+      final rig = newRig();
+      await rig.saveOnPhone(doc1);
+      rig.holdInAccount(doc2, title: 'From another phone');
+      rig.transport
+        ..failNext('authorize', ToolkitFailure.unavailable, times: 5)
+        ..failNext('statuses', ToolkitFailure.unavailable, times: 5);
+      await rig.run();
+      expect(rig.sync.remoteStatus, ToolkitRemoteStatus.loaded);
+      expect(rig.sync.remoteOnly.map((d) => d.documentId), [doc2]);
+    });
+
+    test('a listed document can be renamed in the account', () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1, title: 'Old name');
+      await rig.run();
+      expect(await rig.sync.renameRemoteOnly(doc1, 'New name'), isTrue);
+      expect(rig.transport.server[doc1]!.title, 'New name');
+      expect(rig.sync.remoteOnly.single.title, 'New name');
+
+      rig.transport.failNext('rename', ToolkitFailure.unavailable);
+      expect(await rig.sync.renameRemoteOnly(doc1, 'Another'), isFalse);
+      expect(rig.sync.remoteOnly.single.title, 'New name');
+    });
+
+    test('a deleted listed document stops being listed', () async {
+      final rig = newRig();
+      rig.holdInAccount(doc1);
+      await rig.run();
+      final split = await rig.sync.deleteFirst(<String>[doc1]);
+      expect(split.deleteLocally, [doc1]);
+      rig.sync.removeRemoteOnly(split.deleteLocally);
+      expect(rig.sync.remoteOnly, isEmpty);
+      expect(rig.transport.server[doc1]!.status, 'deleted');
+    });
+  });
+
+  group('merging the account\'s documents among the phone\'s', () {
+    ToolkitDocumentMetadata remote(String id, DateTime created) =>
+        ToolkitDocumentMetadata(
+          documentId: id,
+          type: ToolkitDocumentType.scanner,
+          contentType: ToolkitContentType.pdf,
+          title: 'r-$id',
+          sizeBytes: 10,
+          contentSha256: 'a' * 64,
+          sourceCreatedAt: created,
+          createdAt: created,
+          version: 1,
+        );
+
+    List<String> merge(
+        List<(String, DateTime)> local, List<ToolkitDocumentMetadata> remote) {
+      return mergeToolkitDocuments<(String, DateTime)>(
+        local: local,
+        remote: remote,
+        idOf: (d) => d.$1,
+        createdAtOf: (d) => d.$2,
+        fromRemote: (m) => (m.documentId, m.sourceCreatedAt),
+      ).map((d) => d.$1).toList();
+    }
+
+    test('nothing to add leaves the phone\'s list exactly as it is', () {
+      final local = [
+        ('b', DateTime.utc(2026, 10, 2)),
+        ('a', DateTime.utc(2026, 10, 3))
+      ];
+      final merged = mergeToolkitDocuments<(String, DateTime)>(
+        local: local,
+        remote: const <ToolkitDocumentMetadata>[],
+        idOf: (d) => d.$1,
+        createdAtOf: (d) => d.$2,
+        fromRemote: (m) => (m.documentId, m.sourceCreatedAt),
+      );
+      expect(identical(merged, local), isTrue);
+    });
+
+    test('keeps the phone\'s order and places each by date, newest first', () {
+      expect(
+        merge(
+          [
+            ('l1', DateTime.utc(2026, 10, 20)),
+            ('l2', DateTime.utc(2026, 10, 10)),
+            ('l3', DateTime.utc(2026, 10, 1)),
+          ],
+          [
+            remote('r1', DateTime.utc(2026, 10, 25)),
+            remote('r2', DateTime.utc(2026, 10, 15)),
+            remote('r3', DateTime.utc(2026, 9, 1)),
+          ],
+        ),
+        ['r1', 'l1', 'r2', 'l2', 'l3', 'r3'],
+      );
+    });
+
+    test('a tie on the date is broken by id, as the stores do', () {
+      expect(
+        merge(
+          [('b', DateTime.utc(2026, 10, 1))],
+          [
+            remote('a', DateTime.utc(2026, 10, 1)),
+            remote('c', DateTime.utc(2026, 10, 1))
+          ],
+        ),
+        ['a', 'b', 'c'],
+      );
+    });
+
+    test('an empty phone lists the account\'s documents alone', () {
+      expect(
+        merge(const [], [remote('x', DateTime.utc(2026, 10, 2))]),
+        ['x'],
+      );
     });
   });
 

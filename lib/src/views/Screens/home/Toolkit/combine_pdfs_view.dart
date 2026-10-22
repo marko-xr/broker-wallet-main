@@ -15,7 +15,6 @@ import 'package:broker_wallet/src/services/combine_pdf/combine_models.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_usage_gate.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_wiring.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
-import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/combine_pdf/combine_pdf_viewmodel.dart';
 
 /// The Combine PDFs tool: pick PDFs, choose and order their pages, combine them
@@ -149,83 +148,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     }
   }
 
-  /// The one-line, honest description of where a document is kept; null when this
-  /// build keeps documents on the phone only. "Saved to your account" appears only
-  /// for a document the server confirmed.
-  String? _cloudLabel(CombinedPdf document) {
-    final state = _vm.cloudStateOf(document.id);
-    if (state == null) return null;
-    final loc = _localization;
-    switch (state) {
-      case ToolkitDocumentSyncState.savedToCloud:
-        return loc.translate('combineCloudSaved');
-      case ToolkitDocumentSyncState.savedLocallyPendingSync:
-        return loc.translate('combineCloudPending');
-      case ToolkitDocumentSyncState.syncInProgress:
-        return loc.translate('combineCloudUploading');
-      case ToolkitDocumentSyncState.syncFailedRetryable:
-        return loc.translate('combineCloudRetrying');
-      case ToolkitDocumentSyncState.syncRejected:
-        return loc.translate('combineCloudRejected');
-      case ToolkitDocumentSyncState.downloadRequired:
-        return loc.translate('combineCloudOnly');
-      case ToolkitDocumentSyncState.downloadFailed:
-        return loc.translate('combineCloudAttention');
-      case ToolkitDocumentSyncState.remoteDeleted:
-        return loc.translate('combineCloudRemoteDeleted');
-      case ToolkitDocumentSyncState.deletePending:
-        return null;
-    }
-  }
-
-  IconData _cloudIcon(ToolkitDocumentSyncState state) {
-    switch (state) {
-      case ToolkitDocumentSyncState.savedToCloud:
-        return Icons.cloud_done_outlined;
-      case ToolkitDocumentSyncState.syncInProgress:
-        return Icons.cloud_upload_outlined;
-      case ToolkitDocumentSyncState.downloadRequired:
-        return Icons.cloud_download_outlined;
-      case ToolkitDocumentSyncState.savedLocallyPendingSync:
-      case ToolkitDocumentSyncState.syncFailedRetryable:
-      case ToolkitDocumentSyncState.syncRejected:
-      case ToolkitDocumentSyncState.downloadFailed:
-      case ToolkitDocumentSyncState.deletePending:
-      case ToolkitDocumentSyncState.remoteDeleted:
-        return Icons.cloud_off_outlined;
-    }
-  }
-
-  /// The status line under a document; nothing at all when there is no cloud.
-  Widget _buildCloudStatus(
-      CombinedPdf document, ColorScheme colors, double fontSize) {
-    final label = _cloudLabel(document);
-    final state = _vm.cloudStateOf(document.id);
-    if (label == null || state == null) return const SizedBox.shrink();
-    final color = state == ToolkitDocumentSyncState.savedToCloud
-        ? Colors.green
-        : colors.onSurface.withValues(alpha: 0.6);
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          Icon(_cloudIcon(state), size: fontSize + 2, color: color),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: color, fontSize: fontSize),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// A cloud-only document is downloaded when it is opened, shared or exported;
-  /// the reason a download did not happen has its own message.
+  /// A document of the account that the phone does not hold is fetched when it
+  /// is opened, shared or exported; the reason it was not has its own message.
   String _openFailureMessage() {
     final failure = _vm.lastOpenFailure;
     return failure == null
@@ -763,12 +687,11 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                 accent: const Color(0xFFFF9800),
               ),
             ),
+          // A document of the account is being opened: the spinner alone, and the
+          // taps wait for it.
           if (_vm.isDownloading)
-            Positioned.fill(
-              child: ToolProgressOverlay(
-                message: localization.translate('combineCloudDownloading'),
-                accent: const Color(0xFFFF9800),
-              ),
+            const Positioned.fill(
+              child: ToolProgressOverlay(accent: Color(0xFFFF9800)),
             ),
         ],
       ),
@@ -864,8 +787,9 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           child: _buildHeaderCard(localization, colors),
         ),
 
-        // Notices about the account's list
-        if (_vm.loadFailed)
+        // Notices about the account's list (with nothing to show, the failure is
+        // the library's own retry state below, not a notice above an empty one)
+        if (_vm.loadFailed && _vm.documents.isNotEmpty)
           SliverToBoxAdapter(
             child: _buildNotice(
                 localization.translate('combineLoadFailed'), colors.error),
@@ -910,10 +834,23 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
             },
           ),
         ] else if (_vm.documents.isEmpty) ...[
-          // Empty state when no documents exist
-          SliverToBoxAdapter(
-            child: _buildEmptyState(localization, colors),
-          ),
+          // The library is only called empty once it has really been read.
+          if (_vm.isWaitingForAccount)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else if (_vm.loadFailed)
+            SliverToBoxAdapter(
+              child: _buildLibraryUnavailable(localization, colors),
+            )
+          else
+            // Empty state when no documents exist
+            SliverToBoxAdapter(
+              child: _buildEmptyState(localization, colors),
+            ),
         ] else ...[
           // Combined documents header
           SliverToBoxAdapter(
@@ -954,6 +891,34 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
         // Bottom padding for FAB
         const SliverToBoxAdapter(child: SizedBox(height: 100)),
       ],
+    );
+  }
+
+  /// The library could not be read (the account could not be asked and the phone
+  /// holds nothing to show): an ordinary message with a retry, never an empty
+  /// library.
+  Widget _buildLibraryUnavailable(
+      AppLocalizations localization, ColorScheme colors) {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          Icon(Icons.error_outline, size: 56, color: colors.error),
+          const SizedBox(height: 12),
+          Text(
+            localization.translate(_vm.libraryUnavailable
+                ? 'toolkitLibraryUnavailable'
+                : 'combineLoadFailed'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: _vm.refresh,
+            child: Text(localization.translate('retry')),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1296,7 +1261,6 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                   ),
                 ],
               ),
-              _buildCloudStatus(document, colors, 12),
             ],
           ),
         ),
@@ -1323,27 +1287,12 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                   case 'rename':
                     _renameCombinedDocument(document);
                     break;
-                  case 'backup':
-                    _vm.retryBackup(document.id);
-                    break;
                   case 'delete':
                     _deleteCombinedDocument(document);
                     break;
                 }
               },
               itemBuilder: (context) => [
-                if (_vm.canRetryBackup(document.id))
-                  PopupMenuItem(
-                    value: 'backup',
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_upload_outlined,
-                            size: 20, color: Colors.orange),
-                        const SizedBox(width: 12),
-                        Text(localization.translate('combineBackUpNow')),
-                      ],
-                    ),
-                  ),
                 PopupMenuItem(
                   value: 'share',
                   child: Row(
@@ -1622,7 +1571,6 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                           ),
                         ],
                       ),
-                      _buildCloudStatus(document, colors, 10),
                     ],
                   ),
                 ),

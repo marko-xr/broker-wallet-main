@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_diagnostics.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_cloud_repository.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_download_service.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
@@ -24,6 +25,7 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sy
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_transport.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_upload_coordinator.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_library_reconciler.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_remote_cache.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_sha256.dart';
 
 /// One document a tool holds on this phone, as it describes it.
@@ -125,6 +127,12 @@ abstract interface class ToolkitCloudLibrary {
     required List<ToolkitCloudLocalDocument> local,
   });
 
+  /// What the last successful list of [type] held, kept on the phone, so a screen
+  /// can show its cards at once. A convenience copy of metadata only: the next
+  /// [reconcile] replaces it, and nothing is opened from it without an
+  /// authorized download. Empty when there is none. Never throws.
+  Future<List<ToolkitDocumentMetadata>> cachedRemote(ToolkitDocumentType type);
+
   /// Runs every upload, rename and delete that is due. Never throws.
   Future<void> syncDue();
 
@@ -172,8 +180,10 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
     ToolkitFileHasher? hasher,
     ToolkitFreeSpaceProbe? freeSpace,
     DateTime Function()? clock,
+    ToolkitRemoteCache? remoteCache,
     this.shared = false,
-  })  : _coordinator = ToolkitDocumentUploadCoordinator(
+  })  : _remoteCache = remoteCache,
+        _coordinator = ToolkitDocumentUploadCoordinator(
           accountId: accountId,
           transport: transport,
           journal: journal,
@@ -195,6 +205,7 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
   /// See the constructor.
   final bool shared;
 
+  final ToolkitRemoteCache? _remoteCache;
   final ToolkitDocumentUploadCoordinator _coordinator;
   final ToolkitDocumentCloudRepository _repository;
   final ToolkitDocumentDownloadService _downloads;
@@ -203,6 +214,7 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
       StreamController<String>.broadcast();
   Map<String, ToolkitDocumentMetadata> _remoteById =
       <String, ToolkitDocumentMetadata>{};
+  bool _listedOnce = false;
   bool _syncing = false;
   bool _syncAgain = false;
   bool _disposed = false;
@@ -295,6 +307,28 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
   }
 
   @override
+  Future<List<ToolkitDocumentMetadata>> cachedRemote(
+    ToolkitDocumentType type,
+  ) async {
+    final cache = _remoteCache;
+    if (cache == null) return const <ToolkitDocumentMetadata>[];
+    try {
+      final documents = await cache.read(type);
+      // A card shown from the copy can be renamed or deleted before the first
+      // list of this session arrives: the library must know it by then.
+      if (!_listedOnce && _remoteById.isEmpty) {
+        _remoteById = <String, ToolkitDocumentMetadata>{
+          for (final d in documents) d.documentId: d,
+        };
+      }
+      return documents;
+    } catch (error) {
+      ToolkitDiagnostics.report('cache-read-failed', type: type, error: error);
+      return const <ToolkitDocumentMetadata>[];
+    }
+  }
+
+  @override
   Future<void> syncDue() {
     if (_disposed) return Future<void>.value();
     // Registered at once (not after the first await), so [idle] sees a sync that
@@ -354,8 +388,18 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
     required List<ToolkitCloudLocalDocument> local,
   }) async {
     await _ensureLoaded();
-    final listing = await _repository.listAll(type: type);
+    final ToolkitDocumentListing listing;
+    try {
+      listing = await _repository.listAll(type: type);
+    } catch (error) {
+      // The caller keeps what it showed; the category stays findable here.
+      ToolkitDiagnostics.report('list-failed', type: type, error: error);
+      rethrow;
+    }
     final remote = listing.documents;
+    _listedOnce = true;
+    ToolkitDiagnostics.report('list-ok', type: type, count: remote.length);
+    await _rememberRemote(type, remote);
     final remoteIds = <String>{for (final d in remote) d.documentId};
 
     // A delete the user asked for is not a document to upload or to show. A local
@@ -377,9 +421,21 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
       for (final d in live)
         if (!remoteIds.contains(d.documentId)) d.documentId,
     ];
-    final remoteStates = notListed.isEmpty
-        ? const <String, ToolkitRemoteState>{}
-        : await _repository.statuses(notListed);
+    // What the cloud says about a local document it did not list decides whether
+    // that document is uploaded or was deleted elsewhere. If that question cannot
+    // be answered now, the account's own documents are still reported (they do
+    // not depend on it) and the local ones are simply not queued this time.
+    var statusKnown = true;
+    Map<String, ToolkitRemoteState> remoteStates =
+        const <String, ToolkitRemoteState>{};
+    if (notListed.isNotEmpty) {
+      try {
+        remoteStates = await _repository.statuses(notListed);
+      } catch (error) {
+        statusKnown = false;
+        ToolkitDiagnostics.report('status-failed', type: type, error: error);
+      }
+    }
 
     final items = ToolkitLibraryReconciler.reconcile(
       local: <ToolkitLocalDocument>[
@@ -421,6 +477,7 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
       states[doc.documentId] = state;
 
       final needsRecord = !doc.fileMissing &&
+          (statusKnown || remoteIds.contains(doc.documentId)) &&
           _coordinator.entryFor(doc.documentId) == null &&
           (item.action == ToolkitReconcileAction.upload ||
               item.action == ToolkitReconcileAction.none);
@@ -452,6 +509,19 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
     return entry != null &&
         entry.deleteRequested &&
         entry.state == ToolkitDocumentSyncState.deletePending;
+  }
+
+  Future<void> _rememberRemote(
+    ToolkitDocumentType type,
+    List<ToolkitDocumentMetadata> remote,
+  ) async {
+    final cache = _remoteCache;
+    if (cache == null) return;
+    try {
+      await cache.write(type, remote);
+    } catch (error) {
+      ToolkitDiagnostics.report('cache-write-failed', type: type, error: error);
+    }
   }
 
   @override

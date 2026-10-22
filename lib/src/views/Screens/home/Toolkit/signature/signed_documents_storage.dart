@@ -78,7 +78,8 @@ class SignedDocumentsHelper {
       if (!preparation.isShareable) {
         showToast(
           preparation.unavailable.isNotEmpty
-              ? localization.translate('documentFileNotFound')
+              ? signatureOpenFailureMessage(
+                  localization, viewModel.lastOpenFailure)
               : localization.translate('failedToShareDocuments'),
           Colors.red,
         );

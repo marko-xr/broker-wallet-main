@@ -78,7 +78,8 @@ void main() {
     expect(vm.cloudSummary.notice, ToolkitCloudNotice.allSaved);
   });
 
-  test('after a reinstall the account\'s scans come back', () async {
+  test('after a reinstall the account\'s scans are listed and open on demand',
+      () async {
     final transport = FakeToolkitTransport('user-a');
     final first = newHarness();
     final vm1 = await first.started(cloudFactory: cloudFor(first, transport));
@@ -93,14 +94,104 @@ void main() {
     await settle(() => vm2.documents.isNotEmpty);
     await vm2.settle();
 
-    final restored = vm2.documents.single;
-    expect(restored.id, original.id);
-    expect(restored.name, 'Lease');
-    expect(restored.pageCount, 2);
-    final file = await vm2.openableFile(restored);
+    // The card is there from the account's metadata alone: no file yet.
+    final listed = vm2.documents.single;
+    expect(listed.id, original.id);
+    expect(listed.name, 'Lease');
+    expect(listed.pageCount, 2);
+    expect(vm2.isCloudOnly(listed.id), isTrue);
+    expect(vm2.isMissing(listed.id), isFalse);
+    expect(storedFile(second, listed).existsSync(), isFalse);
+    expect(transport.callCount('downloadToFile'), 0);
+
+    // Opening it downloads, verifies and stores it; it is one card throughout.
+    final file = await vm2.openableFile(listed);
     expect(file, isNotNull);
     expect(file!.readAsBytesSync(), originalBytes);
+    expect(vm2.isCloudOnly(listed.id), isFalse);
+    expect(vm2.documents.single.id, original.id);
+    await vm2.settle();
     expect(vm2.cloudSummary.notice, ToolkitCloudNotice.allSaved);
+    expect(transport.callCount('downloadToFile'), 1);
+  });
+
+  test('a library that could not be read is not shown as an empty one',
+      () async {
+    final transport = FakeToolkitTransport('user-a')
+      ..failNext('listPage', ToolkitFailure.unavailable);
+    final h = newHarness();
+    final vm = await h.started(cloudFactory: cloudFor(h, transport));
+    await settle(() => vm.libraryUnavailable);
+
+    expect(vm.documents, isEmpty);
+    expect(vm.isLoading, isFalse);
+    expect(vm.loadFailed, isTrue);
+
+    // Retry (the screen's button) with the account reachable again.
+    await vm.refresh();
+    await vm.settle();
+    expect(vm.libraryUnavailable, isFalse);
+    expect(vm.loadFailed, isFalse);
+  });
+
+  test('a failed download keeps the card and says it could not be fetched',
+      () async {
+    final transport = FakeToolkitTransport('user-a');
+    final first = newHarness();
+    final vm1 = await first.started(cloudFactory: cloudFor(first, transport));
+    final original = await saveScan(first, vm1, 'Lease');
+    await vm1.settle();
+
+    final second = newHarness();
+    final vm2 = await second.started(cloudFactory: cloudFor(second, transport));
+    await settle(() => vm2.documents.isNotEmpty);
+    await vm2.settle();
+    transport.failNext('downloadToFile', ToolkitFailure.unavailable);
+
+    expect(await vm2.openableFile(vm2.documents.single), isNull);
+    expect(vm2.lastOpenFailure, ToolkitEnsureResult.unavailable);
+    expect(vm2.documents.single.id, original.id, reason: 'still listed');
+    expect(vm2.isCloudOnly(original.id), isTrue);
+
+    // Opening it again works.
+    expect(await vm2.openableFile(vm2.documents.single), isNotNull);
+    expect(vm2.lastOpenFailure, isNull);
+  });
+
+  test('a scan that is only in the account can be shared, renamed and deleted',
+      () async {
+    final transport = FakeToolkitTransport('user-a');
+    final first = newHarness();
+    final vm1 = await first.started(cloudFactory: cloudFor(first, transport));
+    final original = await saveScan(first, vm1, 'Lease');
+    await vm1.settle();
+
+    final second = newHarness();
+    final vm2 = await second.started(cloudFactory: cloudFor(second, transport));
+    await settle(() => vm2.documents.isNotEmpty);
+    await vm2.settle();
+
+    // Renamed in the account without fetching the file.
+    expect(await vm2.rename(original.id, 'Contract'), isNull);
+    expect(transport.server[original.id]!.title, 'Contract');
+    expect(vm2.documents.single.name, 'Contract');
+    expect(vm2.isCloudOnly(original.id), isTrue);
+    expect(transport.callCount('downloadToFile'), 0);
+
+    // Shared from a verified file on the phone, never a link.
+    final shared = await vm2.prepareShare(<String>[original.id]);
+    expect(shared.unavailable, isEmpty);
+    expect(shared.paths, hasLength(1));
+    expect(vm2.isCloudOnly(original.id), isFalse);
+
+    // And a card that was never fetched is deleted from the account.
+    await vm2.settle();
+    final third = newHarness();
+    final vm3 = await third.started(cloudFactory: cloudFor(third, transport));
+    await settle(() => vm3.documents.isNotEmpty);
+    expect(await vm3.delete(<String>[original.id]), isEmpty);
+    expect(transport.server[original.id]!.status, 'deleted');
+    expect(vm3.documents, isEmpty);
   });
 
   test('a delete reaches the account first, then the phone\'s file goes',

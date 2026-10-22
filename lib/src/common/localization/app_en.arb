@@ -3328,5 +3328,7 @@
   "toolkitCloudSignIn": "Sign in again to save your documents to your account",
   "toolkitCloudServerNotReady": "Saving to your account is not available on this server yet. Your documents stay on this phone",
   "toolkitCloudOverLimit": "Some documents are over your account storage limit and stay on this phone",
-  "toolkitCloudAttention": "Some documents could not be saved to your account and stay on this phone",  "toolkitCloudTryAgain": "Try again"
+  "toolkitCloudAttention": "Some documents could not be saved to your account and stay on this phone",  "toolkitCloudTryAgain": "Try again",
+  "toolkitDocumentUnavailable": "This document could not be opened right now. Check your connection and try again.",
+  "toolkitLibraryUnavailable": "Your documents could not be loaded. Check your connection and try again."
 }

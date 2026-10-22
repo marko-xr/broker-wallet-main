@@ -429,6 +429,105 @@ class SignatureStore {
     });
   }
 
+  /// Stores [source], a signed PDF downloaded from the account's cloud, under the
+  /// SAME id it has there, so the phone and the account name it alike. Either it
+  /// is listed with a verified file, or nothing is. Idempotent: an id already
+  /// listed with its file is returned as it is, and one listed whose file is gone
+  /// gets its file back. [expectedSize] is what the cloud says the file has; the
+  /// file must also read as a PDF. How many signatures and other items it holds is
+  /// not kept in the account, so the counts are unknown (0). [source] is removed
+  /// once stored (and when it can never be stored); it is kept when the phone is
+  /// out of space, so a retry need not download it again.
+  Future<SignedDocument> restoreFromCloud({
+    required String id,
+    required File source,
+    required String name,
+    required DateTime createdAt,
+    required int expectedSize,
+  }) {
+    return _serial(() async {
+      final fileName = '$id.pdf';
+      if (!SignatureNaming.isStoredFileName(fileName)) {
+        await _quietDelete(source);
+        throw const SignatureException(SignatureFailure.writeFailed,
+            detail: 'id');
+      }
+      final SignatureAnalysis inspected;
+      try {
+        inspected = await _verify(source);
+      } on SignatureException {
+        await _quietDelete(source);
+        throw const SignatureException(SignatureFailure.writeFailed,
+            detail: 'content');
+      }
+      if (inspected.size != expectedSize) {
+        await _quietDelete(source);
+        throw const SignatureException(SignatureFailure.writeFailed,
+            detail: 'size');
+      }
+      final entries = await _prepare();
+      final index = entries.indexWhere(
+          (e) => e.document.id == id && e.state == _EntryState.ready);
+      final title =
+          SignatureNaming.sanitizeDisplayName(name) ?? 'Restored PDF';
+      final created = index >= 0
+          ? entries[index].document
+          : SignedDocument(
+              id: id,
+              fileName: fileName,
+              name: SignatureNaming.uniqueName(title, <String>[
+                for (final e in entries)
+                  if (e.document.id != id) e.document.name,
+              ]),
+              createdAt: createdAt,
+              fileSize: inspected.size,
+              pageCount: inspected.pageCount,
+              signatureCount: 0,
+              itemCount: 0,
+            );
+      final target = fileOf(created);
+      if (index >= 0 && await target.exists()) {
+        await _quietDelete(source);
+        return created;
+      }
+      if (index < 0) {
+        await _writeIndex(<_Entry>[
+          ...entries,
+          _Entry(created, _EntryState.pending),
+        ]);
+      }
+      final part = File('${target.path}.part');
+      try {
+        await _filesDir.create(recursive: true);
+        await _copier(source, part);
+        await _verifyCopy(source, part, inspected.size, inspected.pageCount);
+        await part.rename(target.path);
+        if (index < 0) {
+          await _writeIndex(<_Entry>[
+            ...entries,
+            _Entry(created, _EntryState.ready),
+          ]);
+        }
+      } catch (error) {
+        await _quietDelete(part);
+        await _quietDelete(target);
+        if (index < 0) {
+          try {
+            await _writeIndex(entries);
+          } on SignatureException {
+            // The next load drops the pending entry, whose file is gone.
+          }
+        }
+        if (error is SignatureException) rethrow;
+        if (error is FileSystemException) throw _mapFileError(error);
+        throw const SignatureException(SignatureFailure.writeFailed,
+            detail: 'restore');
+      }
+      await _quietDelete(source);
+      return created;
+    });
+  }
+
   Future<void> _verifyCopy(
       File source, File copy, int size, int pageCount) async {
     final int copySize;

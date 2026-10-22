@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_to_pdf_view.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_executor.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';
@@ -243,7 +244,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Convert makes the PDF, shows pages and size, Save keeps it',
+  testWidgets('Convert makes the PDF and saves it in one step, no sheet',
       (tester) async {
     await start(tester);
     await pumpView(tester);
@@ -251,42 +252,16 @@ void main() {
     await choose(tester, picked, button: en.translate('selectImages'));
     await tester.enterText(find.byType(TextField).first, 'عقد الإيجار');
     await tester.tap(find.text(en.translate('convertToPdf')));
-    await pumpUntil(tester, () => h.viewModel.draft != null);
-    await tester.pumpAndSettle();
-    // The review is of the real file.
-    expect(find.text(en.translate('i2pReviewTitle')), findsOneWidget);
-    final draft = h.viewModel.draft!;
-    expect(find.textContaining('2 pages • '), findsWidgets);
-    expect(draft.file.existsSync(), isTrue);
-    expect(gate.asked, 1);
-    await tester.tap(find.text(en.translate('i2pReviewSave')));
     await pumpUntil(tester,
         () => h.viewModel.documents.isNotEmpty && !h.viewModel.isSaving);
     await tester.pumpAndSettle();
-    expect(toasts.last, 'PDF saved: عقد الإيجار');
+    expect(toasts.last, 'Images converted to PDF successfully');
+    expect(find.text(en.translate('i2pReviewTitle')), findsNothing);
+    expect(gate.asked, 1);
     expect(find.text('عقد الإيجار'), findsOneWidget);
     expect(h.usage.recorded, ['user-a']);
     expect(find.text(en.translate('noImagesSelected')), findsNothing);
     expect(find.text('2 ${en.translate('images')} • PDF'), findsOneWidget);
-  });
-
-  testWidgets('Discard keeps nothing and counts nothing', (tester) async {
-    await start(tester);
-    await pumpView(tester);
-    await choose(tester, await pictures(tester),
-        button: en.translate('selectImages'));
-    await tester.tap(find.text(en.translate('convertToPdf')));
-    await pumpUntil(tester, () => h.viewModel.draft != null);
-    await tester.pumpAndSettle();
-    final file = h.viewModel.draft!.file;
-    await tester.tap(find.text(en.translate('i2pReviewDiscard')));
-    await tester.pumpAndSettle();
-    expect(h.viewModel.draft, isNull);
-    await pumpUntil(tester, () => !file.existsSync());
-    expect(h.viewModel.documents, isEmpty);
-    expect(h.usage.recorded, isEmpty);
-    // The images are still there to change and convert again.
-    expect(find.text('${en.translate('image')} 1'), findsOneWidget);
   });
 
   testWidgets('a refused plan limit does nothing else', (tester) async {
@@ -305,7 +280,7 @@ void main() {
   });
 
   testWidgets(
-      'converting shows honest progress, blocks a second tap and can be cancelled',
+      'converting shows one honest indicator and blocks a second tap',
       (tester) async {
     final gated = GatedExecutor(const InlineImagePdfExecutor())
       ..releaseBuild = Completer<void>();
@@ -316,7 +291,10 @@ void main() {
     await tester.tap(find.text(en.translate('convertToPdf')));
     await pumpUntil(tester, () => h.viewModel.isBuilding);
     await tester.pump();
-    expect(find.text('Creating a PDF from 2 images…'), findsOneWidget);
+    // One indicator only: the centered overlay, with no spinner on the button.
+    expect(find.text(en.translate('i2pConverting')), findsOneWidget);
+    expect(find.byType(ToolProgressOverlay), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     // No invented percentage anywhere.
     expect(find.textContaining('%'), findsNothing);
     final fab =
@@ -329,16 +307,15 @@ void main() {
             .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.tune))
             .onPressed,
         isNull);
-    await tester.tap(find.text(en.translate('cancel')));
-    await tester.pump();
+    // The overlay has no Cancel button.
+    expect(find.text(en.translate('cancel')), findsNothing);
     gated.releaseBuild!.complete();
-    await pumpUntil(tester, () => !h.viewModel.isBuilding);
-    await tester.pump();
-    expect(toasts.last, en.translate('i2pErrCancelled'));
-    expect(h.viewModel.documents, isEmpty);
-    expect(h.usage.recorded, isEmpty);
-    expect(find.text('${en.translate('image')} 1'), findsOneWidget,
-        reason: 'kept');
+    await pumpUntil(tester,
+        () => h.viewModel.documents.isNotEmpty && !h.viewModel.isSaving);
+    await tester.pumpAndSettle();
+    expect(find.byType(ToolProgressOverlay), findsNothing);
+    expect(toasts.last, en.translate('i2pSaved'));
+    expect(h.usage.recorded, ['user-a']);
   });
 
   testWidgets('a failure is shown in words, naming the picture',
@@ -484,10 +461,6 @@ void main() {
     h.viewModel.updateSettings(const ImagePdfSettings(passwordProtect: true));
     h.viewModel.setPassword('Secret-1');
     await tester.tap(find.text(en.translate('convertToPdf')));
-    await pumpUntil(tester, () => h.viewModel.draft != null);
-    await tester.pumpAndSettle();
-    expect(find.text(en.translate('i2pProtectedNote')), findsWidgets);
-    await tester.tap(find.text(en.translate('i2pReviewSave')));
     await pumpUntil(tester,
         () => h.viewModel.documents.isNotEmpty && !h.viewModel.isSaving);
     await tester.pumpAndSettle();
@@ -501,9 +474,6 @@ void main() {
     await choose(tester, await pictures(tester),
         button: en.translate('selectImages'));
     await tester.tap(find.text(en.translate('convertToPdf')));
-    await pumpUntil(tester, () => h.viewModel.draft != null);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(en.translate('i2pReviewSave')));
     await pumpUntil(tester,
         () => h.viewModel.documents.isNotEmpty && !h.viewModel.isSaving);
     await tester.pumpAndSettle();

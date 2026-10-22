@@ -841,22 +841,12 @@ class _ScannerViewState extends State<ScannerView> {
       margin: const EdgeInsets.only(bottom: 20),
       child: FloatingActionButton.extended(
         onPressed: disabled ? null : _startScanning,
-        icon: _vm.isScanning
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Icon(Icons.camera_alt),
+        // No spinner or changed label: the system scanner is the feedback.
+        icon: const Icon(Icons.camera_alt),
         label: Text(
-          _vm.isScanning
-              ? _localization.translate('scanningProgress')
-              : _vm.documents.isEmpty
-                  ? _localization.translate('startScanning')
-                  : _localization.translate('scanMore'),
+          _vm.documents.isEmpty
+              ? _localization.translate('startScanning')
+              : _localization.translate('scanMore'),
           style: const TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 16,

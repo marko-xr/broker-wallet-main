@@ -13,6 +13,7 @@ import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/document_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_view.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 
 import 'signature_fixtures.dart';
 import 'signature_test_support.dart';
@@ -1230,7 +1231,7 @@ void main() {
   });
 
   group('saving: failures', () {
-    testWidgets('building the preview can be cancelled; nothing is kept',
+    testWidgets('building the preview shows one overlay with no Cancel',
         (tester) async {
       final gated = GatedSignatureExecutor(const InlineSignatureExecutor());
       gated.release = Completer<void>();
@@ -1246,15 +1247,18 @@ void main() {
       // The buttons are gone while it works: no second request is possible.
       expect(find.byKey(key('save-button')), findsNothing);
       expect(gated.writes, 1);
-      await tester.tap(find.byKey(key('preparing-cancel')));
+      // The centered overlay is the only indicator, and it has no Cancel.
+      expect(find.byType(ToolProgressOverlay), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text(message('cancel')), findsNothing);
       await tester.runAsync(() async => gated.release!.complete());
       await pumpUntil(tester, () => !s.isBuilding);
       await tester.pumpAndSettle();
-      expect(toasts, contains(message('sigErrCancelled')));
-      expect(s.draft, isNull);
+      // Nothing is saved yet: the preview is waiting for an explicit Save.
+      expect(find.byType(ToolProgressOverlay), findsNothing);
+      expect(find.byKey(key('preview-save')), findsOneWidget);
       expect(h.usage.recorded, isEmpty);
       expect(h.viewModel.documents, isEmpty);
-      expect(find.byKey(key('add-button')), findsOneWidget);
     });
 
     testWidgets('a failed build offers a retry when a retry can help',

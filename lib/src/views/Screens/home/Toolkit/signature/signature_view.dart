@@ -846,7 +846,6 @@ class _SignatureScreenState extends State<SignatureScreen> {
     final colors = Theme.of(context).colorScheme;
     final documents = _vm.documents;
     final isSelectionMode = _vm.isSelectionMode;
-    final isOpening = _vm.isOpening;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1070,27 +1069,17 @@ class _SignatureScreenState extends State<SignatureScreen> {
           key: const ValueKey<String>('upload-document'),
           onPressed: _vm.isBusy ? null : _uploadDocument,
           elevation: 12,
-          backgroundColor: isOpening ? Colors.grey : redDark,
+          // No spinner, grey or "Loading": the system picker is the feedback.
+          backgroundColor: redDark,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          icon: isOpening
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : const Icon(Icons.upload_file),
+          icon: const Icon(Icons.upload_file),
           label: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
             child: Text(
-              isOpening
-                  ? localization.translate('loading')
-                  : localization.translate('uploadDocument'),
+              localization.translate('uploadDocument'),
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 16,

@@ -36,6 +36,24 @@ OFFER_MEDIA_SWEEP_MODE = "off"
 # separately: off | dry_run | on. Ships off, under the same owner-approved
 # procedure as the Offer sweeps.
 OWNER_MEDIA_SWEEP_MODE = "off"
+# Toolkit cloud documents (toolkit_documents.js). SOURCE ONLY until the owner
+# has approved the migration and the rollout: every /toolkit-documents route
+# answers 404 unless TOOLKIT_DOCUMENTS_ENABLED is exactly "true". The sweep ships
+# off, under the same owner-approved off | dry_run | on procedure as the media
+# sweeps. Optional anti-abuse limits (defaults and hard ceilings are in
+# toolkit_documents.js; none of these is a subscription quota):
+#   TOOLKIT_DOC_MAX_BYTES (PDF), TOOLKIT_DOC_MAX_IMAGE_BYTES (Scanner JPEG / PNG),
+#   TOOLKIT_DOC_MAX_ACCOUNT_BYTES, TOOLKIT_DOC_MAX_ACCOUNT_DOCUMENTS,
+#   TOOLKIT_DOC_MAX_PENDING, TOOLKIT_DOC_MAX_NEW_PER_HOUR, TOOLKIT_DOC_MAX_ATTEMPTS
+# TOOLKIT_DOC_VERIFY_SHA256 = "true" makes confirm hash the stored object in the
+# Worker and compare it with the device's digest (Worker CPU time is unmeasured:
+# measure on staging first). Ships unset (= off).
+# PRODUCTION: switched on 2026-10-21 on the owner's explicit approval (the app is not
+# released and every account is a test account). The same module and the same
+# settings as the accepted staging Worker. Roll back by redeploying the previous
+# version (96783f3d-6557-437f-addc-658a8f252d0f), which has no Toolkit routes.
+TOOLKIT_DOCUMENTS_ENABLED = "true"
+TOOLKIT_DOCUMENT_SWEEP_MODE = "off"
 
 [secrets]
 required = [
@@ -78,6 +96,20 @@ ALLOWED_ORIGIN = "*"
 OFFER_MEDIA_SWEEP_MODE = "off"
 # Owner-media cleanup sweeps: off | dry_run | on. Ships off (see above).
 OWNER_MEDIA_SWEEP_MODE = "off"
+# Toolkit cloud documents (toolkit_documents.js). SOURCE ONLY until the owner
+# has approved the migration and the rollout: every /toolkit-documents route
+# answers 404 unless TOOLKIT_DOCUMENTS_ENABLED is exactly "true". The sweep ships
+# off, under the same owner-approved off | dry_run | on procedure as the media
+# sweeps. Optional anti-abuse limits (defaults and hard ceilings are in
+# toolkit_documents.js; none of these is a subscription quota):
+#   TOOLKIT_DOC_MAX_BYTES (PDF), TOOLKIT_DOC_MAX_IMAGE_BYTES (Scanner JPEG / PNG),
+#   TOOLKIT_DOC_MAX_ACCOUNT_BYTES, TOOLKIT_DOC_MAX_ACCOUNT_DOCUMENTS,
+#   TOOLKIT_DOC_MAX_PENDING, TOOLKIT_DOC_MAX_NEW_PER_HOUR, TOOLKIT_DOC_MAX_ATTEMPTS
+# TOOLKIT_DOC_VERIFY_SHA256 = "true" makes confirm hash the stored object in the
+# Worker and compare it with the device's digest (Worker CPU time is unmeasured:
+# measure on staging first). Ships unset (= off).
+TOOLKIT_DOCUMENTS_ENABLED = "true"
+TOOLKIT_DOCUMENT_SWEEP_MODE = "off"
 
 [env.staging.secrets]
 required = [

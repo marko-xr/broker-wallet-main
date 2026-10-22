@@ -14548,3 +14548,589 @@ NEXT - the owner decides push and merge; resolve the 8 manual-check entries when
 sign-in, and re-verify the catalogue periodically (government sites move pages).
 STOP - no commit, push, merge, hosted change, Master Context / Production Checklist edits, or another Toolbox tool
 without a new instruction.
+
+
+## CHECKPOINT C1 — TOOLKIT CLOUD DOCUMENTS: SHARED PRIVATE BACKEND FOUNDATION (2026-10-19)
+
+Status: **CLOUD_DOCUMENTS_C1_SOURCE_PREPARED_HOSTED_APPROVAL_PENDING.** Branch `toolkit-cloud-documents-readiness`,
+parent `08c8e24` (committed S5 and the shared Toolbox header card), working tree clean at the start. Nothing was
+committed, pushed, merged, applied, deployed or enabled. The design, contracts, rollout, rollback and acceptance
+criteria are in `docs/toolbox/cloud-documents-rollout.md`; the decision is in `docs/DECISIONS.md`.
+
+Owner decision recorded: **Toolkit documents are cloud-backed account data; local storage is a cache and an offline
+working layer.** The four tools still read and write only their own account-scoped local stores
+(`scanner/`, `combine_pdfs/`, `image_to_pdf/`, `signature_pdfs/`, each with an `index.json`); none of them, and no
+other app file, imports the new foundation.
+
+What was prepared (source only)
+- Migration `supabase/migrations/20261019100000_toolkit_cloud_documents.sql`: one table `public.toolkit_documents`
+  (the tool is the `document_type`), key pinned by CHECK to `profiles/<account>/toolkit-documents/<id>.pdf`, guard
+  trigger (identity frozen for every role, forward-only status), RLS (own ready rows, column list without bucket or key,
+  restrictive Single Active Device gate), `service_role` holds no table privilege, 14 service-role-only `SECURITY
+  DEFINER` functions with a fixed search path, per-account advisory-locked limits with hard ceilings, bucket-scoped
+  reads. Reversal SQL at the end of the file.
+- Worker `toolkit_documents.js` wired into `worker.js` (authorize, confirm, list, status, download, rename, remove, and a
+  scheduled sweep). Every route answers 404 unless `TOOLKIT_DOCUMENTS_ENABLED` is exactly `"true"`; `wrangler.toml` ships
+  `"false"` and sweep `"off"` in production and staging. `account_deletion.js` is unchanged and already covers the key.
+- Flutter `lib/src/services/toolkit_documents/` (10 files): models and sync states, transport seam and its Worker client,
+  upload coordinator with a durable journal, download service, cloud repository, library reconciler (the conflict
+  policy), legacy-migration eligibility planner, dependency-free SHA-256. `ToolkitCloudDocumentsFeature` is a
+  compile-time switch (`TOOLKIT_CLOUD_DOCUMENTS`), off.
+- Tests: `supabase/tests/toolkit_documents_test.sql` (116 assertions), `supabase/validation/toolkit_documents_validation.sql`
+  (rollback-only, same assertions), Worker `test/toolkit_documents.test.mjs` (+ fakes), Flutter `test/toolkit_documents/`.
+
+Hosted state inspected READ-ONLY (SELECTs through the scratch-linked CLI; its only side effect is the CLI's ephemeral
+login role): the 18 applied migrations equal the repository's (`20260821000100` … `20261012233000`); no table or function
+named like a Toolkit or document object; PostgreSQL 17.6; `public.quota_section` already lists
+`scanner / signature / image_to_pdf / combine_pdfs`; `media_objects` has 90 rows (51 ready, about 102 MiB). Compatible: no
+speculative migration was needed.
+
+Verification (agent-run, scoped; the owner's rule that the owner runs builds and tests was lifted for exactly these runs
+by the task's explicit instruction)
+- SQL on a local PostgreSQL engine (PGlite 17.5, Supabase stand-ins, emulated pgTAP — not Supabase, not real pgTAP, not
+  hosted): the full migration chain applies; the pgTAP file passes 116 of 116 assertions; 15 of 15 deliberate mutations
+  (grant, RLS, key check, session gate, identity freeze, limits, CAS, ceiling) fail it; the rollback-only validation script
+  passes (`..._SOURCE_PASS`, `..._RESTORED`, 219 statements) and fails on 3 mutations.
+- Worker module on that real SQL through a thin RPC adapter: 28 of 28 end-to-end checks (the adapter's own handling of
+  single-column `returns table` results needed a fix; the Worker needed none).
+- Worker tests `node --test test/toolkit_documents.test.mjs`: 43 of 43; 21 of 21 mutations caught. Existing Worker
+  regression files (account deletion, active session, claim, staging gate, offer / owner media, plan attachments,
+  quotation media) were run because `worker.js` changed: 206 of 206.
+- Flutter: `flutter analyze lib/src/services/toolkit_documents test/toolkit_documents` no issues; `flutter test
+  test/toolkit_documents` 123 passed; 20 of 20 mutations caught (first pass caught 15 and exposed five weak tests, which
+  were strengthened and re-run). Not run: the full Flutter suite, Android/iOS builds, any device.
+- `dart format` was run on the new Dart files only. The flutter commands rewrote no generated plugin registrant.
+
+Not verified / not done
+- Any hosted write, real Supabase or PostgREST, real R2, real pgTAP, real device, real signed PUT from a phone, hosted
+  Worker CPU on large objects, any UI. The Worker proves size, type and PDF framing of an upload, not its declared
+  SHA-256 (the app verifies the hash before upload and after download).
+- Migration of existing documents, library UI, and the Android/iOS backup exclusion of the download cache and journal
+  (C2). Privacy Policy, Terms and store data disclosures (must precede enabling). RevenueCat quotas (separate).
+
+Decisions still owed by the owner
+1. Historical **ownerless** legacy documents (the planner never uploads them under whoever signs in).
+2. **Scanner image scans** (JPEG / PNG) are not PDFs; the cloud accepts PDFs only: convert, allow images, or keep local.
+3. Approve exact SQL, RLS and grants, Worker routes and authorizations, key shape, limits and cost, staging plan, rollback.
+
+NOW - review the migration, the Worker contract and `docs/toolbox/cloud-documents-rollout.md`; answer the two open
+decisions.
+NEXT - on approval: baseline snapshot, hosted rollback-only validation (stop on any failure), apply the one migration,
+read-back, staging Worker with the flag off then on, staging acceptance runner, device acceptance (section 13 of the
+rollout document), legal updates, production.
+STOP - no hosted migration, deployment, flag change, UI change, local-store change, document migration, commit, push or
+merge without a new instruction.
+
+
+## CHECKPOINT C1.1 — CLOUD DOCUMENTS: FINAL SOURCE CORRECTIONS AND SECURITY APPROVAL PACKAGE (2026-10-20)
+
+Status: **CLOUD_DOCUMENTS_C1_1_READY_FOR_HOSTED_REVIEW.** Same branch (`toolkit-cloud-documents-readiness`, parent
+`08c8e24`); the C1 work above is preserved and corrected in place (its "open decisions" 1 and 2 are now decided, and the
+counts it quotes are superseded by this section). Nothing was committed, pushed, merged, applied, deployed or enabled; no
+hosted SQL write was run. The owner approval package (sections A–O: migration inventory, grants / RLS / ownership,
+routes and flags, formats and integrity contract, key compatibility, lifecycle and the nine tombstone scenarios, limits and
+cost, migration and ownerless policies, hosted sequence, rollback and stop conditions, evidence levels, device acceptance)
+is `docs/toolbox/cloud-documents-rollout.md`.
+
+Owner decisions applied (2026-10-20)
+- Scanner **JPEG and PNG** documents are backed up as the original bytes, beside PDF; nothing is converted. `document_type`
+  stays the source tool; `content_type` (`application/pdf` | `image/jpeg` | `image/png`) is a separate, frozen column.
+  Only the Scanner may store an image; an image is one page. The server builds the whole key
+  (`profiles/<account>/toolkit-documents/<id>.<pdf|jpg|png>`, extension from the verified content type, pinned by CHECK).
+- **Ownerless legacy documents stay local and isolated**: never deleted, never auto-uploaded, never assigned to whoever
+  signs in, never shown to another account, filename or title similarity is never ownership. Per-account documents remain
+  eligible for the later migration (C2).
+
+What changed in the source
+- Migration: `content_type`, `sha256_verified`, `content_sha256 not null`, tool/format and per-format size CHECKs, format-aware
+  key CHECK, new table `toolkit_document_account_state` (`tombstone_floor`, no role has access), 15 functions (all revoked
+  from `public, anon, authenticated`, granted to `service_role`), limits split into PDF / image / account / count / pending /
+  hourly / attempts with hard ceilings, tombstone scrub (title) + 500-per-account cap + floor advance at every purge, stale
+  protection (`stale_document` unless `acknowledgeStale`), `discard_abandoned_toolkit_document`.
+- Worker: `toolkit_content.js` (format table, detection, container framing: PDF `%PDF-1.x/2.x` … `%%EOF`, JPEG `FF D8 FF` …
+  `FF D9`, PNG signature + `IHDR` + `IEND`); `toolkit_documents.js` validates format, extension-free keys, tool/format,
+  per-format size, stored content type, framing and (optional) digest before `ready`; refuses a swapped object at download;
+  `TOOLKIT_DOC_*` variables; `worker.js` adds `sha256HexOfStoredObject` (`crypto.DigestStream`) used only when
+  `TOOLKIT_DOC_VERIFY_SHA256 = "true"` (not set by default).
+- Flutter foundation: `ToolkitContentType`, required content type and digest, container probe (`toolkit_file_probe.dart`,
+  head 32 B + tail 1 KiB), journal "confirmed" ledger, `staleDocument` outcome and `acknowledgeStale`, legacy planner with the
+  `ownerless` / `otherAccount` / `unsupportedType` / `tooLarge` reasons. Still imported by nothing; the four stores unchanged.
+
+Integrity contract (honest levels): device SHA-256 is a **claim**; the Worker proves existence, byte length, stored content
+type, declared-format signature and a complete container (not decoding); the R2 ETag is an object-identity token only
+(never a digest); `sha256_verified = true` only if the optional Worker digest ran; the app always verifies size, SHA-256 and
+container on download. Not end-to-end cryptographic verification. `DigestStream` over 1 MiB / 50 MiB matched Node's SHA-256
+in local workerd (about 0.4 s for 50 MiB); Cloudflare CPU billing is NOT measured, so staging measures it before any
+production enablement.
+
+Security review result (against current Supabase documentation, hosted state read-only): the migration's ACL shape equals the
+existing `confirm_offer_plan_upload` (`{postgres=X/postgres,service_role=X/postgres}`, definer, `search_path=""`); default
+privileges would otherwise make a new function client-executable, so every function is explicitly revoked; `service_role` has
+no table privilege (the definer owner `postgres` has BYPASSRLS); `FORCE ROW LEVEL SECURITY` deliberately not used. One real
+defect was found and fixed during the review: a purged tombstone could let a deleted document be uploaded again (closed by
+the per-account floor, the acknowledgement rule and the client ledger).
+
+Proposed initial limits (NOT final; owner decides; anti-abuse, no RevenueCat): PDF 50 MiB, image 25 MiB, account 1 GiB,
+1,000 documents, 5 pending, 120 new per hour, 10 attempts per upload; ceilings 250 MiB / 64 MiB / 20 GiB / 5,000 / 20 /
+1,000 / 100. Cost at those caps is small (R2 about USD 2.85/month for 200 full accounts; verify provider pricing); the first
+ceiling is the Free database (about 100 full accounts ≈ 300 MB of 500 MB; hosted DB is 16 MB now).
+
+Verification (agent-run, scoped; labels: EMULATED = local PostgreSQL engine PGlite 17.5 with Supabase stand-ins and an
+emulated pgTAP, not Supabase; nothing hosted or device-verified)
+- pgTAP file 165 of 165 (EMULATED); 28 of 28 deliberate SQL mutations caught. Rollback-only validation script:
+  `..._SOURCE_PASS` and `..._RESTORED`, 275 statements (EMULATED). Worker on the real SQL through an RPC adapter: 38 of 38.
+- Worker tests: 68 of 68 (`toolkit_documents.test.mjs` 61, `toolkit_content.test.mjs` 7); 38 of 38 Worker mutations caught;
+  existing Worker regression 206 of 206 (`worker.js` changed). Total Worker run: 274 of 274.
+- Flutter: scoped `flutter analyze` clean; `flutter test test/toolkit_documents` 158 of 158; 12 of 12 C1.1 and 20 of 20 C1
+  mutations caught. `dart format --set-exit-if-changed` on the new Dart files clean; `git diff --check` clean; no hidden
+  bidirectional characters. Not run: the full Flutter suite, any build, any hosted write.
+
+Remaining blockers before any hosted step
+1. Owner approval of the exact migration file, grants, Worker contract / flags, integrity wording, key shape, limits and the
+   staging sequence (any later SQL change restarts the review).
+2. Staging measurement of Worker CPU for digest verification, and a decision whether to enable it.
+3. Staging acceptance runner, device acceptance, library UI, legacy migration (C2); Privacy Policy, Terms and store
+   disclosures (before production). Staging and production share ONE Supabase project, so an applied migration exists in
+   production immediately (empty and inert while the Worker flag is off).
+
+NOW - owner reviews `docs/toolbox/cloud-documents-rollout.md` and approves, or changes, the exact SQL and staging plan.
+NEXT - on approval: baseline snapshot, rollback-only validation (stop on any failure), apply the one migration, read-back,
+staging Worker flag off then on.
+STOP - no hosted migration, deployment, flag change, UI change, local-store change, document migration, commit, push or
+merge without a new instruction.
+
+
+## CHECKPOINT C2A — CLOUD DOCUMENTS: FINAL HOSTED PREFLIGHT AND EXACT MIGRATION APPROVAL (2026-10-20)
+
+Status: **CLOUD_DOCUMENTS_C2A_READY_FOR_OWNER_SQL_APPROVAL.** Same branch and HEAD (`08c8e24`); the C1.1 migration, Worker and
+Flutter sources are byte-identical (nothing was changed to make a check pass). This checkpoint ran SELECT-only statements on
+the hosted project plus local, emulated checks. It did not run the rollback-only transaction, apply the migration,
+deploy, touch R2, commit or push. The C1.1 test results above are historical and were not re-run. Details, hashes, the
+privilege matrix and the exact plans are in `docs/toolbox/cloud-documents-rollout.md` (sections P–W).
+
+Candidate (canonical LF SHA-256; the working tree is CRLF)
+- Migration `20261019100000_toolkit_cloud_documents.sql`: `88ceb6c2f8f6b62b9bbec73e6932f3843b333a13c114425b7ef7eaad20d5ad4d`
+  (working-tree CRLF form `87227b31…f62f3`).
+- `toolkit_documents.js` `e98e828e…2599`, `toolkit_content.js` `26a8ebce…cce`, `worker.js` `a57c2e4d…6576` (additive diff only).
+- Derived hosted validation request (275 statements, one begin, one rollback, no commit): `c66e4504…8006`. Not executed.
+- The SQL creates two tables, six indexes, 22 constraints, three triggers, two policies and 15 functions, with grants and
+  revokes only on them. It modifies no existing table, function, policy, trigger, row or default privilege and does not
+  touch account-deletion infrastructure (`account_deletion.js` has an empty diff); it only references `profiles`,
+  `is_current_app_session()` and `bump_sync_version()`.
+
+Hosted baseline (read-only)
+- 18 applied migrations equal the repository's 18; the candidate is the next version; no Toolkit-named object in any schema;
+  PostgreSQL 17.6; 16 MB database; `postgres` may `SET ROLE` to `anon` / `authenticated` / `service_role`; counts only:
+  2 accounts, 90 media rows, 2 active sessions, 0 deletion jobs. A 17-row digest snapshot (two identical runs) is the
+  baseline for the post-validation and post-apply comparisons. No assumption was false.
+- Default function ACL has no PUBLIC entry but grants EXECUTE to `anon` / `authenticated` / `service_role`, so the
+  explicit revokes are required; C1.1's "plus PUBLIC" wording was corrected.
+
+Findings
+- Privilege matrix derived from the engine (15 functions; `proacl`, `has_function_privilege`, live calls as `anon` and
+  `authenticated` all denied 42501; no table privilege for any client or service role; authenticated column SELECT on 15 of
+  21 columns, no key, bucket or etag): the SQL meets every authorization requirement. Hosted ACLs of the new objects can be
+  proven only after an apply.
+- SQL, Worker and Flutter vocabularies were compared by script (formats, tools, statuses, ceilings, 28 SQL outcomes,
+  refusal codes): consistent. With the shipped configuration the Worker does **not** hash stored objects, so
+  `sha256_verified` is false for every document; nothing may be described as server-verified.
+- Capacity estimate corrected: measured about 770 bytes per document row (table + indexes; 765 and 774 in two runs) on 10,000 synthetic rows, so 100 full
+  accounts are about 77 MB (about 155 MB with a 2× allowance) of the 500 MB database; the earlier "first limit at about
+  100 accounts" claim is withdrawn as unmeasured. The 500 MB is database size, not R2 storage. R2's free 10 GB is the first
+  threshold. Limits stay Worker variables; the recommended starting profile is unchanged and not final.
+- The rollback-only validation takes a brief `SHARE ROW EXCLUSIVE` lock on `profiles` (about 4 s earlier; `lock_timeout`
+  3 s). The existing Worker's Cloudflare plan is unverified. Account limits count across buckets because staging and
+  production share one database.
+
+Local confirmation only (EMULATED, not hosted): the assembled validation request ran on the local engine with hosted-faithful
+default privileges: `..._SOURCE_PASS`, `..._RESTORED`, 275 statements, nothing left behind.
+
+NOW - owner independently reviews the review package (ZIP) and the section P hashes, then decides whether to authorize the
+hosted rollback-only validation.
+NEXT - only after a separate yes: baseline snapshot, the rollback-only request, immediate read-back; then, with its own
+approval, the apply, the staging Worker (flag off, then on) and the staging acceptance.
+STOP - no hosted write, rollback-only run, apply, deployment, flag change, R2 change, UI change, local-store change,
+document migration, commit, push or merge without a new instruction.
+
+
+## CHECKPOINT C2B — CLOUD DOCUMENTS: INDEPENDENT REVIEW CORRECTIONS (2026-10-20)
+
+Status: **CLOUD_DOCUMENTS_C2B_READY_FOR_INDEPENDENT_REVIEW.** Same branch and HEAD (`08c8e24`). An independent source review of the C2A
+package returned `CORRECTIONS_REQUIRED_BEFORE_HOSTED_VALIDATION` (three narrow findings). All three are corrected in source; the
+C2A candidate (migration hash `88ceb6c2…ad4d`, 275-statement hosted request `c66e4504…8006`) is **superseded**. Nothing was run
+against any hosted system, nothing applied, deployed or enabled, no R2 object touched, nothing committed or pushed. Design,
+evidence and plans: `docs/toolbox/cloud-documents-rollout.md` sections V–Z.
+
+Corrections
+- **A. Abandoned-upload cleanup race.** The sweep deleted the object before the database knew the upload was abandoned, so a device
+  that confirmed in between kept a READY row whose object had been removed. Cleanup is now claim-first: the row moves
+  `pending_upload → pending_discard` under its row lock (after which authorize / confirm / rename answer `cleanup_in_progress`
+  and the guard refuses `→ ready`), then the object is removed, then the row is discarded for that exact claim identity. A ready
+  or re-authorized row cannot be claimed, so nothing is deleted; a failed removal stays claimed and is retried after a 15-minute
+  lease; a user delete overrides a claim. New SQL: status `pending_discard`, column `discard_claimed_at`, function
+  `claim_abandoned_toolkit_document` (16 functions), listing kind `stuck_discard`. The sweep is still off by default.
+- **B. Presigned PUT replay.** A signed URL could overwrite a confirmed object within its lifetime (download then reports
+  `object_changed`). The Toolkit PUT is now signed with `If-None-Match: *` (write-once); authorize returns `uploadHeaders`, the app
+  sends exactly that header and treats a 412 as "an object already exists", and the confirm judges that object. Measured offline:
+  the old signature covered only `host`, and Content-Type was never signed (the earlier "the signed PUT binds the Content-Type"
+  was wrong; the confirm's stored-type check is what protects it). R2 documents atomic conditional PutObject but not conditional
+  headers on a PRESIGNED PUT, so enforcement is **unproven until staging**; the fallback (per-authorization staging key + server-side
+  copy) is designed, not built.
+- **C. Minimal hosted rollback-only test.** New `supabase/validation/toolkit_documents_hosted_preflight.sql`: 90 statements, one
+  BEGIN / ROLLBACK, no users / sessions / profiles / documents, no session-claim calls, no churn, no network, `lock_timeout 2 s`.
+  It proves (inside the transaction) that the migration changes nothing that exists (16-item before / after digest, including all
+  existing functions and default privileges) and that the objects it creates have the exact signatures, owners, source digests,
+  ACLs, RLS, column grants, constraints, indexes, triggers and policies, then probes anon / authenticated / service_role without
+  touching a row. The complete suite (now 195 assertions) stays local / isolated and its generated script says so.
+
+Evidence (labels: EMULATED = local PostgreSQL 17.5 engine with Supabase stand-ins and emulated pgTAP; MOCK = in-memory database /
+R2 models; nothing hosted, no real R2, no device)
+- pgTAP file 195 / 195; 20 / 20 deliberate SQL defects fail it. Complete rollback-only validation (local only): pass, 318
+  statements. Minimal hosted preflight (assembled request): pass, 90 statements; 14 / 14 deliberate defects fail it.
+- Worker: new file 25 / 25 (21 / 21 deliberate defects fail it); all Worker test files 300 / 300; Worker on the real SQL 49 / 49.
+- Flutter `test/toolkit_documents` 168 / 168 (6 / 6 deliberate defects fail it); scoped analyzer clean; `dart format` clean on the
+  new files; `git diff --check` clean.
+
+New candidate hashes (canonical LF): migration `5b020380feb2f8b7f77b5cc33d417d4d97d213585fe071b36a610a4f9fcc0e71`; hosted
+preflight `0c9746e2d93efaa83735837b2d0241edbf53acedfe27134d408473a05558d952`; derived request
+`34f7e632a84e91ffc678399a5fcbec87267b8c4fcbb32ea13a6f494acd93dc1f`; the rest are in the rollout document, section Z.
+
+Still needed before any hosted step: independent review of the C2B package; the owner's separate approval of the exact migration
+and of running the minimal preflight; real-R2 proofs on staging (replay returns 412 with an unchanged object, header-less PUT
+refused, claim-first sweep on real objects, Delete Account with claimed / abandoned uploads); Cloudflare plan of the existing
+Worker unverified; Privacy Policy, Terms and store disclosures before production.
+
+NOW - independent review of the C2B ZIP, then the owner's decision on the hosted rollback-only preflight.
+NEXT - only after a separate yes: the baseline snapshot, the minimal preflight (one request) and the immediate read-back; then, with
+its own approval, the apply, the staging Worker (flag off, then on) and the real-R2 proofs.
+STOP - no hosted read or write beyond what the owner authorizes, no deployment, flag change, R2 change, UI change, local-store
+change, document migration, commit, push or merge without a new instruction.
+
+
+## CHECKPOINT C2C — CLOUD DOCUMENTS: CONTROLLED HOSTED ROLLBACK-ONLY VALIDATION (2026-10-20)
+
+Status: **CLOUD_DOCUMENTS_C2C_HOSTED_ROLLBACK_VERIFIED** (with one stated limit: the source marker was inferred, not observed; see below).
+Branch `toolkit-cloud-documents-readiness`, HEAD `08c8e24` (nothing committed). The owner approved ONLY the reviewed C2B minimal
+preflight, as one bounded rollback-only transaction on the existing hosted project. The migration was NOT applied, no migration
+history was written, nothing was deployed, no R2 operation ran, no flag changed, nothing was committed or pushed.
+
+What was executed (the only hosted statements of this checkpoint)
+- SELECT-only baseline checks (project identity, database and role, 18 applied migrations with latest `20261012233000`, no
+  Toolkit-named object of any kind, 34 public functions, 109 public policies, 37 public tables) and the 17-item schema digest
+  snapshot: all identical to the baseline recorded in C2A, including the row counts (2 accounts, 2 profiles, 90 media rows,
+  2 active sessions, 0 deletion jobs; counts only, no record read).
+- ONE request: the unchanged reviewed `derived/hosted_toolkit_preflight_request.sql` (SHA-256
+  `34f7e632a84e91ffc678399a5fcbec87267b8c4fcbb32ea13a6f494acd93dc1f`, hashed before and after the run; also rebuilt from the
+  repository and found byte-identical; migration LF SHA-256 `5b020380feb2f8b7f77b5cc33d417d4d97d213585fe071b36a610a4f9fcc0e71`,
+  preflight LF SHA-256 `0c9746e2d93efaa83735837b2d0241edbf53acedfe27134d408473a05558d952`). Through the Supabase CLI
+  `db query --linked` (Management API) on project `rbvcnvqpdqrhywcgxkne` (`broker-wallet`), database `postgres`, role `postgres`.
+  90 statements, one BEGIN, one ROLLBACK, no COMMIT; bounds `lock_timeout 2 s`, `statement_timeout 20 s`,
+  `idle_in_transaction_session_timeout 30 s`. Started 05:39:30Z, finished 05:39:34Z (about 4 s), exit code 0.
+  No retry, no edit, no second execution.
+- SELECT-only read-back and a second snapshot.
+
+Observed
+- The request completed without error and returned `TOOLKIT_DOCUMENTS_HOSTED_PREFLIGHT_RESTORED`.
+- `TOOLKIT_DOCUMENTS_HOSTED_PREFLIGHT_SOURCE_PASS` was NOT observed: the Management API returns only the last result set of a
+  multi-statement request (probed with a harmless two-SELECT query), and that marker is selected immediately before the ROLLBACK.
+  The owner chose to run as approved and infer it. The inference: every assertion in the request raises on failure and an error
+  aborts the whole request (HTTP 400), so reaching the ROLLBACK, the postflight and the final marker means every assertion passed,
+  including the "nothing existing changed" before / after digest, the exact 16 function signatures / owners / source digests / ACLs,
+  RLS on both tables and not forced, no table privilege for anon / authenticated / service_role, the 15 readable columns, no
+  PUBLIC / anon / authenticated EXECUTE, and the role probes. Not observed individually; the per-assertion detail of the hosted run is
+  not available. The same request was shown to pass and print both markers on the local engine (EMULATED) and to fail on 14 / 14
+  deliberate defects.
+- Post-rollback, all equal to the pre-run state: 18 migrations (latest `20261012233000`); 0 Toolkit relations, functions, policies,
+  triggers, types, constraints, indexes or comments; 0 fixture users; 0 idle-in-transaction sessions; no heavy lock on `profiles`;
+  the 17-item digest snapshot IDENTICAL to both the pre-run snapshot and the C2A baseline (column privileges, default privileges,
+  roles, functions with bodies and ACLs, policies, triggers, indexes, constraints, event triggers, extensions, publications,
+  schemas, row counts). Because the objects the migration created inside the transaction are gone, the migration and the rollback
+  ran in one transaction.
+- No timeout, lock wait or error occurred. The only hosted side effect besides the transaction itself is the CLI's ephemeral login
+  role (as in earlier read-only work), plus the unavoidable residue of any rolled-back transaction (transaction id, WAL, catalog dead
+  tuples, statistics counters).
+
+Evidence level: VERIFIED_HOSTED for the rollback-only run, the read-back and the digests; the SOURCE marker alone is inferred.
+Still NOT verified on any hosted system: the lifecycle behavior with real rows, RLS for a real signed-in owner, the Worker,
+R2 (including the write-once PUT replay proof), the apply itself.
+
+NOW - the owner decides whether to authorize applying the ONE migration (a separate approval, from a scratch project holding the 18
+applied migrations plus this exact file).
+NEXT - after a separate yes: apply, SELECT-only read-back (exact ACLs, RLS, columns, digests), then the staging Worker with the flag
+off, then on, and the real-R2 proofs.
+STOP - no apply, deployment, flag change, R2 change, document migration, UI change, commit, push or merge without a new instruction.
+
+## CHECKPOINT C2D — CLOUD DOCUMENTS: ONE APPROVED HOSTED MIGRATION APPLIED (2026-10-20)
+
+Status: **CLOUD_DOCUMENTS_C2D_MIGRATION_APPLIED_VERIFIED_HOSTED** (catalog / privilege level; authenticated runtime testing is pending).
+Branch `toolkit-cloud-documents-readiness`, HEAD `08c8e24` (parent as expected; the C1–C2C source changes remain uncommitted and untouched).
+The owner authorized applying exactly ONE reviewed, rollback-tested migration. Nothing else was authorized or done: no Worker
+deployment, no flag change, no R2 operation, no Flutter change, no commit, no push.
+
+Applied
+- File `supabase/migrations/20261019100000_toolkit_cloud_documents.sql`, canonical LF SHA-256
+  `5b020380feb2f8b7f77b5cc33d417d4d97d213585fe071b36a610a4f9fcc0e71` (re-hashed from the working tree and again inside the scratch
+  project before the push; the file was not altered or regenerated).
+- Project `rbvcnvqpdqrhywcgxkne` (`broker-wallet`; shared by staging and production, so the empty tables now exist for both).
+- Mechanism: the documented Supabase workflow from a scratch project outside the repository (`supabase init` + `link`), holding the
+  18 already-applied migrations (HEAD blobs, LF, byte-checked) plus the one approved file; no seed or roles file; Supabase CLI 2.109.1.
+  `supabase migration list --linked` before: 18 remote + 1 local-only (`20261019100000`). `supabase db push --linked --dry-run`:
+  exactly one pending migration, `20261019100000_toolkit_cloud_documents.sql`. Then `supabase db push --linked --yes`: applied once,
+  exit 0, 06:09:00Z–06:09:04Z (about 4 s); no retry, no flags such as `--include-all` / `--include-seed`, no history repair. The only warning
+  was the CLI's known local "failed to cache migrations catalog ... docker" message (no Docker is used or required).
+- The official history row exists exactly once: version `20261019100000`, name `toolkit_cloud_documents`, 73 recorded statements;
+  `migration list` after shows local and remote both `20261019100000`.
+
+Pre-apply checks (SELECT-only): branch and HEAD as expected; hash as approved; linked project as expected; 18 applied migrations, latest
+`20261012233000`, history identical to HEAD's 18 files; zero Toolkit-named objects; the 17-item schema digest snapshot identical to the C2A
+baseline (and so to the C2C pre- and post-rollback snapshots).
+
+Post-apply read-back (SELECT-only, 20 checks, all PASS; expected values taken from the approved migration applied on the local engine,
+never from the hosted database): 19 migrations, new version once, the earlier 18 unchanged (history digest equal); both tables exist,
+owner `postgres`, RLS enabled and not forced, table ACL owner-only; columns equal the approved definition (22 + state table); the 23
+constraints, 6 indexes, 3 triggers and 2 policies (own-ready-rows permissive select, restrictive Single Active Device gate) with their roles
+and commands and the expected expressions; exactly the 16 function signatures, all owned by `postgres`, 13 `SECURITY DEFINER`,
+`search_path=""`, source digests equal the approved text, ACL exactly `{postgres=X/postgres,service_role=X/postgres}`; no PUBLIC /
+anon / authenticated EXECUTE (ACL and `has_function_privilege`); `service_role` can execute all 16; no table privilege for anon /
+authenticated / service_role; `authenticated` column SELECT is exactly the 15 approved columns (`bucket`, `object_key`,
+`observed_etag`, `upload_attempts`, `last_authorized_at`, `deleted_at`, `discard_claimed_at` are not readable); no write column privilege;
+both tables hold 0 rows; account-deletion infrastructure intact.
+Existing-schema regression: the 17-item digest snapshot after the apply equals the one before in 15 items (column privileges, default
+privileges, event triggers, extensions, columns, constraints, functions with bodies and ACLs, indexes, policies, relations, triggers,
+realtime publication, roles, schemas, row counts 2/2/90/2/0); the only differences are the two expected ones: migration history
+(19 rows) and the Toolkit-named object count (29, all the approved objects). No unexpected object or privilege exists.
+
+Evidence level: VERIFIED_HOSTED for the migration history, the catalog, the privileges and the existing-schema comparison. NOT
+verified: any authenticated end-to-end behavior (real owner, second account, superseded session, RLS read through PostgREST), the
+Worker, R2 (including the write-once PUT replay proof and the claim-first sweep on real objects), Delete Account with real objects. The
+previous C2C evidence distinction stands: the rollback run showed the RESTORED marker and inferred SOURCE_PASS.
+
+NOT DONE: Worker deployment (production or staging), flag activation, R2 changes, Flutter integration, existing-document migration, any
+account-deletion test, commit, push.
+
+NOW - the owner decides whether to authorize a Cloudflare STAGING deployment (flag off first) and the real-R2 lifecycle tests.
+NEXT - after a separate yes: staging Worker upload with `TOOLKIT_DOCUMENTS_ENABLED = "false"`, route-off probes, controlled enablement on
+staging only, then the replay / lifecycle / account-deletion proofs with test accounts and the staging bucket.
+STOP - no deployment, flag change, R2 change, UI change, commit, push or merge without a new instruction.
+
+## CHECKPOINT T1 — TOOLKIT PICKING REGRESSION: COMBINE PDFs AND IMAGES TO PDF (2026-10-21)
+
+Status: **SOURCE_CHANGED_UNVERIFIED — owner device result pending.** Source only, uncommitted, on `toolkit-cloud-documents-readiness`.
+Tests, analyzer and build: NOT RUN (the prompt forbade them). Hosted infrastructure: unchanged.
+
+Findings (confirmed against the repository):
+- The Flutter Cloud Documents code (`lib/src/services/toolkit_documents/`) is untracked and imported by no file in `lib/`. The four Combine / Images-to-PDF
+  flow files were byte-identical to `HEAD` (`08c8e24`) before this change, and `lib/` had no tracked modification. The cloud workstream therefore cannot
+  have changed these two flows; no cloud/R2/Supabase call sits on the picker -> preview path.
+- Combine PDFs: a chosen file joins the selection only after its check finished, and the screen showed nothing while files were picked or checked, so a slow
+  check looked exactly like "nothing was selected". The check ran through `Isolate.run`, which cannot be stopped and has no deadline.
+- Images to PDF: `ImagePdfViewModel._pumpAnalysis` returned from inside its `try` when the account epoch changed during a check, which skipped the restart
+  for the new epoch; pictures added meanwhile stayed "checking" for good (the pump they started was refused by `_analysisRunning`). The check had no deadline either.
+- NOT proven: that either defect is what the owner's phone hit. Decoding in pure Dart is much slower in a Debug (JIT) build than the documented release figures;
+  a slow-but-finishing check remains possible and is not changed by this fix.
+
+Changed: `lib/src/services/toolkit/bounded_isolate.dart` (new: a worker with a deadline, killed on timeout); both executors use it for the file check
+(Combine 2 min, Images 4 min, constructor parameters; a timeout reports `missingSource` with detail `timeout`); `_pumpAnalysis` restarts for the current epoch;
+the Combine screen shows an indicator (existing `processing` string) while files are picked or checked.
+
+Not changed: engines, stores, quota, picker plugins, Cloud Documents, Supabase, Worker, R2.
+
+NOW - owner runs the Samsung checks (Combine: pick 2 PDFs; Images: pick 1 photo, then 3) and reports the result; if it still stalls, send the first non-secret log line.
+NEXT - only after the device result: tests/analyzer run by the owner or with an explicit yes; Cloud Documents Flutter adapters stay a separate checkpoint.
+STOP - no commit, push, deployment or further Toolkit change before the owner reports.
+
+## CHECKPOINT C3 — COMBINE PDFs: CLOUD VERTICAL SLICE ON A STAGING DEBUG BUILD (2026-10-21)
+
+Status: **SOURCE_CHANGED_UNVERIFIED — owner Samsung result pending.** Source only, uncommitted, branch `toolkit-cloud-documents-readiness`.
+Tests, analyzer and builds: NOT RUN (only `dart format` parse checks on the new and changed files). Hosted infrastructure: unchanged (no deploy,
+no migration, no flag change, no R2 operation, nothing written to Supabase).
+
+Why: the reinstall investigation proved that no tool called the cloud code, so no document ever left the phone (hosted `toolkit_documents` holds
+only the nine staging test rows, all `deleted`). C3 connects ONE tool, Combine PDFs, end to end, to prove
+create -> save locally -> upload -> confirm -> reinstall -> sign in -> list -> download -> open.
+
+What changed
+- `lib/src/services/toolkit_documents/toolkit_cloud_library.dart` (new): one seam per tool and account: `queue` (journal + upload), `reconcile`
+  (cloud listing + statuses + `ToolkitLibraryReconciler`; queues local documents the cloud lacks, including documents made before the cloud was
+  on), `rename`, `delete` (cloud first; a delete that cannot reach the server is recorded and finished later), `download` (verified), `syncDue`.
+  The journal is loaded once before any operation acts.
+- `toolkit_cloud_wiring.dart` (new): builds the real library (Worker client, file journal, SHA-256 on an isolate). Returns null (tool stays
+  local) unless `ToolkitCloudDocumentsFeature.isActive` = `TOOLKIT_CLOUD_DOCUMENTS=true` AND not a release build.
+- `r2_config.dart` + `r2_toolkit_document_service.dart`: debug-only `--dart-define=TOOLKIT_STAGING_KEY` is sent as `X-Broker-Wallet-Staging-Key` on Worker
+  routes only (never to the signed storage URLs); empty in a release build.
+- `combine_pdf_store.dart`: `restoreFromCloud` (a downloaded file stored under the SAME id, journaled, verified, idempotent), `fileForId`,
+  `restoreFileFor`, `discardRestoreFile`, `cloudDir`. The journal and the download folder live inside the account folder, which Android and iPhone
+  backup already exclude.
+- `combine_pdf_viewmodel.dart` / `combine_wiring.dart`: after `store.add` the document is queued; the list merges local and cloud-only documents; opening, sharing
+  and exporting a cloud-only document downloads, verifies and stores it first; rename and delete follow the cloud lifecycle; a 60 s timer asks the
+  journal for due retries. With no cloud factory the view model behaves exactly as before.
+- `combine_pdfs_view.dart`: one status line per document (only when the cloud is on), a "Back up now" menu item for waiting/failed documents, a download overlay, and the
+  failure message `combineErrCloudUnavailable`. New strings (en + ar): `combineCloud*`, `combineBackUpNow`, `combineErrCloudUnavailable`.
+- Tests (written, NOT run): `test/combine_pdf/combine_cloud_test.dart` (10 cases against the in-memory fake server and the real store/view model),
+  `combine_fixtures.dart` (optional id generator and cloud factory), the C1 source guard updated from "nothing imports the foundation" to "only the Combine
+  wiring, view model and screen do" plus a guard that the switch is debug-only and off by default.
+
+Truthful states: "Saved to your account" only when the server confirmed the bytes; "On this phone only, not backed up yet" until then; failed retryable,
+rejected, cloud-only, differs, and deleted-elsewhere each have their own line. A delete the server has not confirmed hides the document but keeps its file until confirmed.
+
+Not done / not verified: any run (tests, analyzer, build, device). The other three tools. Release behavior (the cloud is OFF in every release build by design).
+Privacy Policy / Terms / store disclosures (required before any release enablement). A stale-document acknowledgement dialog (such a document shows
+"Cannot be backed up"). Offline-listing banner (`cloudUnreachable` exists in the view model; no UI yet). A cloud title that differs from a locally renamed title
+for a document that had no journal entry is not reconciled. Combined PDFs made on THIS Samsung before this build upload on the first list refresh (they are account-owned).
+
+SUPERSEDED BY C3.1 BELOW: the build command that was here redirected the SHARED `R2_UPLOAD_WORKER_URL` to staging, which broke Profile and Offer media. Do not use it. Use the
+launcher `staging-acceptance/run_c3_combine_device_gate.ps1`, which sets only `TOOLKIT_WORKER_URL` and `TOOLKIT_STAGING_KEY` (Toolkit documents only, debug build only).
+
+NOW - owner: run the analyzer and the Combine + toolkit_documents tests (or authorize me to), then the Samsung check: combine two PDFs; watch the status line go from
+"On this phone only" to "Saved to your account"; uninstall; reinstall the same debug build; sign in; the document is listed as "In your account"; open it (downloads), share it, rename it, delete it.
+NEXT - only after that passes: port the same adapter to Images to PDF, Document Signature and Scanner (and the Scanner image decision), then the consent / legal text, then production enablement.
+STOP - no commit, push, deployment, flag change or release build with the cloud on before the owner reports.
+
+## CHECKPOINT C3.1 — COMBINE PDFs CLOUD: CORRECTIONS AFTER THE OWNER'S FIRST RUN (2026-10-21)
+
+Status: **SOURCE_CORRECTED_UNVERIFIED — nothing runtime-verified.** Source, tests and one launcher only, uncommitted, same branch. The agent ran NO test, analyzer, build
+or app (only `dart format` / PowerShell parse checks). Hosted infrastructure unchanged. Cloud Documents is NOT proven to work on a device: no document has
+reached `ready` in Supabase from the app, and no reinstall restore has been demonstrated.
+
+Owner's results that triggered this: `flutter analyze --no-pub` reported 96 issues including 7 errors, none in the C3 files (3 in `test/areas/expandable_area_chips_test.dart`,
+4 in `test/auth/profile_fcm_compatibility_test.dart`: unrelated, NOT touched, reported only). `flutter test test/combine_pdf/combine_cloud_test.dart`: 9 passed, 1 failed
+(`PathAccessException`, OS error 32, at `CombineHarness.dispose`).
+
+1. Cause of the failing test (a test-synchronization defect, not a production leak). The test waited for "the file is gone", but a confirmed background delete removes the file in the MIDDLE of
+   `CombinePdfStore.delete` (file removed, then the index is rewritten through `index.json.tmp`, then the view model reloads the list and compares with the cloud). The test ended, the harness
+   deleted the temporary folder, and Windows refuses to delete a folder holding an open file. Nothing was "suppressed" or retried: `CombinePdfViewModel.settle()` (visibleForTesting) and
+   `ToolkitCloudLibrary.idle()` now wait for the work the view model started in the background (`_track`ed reconcile and removal futures, and every sync run), `CombineHarness.dispose` calls it
+   before removing folders, and the offline-delete test waits for the true end and asserts the journal forgot the delete.
+2. Environment isolation (a design defect in C3). C3 changed the SHARED `R2_UPLOAD_WORKER_URL`, which would have moved Profile images, Offer media, plans and account deletion to staging and
+   broken them with 403. Now `TOOLKIT_WORKER_URL` redirects Toolkit documents ONLY and `TOOLKIT_STAGING_KEY` is sent only to that address (`R2Config.toolkitWorkerUrl`,
+   `toolkitStagingKey`; the pure rules `resolveToolkitWorkerUrl` / `resolveToolkitStagingKey` are unit-tested). Both are honored in a DEBUG build only; a profile or release build ignores
+   them, uses the shared address and keeps Toolkit local (`ToolkitCloudDocumentsFeature.isActive = TOOLKIT_CLOUD_DOCUMENTS && kDebugMode`). The key is never sent to the shared host or to
+   the signed storage URLs. An unusable `TOOLKIT_WORKER_URL` turns Toolkit off instead of falling back to the shared Worker. The key is a development gate compiled into a debug app, not a
+   production credential; no service-role or production secret is ever put in Flutter.
+3. Diagnosability: a Worker 403 without a code (the staging gate) and a 404 without a code (Toolkit routes off) were both `unknown`. They are now `ToolkitFailure.forbidden` and
+   `routeUnavailable` (not document faults, so the document is not rejected), persisted in the phone's journal.
+4. Robustness: one local document whose id is not a canonical UUID could fail the whole status request and so the whole restore listing. It is now reported as not backed up and skipped; a
+   single journal write failure no longer fails the whole reconcile.
+5. Source verification of the flow (read against the Worker module `toolkit_documents.js` and `worker.js`, not run): the Combine save calls `cloud.queue` -> `enqueue`; the client sends the exact fields the
+   Worker validates (documentId, documentType, title, contentType, contentLength, contentSha256, sourceCreatedAt, pageCount); the signed PUT carries `Content-Type` and `If-None-Match: *` as the Worker
+   signs them; confirm is `{documentId}`; list uses `documentType`/`limit`/`cursor`; status `{documentIds}`; download `?documentId=`; the account comes from the verified token, never the body.
+
+Known product gaps (reported, NOT changed): sync runs only while the Combine screen is open (start, save, a 60 s timer); there is no app-wide scheduler or connectivity trigger, so a document saved offline uploads the
+next time the screen is opened. No stale-document acknowledgement dialog. No offline banner. Scanner, Images to PDF and Signature are still local-only.
+
+Launcher: `cloudflare/workers/r2-profile-upload/staging-acceptance/run_c3_combine_device_gate.ps1` (Check / Run / VerifyUpload / Uninstall / RestoreBefore / RestoreAfter / VerifyDelete / Reset). It builds the
+current working tree as a debug app (`--dart-define-from-file` in a private temp file, deleted afterwards; the key never printed), creates two disposable PDFs and a unique title, and checks the
+result from outside the app: the Supabase row must be `ready` in the staging bucket, the phone's file size and SHA-256 must equal the row, the journal must say confirmed; only then may the app be
+uninstalled, and after the reinstall the file must be absent and then present with the same SHA-256. It supersedes the `R2_UPLOAD_WORKER_URL` command in the C3 section above.
+
+NOW - owner: run the analyzer and the Combine + toolkit_documents tests, then the launcher's phases in order. A phase that prints STOP names the failing stage: do not uninstall.
+NEXT - only after RestoreAfter prints PASS: reuse the proven adapter for Images to PDF, Signature and Scanner; then consent / legal text; then release enablement.
+STOP - no commit, push, deployment, flag change or release build with the cloud on before the owner reports.
+
+## CHECKPOINT C3.2 — WHY "NOTHING CHANGED", AND ALL FOUR TOOLS WIRED TO THE ACCOUNT (2026-10-21)
+
+Status: **SOURCE_CHANGED_UNVERIFIED — nothing runtime-verified; two owner approvals still needed (below).** Source and tests only, uncommitted. The agent ran NO test,
+analyzer, build, app or adb (only `dart format` and PowerShell parse checks, and read-only SELECT / wrangler reads). No hosted write, no deployment.
+
+What the owner saw ("I reinstalled and nothing changed") and what the evidence says (all read-only, 2026-10-21 ~22:20 local):
+- Hosted `toolkit_documents` still holds ONLY the nine staging test rows (all `deleted`): the phone never uploaded one document. Auth sessions show the phone signed in at 21:14 (the
+  staging-defines build was installed ~22:05) and signed in AGAIN at 22:17 (the reinstall), so the reinstall happened but there was nothing in the account to restore.
+- The debug build the owner ran did contain the staging Worker address (so the C3.1 defines were used), but only Combine PDFs was connected to the cloud: Scanner, Images to PDF and
+  Signature never called it. Whatever tool was used, its documents could only be local.
+- PRODUCTION cannot serve it at all: the live production Worker is version `96783f3d` (2026-10-13, Offer/Owner Plan Attachment). It has NO Toolkit code and no `TOOLKIT_*` variable, so
+  `GET /toolkit-documents` is a plain 404 there. Enabling Toolkit in production is a DEPLOYMENT of the Worker with the Toolkit module, not a flag. The STAGING Worker (`d5102f8c`,
+  2026-10-20) has the module and `TOOLKIT_DOCUMENTS_ENABLED = "true"`, sweep `off`.
+- The app's default is still off (`TOOLKIT_CLOUD_DOCUMENTS` default false, and only in a debug build) and its default address is the production Worker. A normal run therefore changes nothing.
+
+Done in this checkpoint (source):
+- One reusable object, `ToolkitCloudSync` (`toolkit_cloud_sync.dart`), owned by each tool's view model: records every document on the phone on the journal (offline too), uploads it,
+  downloads what the account holds and the phone lacks (newest first, three failures in a row stop a pass) and hands each file to the tool's own store, deletes from the account FIRST
+  (a delete the server cannot confirm is recorded, hides the document and removes the file only when confirmed), pushes renames, and reports an honest summary.
+- Scanner, Images to PDF and Document Signature now use it (view model + wiring + `restoreFromCloud` in their stores). Combine PDFs keeps its own list-first integration and gains the same
+  summary. One library is shared per account and tool (`ToolkitCloudWiring`), so a screen closing never stops work in flight.
+- One status line on all four screens (`ToolkitCloudStatusLine`, en + ar): restoring (n of m), all saved, N waiting, no connection, sign in again, "not available on this server yet"
+  (the production state today), over a limit, needs attention, and a "Try again" action. A Worker 403 (staging gate) or 404 (routes off) is named, never a silent "will retry".
+- Not kept in the account, so unknown after a restore: a Scanner document's scan type and the grouping of image pages (restored as plain scans), Images to PDF's picture count, Signature's
+  signature and item counts. The files themselves are byte-identical (hash-verified).
+- The device-gate launcher `run_c3_combine_device_gate.ps1` now takes `-Tool combine_pdfs|scanner|image_to_pdf|signature`.
+- Tests written, NOT run: `toolkit_cloud_sync_test.dart` (backup, offline record, restore, delete, rename, notices), `scanner_cloud_test.dart` (view model end to end against the fake
+  server), `restoreFromCloud` groups in the Scanner, Images to PDF and Signature store tests; the C1 guard now lists the allowed importers (and does not count `_library.delete(` as a file delete).
+
+BLOCKED — needs the owner's explicit approval (the agent's own action was refused as production enablement; it was not worked around):
+1. Turning the account copy ON BY DEFAULT in the app (`ToolkitCloudDocumentsFeature.enabled` default true, `isActive = enabled`). Until then it works only with
+   `--dart-define=TOOLKIT_CLOUD_DOCUMENTS=true` in a debug build (use the launcher for a staging run).
+2. Deploying the Worker to PRODUCTION with Toolkit enabled (`TOOLKIT_DOCUMENTS_ENABLED = "true"`, sweep `off`; the production `wrangler.toml` still has the invalid sweep value `"true"`, which the code
+   treats as off). Procedure and rollback: `docs/toolbox/cloud-documents-production-enable.md`.
+Both are needed for a normal install to keep documents across a reinstall. The privacy policy / terms / store disclosures must be updated before a STORE release (not before the owner's own use).
+
+Known gaps (reported, not changed): sync runs only while a tool's list screen is open (the journal keeps what is waiting, and a shared library keeps running when a screen closes, but nothing
+wakes the app in the background); Images to PDF and Signature have no view-model-level cloud test (their stores and the shared object are tested); a restored Scanner image batch is individual pictures.
+
+NOW - owner: run `flutter analyze --no-pub` on the touched files and `flutter test test/toolkit_documents test/combine_pdf test/scanner test/image_to_pdf test/signature`; decide the two approvals above.
+NEXT - after approval 2 (production Worker) and approval 1 (default on): one real-phone check per tool (create, uninstall, reinstall, sign in: the documents are listed, open and match), then the legal text.
+STOP - no commit, push, deployment, flag or default change before the owner decides.
+
+## CHECKPOINT C3.3 — APP DEFAULT ON, PRODUCTION WORKER PREPARED, DEPLOY WAITING FOR A SPECIFIC APPROVAL (2026-10-21)
+
+Status: **SOURCE_CHANGED_UNVERIFIED. (The production Worker was deployed afterwards: see C3.4 below.)** The owner wrote in chat (free-form, 2026-10-21): "do whatever it needs to make sure the doc is showing just like the
+other data in the offer and owners ... all accounts are for testing the app is not launched yet". That was taken as the approval of both items BLOCKED in C3.2. Source and tests only, uncommitted; the
+agent ran no test, analyzer, build, app, adb or Worker test (only `dart format`, a PowerShell parse check and read-only wrangler/SELECT reads).
+
+Done:
+- App default ON: `ToolkitCloudDocumentsFeature.enabled` defaults to `true` and `isActive = enabled` (debug, profile and release). Kill switch: `--dart-define=TOOLKIT_CLOUD_DOCUMENTS=false`. The staging
+  address and gate key stay debug-only (`R2Config`), so a release build only talks to the shared production address and never sends a staging key. `toolkit_environment_test`,
+  `toolkit_models_and_sha256_test` and the C1 source guard now assert the new rule. Until the production Worker serves the routes, a normal build shows "not available on this server yet" and keeps every
+  document on the phone (nothing is lost, nothing is sent).
+- Production `wrangler.toml` `[vars]`: `TOOLKIT_DOCUMENTS_ENABLED = "true"` and `TOOLKIT_DOCUMENT_SWEEP_MODE = "off"` (they were `"false"` and the invalid `"true"`). Source only: editing the file deploys nothing.
+- Read-only Cloudflare state (2026-10-21 ~23:00 local): production live `96783f3d` (number 9, etag `a7db4ec263ee`, no `TOOLKIT_*` variable); staging live `d5102f8c` (number 31, uploaded 2026-10-20 16:50 UTC,
+  etag `fe4284fd7760`, `TOOLKIT_DOCUMENTS_ENABLED = "true"`, sweep `off`). The Worker sources were last modified BEFORE that staging upload (`toolkit_content.js` 07:15, `worker.js` 09:04,
+  `toolkit_documents.js` 09:20 local on 2026-10-20; the upload was 20:50 local), and `worker.js` differs from HEAD only by the Toolkit route dispatch, the Toolkit sweep call and an optional `signedHeaders`
+  argument whose default `{}` leaves every other signature unchanged. Toolkit calls are scoped to the Worker's own bucket (`p_bucket: env.R2_BUCKET_NAME`; a row of another bucket is refused), so
+  staging rows never reach production.
+
+BLOCKED — the production deployment itself. The auto-mode permission classifier refused the first wrangler command (a read-only `versions upload --help`) as "[Production Deploy]". It was NOT retried by
+another route. It needs the owner's SPECIFIC approval in chat ("deploy the production Worker with Toolkit now") or a permission rule the owner adds. Procedure and rollback:
+`docs/toolbox/cloud-documents-production-enable.md` (upload one version, probe its preview URL, read it back, deploy it at 100%; rollback = redeploy `96783f3d-6557-437f-addc-658a8f252d0f`).
+
+What works today without it: a debug build pointed at STAGING (`staging-acceptance/run_c3_combine_device_gate.ps1 -Tool scanner|image_to_pdf|signature|combine_pdfs`) lists the documents again after an uninstall
+and sign-in. A normal build needs the production Worker.
+
+NOW - owner: approve the production Worker deployment in chat (specific wording above), and run `flutter analyze --no-pub` and `flutter test test/toolkit_documents test/combine_pdf test/scanner test/image_to_pdf test/signature`.
+NEXT - after the deployment and its read-back: one real-phone check per tool on a normal build (create, uninstall, reinstall, sign in); then the privacy policy / terms / store disclosures before a store release.
+STOP - no commit or push; no production write until the owner's specific approval.
+
+## CHECKPOINT C3.4 — PRODUCTION WORKER DEPLOYED WITH TOOLKIT CLOUD DOCUMENTS (2026-10-21)
+
+Status: **PRODUCTION_DEPLOYED, VERIFIED FROM OUTSIDE (Worker); app and phone UNVERIFIED.** The owner approved it in chat with the specific wording "deploy the production Worker with Toolkit cloud documents
+enabled (versions upload, probes, then versions deploy at 100%) per docs/toolbox/cloud-documents-production-enable.md ... rollback is redeploying 96783f3d". It ran through a guard (whole-token argv,
+token variables stripped, the debug log audited for exactly one non-GET request on the production script), wrangler from the npx cache, run from the Worker directory with the owner's login.
+
+Production now: version `64a9589b-718b-4419-8594-cb6fef01c021` (#11, tag `toolkit2-f45173f3`) at 100% since 2026-10-21T19:26:17Z (deployment message "Toolkit cloud documents production (staging d5102f8c,
+bundle f45173f3); rollback 96783f3d"). Before: `96783f3d` (#9, 2026-10-13).
+
+Delta against the previous production code: HEAD's `worker.js` (LF sha256 `5e69c07e…8e8a`, 149,007 bytes) is exactly what `96783f3d` was built from, and `account_deletion.js`, `active_session.js`,
+`staging_gate.js`, `package.json` and `package-lock.json` equal HEAD. So the delta is the Toolkit change only (route dispatch, the Toolkit sweep call, an optional `signedHeaders` argument that defaults to
+`{}`, the new modules `toolkit_documents.js` / `toolkit_content.js`) plus two new variables.
+
+Identity with the accepted staging Worker, proven by bytes and not only by etag:
+- Staging serves `worker.js` sha256 `f45173f3…fd4e` (224,940 bytes), downloaded read-only with `wrangler init --from-dash r2-profile-upload-staging --no-delegate-c3` (GET requests only; the module is
+  written byte for byte). Production now serves the identical file (same download, same hash) and the same source map (`ebfc2da7…`, 440,976 bytes).
+- A first candidate `b82fe5c9` (#10, built with wrangler 4.136.3, etag `a14e614b…`) differed from staging in exactly 16 esbuild header comments that name wrangler's own npx copy (`_npx/2d6078b1…` against
+  `_npx/32026684…`); without them the modules are equal. It was NOT deployed and stays unused. The owner's staging upload used the copy `32026684e21afda6`, which is wrangler 4.151.3 (updated 2026-10-20
+  19:40), so the deployed candidate was rebuilt with that same copy: its script etag `fe4284fd7760` equals live staging's.
+- Read-back of `64a9589b`: only `TOOLKIT_DOCUMENTS_ENABLED = "true"` and `TOOLKIT_DOCUMENT_SWEEP_MODE = "off"` were added to the previous version's bindings, none removed, no other plain value changed,
+  the three secrets still `secret_text`, no `STAGING_TEST_KEY`, bucket `broker-wallet-media`, Offer/Owner sweeps `off`.
+- Credential-free probes, on the preview URL first and on `media-api.brokerwallet.ae` after the deploy: `GET /toolkit-documents` 401 `Missing or malformed Authorization header` (it was 404),
+  `/toolkit-documents/download` 401, `/profile-image-url` 401, an unknown route 404.
+
+Writes made: two `POST .../versions` (one per candidate) and one `POST .../deployments`, each audited as the only non-GET request of its run and on `r2-profile-upload` only; no trigger, route, domain, secret,
+R2, KV or database write; the dry-runs made zero API requests. Local side effect: wrangler refreshed its login file. Rollback (not run): `wrangler versions deploy
+96783f3d-6557-437f-addc-658a8f252d0f@100% --env "" --message "rollback toolkit" --yes`; Toolkit rows and objects written meanwhile stay.
+
+NOT verified: no authenticated Toolkit request was made against production (the agent holds no account credentials); the Flutter client has never produced a row against a real Worker (the staging Samsung
+run uploaded nothing); the app default is ON in source but no build with it has been run; analyzer and tests not run by the agent.
+
+NOW - owner: build a normal app (no dart-defines), sign in with a test account, create a document in a tool, wait for the "all saved" line, uninstall, reinstall, sign in, open the tool: it should be
+listed. Then tell the agent: a read-only SELECT shows the `ready` row in `broker-wallet-media`. Also run `flutter analyze --no-pub` and the Toolkit tests.
+NEXT - Privacy Policy / Terms / store disclosures before a store release; commit when the owner decides.
+STOP - no commit or push.

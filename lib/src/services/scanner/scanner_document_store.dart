@@ -424,6 +424,99 @@ class ScannerDocumentStore {
     });
   }
 
+  /// Stores [source], a document downloaded from the account's cloud, under the
+  /// SAME id it has there, so the phone and the account name it alike. Either it
+  /// is listed with a verified file, or nothing is. Idempotent: an id already
+  /// listed with its file is returned as it is, and one listed whose file is gone
+  /// gets its file back. [expectedSize] is what the cloud says the file has; the
+  /// file must also read as a PDF or an image. The kind of scan and the grouping
+  /// of image pages are not kept in the account, so a restored document is a
+  /// plain document scan. [source] is removed once stored (and when it can never
+  /// be stored); it is kept when the phone is out of space, so a retry need not
+  /// download it again.
+  Future<ScannerDocument> restoreFromCloud({
+    required String id,
+    required File source,
+    required String name,
+    required DateTime createdAt,
+    required int expectedSize,
+  }) {
+    return _serial(() async {
+      final InspectedScanFile inspected;
+      try {
+        inspected = await _inspector.inspect(source);
+      } on ScannerException {
+        await _quietDelete(source);
+        throw const ScannerException(ScannerFailure.writeFailed, 'content');
+      }
+      final fileName = '$id.${inspected.kind.extension}';
+      if (inspected.size != expectedSize ||
+          !ScannerNaming.isStoredFileName(fileName)) {
+        await _quietDelete(source);
+        throw const ScannerException(ScannerFailure.writeFailed, 'size');
+      }
+      final entries = await _prepare();
+      final index = entries.indexWhere(
+          (e) => e.document.id == id && e.state == _EntryState.ready);
+      final title = ScannerNaming.sanitizeDisplayName(name) ?? 'Restored scan';
+      final created = index >= 0
+          ? entries[index].document
+          : ScannerDocument(
+              id: id,
+              fileName: fileName,
+              name: ScannerNaming.uniqueName(title, <String>[
+                for (final e in entries)
+                  if (e.document.id != id) e.document.name,
+              ]),
+              scanType: ScanMode.document,
+              format: inspected.kind.format,
+              mimeType: inspected.kind.mimeType,
+              createdAt: createdAt,
+              fileSize: inspected.size,
+              pageCount: inspected.pageCount,
+            );
+      final target = fileOf(created);
+      if (index >= 0 && await target.exists()) {
+        await _quietDelete(source);
+        return created;
+      }
+      if (index < 0) {
+        await _writeIndex(<_Entry>[
+          ...entries,
+          _Entry(created, _EntryState.pending),
+        ]);
+      }
+      final part = File('${target.path}.part');
+      try {
+        await _filesDir.create(recursive: true);
+        await _copier(source, part);
+        await _verifyCopy(part, inspected);
+        await part.rename(target.path);
+        if (index < 0) {
+          await _writeIndex(<_Entry>[
+            ...entries,
+            _Entry(created, _EntryState.ready),
+          ]);
+        }
+      } catch (error) {
+        await _quietDelete(part);
+        await _quietDelete(target);
+        if (index < 0) {
+          try {
+            await _writeIndex(entries);
+          } on ScannerException {
+            // The next load drops the pending entry, whose file is gone.
+          }
+        }
+        if (error is ScannerException) rethrow;
+        if (error is FileSystemException) throw _mapFileError(error);
+        throw const ScannerException(ScannerFailure.writeFailed, 'restore');
+      }
+      await _quietDelete(source);
+      return created;
+    });
+  }
+
   Future<void> _verifyCopy(File copy, InspectedScanFile expected) async {
     final int size;
     try {

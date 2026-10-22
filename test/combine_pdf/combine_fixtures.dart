@@ -312,6 +312,8 @@ class CombineHarness {
     FakePicker? picker,
     DateTime Function()? clock,
     CombineFileCopier? copier,
+    String Function()? idGenerator,
+    CombineCloudFactory? cloudFactory,
   })  : base = makeTempDir('base'),
         temp = makeTempDir('temp'),
         inputs = makeTempDir('in'),
@@ -332,8 +334,9 @@ class CombineHarness {
       currentUserId: userId ?? () => _user,
       userIdChanges: _users.stream,
       clock: clock ?? () => DateTime.utc(2026, 10, 18, 9, 30),
-      idGenerator: () => 'id${counter++}',
+      idGenerator: idGenerator ?? () => 'id${counter++}',
       copier: copier,
+      cloudFactory: cloudFactory,
     );
   }
 
@@ -388,6 +391,11 @@ class CombineHarness {
   }
 
   Future<void> dispose() async {
+    // Work the view model started in the background (a cloud comparison, an
+    // upload, the removal of a file after the server confirmed a delete) may
+    // still be writing the index or reading a file. Windows refuses to delete a
+    // folder with an open file in it (error 32), so it finishes first.
+    await viewModel.settle();
     viewModel.dispose();
     await _users.close();
     for (final d in [base, temp, inputs]) {

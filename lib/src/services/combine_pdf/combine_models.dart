@@ -82,6 +82,11 @@ enum CombinePdfFailure {
 
   /// Exporting to the Downloads folder or Files failed.
   exportFailed,
+
+  /// The document is in the user's account but could not be fetched or changed
+  /// there now (no connection, a busy server, another phone took over the
+  /// account). Nothing on this phone was lost.
+  cloudUnavailable,
 }
 
 /// A failure carrying only its [kind] (and, for a problem with one selected

@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:broker_wallet/src/services/combine_pdf/combine_models.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_pdf_engine.dart';
+import 'package:broker_wallet/src/services/toolkit/bounded_isolate.dart';
 
 /// Lets the user stop a combine that is running.
 class CombineCancelToken {
@@ -72,14 +73,32 @@ void _mergeEntry(_MergeStart start) {
 class IsolateCombineExecutor implements CombineExecutor {
   const IsolateCombineExecutor({
     this.maxSourceBytes = CombineLimits.maxSourceBytes,
+    this.analysisDeadline = const Duration(minutes: 2),
   });
 
   final int maxSourceBytes;
 
+  /// The longest one file's check may run. Generous on purpose (a debug build
+  /// reads a large PDF many times slower than a release one); it only ends a
+  /// check that would otherwise never report.
+  final Duration analysisDeadline;
+
   @override
   Future<CombineAnalysis> analyze(String path, {int? maxBytes}) {
     final limit = maxBytes ?? maxSourceBytes;
-    return Isolate.run(() => analyzeCombinePdf(path, maxBytes: limit));
+    // A check that never ends would leave the selection looking empty with
+    // nothing to tap: past the deadline the worker is stopped and the file is
+    // reported as one that could not be read, so it can be removed or retried.
+    return runBoundedIsolate<CombineAnalysis>(
+      () => analyzeCombinePdf(path, maxBytes: limit),
+      limit: analysisDeadline,
+      onTimeout: () => const CombinePdfException(
+          CombinePdfFailure.missingSource,
+          detail: 'timeout'),
+      onFailure: () => const CombinePdfException(
+          CombinePdfFailure.corruptSource,
+          detail: 'worker'),
+    );
   }
 
   @override

@@ -14,6 +14,8 @@ import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_platform.dart'
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_usage_gate.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_wiring.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/image_to_pdf/image_pdf_viewmodel.dart';
 
 /// The SharedPreferences key the first Images to PDF tool stored every account's
@@ -64,6 +66,15 @@ class ImagePdfWiring {
       loadUnicodeFont: _loadFont,
       tempRoot: getTemporaryDirectory,
       legacyDocumentCount: _legacyCount,
+      // The account copy: null (so the tool stays local) when this build has it
+      // switched off.
+      cloudFactory: (accountId, files) => ToolkitCloudWiring.create(
+        accountId: accountId,
+        type: ToolkitDocumentType.imageToPdf,
+        directory: files.journalDirectory,
+        files: files,
+        currentAccountId: () => auth.currentUserId,
+      ),
     );
   }
 

@@ -12,7 +12,20 @@ import 'package:broker_wallet/src/services/signature/signature_platform.dart';
 import 'package:broker_wallet/src/services/signature/signature_stamp_renderer.dart';
 import 'package:broker_wallet/src/services/signature/signature_store.dart';
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_account_files.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_library.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_sync.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_download_service.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
+
+/// Builds the cloud library of one signed-in account for Document Signature, or
+/// returns null when this build keeps the tool local. [files] finds the stored
+/// files and the folder of the journal.
+typedef SignatureCloudFactory = ToolkitCloudLibrary? Function(
+  String accountId,
+  ToolkitAccountFiles files,
+);
 
 /// What picking and opening a PDF did.
 class SignatureOpenOutcome {
@@ -69,10 +82,14 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     required String? Function() currentUserId,
     required Stream<String?> userIdChanges,
     Future<int> Function()? legacyDocumentCount,
+    SignatureCloudFactory? cloudFactory,
+    Duration cloudSyncInterval = const Duration(seconds: 60),
     SignatureFileCopier? copier,
     DateTime Function()? clock,
     String Function()? idGenerator,
-  })  : _executor = executor,
+  })  : _cloudFactory = cloudFactory,
+        _cloudSyncInterval = cloudSyncInterval,
+        _executor = executor,
         _baseDirectory = baseDirectory,
         _picker = picker,
         _usage = usage,
@@ -103,6 +120,8 @@ class SignatureLibraryViewModel extends ChangeNotifier {
   final String? Function() _currentUserId;
   final Stream<String?> _userIdChanges;
   final Future<int> Function()? _legacyDocumentCount;
+  final SignatureCloudFactory? _cloudFactory;
+  final Duration _cloudSyncInterval;
   final SignatureFileCopier? _copier;
   final DateTime Function()? _clock;
   final String Function()? _idGenerator;
@@ -113,6 +132,12 @@ class SignatureLibraryViewModel extends ChangeNotifier {
   String? _userId;
   SignatureStore? _store;
 
+  // The account copy of the documents (null: this build keeps the tool local).
+  ToolkitCloudSync? _cloud;
+
+  // What the store holds, and what the screen lists: the same, minus a document
+  // whose delete the user asked for and the server has not confirmed yet.
+  List<SignedDocument> _visible = const <SignedDocument>[];
   List<SignedDocument> _documents = const <SignedDocument>[];
   Set<String> _missing = const <String>{};
   final Set<String> _selected = <String>{};
@@ -124,7 +149,11 @@ class SignatureLibraryViewModel extends ChangeNotifier {
   bool _editing = false;
   int _legacyCount = 0;
 
-  List<SignedDocument> get documents => _documents;
+  List<SignedDocument> get documents => _visible;
+
+  /// The state of the documents in the user's account, for the status line.
+  ToolkitCloudSummary get cloudSummary =>
+      _cloud?.summary() ?? ToolkitCloudSummary.off;
   bool get isLoading => _loading;
   bool get loadFailed => _loadFailed;
 
@@ -179,6 +208,7 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _subscription?.cancel();
+    _detachCloud();
     super.dispose();
   }
 
@@ -193,6 +223,8 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     final epoch = _epoch;
     _userId = uid;
     _store = null;
+    _detachCloud();
+    _visible = const <SignedDocument>[];
     _documents = const <SignedDocument>[];
     _missing = const <String>{};
     _selected.clear();
@@ -221,6 +253,7 @@ class SignatureLibraryViewModel extends ChangeNotifier {
         clock: _clock,
         idGenerator: _idGenerator,
       );
+      _attachCloud(uid, epoch);
     } catch (_) {
       if (_disposed || epoch != _epoch) return;
       _loading = false;
@@ -231,8 +264,11 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     await refresh();
   }
 
-  /// Reloads the signed-in account's documents from disk.
-  Future<void> refresh() async {
+  /// Reloads the signed-in account's documents from disk, then (unless [cloud] is
+  /// false) compares them with the user's account in the background: what the
+  /// account lacks is uploaded, what this phone lacks is downloaded. A document
+  /// just signed and saved reaches here through the editor's `onSaved`.
+  Future<void> refresh({bool cloud = true}) async {
     final store = _store;
     final epoch = _epoch;
     if (store == null) return;
@@ -242,6 +278,7 @@ class SignatureLibraryViewModel extends ChangeNotifier {
       _documents = library.documents;
       _missing = library.missingIds;
       _loadFailed = false;
+      _rebuildVisible();
       final ids = _documents.map((d) => d.id).toSet();
       _selected.removeWhere((id) => !ids.contains(id));
     } catch (_) {
@@ -250,6 +287,125 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     }
     _loading = false;
     _notify();
+    if (cloud && !_loadFailed) _cloud?.requestSync();
+  }
+
+  // ------------------------------------------------------- the account copy
+
+  void _rebuildVisible() {
+    final cloud = _cloud;
+    _visible = cloud == null
+        ? _documents
+        : <SignedDocument>[
+            for (final d in _documents)
+              if (!cloud.isDeleting(d.id)) d,
+          ];
+  }
+
+  void _attachCloud(String uid, int epoch) {
+    final makeCloud = _cloudFactory;
+    final store = _store;
+    if (makeCloud == null || store == null) return;
+    try {
+      final files = ToolkitAccountFiles(store.accountDir);
+      final library = makeCloud(uid, files);
+      if (library == null) return;
+      _cloud = ToolkitCloudSync(
+        type: ToolkitDocumentType.signature,
+        library: library,
+        syncInterval: _cloudSyncInterval,
+        localDocuments: _cloudLocalDocuments,
+        restoreOne: (document, lib) => _restoreOne(document, lib, epoch),
+        removeLocal: (id) => _removeLocalAfterCloudDelete(id, epoch),
+        onChanged: () {
+          if (_disposed || epoch != _epoch) return;
+          _rebuildVisible();
+          _notify();
+        },
+        onRestoredOne: () async {
+          if (!_disposed && epoch == _epoch) await refresh(cloud: false);
+        },
+      )..start();
+    } catch (_) {
+      // The cloud copy is optional and never blocks the local library.
+    }
+  }
+
+  void _detachCloud() {
+    _cloud?.dispose();
+    _cloud = null;
+  }
+
+  List<ToolkitCloudLocalDocument> _cloudLocalDocuments() =>
+      <ToolkitCloudLocalDocument>[
+        for (final d in _documents)
+          ToolkitCloudLocalDocument(
+            documentId: d.id,
+            title: d.name,
+            sizeBytes: d.fileSize,
+            sourceCreatedAt: d.createdAt,
+            pageCount: d.pageCount >= 1 ? d.pageCount : null,
+            fileMissing: _missing.contains(d.id),
+          ),
+      ];
+
+  /// Downloads one document of the account that this phone lacks and stores it.
+  Future<bool> _restoreOne(
+    ToolkitDocumentMetadata document,
+    ToolkitCloudLibrary library,
+    int epoch,
+  ) async {
+    final store = _store;
+    if (store == null || _disposed || epoch != _epoch) return false;
+    final target = ToolkitAccountFiles(store.accountDir)
+        .restoreFile(document.documentId, document.contentType.extension);
+    if (target == null) return false;
+    final result = await library.download(document: document, target: target);
+    if (_disposed || epoch != _epoch) return false;
+    if (result == ToolkitDownloadResult.conflict) {
+      // A leftover in the download folder that is not this document: never used,
+      // removed, so the next attempt downloads again.
+      try {
+        await target.delete();
+      } catch (_) {}
+      return false;
+    }
+    await store.restoreFromCloud(
+      id: document.documentId,
+      source: target,
+      name: document.title,
+      createdAt: document.sourceCreatedAt,
+      expectedSize: document.sizeBytes,
+    );
+    return true;
+  }
+
+  /// A delete that waited for the network was confirmed by the server: the
+  /// phone's copy goes now (and only now).
+  Future<void> _removeLocalAfterCloudDelete(String id, int epoch) async {
+    final store = _store;
+    if (store == null || !_documents.any((d) => d.id == id)) return;
+    try {
+      await store.delete(<String>[id]);
+    } catch (_) {
+      // Still listed; the user can delete it again.
+    }
+    if (_disposed || epoch != _epoch) return;
+    await refresh(cloud: false);
+  }
+
+  /// The user asked to try the account copy again now.
+  Future<void> retryCloud() async {
+    final cloud = _cloud;
+    if (cloud != null) await cloud.retryNow();
+  }
+
+  /// Completes when the account copy has no work in flight (for tests, so no file
+  /// is open when a folder is removed).
+  @visibleForTesting
+  Future<void> settle() async {
+    final cloud = _cloud;
+    if (cloud != null) await cloud.settle();
   }
 
   // ---------------------------------------------------------------- opening
@@ -427,8 +583,11 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     _working = true;
     _notify();
     try {
-      await store.rename(id, newName);
+      final updated = await store.rename(id, newName);
       if (_disposed || epoch != _epoch) return SignatureFailure.accountChanged;
+      // The phone's title is the user's; the account copy follows, and a failure
+      // to reach the account is kept and retried, never shown as a rename error.
+      await _cloud?.rename(id, updated.name);
       await refresh();
       return null;
     } on SignatureException catch (error) {
@@ -451,11 +610,31 @@ class SignatureLibraryViewModel extends ChangeNotifier {
     _working = true;
     _notify();
     try {
-      final outcome = await store.delete(wanted);
+      // With an account copy, the account's copy goes first and the phone's file
+      // only after the server confirmed it. A delete the server cannot be asked
+      // about now is recorded and finished later: the document is hidden, and its
+      // file is removed when the confirmation arrives.
+      var onPhone = wanted;
+      var notDeletedInCloud = const <String>[];
+      final cloud = _cloud;
+      if (cloud != null) {
+        final split = await cloud.deleteFirst(wanted);
+        if (_disposed || epoch != _epoch) return const <String>[];
+        onPhone = split.deleteLocally;
+        notDeletedInCloud = split.failed;
+      }
+      final outcome = onPhone.isEmpty
+          ? const SignatureDeleteOutcome(
+              deleted: <String>[], failed: <String>[], notFound: <String>[])
+          : await store.delete(onPhone);
       if (_disposed || epoch != _epoch) return const <String>[];
       _selected.removeAll(outcome.deleted);
       await refresh();
-      return <String>[...outcome.failed, ...outcome.notFound];
+      return <String>[
+        ...outcome.failed,
+        ...outcome.notFound,
+        ...notDeletedInCloud,
+      ];
     } catch (_) {
       return wanted;
     } finally {

@@ -11,6 +11,12 @@ import {
 } from './account_deletion.js';
 import { stagingRequestAllowed } from './staging_gate.js';
 import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.js';
+import {
+  TOOLKIT_PUT_SIGNED_HEADERS,
+  handleToolkitDocumentRequest,
+  runToolkitDocumentSweeps,
+} from './toolkit_documents.js';
+import { toHex } from './toolkit_content.js';
 
 /**
  * Private profile-image and offer-media lifecycle worker.
@@ -39,6 +45,10 @@ import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.
  *   POST /owner-plan/confirm
  *   GET  /owner-plan
  *   POST /owner-plan/remove
+ *   POST /toolkit-documents/authorize|confirm|status|rename|remove
+ *   GET  /toolkit-documents, GET /toolkit-documents/download
+ *                          (Toolkit cloud documents; see toolkit_documents.js.
+ *                          Answer 404 unless TOOLKIT_DOCUMENTS_ENABLED is "true")
  *   POST /account/delete   (see account_deletion.js)
  *
  * Scheduled:
@@ -47,6 +57,8 @@ import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.
  *   owner-media cleanup sweeps (runOwnerMediaSweeps; OFF unless configured)
  *   offer-plan / owner-plan cleanup sweeps (runOfferPlanSweeps /
  *     runOwnerPlanSweeps; same switches as the Offer / Owner media sweeps)
+ *   Toolkit document cleanup (runToolkitDocumentSweeps; OFF unless
+ *     TOOLKIT_DOCUMENT_SWEEP_MODE is configured)
  *
  * Land / plot plans (Arabic: مخطط الأرض / مخطط القطعة). Each Offer and each Owner
  * record has at most ONE dedicated plan: an image or a document (PDF, DOC,
@@ -326,6 +338,10 @@ export default {
       if (request.method === 'POST' && path === '/owner-plan/confirm') return await handlePlanConfirm(request, env, PLAN_PARENTS.owner);
       if (request.method === 'GET' && path === '/owner-plan') return await handlePlanGet(request, env, PLAN_PARENTS.owner);
       if (request.method === 'POST' && path === '/owner-plan/remove') return await handlePlanRemove(request, env, PLAN_PARENTS.owner);
+      if (path === '/toolkit-documents' || path.startsWith('/toolkit-documents/')) {
+        const toolkit = await handleToolkitDocumentRequest(request, env, toolkitDocumentDeps());
+        if (toolkit) return toolkit;
+      }
       return corsResponse({ error: 'Not found' }, 404, env);
     } catch (error) {
       console.error('[r2-profile-upload] request failed', error);
@@ -354,8 +370,83 @@ export default {
     // / OWNER_MEDIA_SWEEP_MODE), so they are off wherever those are off.
     ctx.waitUntil(runOfferPlanSweeps(env));
     ctx.waitUntil(runOwnerPlanSweeps(env));
+    // Toolkit documents: its own switch (TOOLKIT_DOCUMENT_SWEEP_MODE), off by
+    // default; never rejects.
+    ctx.waitUntil(runToolkitDocumentCleanup(env));
   },
 };
+
+/** Scheduled Toolkit document cleanup (report only; see runToolkitDocumentSweeps). */
+export function runToolkitDocumentCleanup(env, options = {}) {
+  return runToolkitDocumentSweeps(env, toolkitDocumentDeps(), options);
+}
+
+/**
+ * What toolkit_documents.js needs from this file, built on use because
+ * WorkerError is declared at the end of the module.
+ */
+function toolkitDocumentDeps() {
+  return {
+    respond: corsResponse,
+    WorkerError,
+    verifyUser: verifySupabaseTokenAndGetUserId,
+    supabase: supabaseServiceFetch,
+    signPut: signToolkitDocumentPut,
+    sha256OfObject: sha256HexOfStoredObject,
+    signGet: ({ env, objectKey }) => createPresignedR2Url({
+      env, method: 'GET', objectKey, expiresInSeconds: GET_URL_TTL_SECONDS,
+    }),
+    requireUuid,
+    requireConfiguredBucket,
+    putTtlSeconds: PUT_URL_TTL_SECONDS,
+    getTtlSeconds: GET_URL_TTL_SECONDS,
+  };
+}
+
+/**
+ * The SHA-256 of a stored object, computed by the Worker (null when the object is
+ * gone). Used only when TOOLKIT_DOC_VERIFY_SHA256 is "true". The Workers runtime
+ * hashes a stream natively (crypto.DigestStream), so the object is never held in
+ * memory; outside that runtime (Node tests) a bounded fallback buffers it.
+ */
+async function sha256HexOfStoredObject(env, objectKey, size) {
+  const object = await env.MEDIA_BUCKET.get(objectKey);
+  if (!object) return null;
+  if (typeof crypto.DigestStream === 'function' && object.body) {
+    const digest = new crypto.DigestStream('SHA-256');
+    await object.body.pipeTo(digest);
+    return toHex(new Uint8Array(await digest.digest));
+  }
+  if (size > 16 * 1024 * 1024) {
+    throw new WorkerError('Digest verification is unavailable for this object', 500);
+  }
+  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', await object.arrayBuffer())));
+}
+
+/** A signed PUT for a Toolkit document, refused while the account is being deleted. */
+async function signToolkitDocumentPut({ env, userId, objectKey, contentType }) {
+  try {
+    const quarantineCheckedAt = Date.now();
+    await assertUploadsAllowed(userId, env);
+    const presignedUrl = await createPresignedR2Url({
+      env, method: 'PUT', objectKey, contentType, expiresInSeconds: PUT_URL_TTL_SECONDS,
+      // Write once: a replay of this URL after the object exists is refused by R2.
+      signedHeaders: TOOLKIT_PUT_SIGNED_HEADERS,
+    });
+    assertPresignedWithin(presignedUrl, quarantineCheckedAt + MAX_SIGNING_DELAY_MS);
+    return presignedUrl;
+  } catch (error) {
+    if (error instanceof AccountDeletionError) {
+      const inProgress = error.code === 'deletion_in_progress';
+      throw new WorkerError(
+        inProgress ? 'Account deletion in progress' : 'Upload authorization unavailable',
+        error.status,
+        inProgress ? 'deletion_in_progress' : undefined,
+      );
+    }
+    throw error;
+  }
+}
 
 async function handleAuthorize(request, env) {
   requireConfiguredBucket(env);
@@ -2736,7 +2827,9 @@ async function loadProfileMediaId(userId, env) {
   return (await profileRes.json())?.[0]?.profile_media_id ?? null;
 }
 
-async function createPresignedR2Url({ env, method, objectKey, contentType, expiresInSeconds }) {
+// [signedHeaders] (optional, lower-case names) are added to the signature: the caller of the
+// URL must then send exactly those headers. Only the Toolkit PUT uses it.
+async function createPresignedR2Url({ env, method, objectKey, contentType, expiresInSeconds, signedHeaders = {} }) {
   requireConfiguredBucket(env);
   if (!env.R2_S3_ENDPOINT || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
     throw new WorkerError('Missing R2 signing runtime configuration', 500);
@@ -2744,7 +2837,7 @@ async function createPresignedR2Url({ env, method, objectKey, contentType, expir
   const encodedKey = objectKey.split('/').map(encodeURIComponent).join('/');
   const signedUrl = new URL(`${env.R2_S3_ENDPOINT}/${env.R2_BUCKET_NAME}/${encodedKey}`);
   signedUrl.searchParams.set('X-Amz-Expires', String(expiresInSeconds));
-  const headers = contentType ? { 'content-type': contentType } : {};
+  const headers = { ...(contentType ? { 'content-type': contentType } : {}), ...signedHeaders };
   const aws = new AwsClient({ accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY });
   const signedRequest = await aws.sign(new Request(signedUrl, { method, headers }), {
     aws: { signQuery: true, service: 's3', region: 'auto' },

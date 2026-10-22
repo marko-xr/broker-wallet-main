@@ -706,3 +706,128 @@
     UAE-wide group stays visible under any emirate filter.
   - The verification register is `docs/toolbox/uae-links-verification.md`; the catalogue test enforces ids,
     domains, coverage, language completeness and metadata.
+- Toolkit cloud documents (decided 2026-10-19, branch `toolkit-cloud-documents-readiness`; checkpoint C1 is source only):
+  - **Toolkit documents are cloud-backed account data; local storage is a cache and an offline working layer.**
+    The PDFs of Scanner, Combine PDFs, Images to PDF and Document Signature must survive reinstalling the app and
+    moving to a new phone, by signing in to the same Supabase account. Local-only storage is no longer the final
+    persistence model. Deal Pack Builder, Inspection Reports, Floor Plan Markup and the UAE Transaction Assistant
+    are future work and not part of this.
+  - **One shared foundation, no parallel identity.** One table `public.toolkit_documents` (the tool is the
+    `document_type` column), bytes in the existing private R2 bucket under
+    `profiles/<account>/toolkit-documents/<id>.pdf`, the existing `r2-profile-upload` Worker, the existing Supabase
+    Auth identity, Single Active Device gate and Delete Account sweep. It deliberately does not reuse
+    `media_objects`: that is the gallery / plan model. The object key is derived on the server, pinned by a CHECK
+    constraint and never returned to the client; the id is the local document's UUID and is the idempotency key of
+    every operation.
+  - **Server-controlled state.** `authenticated` may only read its own ready rows through a column list without the
+    bucket or key; every change goes through service-role-only `SECURITY DEFINER` functions (authorize / confirm /
+    rename / begin-delete / finalize-delete / discard-abandoned), with a guard trigger that freezes identity for every
+    role. Every Worker read is scoped by bucket because staging and production share one Supabase project.
+  - **Honest states.** "Saved to cloud" is set only after the server confirmed the stored bytes; a document that is
+    only on the phone says so and is described as not protected against device loss. A document deleted elsewhere is
+    tombstoned (180 days) and never uploaded again; an abandoned upload that never became ready is removed without a
+    tombstone so a slow device can still upload it. The coordinator never deletes a local file.
+  - **Conflicts.** Bytes of an id never change: no "newer copy" exists. A same-id file with different bytes is a
+    conflict that overwrites neither side; renames are compare-and-swap on the version, retried once.
+  - **Limits are anti-abuse, not entitlements.** Per-PDF, per-account bytes and count, pending uploads, uploads per hour
+    and attempts per upload are configurable Worker variables with hard ceilings enforced by the database; paid-plan
+    quotas (RevenueCat) stay separate future work.
+  - **Not end-to-end encrypted; the local cache is not encrypted.** The Privacy Policy, Terms and the store data
+    disclosures must be updated before cloud document storage is enabled; existing legal decisions stand until then.
+  - **Inactive until reviewed.** Every route answers 404 unless `TOOLKIT_DOCUMENTS_ENABLED` is exactly `"true"` (ships
+    `"false"`), the sweep ships `off`, the Flutter foundation is imported by nothing and `TOOLKIT_CLOUD_DOCUMENTS` is a
+    compile-time switch that is off. The four tools keep their local stores until the migration of existing documents
+    is separately implemented and verified.
+  - **C3 (2026-10-21): Combine PDFs is the one tool wired to the cloud, in a DEBUG build only.** `ToolkitCloudDocumentsFeature.isActive` is
+    `TOOLKIT_CLOUD_DOCUMENTS=true` AND `kDebugMode` (profile and release builds are always local). Toolkit documents have their own Worker address
+    (`TOOLKIT_WORKER_URL`) and staging gate key (`TOOLKIT_STAGING_KEY`), both honored in a debug build only and never applied to the shared
+    `R2_UPLOAD_WORKER_URL` (Profile, Offer media, plans, account deletion). The key is never sent to the shared host or to signed storage URLs. The
+    other three tools stay local (superseded by C3.2 below). A release build cannot reach the cloud until a later checkpoint changes that on purpose, after the Samsung
+    result and the legal text. The tool's local store remains authoritative for names and files; the cloud copy never deletes a local file before the
+    server confirmed the delete.
+  - **C3.2 (2026-10-21): all four tools use the account copy, through one object each tool's view model owns (`ToolkitCloudSync`).** The phone's store stays the
+    working copy and works offline; documents on the phone are recorded on the journal and uploaded (also ones made before the cloud was on); what the account holds
+    and the phone lacks is downloaded, hash-verified and stored by the tool's own store (`restoreFromCloud`, same id), so the tool's list shows it like any other
+    (Combine PDFs lists it first and downloads on open). A delete reaches the account first and the phone's file goes only after the server confirmed it. One library
+    is shared per account and tool, so a screen closing never stops work in flight. The user is told the truth on every screen (one status line, including WHY the
+    account cannot be reached). Details the account does not keep (scan type, image grouping, picture count, signature counts) are unknown after a restore.
+    The app default stays OFF until the owner approves turning it on AND approves deploying the Worker to production (the live production Worker has no Toolkit code):
+    see `docs/toolbox/cloud-documents-production-enable.md`.
+  - **C3.3 (2026-10-21): the account copy is ON by default, in every build; the production Worker is next.** The owner approved it in chat ("do whatever it needs to make sure the doc is
+    showing just like the other data ... all accounts are for testing, the app is not launched yet"). `ToolkitCloudDocumentsFeature.enabled` defaults to `true` and `isActive = enabled`;
+    `--dart-define=TOOLKIT_CLOUD_DOCUMENTS=false` is the kill switch. The staging address and gate key stay debug-only, so a release build only ever talks to the shared production address.
+    This supersedes the debug-only and default-off statements of C3 and C3.2. The production Worker must serve the routes first (`TOOLKIT_DOCUMENTS_ENABLED = "true"`, sweep `off`, set in the
+    production `wrangler.toml`; the deployment waits for the owner's specific approval, see `docs/toolbox/cloud-documents-production-enable.md`); until then a normal build says
+    "not available on this server yet" and keeps documents on the phone. The privacy policy, terms and store disclosures must be updated before a STORE release.
+  - **C3.4 (2026-10-21): the production Worker serves Toolkit cloud documents.** Deployed on the owner's specific approval (version `64a9589b-718b-4419-8594-cb6fef01c021`, rollback `96783f3d`). The module is
+    byte-identical to the one the accepted staging Worker serves (`worker.js` sha256 `f45173f3…fd4e`), the only code delta against the previous production Worker is the Toolkit module, and the only new
+    variables are `TOOLKIT_DOCUMENTS_ENABLED = "true"` and `TOOLKIT_DOCUMENT_SWEEP_MODE = "off"`. Identity is proven by downloading the served module read-only and comparing bytes (the etags also matched once the
+    candidate was built with the same wrangler copy as the staging upload). Real-phone verification remains the owner's; store disclosures remain open.
+  - **Open owner decisions.** Historical ownerless legacy files (attribute, discard or keep local); Scanner image scans
+    (JPEG / PNG are not PDFs: convert, allow image types, or keep local); the limits and cost proposal; the exact
+    hosted SQL, grants, routes and rollback.
+  - Design, contracts, rollout and rollback: `docs/toolbox/cloud-documents-rollout.md`.
+- Toolkit cloud documents, C1.1 corrections (decided 2026-10-20; supersedes the C1 "open owner decisions" and the PDF-only wording above; still source only):
+  - **Scanner JPEG and PNG are backed up as-is, beside PDF; no conversion and no silent exclusion.** `document_type` is the
+    source tool and `content_type` the binary format, two separate frozen fields. Only the Scanner may store images
+    (one page each); the other tools store PDF. The server builds the whole key from the verified content type
+    (`.pdf` / `.jpg` / `.png`), never from a client name, MIME label or key; unsupported formats are refused before a row exists.
+  - **Ownerless legacy documents stay local and isolated.** Never deleted, never auto-uploaded, never assigned to the
+    signed-in account, never visible to another account, and a file name or title is never ownership. No recovery
+    operation is authorized; a future one needs its own design and approval. Per-account documents remain eligible for
+    the later explicit migration, which never moves, rewrites or deletes originals.
+  - **Integrity is described at its real level.** The device SHA-256 is a claim; the Worker verifies existence, byte
+    length, stored content type, declared-format signature and a complete container (not decoding); the R2 ETag is an
+    object-identity token, never a digest; `sha256_verified` is true only when the optional Worker digest ran
+    (`TOOLKIT_DOC_VERIFY_SHA256`, off until Cloudflare CPU is measured on staging); the app always verifies size, SHA-256
+    and container on download. The product must not claim end-to-end cryptographic verification.
+  - **Authorization model.** All Toolkit functions are `SECURITY DEFINER`, `search_path = ''`, revoked from
+    `public, anon, authenticated` and granted to `service_role` only; clients read their own ready rows through a column
+    list without bucket or key; `service_role` has no table privilege; identity (owner, tool, format, key, size, digest) is
+    frozen for every role; `FORCE ROW LEVEL SECURITY` is deliberately not used (owner role has BYPASSRLS; RLS already
+    applies to client roles). The explicit revoke/grant is required because hosted default privileges grant new functions
+    to client roles.
+  - **Tombstones are bounded and cannot be silently resurrected.** Deletion keeps a title-scrubbed tombstone for 180 days,
+    at most 500 per account; every purge advances a per-account `tombstone_floor`; a new document id older than the floor
+    is refused as `stale_document` unless the user explicitly acknowledges; documents that already reached the cloud are
+    never re-uploaded (client ledger + reconciler). Abandoned never-ready uploads are removed object-first without a
+    tombstone.
+  - **Limits stay anti-abuse and non-final.** Recommended starting profile: PDF 50 MiB, image 25 MiB, account 1 GiB, 1,000
+    documents, 5 pending, 120 new per hour, 10 attempts; hard ceilings 250 MiB / 64 MiB / 20 GiB / 5,000 / 20 / 1,000 / 100.
+    The owner decides the numbers; they are Worker variables, not RevenueCat entitlements. The Free database size, not R2
+    cost, is the first ceiling.
+  - **Nothing hosted without a separate approval of the exact, frozen migration.** Staging and production share one
+    Supabase project; the ordered sequence, stop conditions and rollback are in `docs/toolbox/cloud-documents-rollout.md`.
+- Toolkit cloud documents, C2A preflight (2026-10-20; source unchanged, nothing hosted):
+  - **The candidate is frozen by hash.** The migration's canonical (LF) SHA-256 is
+    `88ceb6c2f8f6b62b9bbec73e6932f3843b333a13c114425b7ef7eaad20d5ad4d`; any edit to it restarts the review. The Worker
+    modules and entrypoint are hashed in `docs/toolbox/cloud-documents-rollout.md` section P.
+  - **Order of hosted work stays gated.** Read-only baseline (done) → separately approved rollback-only validation →
+    separately approved apply of the one migration → read-back → staging Worker with the flag off, then on → acceptance →
+    production only after legal updates and a further approval. Each step stops on any mismatch and none runs automatically.
+  - **Integrity wording.** While `TOOLKIT_DOC_VERIFY_SHA256` is unset, `sha256_verified` is false for every document; the
+    stored digest is the device's claim and no screen, document or policy may call documents server-verified. Enabling the
+    Worker digest is a later decision after a staging CPU measurement.
+  - **Capacity statements must be labelled.** The Supabase Free 500 MB is the database allowance and is separate from R2
+    storage; the measured Toolkit row cost is about 770 bytes (table + indexes; two runs: 765 and 774). Capacity figures are estimates until measured on
+    the hosted project; the earlier "database first at about 100 accounts" claim is withdrawn. Business quotas stay
+    undecided and separate from these anti-abuse limits.
+  - **Shared database consequence is accepted and must be repeated in every approval:** staging and production share one
+    Supabase project, so an applied migration exists in production immediately (empty and inert while the Worker flag is
+    off), and staging test data lives in the same table and counts toward the same per-account limits.
+- Toolkit cloud documents, C2B corrections (2026-10-20; source only; supersedes the C1 / C1.1 abandoned-upload and PUT wording):
+  - **Abandoned-upload cleanup is claim-first.** A row is claimed (`pending_upload → pending_discard`, a compare-and-set under its
+    row lock) before its object is removed, and is discarded only for the exact claim identity. A status read before a delete is
+    never the safety mechanism, because the status can change before the delete lands. A failed removal stays claimed and is
+    retried after a lease; a user delete overrides a claim and keeps its tombstone. The sweep stays off by default.
+  - **A signed Toolkit PUT is write-once.** It is signed with `If-None-Match: *`, the Worker returns the header, the app sends it
+    and treats a 412 as "an object exists" so the confirm judges that object. This is designed from R2's documented atomic
+    conditional PutObject and is NOT considered proven until a staging replay test shows a real presigned URL being refused;
+    nothing may claim replay protection before that. The fallback, if R2 ignores the header, is a per-authorization staging key
+    promoted by a server-side copy (not built).
+  - **The signature does not cover Content-Type.** The stored type is whatever the client sent; the confirm's stored-type check
+    remains the control and must not be removed.
+  - **The hosted database is only ever given fixture-free, bounded checks.** Anything that needs users, sessions, profiles or
+    document churn runs locally or in an isolated database. The hosted rollback-only candidate is
+    `supabase/validation/toolkit_documents_hosted_preflight.sql`; the complete suite is not to be run on the shared project.
+  - **A changed migration invalidates every earlier hash and review.** The C2A migration and request hashes are superseded.

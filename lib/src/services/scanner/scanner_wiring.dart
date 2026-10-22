@@ -17,6 +17,8 @@ import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_share_preparer.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_usage_gate.dart';
 import 'package:broker_wallet/src/services/scanner/syncfusion_pdf_page_counter.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_wiring.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 
 /// The SharedPreferences key the first Scanner stored every account's
@@ -64,6 +66,15 @@ class ScannerWiring {
       currentUserId: () => auth.currentUserId,
       userIdChanges: auth.authStateChanges.map((user) => user?.uid),
       legacyDocumentCount: _legacyCount,
+      // The account copy: null (so the tool stays local) when this build has it
+      // switched off.
+      cloudFactory: (accountId, files) => ToolkitCloudWiring.create(
+        accountId: accountId,
+        type: ToolkitDocumentType.scanner,
+        directory: files.journalDirectory,
+        files: files,
+        currentAccountId: () => auth.currentUserId,
+      ),
     );
   }
 

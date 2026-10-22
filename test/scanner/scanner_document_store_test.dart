@@ -592,6 +592,116 @@ void main() {
           'businessCard_scan_20260307_0905');
     });
   });
+
+  group('restoring a document from the user\'s account', () {
+    const cloudId = 'd0c00001-0000-4000-8000-000000000001';
+
+    test('a PDF is stored under the SAME id, with its real pages', () async {
+      final store = storeFor('user-a');
+      final bytes = await pdfBytes(2);
+      final download = await writeFile(sources, '$cloudId.pdf', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: download,
+        name: 'Lease',
+        createdAt: DateTime.utc(2026, 10, 1),
+        expectedSize: bytes.length,
+      );
+      expect(doc.id, cloudId);
+      expect(doc.fileName, '$cloudId.pdf');
+      expect(doc.name, 'Lease');
+      expect(doc.createdAt, DateTime.utc(2026, 10, 1));
+      expect(doc.pageCount, 2);
+      expect(doc.format, ExportFormat.pdf);
+      expect(store.fileOf(doc).readAsBytesSync(), bytes);
+      expect(download.existsSync(), isFalse,
+          reason: 'the download is removed once it is stored');
+      final library = await store.load();
+      expect(library.documents.single.id, cloudId);
+      expect(library.missingIds, isEmpty);
+    });
+
+    test('a scanned image is restored as an image document', () async {
+      final store = storeFor('user-a');
+      final bytes = jpegBytes(seed: 7);
+      final download = await writeFile(sources, '$cloudId.jpg', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: download,
+        name: 'Photo',
+        createdAt: DateTime.utc(2026, 10, 2),
+        expectedSize: bytes.length,
+      );
+      expect(doc.fileName, '$cloudId.jpg');
+      expect(doc.format, ExportFormat.images);
+      expect(doc.mimeType, 'image/jpeg');
+      expect(store.fileOf(doc).readAsBytesSync(), bytes);
+    });
+
+    test('restoring the same document twice lists it once', () async {
+      final store = storeFor('user-a');
+      final bytes = await pdfBytes(1);
+      for (var i = 0; i < 2; i++) {
+        final download = await writeFile(sources, 'dl$i.pdf', bytes);
+        await store.restoreFromCloud(
+          id: cloudId,
+          source: download,
+          name: 'Lease',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: bytes.length,
+        );
+        expect(download.existsSync(), isFalse);
+      }
+      expect((await store.load()).documents, hasLength(1));
+    });
+
+    test('a file of the wrong size, or that is not a scan, stores nothing',
+        () async {
+      final store = storeFor('user-a');
+      final bytes = await pdfBytes(1);
+      final wrongSize = await writeFile(sources, 'size.pdf', bytes);
+      expect(
+        await failureOf(() => store.restoreFromCloud(
+              id: cloudId,
+              source: wrongSize,
+              name: 'Lease',
+              createdAt: DateTime.utc(2026, 10, 1),
+              expectedSize: bytes.length + 1,
+            )),
+        ScannerFailure.writeFailed,
+      );
+      expect(wrongSize.existsSync(), isFalse);
+      final junk =
+          await writeFile(sources, 'junk.pdf', utf8.encode('not a pdf'));
+      expect(
+        await failureOf(() => store.restoreFromCloud(
+              id: cloudId,
+              source: junk,
+              name: 'Lease',
+              createdAt: DateTime.utc(2026, 10, 1),
+              expectedSize: 9,
+            )),
+        ScannerFailure.writeFailed,
+      );
+      expect(junk.existsSync(), isFalse);
+      expect((await store.load()).documents, isEmpty);
+    });
+
+    test('a title already used on the phone is made unique', () async {
+      final store = storeFor('user-a');
+      await store.add(<ScannerNewDocument>[await pdfItem('Lease', 1)]);
+      final bytes = await pdfBytes(1);
+      final download = await writeFile(sources, 'dl.pdf', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: download,
+        name: 'Lease',
+        createdAt: DateTime.utc(2026, 10, 1),
+        expectedSize: bytes.length,
+      );
+      expect(doc.name, 'Lease (2)');
+    });
+  });
 }
 
 Future<ScannerNewDocument> jpegItem() async {

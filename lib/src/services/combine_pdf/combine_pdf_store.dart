@@ -133,6 +133,35 @@ class CombinePdfStore {
   File fileOf(CombinedPdf document) =>
       File(p.join(_filesDir.path, document.fileName));
 
+  /// The stored file of the document with [id], or null for an id that cannot be
+  /// a stored file's name.
+  File? fileForId(String id) {
+    final name = '$id.pdf';
+    return CombineNaming.isStoredFileName(name)
+        ? File(p.join(_filesDir.path, name))
+        : null;
+  }
+
+  /// Where a document that is only in the account's cloud is downloaded to
+  /// before [restoreFromCloud] stores it. Inside the account folder, which backup
+  /// excludes, and never swept while a download may be running.
+  File? restoreFileFor(String id) {
+    final name = '$id.pdf';
+    return CombineNaming.isStoredFileName(name)
+        ? File(p.join(accountDir.path, 'restore', name))
+        : null;
+  }
+
+  /// Where the cloud journal of this account's documents is kept.
+  Directory get cloudDir => Directory(p.join(accountDir.path, 'cloud'));
+
+  /// Removes the download of [id] from the download folder (and only there): a
+  /// leftover that is not the document it should be. Never touches a stored file.
+  Future<void> discardRestoreFile(String id) async {
+    final file = restoreFileFor(id);
+    if (file != null) await _quietDelete(file);
+  }
+
   Future<T> _serial<T>(Future<T> Function() action) {
     final run = _tail.then((_) => action());
     _tail = run.then<void>((_) {}, onError: (_) {});
@@ -412,6 +441,99 @@ class CombinePdfStore {
         throw const CombinePdfException(CombinePdfFailure.writeFailed,
             detail: 'add');
       }
+      return created;
+    });
+  }
+
+  /// Stores [source], a document downloaded from the account's cloud, under the
+  /// SAME id it has there, so the phone and the cloud name it alike. Either it is
+  /// listed with a verified file, or nothing is. Idempotent: an id already listed
+  /// with its file is returned as it is, and one listed whose file is gone gets
+  /// its file back. [expectedSize] is what the cloud says the file has; the file
+  /// must also read as a PDF. [source] is removed once stored (and when it can
+  /// never be stored); it is kept when the phone is out of space, so a retry
+  /// need not download it again.
+  Future<CombinedPdf> restoreFromCloud({
+    required String id,
+    required File source,
+    required String name,
+    required DateTime createdAt,
+    required int expectedSize,
+  }) {
+    return _serial(() async {
+      final fileName = '$id.pdf';
+      if (!CombineNaming.isStoredFileName(fileName)) {
+        throw const CombinePdfException(CombinePdfFailure.writeFailed,
+            detail: 'id');
+      }
+      final entries = await _prepare();
+      final CombineAnalysis inspected;
+      try {
+        inspected = await _verify(source);
+      } on CombinePdfException {
+        await _quietDelete(source);
+        throw const CombinePdfException(CombinePdfFailure.writeFailed,
+            detail: 'content');
+      }
+      if (inspected.size != expectedSize) {
+        await _quietDelete(source);
+        throw const CombinePdfException(CombinePdfFailure.writeFailed,
+            detail: 'size');
+      }
+      final index = entries.indexWhere(
+          (e) => e.document.id == id && e.state == _EntryState.ready);
+      final created = index >= 0
+          ? entries[index].document
+          : CombinedPdf(
+              id: id,
+              fileName: fileName,
+              name: CombineNaming.uniqueName(name, <String>[
+                for (final e in entries)
+                  if (e.document.id != id) e.document.name,
+              ]),
+              createdAt: createdAt,
+              fileSize: inspected.size,
+              pageCount: inspected.pageCount,
+            );
+      final target = fileOf(created);
+      if (index >= 0 && await target.exists()) {
+        await _quietDelete(source);
+        return created;
+      }
+      if (index < 0) {
+        await _writeIndex(<_Entry>[
+          ...entries,
+          _Entry(created, _EntryState.pending),
+        ]);
+      }
+      final part = File('${target.path}.part');
+      try {
+        await _filesDir.create(recursive: true);
+        await _copier(source, part);
+        await _verifyCopy(part, inspected);
+        await part.rename(target.path);
+        if (index < 0) {
+          await _writeIndex(<_Entry>[
+            ...entries,
+            _Entry(created, _EntryState.ready),
+          ]);
+        }
+      } catch (error) {
+        await _quietDelete(part);
+        await _quietDelete(target);
+        if (index < 0) {
+          try {
+            await _writeIndex(entries);
+          } on CombinePdfException {
+            // The next load drops the pending entry, whose file is gone.
+          }
+        }
+        if (error is CombinePdfException) rethrow;
+        if (error is FileSystemException) throw _mapFileError(error);
+        throw const CombinePdfException(CombinePdfFailure.writeFailed,
+            detail: 'restore');
+      }
+      await _quietDelete(source);
       return created;
     });
   }

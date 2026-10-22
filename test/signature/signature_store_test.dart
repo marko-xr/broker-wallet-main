@@ -486,4 +486,82 @@ void main() {
       expect((await save(store, 'After', 'Z')).name, 'After');
     });
   });
+
+  group('restoring a signed PDF from the user\'s account', () {
+    const cloudId = 'd0c00001-0000-4000-8000-000000000001';
+
+    test('is stored under the SAME id, with unknown counts', () async {
+      final store = storeFor('user-a');
+      final bytes = buildPdf('R', count: 3);
+      final file = await writeFile(work, 'dl.pdf', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: file,
+        name: 'Contract',
+        createdAt: DateTime.utc(2026, 10, 1),
+        expectedSize: bytes.length,
+      );
+      expect(doc.id, cloudId);
+      expect(doc.fileName, '$cloudId.pdf');
+      expect(doc.name, 'Contract');
+      expect(doc.createdAt, DateTime.utc(2026, 10, 1));
+      expect(doc.pageCount, 3);
+      expect(doc.signatureCount, 0, reason: 'not kept in the account');
+      expect(doc.itemCount, 0, reason: 'not kept in the account');
+      expect(store.fileOf(doc).readAsBytesSync(), bytes);
+      expect(file.existsSync(), isFalse,
+          reason: 'the download is removed once it is stored');
+      final library = await store.load();
+      expect(library.documents.single.id, cloudId);
+      expect(library.missingIds, isEmpty);
+    });
+
+    test('restoring the same document twice lists it once', () async {
+      final store = storeFor('user-a');
+      final bytes = buildPdf('R', count: 1);
+      for (var i = 0; i < 2; i++) {
+        final file = await writeFile(work, 'dl$i.pdf', bytes);
+        await store.restoreFromCloud(
+          id: cloudId,
+          source: file,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: bytes.length,
+        );
+        expect(file.existsSync(), isFalse);
+      }
+      expect((await store.load()).documents, hasLength(1));
+    });
+
+    test('a file of the wrong size, or that is not a PDF, stores nothing',
+        () async {
+      final store = storeFor('user-a');
+      final bytes = buildPdf('R', count: 1);
+      final wrongSize = await writeFile(work, 'size.pdf', bytes);
+      await expectLater(
+        store.restoreFromCloud(
+          id: cloudId,
+          source: wrongSize,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: bytes.length + 1,
+        ),
+        failsWith(SignatureFailure.writeFailed),
+      );
+      expect(wrongSize.existsSync(), isFalse);
+      final junk = await writeFile(work, 'junk.pdf', utf8.encode('not a pdf'));
+      await expectLater(
+        store.restoreFromCloud(
+          id: cloudId,
+          source: junk,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: 9,
+        ),
+        failsWith(SignatureFailure.writeFailed),
+      );
+      expect(junk.existsSync(), isFalse);
+      expect((await store.load()).documents, isEmpty);
+    });
+  });
 }

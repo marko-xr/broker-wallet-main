@@ -94,7 +94,10 @@ class Harness {
 
   Directory get staging => Directory(p.join(temp.path, 'staging'));
 
-  ScannerViewModel build({ScannerFileCopier? copier}) {
+  ScannerViewModel build({
+    ScannerFileCopier? copier,
+    ScannerCloudFactory? cloudFactory,
+  }) {
     final vm = ScannerViewModel(
       engine: engine,
       baseDirectory: () async => base,
@@ -113,14 +116,18 @@ class Harness {
       currentUserId: () => uid,
       userIdChanges: auth.stream,
       legacyDocumentCount: () async => legacy,
+      cloudFactory: cloudFactory,
       copier: copier,
     );
     built.add(vm);
     return vm;
   }
 
-  Future<ScannerViewModel> started({ScannerFileCopier? copier}) async {
-    final vm = build(copier: copier);
+  Future<ScannerViewModel> started({
+    ScannerFileCopier? copier,
+    ScannerCloudFactory? cloudFactory,
+  }) async {
+    final vm = build(copier: copier, cloudFactory: cloudFactory);
     await vm.start();
     return vm;
   }
@@ -140,6 +147,13 @@ class Harness {
   List<String> outputFiles() => relativeFiles(output);
 
   Future<void> close() async {
+    // Work the view model started in the background (a comparison with the
+    // user's account, an upload) may still be reading a file: it finishes before
+    // the folders are removed (Windows refuses to delete a folder with an open
+    // file in it).
+    for (final vm in built) {
+      await vm.settle();
+    }
     for (final vm in built) {
       if (!vm.isDisposedForTest) vm.dispose();
     }

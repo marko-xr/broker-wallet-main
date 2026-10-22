@@ -456,6 +456,104 @@ class ImagePdfStore {
     });
   }
 
+  /// Stores [source], a PDF downloaded from the account's cloud, under the SAME id
+  /// it has there, so the phone and the account name it alike. Either it is listed
+  /// with a verified file, or nothing is. Idempotent: an id already listed with
+  /// its file is returned as it is, and one listed whose file is gone gets its
+  /// file back. [expectedSize] is what the cloud says the file has; the file must
+  /// also read as a PDF (a protected one is kept as protected). The number of
+  /// pictures it was made from is not kept in the account, so it is unknown (0).
+  /// [source] is removed once stored (and when it can never be stored); it is
+  /// kept when the phone is out of space, so a retry need not download it again.
+  Future<ImagePdfDocument> restoreFromCloud({
+    required String id,
+    required File source,
+    required String name,
+    required DateTime createdAt,
+    required int expectedSize,
+  }) {
+    return _serial(() async {
+      final fileName = '$id.pdf';
+      if (!ImagePdfNaming.isStoredFileName(fileName)) {
+        await _quietDelete(source);
+        throw const ImagePdfException(ImagePdfFailure.writeFailed,
+            detail: 'id');
+      }
+      final ImagePdfFileInfo inspected;
+      try {
+        inspected = await _verify(source);
+      } on ImagePdfException {
+        await _quietDelete(source);
+        throw const ImagePdfException(ImagePdfFailure.writeFailed,
+            detail: 'content');
+      }
+      if (inspected.size != expectedSize) {
+        await _quietDelete(source);
+        throw const ImagePdfException(ImagePdfFailure.writeFailed,
+            detail: 'size');
+      }
+      final entries = await _prepare();
+      final index = entries.indexWhere(
+          (e) => e.document.id == id && e.state == _EntryState.ready);
+      final title = ImagePdfNaming.sanitizeDisplayName(name) ?? 'Restored PDF';
+      final created = index >= 0
+          ? entries[index].document
+          : ImagePdfDocument(
+              id: id,
+              fileName: fileName,
+              name: ImagePdfNaming.uniqueName(title, <String>[
+                for (final e in entries)
+                  if (e.document.id != id) e.document.name,
+              ]),
+              createdAt: createdAt,
+              fileSize: inspected.size,
+              pageCount: inspected.pageCount,
+              imageCount: 0,
+              encrypted: inspected.encrypted,
+            );
+      final target = fileOf(created);
+      if (index >= 0 && await target.exists()) {
+        await _quietDelete(source);
+        return created;
+      }
+      if (index < 0) {
+        await _writeIndex(<_Entry>[
+          ...entries,
+          _Entry(created, _EntryState.pending),
+        ]);
+      }
+      final part = File('${target.path}.part');
+      try {
+        await _filesDir.create(recursive: true);
+        await _copier(source, part);
+        await _verifyCopy(part, created);
+        await part.rename(target.path);
+        if (index < 0) {
+          await _writeIndex(<_Entry>[
+            ...entries,
+            _Entry(created, _EntryState.ready),
+          ]);
+        }
+      } catch (error) {
+        await _quietDelete(part);
+        await _quietDelete(target);
+        if (index < 0) {
+          try {
+            await _writeIndex(entries);
+          } on ImagePdfException {
+            // The next load drops the pending entry, whose file is gone.
+          }
+        }
+        if (error is ImagePdfException) rethrow;
+        if (error is FileSystemException) throw _mapFileError(error);
+        throw const ImagePdfException(ImagePdfFailure.writeFailed,
+            detail: 'restore');
+      }
+      await _quietDelete(source);
+      return created;
+    });
+  }
+
   Future<void> _verifyCopy(File copy, ImagePdfDocument expected) async {
     final int size;
     try {

@@ -7,6 +7,7 @@ import 'package:broker_wallet/src/services/scanner/scan_models.dart';
 import 'package:broker_wallet/src/services/scanner/scan_result.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 
 /// The step between scanning and saving: every page that will be stored, in
 /// order, the real page count, and a name. Nothing is stored until Save; Discard
@@ -149,108 +150,110 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop && !saving) _discard();
           },
-          child: Scaffold(
-            backgroundColor: colors.surface,
-            appBar: AppBar(
-              title: Text(loc.translate('scannerReviewTitle')),
-              centerTitle: true,
-              backgroundColor: colors.surface,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: saving ? null : _discard,
-                tooltip: loc.translate('discard'),
-              ),
-            ),
-            body: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                    child: _summary(loc, colors, draft),
+          child: Stack(
+            children: [
+              Scaffold(
+                backgroundColor: colors.surface,
+                appBar: AppBar(
+                  title: Text(loc.translate('scannerReviewTitle')),
+                  centerTitle: true,
+                  backgroundColor: colors.surface,
+                  elevation: 0,
+                  leading: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: saving ? null : _discard,
+                    tooltip: loc.translate('discard'),
                   ),
-                  Expanded(child: _pages(loc, colors, draft)),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Text(
-                      loc.translate('scannerReviewHint'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurface.withValues(alpha: 0.65),
-                          ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: TextField(
-                      controller: _name,
-                      enabled: !saving,
-                      maxLength: ScannerNaming.maxNameRunes,
-                      decoration: InputDecoration(
-                        labelText: loc.translate('documentName'),
-                        border: const OutlineInputBorder(),
-                        counterText: '',
+                ),
+                body: SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                        child: _summary(loc, colors, draft),
                       ),
-                    ),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline,
-                              size: 18, color: colors.error),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _error!,
-                              style: TextStyle(color: colors.error),
-                            ),
-                          ),
-                        ],
+                      Expanded(child: _pages(loc, colors, draft)),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          loc.translate('scannerReviewHint'),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colors.onSurface.withValues(alpha: 0.65),
+                              ),
+                        ),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: saving ? null : _discard,
-                            child: Text(loc.translate('discard')),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: TextField(
+                          controller: _name,
+                          enabled: !saving,
+                          maxLength: ScannerNaming.maxNameRunes,
+                          decoration: InputDecoration(
+                            labelText: loc.translate('documentName'),
+                            border: const OutlineInputBorder(),
+                            counterText: '',
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            onPressed: saving ? null : _save,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
+                      ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline,
+                                  size: 18, color: colors.error),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: TextStyle(color: colors.error),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: saving ? null : _discard,
+                                child: Text(loc.translate('discard')),
+                              ),
                             ),
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.save),
-                            label: Text(saving
-                                ? loc.translate('scannerSaving')
-                                : _error != null
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: ElevatedButton.icon(
+                                onPressed: saving ? null : _save,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(Icons.save),
+                                label: Text(_error != null
                                     ? loc.translate('retry')
                                     : loc.translate('saveDocument')),
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+              // The one progress indicator while the scan is stored: dims the
+              // whole screen and takes the taps; the Save button keeps its look.
+              if (saving)
+                Positioned.fill(
+                  child: ToolProgressOverlay(
+                    message: loc.translate('scannerSaving'),
+                    accent: AppColors.primary,
+                  ),
+                ),
+            ],
           ),
         );
       },

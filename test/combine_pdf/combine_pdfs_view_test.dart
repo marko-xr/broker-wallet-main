@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pages_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pdfs_view.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_executor.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_pdf_platform.dart';
@@ -211,8 +212,8 @@ void main() {
   });
 
   testWidgets(
-      'combining shows honest progress, blocks a second tap and '
-      'can be cancelled', (tester) async {
+      'combining shows one honest indicator and blocks a second tap',
+      (tester) async {
     final gated = GatedExecutor(const InlineCombineExecutor())
       ..release = Completer<void>();
     await start(tester, harness: CombineHarness(executor: gated));
@@ -223,7 +224,10 @@ void main() {
     await tester.tap(find.text('Combine PDFs').last);
     await pumpUntil(tester, () => h.viewModel.isMerging);
     await tester.pump();
-    expect(find.text('Combining 5 pages…'), findsOneWidget);
+    // One indicator only: the centered overlay, with no spinner on the button.
+    expect(find.text('Combining PDFs…'), findsOneWidget);
+    expect(find.byType(ToolProgressOverlay), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     // No invented percentage anywhere.
     expect(find.textContaining('%'), findsNothing);
     final fab =
@@ -231,15 +235,15 @@ void main() {
     expect(fab.onPressed, isNull);
     expect(gate.asked, 1);
 
-    await tester.tap(find.text('Cancel combining'));
-    await tester.pump();
+    // The overlay has no Cancel button.
+    expect(find.text('Cancel combining'), findsNothing);
     gated.release!.complete();
-    await pumpUntil(tester, () => !h.viewModel.isMerging);
-    await tester.pump();
-    expect(toasts.last, 'Combining was cancelled. Nothing was saved.');
-    expect(h.viewModel.documents, isEmpty);
-    expect(h.usage.recorded, isEmpty);
-    expect(find.text('lease.pdf'), findsOneWidget, reason: 'plan is kept');
+    await pumpUntil(tester,
+        () => h.viewModel.documents.isNotEmpty && !h.viewModel.isMerging);
+    await tester.pumpAndSettle();
+    expect(find.byType(ToolProgressOverlay), findsNothing);
+    expect(toasts.last, 'PDFs combined successfully');
+    expect(h.usage.recorded, ['user-a']);
   });
 
   testWidgets('a finished combine appears in the list and is counted once',

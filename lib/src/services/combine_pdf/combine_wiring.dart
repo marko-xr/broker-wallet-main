@@ -12,6 +12,8 @@ import 'package:broker_wallet/src/services/combine_pdf/combine_pdf_platform.dart
 import 'package:broker_wallet/src/services/combine_pdf/combine_usage_gate.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_wiring.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/combine_pdf/combine_pdf_viewmodel.dart';
 
 /// The SharedPreferences key the first Combine tool stored every account's
@@ -53,6 +55,15 @@ class CombinePdfWiring {
       currentUserId: () => auth.currentUserId,
       userIdChanges: auth.authStateChanges.map((user) => user?.uid),
       legacyDocumentCount: _legacyCount,
+      // The account's cloud copy: null (so the tool stays local) only when the
+      // build sets the kill switch TOOLKIT_CLOUD_DOCUMENTS=false.
+      cloudFactory: (accountId, store, files) => ToolkitCloudWiring.create(
+        accountId: accountId,
+        type: ToolkitDocumentType.combinePdfs,
+        directory: store.cloudDir,
+        files: files,
+        currentAccountId: () => auth.currentUserId,
+      ),
     );
   }
 

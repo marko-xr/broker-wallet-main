@@ -438,4 +438,100 @@ void main() {
     expect(analyzeImagePdf(store.fileOf(one).path).pageCount, 1);
     expect(analyzeImagePdf(store.fileOf(two).path).pageCount, 3);
   });
+
+  group('restoring a PDF from the user\'s account', () {
+    const cloudId = 'd0c00001-0000-4000-8000-000000000001';
+
+    File download(String tag, List<int> bytes) =>
+        File(p.join(work.path, '$tag.pdf'))..writeAsBytesSync(bytes);
+
+    test('is stored under the SAME id, with its real pages', () async {
+      final store = storeFor('user-a');
+      final bytes = simplePdf(3);
+      final file = download('dl', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: file,
+        name: 'Passport scan',
+        createdAt: DateTime.utc(2026, 10, 1),
+        expectedSize: bytes.length,
+      );
+      expect(doc.id, cloudId);
+      expect(doc.fileName, '$cloudId.pdf');
+      expect(doc.name, 'Passport scan');
+      expect(doc.createdAt, DateTime.utc(2026, 10, 1));
+      expect(doc.pageCount, 3);
+      expect(doc.imageCount, 0, reason: 'not kept in the account: unknown');
+      expect(doc.encrypted, isFalse);
+      expect(store.fileOf(doc).readAsBytesSync(), bytes);
+      expect(file.existsSync(), isFalse,
+          reason: 'the download is removed once it is stored');
+      final library = await store.load();
+      expect(library.documents.single.id, cloudId);
+      expect(library.missingIds, isEmpty);
+    });
+
+    test('a password-protected PDF stays protected', () async {
+      final store = storeFor('user-a');
+      final bytes = simplePdf(2, password: 'secret');
+      final file = download('locked', bytes);
+      final doc = await store.restoreFromCloud(
+        id: cloudId,
+        source: file,
+        name: 'Locked',
+        createdAt: DateTime.utc(2026, 10, 1),
+        expectedSize: bytes.length,
+      );
+      expect(doc.encrypted, isTrue);
+      expect(store.fileOf(doc).readAsBytesSync(), bytes);
+    });
+
+    test('restoring the same document twice lists it once', () async {
+      final store = storeFor('user-a');
+      final bytes = simplePdf(1);
+      for (var i = 0; i < 2; i++) {
+        final file = download('dl$i', bytes);
+        await store.restoreFromCloud(
+          id: cloudId,
+          source: file,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: bytes.length,
+        );
+        expect(file.existsSync(), isFalse);
+      }
+      expect((await store.load()).documents, hasLength(1));
+    });
+
+    test('a file of the wrong size, or that is not a PDF, stores nothing',
+        () async {
+      final store = storeFor('user-a');
+      final bytes = simplePdf(1);
+      final wrongSize = download('size', bytes);
+      await expectLater(
+        store.restoreFromCloud(
+          id: cloudId,
+          source: wrongSize,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: bytes.length + 1,
+        ),
+        throwsA(isA<ImagePdfException>()),
+      );
+      expect(wrongSize.existsSync(), isFalse);
+      final junk = download('junk', utf8.encode('not a pdf'));
+      await expectLater(
+        store.restoreFromCloud(
+          id: cloudId,
+          source: junk,
+          name: 'Same',
+          createdAt: DateTime.utc(2026, 10, 1),
+          expectedSize: 9,
+        ),
+        throwsA(isA<ImagePdfException>()),
+      );
+      expect(junk.existsSync(), isFalse);
+      expect((await store.load()).documents, isEmpty);
+    });
+  });
 }

@@ -3,6 +3,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
@@ -16,11 +17,9 @@ import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_wiring.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
 import 'package:broker_wallet/src/viewmodels/image_to_pdf/image_pdf_viewmodel.dart';
 
-enum _ReviewAction { preview, save, discard }
-
 /// The Images to PDF tool: pick or photograph images, arrange them, choose the
-/// page layout, make the PDF and review it, then keep it in the signed-in
-/// account's private list to preview, rename, share, export and delete. The
+/// page layout, make the PDF (Preview shows it first) and save it in one step
+/// into the signed-in account's private list to preview, rename, share, export and delete. The
 /// logic lives in [ImagePdfViewModel]; this file is the screen.
 class ImageToPdfView extends StatefulWidget {
   const ImageToPdfView({Key? key, this.viewModel, this.usageGate})
@@ -44,7 +43,9 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
   late final bool _ownsViewModel;
   final TextEditingController _fileNameController = TextEditingController();
   bool _isViewMode = false; // true for list view, false for grid view
-  bool _reviewing = false;
+  // Convert is one operation (make the PDF, then save it): the overlay stays up
+  // across the two steps instead of blinking off between them.
+  bool _converting = false;
 
   @override
   void initState() {
@@ -515,48 +516,17 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
     );
   }
 
+  /// Makes the PDF and saves it in one step, like the other tools: no sheet in
+  /// between. The Preview button above the list shows the real PDF beforehand.
   Future<void> _convertToPDF() async {
-    if (_reviewing) return;
-    final draft = await _ensureDraft();
-    if (draft == null || !mounted) return;
-    await _review(draft);
-  }
-
-  /// Shows the finished PDF (pages, size) with Preview, Save and Discard.
-  Future<void> _review(ImagePdfDraft first) async {
-    _reviewing = true;
+    if (_converting) return;
+    setState(() => _converting = true);
     try {
-      while (mounted) {
-        final draft = _vm.draft ?? first;
-        final action = await showModalBottomSheet<_ReviewAction>(
-          context: context,
-          isScrollControlled: true,
-          builder: (sheetContext) => _ReviewSheet(
-            draft: draft,
-            title: _fileNameController.text.trim().isEmpty
-                ? _vm.suggestedName
-                : _fileNameController.text.trim(),
-            formatSize: _formatFileSize,
-          ),
-        );
-        if (!mounted) return;
-        switch (action) {
-          case _ReviewAction.preview:
-            await _openDraftViewer();
-            continue;
-          case _ReviewAction.save:
-            await _saveDraft();
-          case _ReviewAction.discard:
-            _vm.discardDraft();
-          case null:
-            // Closed without a choice: the draft is kept until something it
-            // was made from changes.
-            break;
-        }
-        return;
-      }
+      final draft = await _ensureDraft();
+      if (draft == null || !mounted) return;
+      await _saveDraft();
     } finally {
-      _reviewing = false;
+      if (mounted) setState(() => _converting = false);
     }
   }
 
@@ -566,12 +536,7 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
     if (!mounted) return;
     if (outcome.isDone) {
       _fileNameController.text = _vm.suggestedName;
-      _showToast(
-        localization
-            .translate('i2pSaved')
-            .replaceAll('{name}', outcome.document!.name),
-        Colors.green,
-      );
+      _showToast(localization.translate('i2pSaved'), Colors.green);
       return;
     }
     final failure = outcome.failure!;
@@ -776,12 +741,9 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
           child: _buildHeaderCard(localization, colors),
         ),
 
-        // Progress of the work in hand
-        if (_vm.isBuilding || _vm.isSaving)
-          SliverToBoxAdapter(
-            child: _buildProcessingIndicator(localization, colors),
-          )
-        else if (_vm.isChecking)
+        // Making and saving the PDF show the centered overlay (see build);
+        // only the real count of pictures being checked is shown inline.
+        if (_vm.isChecking)
           SliverToBoxAdapter(
             child: _buildCheckingIndicator(localization, colors),
           ),
@@ -915,83 +877,6 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
             onPressed: _vm.refresh,
             child: Text(localization.translate('retry')),
           ),
-        ],
-      ),
-    );
-  }
-
-  /// Making the PDF reports no percentage: the libraries give no progress, so
-  /// the card says what is happening and offers Cancel instead of a made-up bar.
-  Widget _buildProcessingIndicator(
-      AppLocalizations localization, ColorScheme colors) {
-    final saving = _vm.isSaving;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(_green),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      saving
-                          ? localization.translate('i2pSaving')
-                          : localization
-                              .translate('i2pBuilding')
-                              .replaceAll('{count}', '${_vm.items.length}'),
-                      style: AppTextStyles.bodyText.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      saving
-                          ? localization.translate('i2pSavingNote')
-                          : localization.translate('i2pBuildingNote'),
-                      style: TextStyle(
-                        color: colors.onSurface.withValues(alpha: 0.6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!saving) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
-                onPressed: _vm.cancelBuild,
-                child: Text(localization.translate('cancel')),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1947,26 +1832,16 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
   }
 
   Widget _buildFloatingActionButton(AppLocalizations localization) {
-    final working = _vm.isBuilding || _vm.isSaving;
+    final working = _vm.isBuilding || _vm.isSaving || _converting;
     final canConvert = !_vm.isBusy && !_vm.isChecking && !_vm.hasFailedItems;
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       child: _vm.items.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: canConvert ? _convertToPDF : null,
-              icon: working
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.picture_as_pdf),
-              label: Text(working
-                  ? localization.translate('converting')
-                  : localization.translate('convertToPdf')),
+              onPressed: canConvert && !_converting ? _convertToPDF : null,
+              // The button keeps its look while the overlay shows the work.
+              icon: const Icon(Icons.picture_as_pdf),
+              label: Text(localization.translate('convertToPdf')),
               backgroundColor: canConvert || working ? _green : Colors.grey,
               foregroundColor: Colors.white,
             )
@@ -1987,151 +1862,33 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
 
     return ListenableBuilder(
       listenable: _vm,
-      builder: (context, _) => Scaffold(
-        resizeToAvoidBottomInset:
-            false, // Prevent keyboard from moving the form
-        backgroundColor: colors.surface,
-        extendBodyBehindAppBar: true,
-        appBar: _buildAdvancedAppBar(localization, colors),
-        body: _buildBody(localization, colors),
-        floatingActionButton: _buildFloatingActionButton(localization),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      ),
-    );
-  }
-}
-
-/// The finished PDF, before it is saved: its real page count and size, and the
-/// three things to do with it.
-class _ReviewSheet extends StatelessWidget {
-  const _ReviewSheet({
-    required this.draft,
-    required this.title,
-    required this.formatSize,
-  });
-
-  final ImagePdfDraft draft;
-  final String title;
-  final String Function(int bytes) formatSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
-    final colors = Theme.of(context).colorScheme;
-    const green = Color(0xFF4CAF50);
-    final notes = <String>[
-      if (draft.lowResolutionImages > 0)
-        loc
-            .translate('i2pLowResNote')
-            .replaceAll('{count}', '${draft.lowResolutionImages}'),
-      if (draft.encrypted) loc.translate('i2pProtectedNote'),
-    ];
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context, _) {
+        final working = _vm.isBuilding || _vm.isSaving || _converting;
+        return Stack(
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    draft.encrypted ? Icons.lock : Icons.picture_as_pdf,
-                    color: green,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        loc.translate('i2pReviewTitle'),
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: colors.onSurface.withValues(alpha: 0.7)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Scaffold(
+              resizeToAvoidBottomInset:
+                  false, // Prevent keyboard from moving the form
+              backgroundColor: colors.surface,
+              extendBodyBehindAppBar: true,
+              appBar: _buildAdvancedAppBar(localization, colors),
+              body: _buildBody(localization, colors),
+              floatingActionButton: _buildFloatingActionButton(localization),
+              floatingActionButtonLocation:
+                  FloatingActionButtonLocation.centerDocked,
             ),
-            const SizedBox(height: 16),
-            Text(
-              '${loc.translate('i2pPagesCount').replaceAll('{count}', '${draft.pageCount}')} • ${formatSize(draft.size)}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-            ),
-            for (final note in notes)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 16,
-                        color: colors.onSurface.withValues(alpha: 0.6)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        note,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                  ],
+            // The one progress indicator: dims the whole screen, app bar and
+            // button included, and takes the taps.
+            if (working)
+              Positioned.fill(
+                child: ToolProgressOverlay(
+                  message: localization.translate('i2pConverting'),
+                  accent: _green,
                 ),
               ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context).pop(_ReviewAction.preview),
-                    icon: const Icon(Icons.visibility),
-                    label: Text(loc.translate('i2pReviewPreview')),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context).pop(_ReviewAction.save),
-                    icon: const Icon(Icons.check),
-                    label: Text(loc.translate('i2pReviewSave')),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: green,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
-                onPressed: () =>
-                    Navigator.of(context).pop(_ReviewAction.discard),
-                child: Text(loc.translate('i2pReviewDiscard')),
-              ),
-            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }

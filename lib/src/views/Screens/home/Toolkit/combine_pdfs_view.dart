@@ -5,6 +5,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pages_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
@@ -14,6 +15,7 @@ import 'package:broker_wallet/src/services/combine_pdf/combine_models.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_usage_gate.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_wiring.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_platform.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/combine_pdf/combine_pdf_viewmodel.dart';
 
 /// The Combine PDFs tool: pick PDFs, choose and order their pages, combine them
@@ -142,7 +144,93 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
         return loc.translate('combineErrPermission');
       case CombinePdfFailure.exportFailed:
         return loc.translate('combineErrExport');
+      case CombinePdfFailure.cloudUnavailable:
+        return loc.translate('combineErrCloudUnavailable');
     }
+  }
+
+  /// The one-line, honest description of where a document is kept; null when this
+  /// build keeps documents on the phone only. "Saved to your account" appears only
+  /// for a document the server confirmed.
+  String? _cloudLabel(CombinedPdf document) {
+    final state = _vm.cloudStateOf(document.id);
+    if (state == null) return null;
+    final loc = _localization;
+    switch (state) {
+      case ToolkitDocumentSyncState.savedToCloud:
+        return loc.translate('combineCloudSaved');
+      case ToolkitDocumentSyncState.savedLocallyPendingSync:
+        return loc.translate('combineCloudPending');
+      case ToolkitDocumentSyncState.syncInProgress:
+        return loc.translate('combineCloudUploading');
+      case ToolkitDocumentSyncState.syncFailedRetryable:
+        return loc.translate('combineCloudRetrying');
+      case ToolkitDocumentSyncState.syncRejected:
+        return loc.translate('combineCloudRejected');
+      case ToolkitDocumentSyncState.downloadRequired:
+        return loc.translate('combineCloudOnly');
+      case ToolkitDocumentSyncState.downloadFailed:
+        return loc.translate('combineCloudAttention');
+      case ToolkitDocumentSyncState.remoteDeleted:
+        return loc.translate('combineCloudRemoteDeleted');
+      case ToolkitDocumentSyncState.deletePending:
+        return null;
+    }
+  }
+
+  IconData _cloudIcon(ToolkitDocumentSyncState state) {
+    switch (state) {
+      case ToolkitDocumentSyncState.savedToCloud:
+        return Icons.cloud_done_outlined;
+      case ToolkitDocumentSyncState.syncInProgress:
+        return Icons.cloud_upload_outlined;
+      case ToolkitDocumentSyncState.downloadRequired:
+        return Icons.cloud_download_outlined;
+      case ToolkitDocumentSyncState.savedLocallyPendingSync:
+      case ToolkitDocumentSyncState.syncFailedRetryable:
+      case ToolkitDocumentSyncState.syncRejected:
+      case ToolkitDocumentSyncState.downloadFailed:
+      case ToolkitDocumentSyncState.deletePending:
+      case ToolkitDocumentSyncState.remoteDeleted:
+        return Icons.cloud_off_outlined;
+    }
+  }
+
+  /// The status line under a document; nothing at all when there is no cloud.
+  Widget _buildCloudStatus(
+      CombinedPdf document, ColorScheme colors, double fontSize) {
+    final label = _cloudLabel(document);
+    final state = _vm.cloudStateOf(document.id);
+    if (label == null || state == null) return const SizedBox.shrink();
+    final color = state == ToolkitDocumentSyncState.savedToCloud
+        ? Colors.green
+        : colors.onSurface.withValues(alpha: 0.6);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Icon(_cloudIcon(state), size: fontSize + 2, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: color, fontSize: fontSize),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A cloud-only document is downloaded when it is opened, shared or exported;
+  /// the reason a download did not happen has its own message.
+  String _openFailureMessage() {
+    final failure = _vm.lastOpenFailure;
+    return failure == null
+        ? _localization.translate('documentFileNotFound')
+        : _failureMessage(failure);
   }
 
   // Failures a second attempt can fix (as opposed to a file that must change).
@@ -255,7 +343,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
       if (!preparation.isShareable) {
         _showToast(
           preparation.unavailable.isNotEmpty
-              ? localization.translate('documentFileNotFound')
+              ? _openFailureMessage()
               : localization.translate('failedToShareDocuments'),
           Colors.red,
         );
@@ -286,7 +374,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     final file = await _vm.openableFile(document);
     if (!mounted) return;
     if (file == null) {
-      _showToast(_localization.translate('documentFileNotFound'), Colors.red);
+      _showToast(_openFailureMessage(), Colors.red);
       return;
     }
     await Navigator.of(context).push(
@@ -652,15 +740,37 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
 
     return ListenableBuilder(
       listenable: _vm,
-      builder: (context, _) => Scaffold(
-        backgroundColor: colors.surface,
-        extendBodyBehindAppBar: true,
-        resizeToAvoidBottomInset: false,
-        appBar: _buildAdvancedAppBar(localization, colors),
-        body: _buildBody(localization, colors),
-        floatingActionButton: _buildFloatingActionButton(localization),
-        floatingActionButtonLocation:
-            FloatingActionButtonLocation.centerDocked,
+      builder: (context, _) => Stack(
+        children: [
+          Scaffold(
+            backgroundColor: colors.surface,
+            extendBodyBehindAppBar: true,
+            resizeToAvoidBottomInset: false,
+            appBar: _buildAdvancedAppBar(localization, colors),
+            body: _buildBody(localization, colors),
+            floatingActionButton: _buildFloatingActionButton(localization),
+            floatingActionButtonLocation:
+                FloatingActionButtonLocation.centerDocked,
+          ),
+          // The one progress indicator while the PDFs are combined and saved:
+          // dims the whole screen and takes the taps.
+          if (_vm.isMerging)
+            Positioned.fill(
+              child: ToolProgressOverlay(
+                // No page count: the plan is emptied just before the combine
+                // ends, which would change the text under the user's eyes.
+                message: localization.translate('combineCombining'),
+                accent: const Color(0xFFFF9800),
+              ),
+            ),
+          if (_vm.isDownloading)
+            Positioned.fill(
+              child: ToolProgressOverlay(
+                message: localization.translate('combineCloudDownloading'),
+                accent: const Color(0xFFFF9800),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -770,10 +880,11 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
             ),
           ),
 
-        // Processing indicator
-        if (_vm.isMerging)
+        // Chosen files are being read and checked (never while the picker is
+        // open: the picker is the feedback there)
+        if (_vm.isCheckingFiles)
           SliverToBoxAdapter(
-            child: _buildProcessingIndicator(localization, colors),
+            child: _buildCheckingIndicator(localization, colors),
           ),
 
         // Show creation interface when creating new PDFs
@@ -928,70 +1039,38 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
     );
   }
 
-  // The combine reports no percentage: the PDF library gives no progress, so
-  // the card says what is happening and offers Cancel instead of a made-up bar.
-  Widget _buildProcessingIndicator(
+  // Shown while the files that came back from the picker are being read and
+  // checked. Each file joins the selection once it has been checked, so without
+  // this the screen looks as if nothing had been chosen. The bar is the real
+  // count of files already checked, the same as Images to PDF shows.
+  Widget _buildCheckingIndicator(
       AppLocalizations localization, ColorScheme colors) {
+    final total = _vm.chosenCount;
+    final done = _vm.checkedCount.clamp(0, total);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      localization
-                          .translate('combineProcessing')
-                          .replaceAll('{pages}', '${_vm.plan.totalPages}'),
-                      style: AppTextStyles.bodyText.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      localization.translate('combineProcessingNote'),
-                      style: TextStyle(
-                        color: colors.onSurface.withValues(alpha: 0.6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Text(
+            localization
+                .translate('combineChecking')
+                .replaceAll('{done}', '$done')
+                .replaceAll('{total}', '$total'),
+            style: AppTextStyles.bodyText.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: TextButton(
-              onPressed: _vm.cancelCombine,
-              child: Text(localization.translate('combineCancelButton')),
-            ),
+          LinearProgressIndicator(
+            value: total == 0 ? null : done / total,
+            backgroundColor: colors.outline.withValues(alpha: 0.2),
+            valueColor:
+                const AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
           ),
         ],
       ),
@@ -1195,23 +1274,29 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.info_outline,
-                size: 14,
-                color: colors.onSurface.withValues(alpha: 0.6),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 14,
+                    color: colors.onSurface.withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _vm.isMissing(document.id)
+                        ? localization.translate('combineFileMissingBadge')
+                        : '${document.pageCount} ${localization.translate('pages')} • ${(document.fileSize / 1024).toStringAsFixed(1)} KB',
+                    style: TextStyle(
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 4),
-              Text(
-                _vm.isMissing(document.id)
-                    ? localization.translate('combineFileMissingBadge')
-                    : '${document.pageCount} ${localization.translate('pages')} • ${(document.fileSize / 1024).toStringAsFixed(1)} KB',
-                style: TextStyle(
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  fontSize: 12,
-                ),
-              ),
+              _buildCloudStatus(document, colors, 12),
             ],
           ),
         ),
@@ -1238,12 +1323,27 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                   case 'rename':
                     _renameCombinedDocument(document);
                     break;
+                  case 'backup':
+                    _vm.retryBackup(document.id);
+                    break;
                   case 'delete':
                     _deleteCombinedDocument(document);
                     break;
                 }
               },
               itemBuilder: (context) => [
+                if (_vm.canRetryBackup(document.id))
+                  PopupMenuItem(
+                    value: 'backup',
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_upload_outlined,
+                            size: 20, color: Colors.orange),
+                        const SizedBox(width: 12),
+                        Text(localization.translate('combineBackUpNow')),
+                      ],
+                    ),
+                  ),
                 PopupMenuItem(
                   value: 'share',
                   child: Row(
@@ -1522,6 +1622,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                           ),
                         ],
                       ),
+                      _buildCloudStatus(document, colors, 10),
                     ],
                   ),
                 ),
@@ -1793,20 +1894,10 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               backgroundColor: const Color(0xFFFF9800),
               foregroundColor: Colors.white,
               elevation: 8,
-              icon: _vm.isMerging
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.merge_type),
+              // The button keeps its look while the overlay shows the work.
+              icon: const Icon(Icons.merge_type),
               label: Text(
-                _vm.isMerging
-                    ? localization.translate('combining')
-                    : localization.translate('combinePdfsButton'),
+                localization.translate('combinePdfsButton'),
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 16,

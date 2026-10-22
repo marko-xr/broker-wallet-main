@@ -9,6 +9,7 @@ import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/services/signature/signature_wiring.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 
 /// The last step before a signed document is kept: the signed copy itself, drawn
 /// page by page by the same renderer that draws every PDF, with a name field and
@@ -226,113 +227,117 @@ class _SignaturePreviewScreenState extends State<SignaturePreviewScreen> {
         final saving = _vm.isSaving;
         return PopScope(
           canPop: !saving,
-          child: Scaffold(
-            backgroundColor: Colors.grey[200],
-            appBar: AppBar(
-              title: Text(
-                localization.translate('sigPreviewTitle'),
-                style: const TextStyle(
-                  fontSize: 20,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              centerTitle: true,
-              backgroundColor: SignatureColors.redLight,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            body: Column(
-              children: [
-                _buildNote(localization),
-                Expanded(child: _buildPages()),
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 6,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
+          child: Stack(
+            children: [
+              Scaffold(
+                backgroundColor: Colors.grey[200],
+                appBar: AppBar(
+                  title: Text(
+                    localization.translate('sigPreviewTitle'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          key: const ValueKey<String>('preview-name'),
-                          controller: _name,
-                          enabled: !saving,
-                          maxLength: 80,
-                          decoration: InputDecoration(
-                            labelText: localization.translate('documentName'),
-                            border: const OutlineInputBorder(),
-                            counterText: '',
-                            isDense: true,
+                  centerTitle: true,
+                  backgroundColor: SignatureColors.redLight,
+                  elevation: 0,
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: saving ? null : () => Navigator.of(context).pop(),
+                  ),
+                ),
+                body: Column(
+                  children: [
+                    _buildNote(localization),
+                    Expanded(child: _buildPages()),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, -2),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
+                        ],
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                key: const ValueKey<String>('preview-back'),
-                                onPressed: saving
-                                    ? null
-                                    : () => Navigator.of(context).pop(),
-                                style: OutlinedButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: Text(
-                                    localization.translate('sigBackToEdit')),
+                            TextField(
+                              key: const ValueKey<String>('preview-name'),
+                              controller: _name,
+                              enabled: !saving,
+                              maxLength: 80,
+                              decoration: InputDecoration(
+                                labelText: localization.translate('documentName'),
+                                border: const OutlineInputBorder(),
+                                counterText: '',
+                                isDense: true,
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                key: const ValueKey<String>('preview-save'),
-                                onPressed: saving || !_ready ? null : _save,
-                                icon: saving
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(Icons.save),
-                                label: Text(localization.translate('save')),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    key: const ValueKey<String>('preview-back'),
+                                    onPressed: saving
+                                        ? null
+                                        : () => Navigator.of(context).pop(),
+                                    style: OutlinedButton.styleFrom(
+                                      padding:
+                                          const EdgeInsets.symmetric(vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                        localization.translate('sigBackToEdit')),
                                   ),
                                 ),
-                              ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    key: const ValueKey<String>('preview-save'),
+                                    onPressed: saving || !_ready ? null : _save,
+                                    icon: const Icon(Icons.save),
+                                    label: Text(localization.translate('save')),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      padding:
+                                          const EdgeInsets.symmetric(vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
+                  ],
+                ),
+              ),
+              // The one progress indicator while the signed copy is stored: dims
+              // the whole screen and takes the taps; Save keeps its look.
+              if (saving)
+                Positioned.fill(
+                  child: ToolProgressOverlay(
+                    message: localization.translate('sigSaving'),
+                    accent: SignatureColors.redDark,
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
         );
       },

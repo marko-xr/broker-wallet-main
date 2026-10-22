@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_preview_screen.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_stamp_dialogs.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 
 /// The editing screen of one picked PDF: its pages, with signatures, initials,
 /// dates and texts placed on them.
@@ -325,7 +326,10 @@ class _DocumentViewState extends State<DocumentView> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _PreparingDialog(onCancel: _vm.cancelBuild),
+      // The overlay dims the screen itself; the dialog's own barrier would
+      // darken it twice.
+      barrierColor: Colors.transparent,
+      builder: (_) => const _PreparingDialog(),
     );
     final failure = await _vm.buildDraft();
     if (!mounted) return;
@@ -727,39 +731,20 @@ class _GoToPageDialogState extends State<_GoToPageDialog> {
   }
 }
 
-/// A busy indicator for writing the signed copy. It is not a progress bar: the
-/// work has no honest percentage, so it only says it is working, and it can be
-/// cancelled.
+/// The busy indicator while the signed copy is written: the shared centered
+/// overlay. It is not a progress bar (the work has no honest percentage) and
+/// has no Cancel button, like the other tools.
 class _PreparingDialog extends StatelessWidget {
-  const _PreparingDialog({required this.onCancel});
-
-  final VoidCallback onCancel;
+  const _PreparingDialog();
 
   @override
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     return PopScope(
       canPop: false,
-      child: Center(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(localization.translate('sigPreparing')),
-                const SizedBox(height: 8),
-                TextButton(
-                  key: const ValueKey<String>('preparing-cancel'),
-                  onPressed: onCancel,
-                  child: Text(localization.translate('cancel')),
-                ),
-              ],
-            ),
-          ),
-        ),
+      child: ToolProgressOverlay(
+        message: localization.translate('sigPreparing'),
+        accent: SignatureColors.redDark,
       ),
     );
   }

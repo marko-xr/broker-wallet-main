@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_engine.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_processor.dart';
+import 'package:broker_wallet/src/services/toolkit/bounded_isolate.dart';
 
 /// Lets the user stop a conversion that is running.
 class ImagePdfCancelToken {
@@ -75,11 +76,25 @@ void _buildEntry(_BuildStart start) {
 /// Production: every picture check is a short-lived isolate, and a conversion
 /// owns one isolate that is stopped at once if the user cancels.
 class IsolateImagePdfExecutor implements ImagePdfExecutor {
-  const IsolateImagePdfExecutor();
+  const IsolateImagePdfExecutor({
+    this.analysisDeadline = const Duration(minutes: 4),
+  });
+
+  /// The longest one picture's check may run. Generous on purpose (a debug
+  /// build decodes a photograph many times slower than a release one); it only
+  /// ends a check that would otherwise leave the picture "checking" for good.
+  final Duration analysisDeadline;
 
   @override
   Future<ImageAnalysis> analyzeImage(String path) =>
-      Isolate.run(() => analyzeImageFile(path));
+      runBoundedIsolate<ImageAnalysis>(
+        () => analyzeImageFile(path),
+        limit: analysisDeadline,
+        onTimeout: () => const ImagePdfException(ImagePdfFailure.missingSource,
+            detail: 'timeout'),
+        onFailure: () => const ImagePdfException(ImagePdfFailure.corruptSource,
+            detail: 'worker'),
+      );
 
   @override
   Future<ImagePdfFileInfo> analyzePdf(String path, {String? password}) =>

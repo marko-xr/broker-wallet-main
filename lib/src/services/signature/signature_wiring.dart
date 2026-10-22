@@ -14,6 +14,8 @@ import 'package:broker_wallet/src/services/signature/signature_page_renderer.dar
 import 'package:broker_wallet/src/services/signature/signature_platform.dart';
 import 'package:broker_wallet/src/services/signature/signature_stamp_renderer.dart';
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_wiring.dart';
+import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_library_viewmodel.dart';
 
 /// The SharedPreferences key the first Signature tool stored every account's
@@ -67,6 +69,15 @@ class SignatureWiring {
       currentUserId: () => auth.currentUserId,
       userIdChanges: auth.authStateChanges.map((user) => user?.uid),
       legacyDocumentCount: _legacyCount,
+      // The account copy: null (so the tool stays local) when this build has it
+      // switched off.
+      cloudFactory: (accountId, files) => ToolkitCloudWiring.create(
+        accountId: accountId,
+        type: ToolkitDocumentType.signature,
+        directory: files.journalDirectory,
+        files: files,
+        currentAccountId: () => auth.currentUserId,
+      ),
     );
   }
 

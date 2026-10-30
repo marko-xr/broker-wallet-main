@@ -154,17 +154,20 @@ class AddQuotationView extends StatelessWidget {
                                           Icon(Icons.auto_awesome,
                                               size: 16, color: colors.primary),
                                           const SizedBox(width: 8),
-                                          Text(
+                                          Flexible(
+                                              child: Text(
                                             _getLocalizedWithFallback(
                                                 loc,
                                                 'templatePreview',
                                                 'Template Preview'),
                                             style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              color: colors.primary,
+                                              fontWeight:
+                                                  FontWeight.w600,
+                                              color:
+                                                  colors.primary,
                                               fontSize: 14,
                                             ),
-                                          ),
+                                          )),
                                         ],
                                       ),
                                       const SizedBox(height: 10),
@@ -335,11 +338,11 @@ class AddQuotationView extends StatelessWidget {
                               const SizedBox(height: 6),
                               Row(
                                 children: [
-                                  TextButton.icon(
+                                  Flexible(child: TextButton.icon(
                                     onPressed: vm.addDownpaymentRow,
                                     icon: const Icon(Icons.add),
                                     label: Text(loc.translate('addRow')),
-                                  ),
+                                  )),
                                 ],
                               ),
                             ],
@@ -449,7 +452,7 @@ class AddQuotationView extends StatelessWidget {
                               // Add Fee Button
                               Container(
                                 width: double.infinity,
-                                height: 52,
+                                constraints: const BoxConstraints(minHeight: 52),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[100],
                                   borderRadius: BorderRadius.circular(10),
@@ -469,13 +472,15 @@ class AddQuotationView extends StatelessWidget {
                                         color: Colors.grey[600],
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        loc.translate('addAdministrativeFee'),
+                                      Flexible(
+                                          child: Text(
+                                        loc.translate(
+                                            'addAdministrativeFee'),
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                           fontSize: 16,
                                         ),
-                                      ),
+                                      )),
                                     ],
                                   ),
                                 ),
@@ -806,7 +811,7 @@ class _LabelWithCurrency extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(bottom: 7, start: 2),
       child: Row(
         children: [
-          Text(text, style: AppTextStyles.sectionLabel),
+          Flexible(child: Text(text, style: AppTextStyles.sectionLabel)),
           const SizedBox(width: 8),
           Text('(', style: AppTextStyles.sectionLabel),
           Image.asset(
@@ -872,7 +877,7 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -998,7 +1003,7 @@ class _DatePickerFieldState extends State<_DatePickerField> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -1129,7 +1134,7 @@ class _SmartDatePickerFieldState extends State<_SmartDatePickerField> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -1287,7 +1292,7 @@ class _AutoCalculatedDateFieldState extends State<_AutoCalculatedDateField> {
     final bool hasValue = widget.value.isNotEmpty;
 
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color:
             hasValue ? colors.surface : colors.surface.withValues(alpha: 0.7),
@@ -1666,7 +1671,7 @@ class _SwitchRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -1777,39 +1782,60 @@ class _DownpaymentRow extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       child: Column(
         children: [
-          // First line: method + number
-          Row(
-            children: [
-              Expanded(
-                flex: 6,
-                child: _DropdownField(
-                  label:
-                      AppLocalizations.of(context).translate('paymentMethod'),
-                  value: method,
-                  items: const [
-                    DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                    DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
-                    DropdownMenuItem(
-                        value: 'bankTransfer', child: Text('Bank Transfer')),
-                    DropdownMenuItem(value: 'other', child: Text('Other')),
-                  ],
-                  onChanged: (v) => onMethodChanged(v ?? 'cash'),
-                ),
-              ),
+          // Preserve the 6:2 row while the longest payment label fits. On a
+          // narrow/scaled row the same two fields flow vertically, so neither
+          // the method nor the auto-number is squeezed into a few characters.
+          LayoutBuilder(builder: (context, constraints) {
+            final methodField = _DropdownField(
+              label: AppLocalizations.of(context).translate('paymentMethod'),
+              value: method,
+              items: const [
+                DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
+                DropdownMenuItem(
+                    value: 'bankTransfer', child: Text('Bank Transfer')),
+                DropdownMenuItem(value: 'other', child: Text('Other')),
+              ],
+              onChanged: (v) => onMethodChanged(v ?? 'cash'),
+            );
+            final numberField = _SmallTextField(
+              hint: '1',
+              value: number,
+              onChanged: onNumberChanged, // will be ignored (readOnly)
+              keyboardType: TextInputType.number,
+              readOnly: true, // <---- auto-numbered
+            );
+            var labelWidth = 0.0;
+            for (final item in methodField.items) {
+              final painter = TextPainter(
+                text: TextSpan(
+                    text: (item.child as Text).data,
+                    style: Theme.of(context).textTheme.titleMedium),
+                textDirection: Directionality.of(context),
+                textScaler: MediaQuery.textScalerOf(context),
+              )..layout();
+              if (painter.width > labelWidth) labelWidth = painter.width;
+              painter.dispose();
+            }
+            // Existing 8px gap, 44px trailing space, 12px field insets and
+            // 24px dropdown arrow; no viewport breakpoint or text-scale cap.
+            final methodWidth = (constraints.maxWidth - 8 - 44) * 6 / 8;
+            if (methodWidth < labelWidth + 24 + 24) {
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    methodField,
+                    const SizedBox(height: 8),
+                    numberField
+                  ]);
+            }
+            return Row(children: [
+              Expanded(flex: 6, child: methodField),
               const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: _SmallTextField(
-                  hint: '1',
-                  value: number,
-                  onChanged: onNumberChanged, // will be ignored (readOnly)
-                  keyboardType: TextInputType.number,
-                  readOnly: true, // <---- auto-numbered
-                ),
-              ),
-              const SizedBox(width: 44), // Space for delete button alignment
-            ],
-          ),
+              Expanded(flex: 2, child: numberField),
+              const SizedBox(width: 44)
+            ]);
+          }),
           const SizedBox(height: 8),
 
           // Second line: date + amount
@@ -1909,7 +1935,7 @@ class _SmallTextFieldState extends State<_SmallTextField> {
     if (widget.readOnly) {
       // For read-only fields (like auto-numbered fields), use simple text display
       return Container(
-        height: 52,
+        constraints: const BoxConstraints(minHeight: 52),
         decoration: BoxDecoration(
           color: colors.surface,
           borderRadius: BorderRadius.circular(10),
@@ -1931,7 +1957,7 @@ class _SmallTextFieldState extends State<_SmallTextField> {
 
     // For editable fields, use TextField but with better constraints
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       child: TextField(
         controller: _c,
         readOnly: widget.readOnly,
@@ -2051,7 +2077,7 @@ class _SmallDateFieldState extends State<_SmallDateField> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -2121,6 +2147,7 @@ class _DropdownField extends StatelessWidget {
         child: DropdownButton<String>(
           value: value.isEmpty ? null : value,
           isExpanded: true,
+          itemHeight: null,
           items: items,
           onChanged: onChanged,
         ),
@@ -2301,34 +2328,36 @@ class _WelcomeModeOption extends StatelessWidget {
             ? colors.primary.withValues(alpha: 0.08)
             : colors.surface,
       ),
-      child: ListTile(
-        onTap: onTap,
-        leading: Icon(
-          icon,
-          color: isSelected ? colors.primary : colors.onSurfaceVariant,
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            color: isSelected ? colors.primary : colors.onSurface,
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 8,
-            color: isSelected
-                ? colors.primary.withValues(alpha: 0.7)
-                : colors.onSurfaceVariant,
-          ),
-        ),
-        trailing: isSelected
-            ? Icon(Icons.check_circle, color: colors.primary)
-            : Icon(Icons.radio_button_unchecked,
-                color: colors.onSurfaceVariant.withValues(alpha: 0.5)),
-      ),
+      child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            onTap: onTap,
+            leading: Icon(
+              icon,
+              color: isSelected ? colors.primary : colors.onSurfaceVariant,
+            ),
+            title: Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? colors.primary : colors.onSurface,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 8,
+                color: isSelected
+                    ? colors.primary.withValues(alpha: 0.7)
+                    : colors.onSurfaceVariant,
+              ),
+            ),
+            trailing: isSelected
+                ? Icon(Icons.check_circle, color: colors.primary)
+                : Icon(Icons.radio_button_unchecked,
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.5)),
+          )),
     );
   }
 }

@@ -557,8 +557,8 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                   Text(
                     loc
                         .translate('combinePagesOfFile')
-                        .replaceAll(
-                            '{selected}', '${_vm.plan.selectedCount(source.id)}')
+                        .replaceAll('{selected}',
+                            '${_vm.plan.selectedCount(source.id)}')
                         .replaceAll('{total}', '${source.pageCount}'),
                     style: const TextStyle(fontSize: 12),
                   ),
@@ -741,14 +741,12 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           // Bulk actions when in selection mode
           IconButton(
             icon: const Icon(Icons.share, color: Colors.white),
-            onPressed:
-                _vm.selectedCount > 0 ? _shareBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0 ? _shareBulkDocuments : null,
             tooltip: localization.translate('shareSelected'),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
-            onPressed:
-                _vm.selectedCount > 0 ? _deleteBulkDocuments : null,
+            onPressed: _vm.selectedCount > 0 ? _deleteBulkDocuments : null,
             tooltip: localization.translate('deleteSelected'),
           ),
           IconButton(
@@ -1034,8 +1032,7 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
           LinearProgressIndicator(
             value: total == 0 ? null : done / total,
             backgroundColor: colors.outline.withValues(alpha: 0.2),
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
           ),
         ],
       ),
@@ -1158,14 +1155,15 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
             color: const Color(0xFFFF9800),
           ),
           const SizedBox(width: 8),
-          Text(
-            '${localization.translate('combinedDocuments')} (${_vm.documents.length})',
-            style: AppTextStyles.bodyText.copyWith(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFFFF9800),
+          Expanded(
+            child: Text(
+              '${localization.translate('combinedDocuments')} (${_vm.documents.length})',
+              style: AppTextStyles.bodyText.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFFF9800),
+              ),
             ),
           ),
-          const Spacer(),
           if (_vm.documents.isNotEmpty)
             IconButton(
               icon: Icon(
@@ -1392,95 +1390,95 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
               SizedBox(
                 height: 28,
                 child: Row(
-                children: [
-                  // Selection indicator or document type icon
-                  _vm.isSelectionMode
-                      ? Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFFFF9800)
-                                : Colors.grey.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            isSelected
-                                ? Icons.check
-                                : Icons.radio_button_unchecked,
-                            color: isSelected ? Colors.white : Colors.grey,
-                            size: 18,
-                          ),
-                        )
-                      : Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFFFF9800).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.picture_as_pdf,
-                            color: const Color(0xFFFF9800),
-                            size: 16,
-                          ),
-                        ),
-
-                  const Spacer(),
-
-                  // More options menu
-                  PopupMenuButton<String>(
-                    // A sized child instead of the default icon button,
-                    // which would add 48 px of height to this row.
-                    child: SizedBox(
-                      width: 32,
-                      height: 28,
-                      child: Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'rename':
-                          _renameCombinedDocument(document);
-                          break;
-                        case 'delete':
-                          _deleteCombinedDocument(document);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'rename',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.edit,
-                                size: 18, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Text(localization.translate('rename')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.delete,
-                                color: Colors.red, size: 18),
-                            const SizedBox(width: 8),
-                            Text(
-                              localization.translate('delete'),
-                              style: const TextStyle(color: Colors.red),
+                  children: [
+                    // Selection indicator or document type icon
+                    _vm.isSelectionMode
+                        ? Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFFFF9800)
+                                  : Colors.grey.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                          ],
+                            child: Icon(
+                              isSelected
+                                  ? Icons.check
+                                  : Icons.radio_button_unchecked,
+                              color: isSelected ? Colors.white : Colors.grey,
+                              size: 18,
+                            ),
+                          )
+                        : Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF9800)
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.picture_as_pdf,
+                              color: const Color(0xFFFF9800),
+                              size: 16,
+                            ),
+                          ),
+
+                    const Spacer(),
+
+                    // More options menu
+                    PopupMenuButton<String>(
+                      // A sized child instead of the default icon button,
+                      // which would add 48 px of height to this row.
+                      child: SizedBox(
+                        width: 32,
+                        height: 28,
+                        child: Icon(
+                          Icons.more_vert,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'rename':
+                            _renameCombinedDocument(document);
+                            break;
+                          case 'delete':
+                            _deleteCombinedDocument(document);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'rename',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit,
+                                  size: 18, color: Colors.grey),
+                              const SizedBox(width: 8),
+                              Text(localization.translate('rename')),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.delete,
+                                  color: Colors.red, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                localization.translate('delete'),
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
 
@@ -1516,13 +1514,15 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                           color: const Color(0xFFFF9800).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: const Color(0xFFFF9800).withValues(alpha: 0.3),
+                            color:
+                                const Color(0xFFFF9800).withValues(alpha: 0.3),
                             width: 1,
                           ),
                         ),
                         child: Text(
                           _vm.isMissing(document.id)
-                              ? localization.translate('combineFileMissingBadge')
+                              ? localization
+                                  .translate('combineFileMissingBadge')
                               : '${document.pageCount} ${localization.translate('pages')} • PDF',
                           style: TextStyle(
                             color: const Color(0xFFFF9800),
@@ -1560,14 +1560,21 @@ class _CombinePdfsViewState extends State<CombinePdfsView> {
                             color: colors.onSurfaceVariant,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            '${(document.fileSize / 1024).toStringAsFixed(1)} KB',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                  fontSize: 10,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          Flexible(
+                            child: Text(
+                              '${(document.fileSize / 1024).toStringAsFixed(1)} KB',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                    fontSize: 10,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            ),
                           ),
                         ],
                       ),

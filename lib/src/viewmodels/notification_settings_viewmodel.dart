@@ -5,8 +5,11 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:flutter/foundation.dart';
 
 class NotificationSettingsViewModel extends ChangeNotifier {
-  NotificationSettingsViewModel({required this.authViewModel})
-      : _userRepository = RepositoryProvider.instance.userRepository;
+  NotificationSettingsViewModel({
+    required this.authViewModel,
+    UserRepository? userRepository,
+  }) : _userRepository =
+            userRepository ?? RepositoryProvider.instance.userRepository;
 
   final AuthViewModel authViewModel;
   final UserRepository _userRepository;

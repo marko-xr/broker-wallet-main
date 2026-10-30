@@ -86,10 +86,10 @@ Object? thrownBy(void Function() body) {
 void main() {
   group('the definitions', () {
     test(
-        'Recently Added and Recently Updated are 12 hours, This Week 7 days, '
+        'Recently Added and Recently Updated are 24 hours, This Week 7 days, '
         'Less Price and Highest Price keep 6', () {
-      expect(HomeFilterRules.recentlyAddedWindow, const Duration(hours: 12));
-      expect(HomeFilterRules.recentlyUpdatedWindow, const Duration(hours: 12));
+      expect(HomeFilterRules.recentlyAddedWindow, const Duration(hours: 24));
+      expect(HomeFilterRules.recentlyUpdatedWindow, const Duration(hours: 24));
       expect(HomeFilterRules.thisWeekWindow, const Duration(days: 7));
       expect(HomeFilterRules.lessPriceLimit, 6);
       expect(HomeFilterRules.highestPriceLimit, 6);
@@ -176,28 +176,29 @@ void main() {
   });
 
   group('Recently Added', () {
-    test('keeps a record created inside the last 12 hours', () {
+    test('keeps a record created inside the last 24 hours', () {
       expect(
         ids(recently([
           record(ItemType.offer, 'new', age: const Duration(minutes: 1)),
-          record(ItemType.offer, 'eleven', age: const Duration(hours: 11)),
+          record(ItemType.offer, 'twenty-three',
+              age: const Duration(hours: 23)),
         ])),
-        containsAll(['new', 'eleven']),
+        containsAll(['new', 'twenty-three']),
       );
     });
 
-    test('drops a record older than 12 hours', () {
+    test('drops a record older than 24 hours', () {
       expect(
         recently([
           record(ItemType.offer, 'old',
-              age: const Duration(hours: 12, minutes: 1)),
+              age: const Duration(hours: 24, minutes: 1)),
           record(ItemType.request, 'older', age: const Duration(days: 3)),
         ]),
         isEmpty,
       );
     });
 
-    test('the boundary is explicit: exactly 12 hours old is out', () {
+    test('the boundary is explicit: exactly 24 hours old is out', () {
       final exactly = record(ItemType.offer, 'exactly',
           age: HomeFilterRules.recentlyAddedWindow);
       final justInside = record(ItemType.offer, 'inside',
@@ -253,7 +254,13 @@ void main() {
     test('uses the clock it is given, never its own', () {
       final items = [record(ItemType.offer, 'a', age: hour)];
       expect(ids(recently(items)), ['a']);
-      expect(recently(items, at: now.add(const Duration(hours: 12))), isEmpty);
+      expect(
+        recently(
+          items,
+          at: now.add(HomeFilterRules.recentlyAddedWindow),
+        ),
+        isEmpty,
+      );
     });
 
     test('a timestamp held in local time is the same instant as in UTC', () {
@@ -263,7 +270,7 @@ void main() {
         record(ItemType.request, 'local', at: instant.toLocal()),
       ];
       expect(ids(recently(items)), ['local', 'utc']);
-      final stale = now.subtract(const Duration(hours: 13));
+      final stale = now.subtract(const Duration(hours: 25));
       expect(
         recently([
           record(ItemType.offer, 'utc', at: stale.toUtc()),
@@ -565,30 +572,30 @@ void main() {
   });
 
   group('Recently Updated', () {
-    test('keeps a record changed inside the last 12 hours', () {
+    test('keeps a record changed inside the last 24 hours', () {
       expect(
         ids(updated([
           record(ItemType.offer, 'just-now',
               age: day * 3, changedAge: const Duration(minutes: 1)),
-          record(ItemType.owner, 'eleven',
-              age: day * 3, changedAge: const Duration(hours: 11)),
+          record(ItemType.owner, 'twenty-three',
+              age: day * 3, changedAge: const Duration(hours: 23)),
         ])),
-        containsAll(['just-now', 'eleven']),
+        containsAll(['just-now', 'twenty-three']),
       );
     });
 
-    test('drops a record last changed more than 12 hours ago', () {
+    test('drops a record last changed more than 24 hours ago', () {
       expect(
         updated([
           record(ItemType.offer, 'old',
-              age: day * 5, changedAge: const Duration(hours: 12, minutes: 1)),
+              age: day * 5, changedAge: const Duration(hours: 24, minutes: 1)),
           record(ItemType.request, 'older', age: day * 9, changedAge: day * 3),
         ]),
         isEmpty,
       );
     });
 
-    test('the boundary is explicit: changed exactly 12 hours ago is out', () {
+    test('the boundary is explicit: changed exactly 24 hours ago is out', () {
       final window = HomeFilterRules.recentlyUpdatedWindow;
       final exactly =
           record(ItemType.offer, 'exactly', age: day * 2, changedAge: window);
@@ -710,7 +717,13 @@ void main() {
     test('uses the clock it is given, never its own', () {
       final items = [record(ItemType.offer, 'a', age: day, changedAge: hour)];
       expect(ids(updated(items)), ['a']);
-      expect(updated(items, at: now.add(const Duration(hours: 12))), isEmpty);
+      expect(
+        updated(
+          items,
+          at: now.add(HomeFilterRules.recentlyUpdatedWindow),
+        ),
+        isEmpty,
+      );
     });
 
     test('a timestamp held in local time is the same instant as in UTC', () {

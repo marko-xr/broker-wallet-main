@@ -16,12 +16,14 @@ class AddOfficesView extends StatelessWidget {
   final AddOfficesMode mode;
   final String? officeId;
   final OfficeModel? officeData;
+  final AddOfficesViewModel? viewModel;
 
   const AddOfficesView({
     super.key,
     this.mode = AddOfficesMode.add,
     this.officeId,
     this.officeData,
+    this.viewModel,
   });
 
   @override
@@ -29,11 +31,13 @@ class AddOfficesView extends StatelessWidget {
     final localization = AppLocalizations.of(context);
 
     return ChangeNotifierProvider(
-      create: (_) => AddOfficesViewModel(
-        mode: mode,
-        officeId: officeId,
-        officeData: officeData,
-      ),
+      create: (_) =>
+          viewModel ??
+          AddOfficesViewModel(
+            mode: mode,
+            officeId: officeId,
+            officeData: officeData,
+          ),
       child: Consumer<AddOfficesViewModel>(
         builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;

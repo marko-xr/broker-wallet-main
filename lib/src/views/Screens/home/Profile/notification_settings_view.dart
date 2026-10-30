@@ -1,11 +1,16 @@
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/notification_settings_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class NotificationSettingsView extends StatefulWidget {
-  const NotificationSettingsView({super.key});
+  const NotificationSettingsView({super.key, this.userRepository});
+
+  /// Optional repository seam for production-widget tests.
+  /// Runtime routes omit it and keep the configured repository provider.
+  final UserRepository? userRepository;
 
   @override
   State<NotificationSettingsView> createState() =>
@@ -20,6 +25,7 @@ class _NotificationSettingsViewState extends State<NotificationSettingsView> {
     super.initState();
     _viewModel = NotificationSettingsViewModel(
       authViewModel: context.read<AuthViewModel>(),
+      userRepository: widget.userRepository,
     )..initialize();
   }
 

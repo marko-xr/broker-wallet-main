@@ -119,7 +119,8 @@ class CompactRequestCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              Text(
+                              Flexible(
+                                  child: Text(
                                 _getFormattedDate(request.createdAt),
                                 style: texts.bodySmall?.copyWith(
                                   color:
@@ -127,7 +128,7 @@ class CompactRequestCard extends StatelessWidget {
                                   fontWeight: FontWeight.w500,
                                 ),
                                 overflow: TextOverflow.ellipsis,
-                              ),
+                              )),
                             ],
                           ),
                           const SizedBox(height: 6),
@@ -267,13 +268,14 @@ class CompactRequestCard extends StatelessWidget {
                                         color: colors.primary,
                                       ),
                                       const SizedBox(width: 4),
-                                      Text(
+                                      Flexible(
+                                          child: Text(
                                         '$squareFootageValue ${loc.translate('squareFootageUnit')}',
                                         style: texts.labelSmall?.copyWith(
                                           color: colors.primary,
                                           fontWeight: FontWeight.w600,
                                         ),
-                                      ),
+                                      )),
                                     ],
                                   ),
                                 ),
@@ -303,13 +305,14 @@ class CompactRequestCard extends StatelessWidget {
                                     color: colors.tertiary,
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(
+                                  Flexible(
+                                      child: Text(
                                     _getPriceRange(request, loc),
                                     style: texts.labelSmall?.copyWith(
                                       color: colors.tertiary,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                  ),
+                                  )),
                                 ],
                               ),
                             ),

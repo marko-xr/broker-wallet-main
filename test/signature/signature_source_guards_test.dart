@@ -10,7 +10,10 @@ const String signatureViews = 'lib/src/views/Screens/home/Toolkit/signature';
 const String signatureServices = 'lib/src/services/signature';
 const String signatureViewModels = 'lib/src/viewmodels/signature';
 
-String read(String path) => File(path).readAsStringSync();
+// Line endings are normalised: a Windows checkout is CRLF and the guards below
+// search for LF-only patterns such as '\n}\n'.
+String read(String path) =>
+    File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
 List<File> sourcesIn(String folder) => Directory(folder)
     .listSync(recursive: true)

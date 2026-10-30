@@ -34,6 +34,7 @@ class _ToolkitViewState extends State<ToolkitView>
     with TickerProviderStateMixin {
   late final List<ToolkitItem> _allItems;
   late AnimationController _animationController;
+  bool _isGrid = false;
 
   @override
   void initState() {
@@ -97,8 +98,6 @@ class _ToolkitViewState extends State<ToolkitView>
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
-    final width = MediaQuery.of(context).size.width;
-    final crossAxisCount = (width ~/ 200).clamp(2, 3);
 
     return Scaffold(
       backgroundColor: colors.surface,
@@ -141,84 +140,122 @@ class _ToolkitViewState extends State<ToolkitView>
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: CustomScrollView(
+            slivers: [
               // Header section
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF02957D), Color(0xFF026B5A)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF02957D).withValues(alpha: 0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF02957D), Color(0xFF026B5A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF02957D).withValues(alpha: 0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              localization.translate('professionalTools'),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              localization.translate('boostProductivity'),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.build_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 30)),
+
+              // Tools section
+              SliverToBoxAdapter(
                 child: Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localization.translate('professionalTools'),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            localization.translate('boostProductivity'),
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        localization.translate('availableTools'),
+                        style: AppTextStyles.bodyText.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.build_rounded,
-                        color: Colors.white,
-                        size: 28,
+                    IconButton(
+                      onPressed: () => setState(() => _isGrid = !_isGrid),
+                      padding: EdgeInsets.zero,
+                      alignment: AlignmentDirectional.centerEnd,
+                      constraints:
+                          const BoxConstraints(minWidth: 40, minHeight: 40),
+                      // The glyphs carry ~3 px of built-in side padding;
+                      // shift them so the visible edge meets the cards' edge.
+                      icon: Transform.translate(
+                        offset: Offset(
+                          Directionality.of(context) == TextDirection.rtl
+                              ? -3
+                              : 3,
+                          0,
+                        ),
+                        child: Icon(
+                          _isGrid
+                              ? Icons.view_list_rounded
+                              : Icons.grid_view_rounded,
+                          color: colors.primary,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              const SizedBox(height: 30),
-
-              // Tools section
-              Text(
-                localization.translate('availableTools'),
-                style: AppTextStyles.bodyText.copyWith(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: colors.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Expanded(
-                child: _buildGrid(_allItems, crossAxisCount),
-              ),
+              if (_isGrid)
+                SliverLayoutBuilder(
+                  builder: (context, constraints) => _buildGrid(
+                    _allItems,
+                    constraints.crossAxisExtent,
+                  ),
+                )
+              else
+                _buildList(_allItems),
             ],
           ),
         ),
@@ -226,36 +263,166 @@ class _ToolkitViewState extends State<ToolkitView>
     );
   }
 
-  Widget _buildGrid(List<ToolkitItem> items, int crossAxisCount) {
-    return GridView.builder(
-      physics: const BouncingScrollPhysics(),
-      itemCount: items.length,
+  Widget _buildList(List<ToolkitItem> items) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (ctx, i) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _ToolkitListTile(
+            item: items[i],
+            onTap: () => context.push(items[i].route),
+          ),
+        ),
+        childCount: items.length,
+      ),
+    );
+  }
+
+  Widget _buildGrid(List<ToolkitItem> items, double width) {
+    final crossAxisCount = (width ~/ 200).clamp(2, 3);
+    final tileWidth = (width - (crossAxisCount - 1) * 16) / crossAxisCount;
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final tileHeight =
+        (tileWidth / 0.95).clamp(172 * textScale, double.infinity).toDouble();
+    return SliverGrid(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 16,
         mainAxisSpacing: 20,
-        childAspectRatio: 0.85,
+        mainAxisExtent: tileHeight,
       ),
-      itemBuilder: (ctx, i) {
-        final item = items[i];
-        return AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            final animationValue = Curves.elasticOut.transform(
-              (_animationController.value - (i * 0.1)).clamp(0.0, 1.0),
-            );
-            return Transform.scale(
-              scale: animationValue,
-              child: _ToolkitCard(
-                item: item,
-                onTap: () => context.push(
-                    item.route), // Changed from context.go() to context.push()
-                index: i,
+      delegate: SliverChildBuilderDelegate(
+        (ctx, i) {
+          final item = items[i];
+          return AnimatedBuilder(
+            animation: _animationController,
+            builder: (context, child) {
+              final animationValue = Curves.elasticOut.transform(
+                (_animationController.value - (i * 0.1)).clamp(0.0, 1.0),
+              );
+              return Transform.scale(
+                scale: animationValue,
+                child: _ToolkitCard(
+                  item: item,
+                  onTap: () => context.push(item
+                      .route), // Changed from context.go() to context.push()
+                  index: i,
+                ),
+              );
+            },
+          );
+        },
+        childCount: items.length,
+      ),
+    );
+  }
+}
+
+class _ToolkitListTile extends StatelessWidget {
+  final ToolkitItem item;
+  final VoidCallback onTap;
+
+  const _ToolkitListTile({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final localization = AppLocalizations.of(context);
+    final iconColor = item.backgroundColor == null
+        ? const Color(0xFF02957D)
+        : HSLColor.fromColor(item.backgroundColor!)
+            .withLightness(0.4)
+            .withSaturation(0.65)
+            .toColor();
+
+    return Semantics(
+      label: localization.translate(item.titleKey),
+      button: true,
+      child: Material(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Ink(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: colors.outline.withValues(alpha: 0.1),
+                width: 1.5,
               ),
-            );
-          },
-        );
-      },
+              boxShadow: [
+                BoxShadow(
+                  color: colors.shadow.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Hero(
+                  tag: item.titleKey,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: item.backgroundColor ?? const Color(0xFFF0F9F7),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        item.iconAsset,
+                        width: 26,
+                        height: 26,
+                        colorFilter:
+                            ColorFilter.mode(iconColor, BlendMode.srcIn),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        localization.translate(item.titleKey),
+                        style: AppTextStyles.bodyText.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: colors.onSurface,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (item.description != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          localization.translate(item.description!),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.onSurface.withValues(alpha: 0.6),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 14,
+                  color: colors.primary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -285,7 +452,7 @@ class _ToolkitCardState extends State<_ToolkitCard>
   Color _getDarkColorFromBackground(Color? backgroundColor) {
     if (backgroundColor == null) return const Color(0xFF02957D);
 
-    switch (backgroundColor.value) {
+    switch (backgroundColor.toARGB32()) {
       case 0xFFFFE6E6: // Light red (signature)
         return const Color(0xFFD32F2F); // Dark red
       case 0xFFE8F5E8: // Light green (imageToPdf)
@@ -365,7 +532,7 @@ class _ToolkitCardState extends State<_ToolkitCard>
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -373,8 +540,8 @@ class _ToolkitCardState extends State<_ToolkitCard>
                       Hero(
                         tag: widget.item.titleKey,
                         child: Container(
-                          width: 60,
-                          height: 60,
+                          width: 52,
+                          height: 52,
                           decoration: BoxDecoration(
                             color: widget.item.backgroundColor ??
                                 const Color(0xFFF0F9F7),
@@ -392,8 +559,8 @@ class _ToolkitCardState extends State<_ToolkitCard>
                           child: Center(
                             child: SvgPicture.asset(
                               widget.item.iconAsset,
-                              width: 32,
-                              height: 32,
+                              width: 28,
+                              height: 28,
                               colorFilter: ColorFilter.mode(
                                 iconColor,
                                 BlendMode.srcIn,

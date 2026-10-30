@@ -22,7 +22,10 @@ import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 /// signed-in account's private list, then preview, rename, share, export and
 /// delete. The logic lives in [ScannerViewModel]; this file is the screen.
 class ScannerView extends StatefulWidget {
-  const ScannerView({Key? key}) : super(key: key);
+  const ScannerView({Key? key, this.viewModel}) : super(key: key);
+
+  /// Optional local dependency. Normal routes keep the platform wiring.
+  final ScannerViewModel? viewModel;
 
   @override
   _ScannerViewState createState() => _ScannerViewState();
@@ -38,14 +41,14 @@ class _ScannerViewState extends State<ScannerView> {
   @override
   void initState() {
     super.initState();
-    _vm = ScannerWiring.createViewModel();
+    _vm = widget.viewModel ?? ScannerWiring.createViewModel();
     _loadPreferences();
     _vm.start();
   }
 
   @override
   void dispose() {
-    _vm.dispose();
+    if (widget.viewModel == null) _vm.dispose();
     super.dispose();
   }
 
@@ -443,132 +446,137 @@ class _ScannerViewState extends State<ScannerView> {
         color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: colors.outline.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              _localization.translate('scanSettings'),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Scan mode: a label for the document and its default name.
-                  _buildSettingSection(
-                    _localization.translate('scanMode'),
-                    Column(
-                      children: [
-                        RadioGroup<ScanMode>(
-                          groupValue: _vm.scanMode,
-                          onChanged: (ScanMode? value) {
-                            if (value != null) _vm.selectScanMode(value);
-                          },
-                          child: Column(
-                            children: ScanMode.values.map((mode) {
-                              return RadioListTile<ScanMode>(
-                                title: Text(_getScanTypeLabel(mode)),
-                                subtitle: Text(_getScanModeDescription(mode)),
-                                value: mode,
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        _buildNote(_localization.translate('scannerModeNote')),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildSettingSection(
-                    _localization.translate('exportFormat'),
-                    RadioGroup<ExportFormat>(
-                      groupValue: _vm.exportFormat,
-                      onChanged: (ExportFormat? value) {
-                        if (value != null) _vm.selectExportFormat(value);
-                      },
-                      child: Column(
-                        children: ExportFormat.values.map((format) {
-                          return RadioListTile<ExportFormat>(
-                            title: Text(format.name.toUpperCase()),
-                            subtitle: Text(_getFormatDescription(format)),
-                            value: format,
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildSettingSection(
-                    _localization.translate('scannerMaxPages'),
-                    Wrap(
-                      spacing: 8,
-                      children: ScannerViewModel.maxPageChoices.map((pages) {
-                        return ChoiceChip(
-                          label: Text('$pages'),
-                          selected: _vm.maxPages == pages,
-                          onSelected: (_) {
-                            _vm.maxPages = pages;
-                            _saveMaxPagesPreference(pages);
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Quality: neither platform's scanner takes a quality from
-                  // the app, so the choices are shown as unavailable.
-                  _buildSettingSection(
-                    _localization.translate('scanQuality'),
-                    Column(
-                      children: [
-                        RadioGroup<ScanQuality>(
-                          groupValue: null,
-                          onChanged: (_) {},
-                          child: Column(
-                            children: ScanQuality.values.map((quality) {
-                              return RadioListTile<ScanQuality>(
-                                title: Text(_getScanQualityLabel(quality)
-                                    .toUpperCase()),
-                                value: quality,
-                                enabled: false,
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        _buildNote(
-                            _localization.translate('scannerQualityNote')),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildSettingSection(
-                    _localization.translate('scannerBuiltInToolsTitle'),
-                    _buildNote(
-                        _localization.translate('scannerBuiltInToolsBody')),
-                  ),
-                  const SizedBox(height: 40),
-                ],
+      child: Material(
+          color: Colors.transparent,
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: colors.outline.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-          ),
-        ],
-      ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  _localization.translate('scanSettings'),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Scan mode: a label for the document and its default name.
+                      _buildSettingSection(
+                        _localization.translate('scanMode'),
+                        Column(
+                          children: [
+                            RadioGroup<ScanMode>(
+                              groupValue: _vm.scanMode,
+                              onChanged: (ScanMode? value) {
+                                if (value != null) _vm.selectScanMode(value);
+                              },
+                              child: Column(
+                                children: ScanMode.values.map((mode) {
+                                  return RadioListTile<ScanMode>(
+                                    title: Text(_getScanTypeLabel(mode)),
+                                    subtitle:
+                                        Text(_getScanModeDescription(mode)),
+                                    value: mode,
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            _buildNote(
+                                _localization.translate('scannerModeNote')),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildSettingSection(
+                        _localization.translate('exportFormat'),
+                        RadioGroup<ExportFormat>(
+                          groupValue: _vm.exportFormat,
+                          onChanged: (ExportFormat? value) {
+                            if (value != null) _vm.selectExportFormat(value);
+                          },
+                          child: Column(
+                            children: ExportFormat.values.map((format) {
+                              return RadioListTile<ExportFormat>(
+                                title: Text(format.name.toUpperCase()),
+                                subtitle: Text(_getFormatDescription(format)),
+                                value: format,
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildSettingSection(
+                        _localization.translate('scannerMaxPages'),
+                        Wrap(
+                          spacing: 8,
+                          children:
+                              ScannerViewModel.maxPageChoices.map((pages) {
+                            return ChoiceChip(
+                              label: Text('$pages'),
+                              selected: _vm.maxPages == pages,
+                              onSelected: (_) {
+                                _vm.maxPages = pages;
+                                _saveMaxPagesPreference(pages);
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Quality: neither platform's scanner takes a quality from
+                      // the app, so the choices are shown as unavailable.
+                      _buildSettingSection(
+                        _localization.translate('scanQuality'),
+                        Column(
+                          children: [
+                            RadioGroup<ScanQuality>(
+                              groupValue: null,
+                              onChanged: (_) {},
+                              child: Column(
+                                children: ScanQuality.values.map((quality) {
+                                  return RadioListTile<ScanQuality>(
+                                    title: Text(_getScanQualityLabel(quality)
+                                        .toUpperCase()),
+                                    value: quality,
+                                    enabled: false,
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            _buildNote(
+                                _localization.translate('scannerQualityNote')),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildSettingSection(
+                        _localization.translate('scannerBuiltInToolsTitle'),
+                        _buildNote(
+                            _localization.translate('scannerBuiltInToolsBody')),
+                      ),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          )),
     );
   }
 
@@ -870,26 +878,44 @@ class _ScannerViewState extends State<ScannerView> {
 
   Widget _buildAdvancedFAB(AppLocalizations localization) {
     final disabled = _vm.isBusy || _vm.draft != null;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      child: FloatingActionButton.extended(
-        onPressed: disabled ? null : _startScanning,
-        // No spinner or changed label: the system scanner is the feedback.
-        icon: const Icon(Icons.camera_alt),
-        label: Text(
-          _vm.documents.isEmpty
-              ? _localization.translate('startScanning')
-              : _localization.translate('scanMore'),
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
+    final theme = Theme.of(context);
+    final labelWidth = (MediaQuery.sizeOf(context).width -
+            MediaQuery.paddingOf(context).horizontal -
+            32 -
+            36 -
+            24 -
+            8)
+        .clamp(0.0, double.infinity);
+    Widget boundedLabel(Widget text) => ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: labelWidth),
+        child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8), child: text));
+    // Keep the Material 2/3 minimum; release only the fixed maximum height.
+    return Theme(
+        data: theme.copyWith(
+            floatingActionButtonTheme: theme.floatingActionButtonTheme.copyWith(
+                extendedSizeConstraints:
+                    BoxConstraints(minHeight: theme.useMaterial3 ? 56 : 48))),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          child: FloatingActionButton.extended(
+            onPressed: disabled ? null : _startScanning,
+            // No spinner or changed label: the system scanner is the feedback.
+            icon: const Icon(Icons.camera_alt),
+            label: boundedLabel(Text(
+              _vm.documents.isEmpty
+                  ? _localization.translate('startScanning')
+                  : _localization.translate('scanMore'),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            )),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            elevation: 8,
           ),
-        ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 8,
-      ),
-    );
+        ));
   }
 
   IconData _getScanModeIcon(ScanMode mode) {
@@ -998,14 +1024,14 @@ class _ScannerViewState extends State<ScannerView> {
             color: AppColors.primary,
           ),
           const SizedBox(width: 8),
-          Text(
+          Expanded(
+              child: Text(
             '${localization.translate('scannedDocuments')} (${_vm.documents.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
               color: AppColors.primary,
             ),
-          ),
-          const Spacer(),
+          )),
           // Shows the view the tap switches to; replaces the old text label.
           IconButton(
             icon: Icon(
@@ -1096,152 +1122,155 @@ class _ScannerViewState extends State<ScannerView> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: isSelectionMode
-            ? Checkbox(
-                value: isSelected,
-                onChanged: (_) => _vm.toggleSelection(document.id),
-                activeColor: AppColors.primary,
-              )
-            : Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  document.format == ExportFormat.pdf
-                      ? Icons.picture_as_pdf
-                      : Icons.image,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-        onTap: () => _onCardTap(document),
-        onLongPress: () => _onCardLongPress(document),
-        title: Text(
-          document.name,
-          style: AppTextStyles.bodyText.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${_getScanTypeLabel(document.scanType).toUpperCase()} • ${_getFormatLabel(document.format).toUpperCase()}',
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${_formatDateTime(document.createdAt)} • ${_pagesLabel(document)} • ${_formatFileSize(document.fileSize)}',
-                style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.6),
-                  fontSize: 12,
-                ),
-              ),
-              if (missing) _buildMissingBadge(),
-            ],
-          ),
-        ),
-        trailing: isSelectionMode
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.visibility,
-                        color: AppColors.primary, size: 20),
-                    onPressed: () => _previewDocument(document),
-                    tooltip: _localization.translate('preview'),
-                    visualDensity: VisualDensity.compact,
+      child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: isSelectionMode
+                ? Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => _vm.toggleSelection(document.id),
+                    activeColor: AppColors.primary,
+                  )
+                : Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      document.format == ExportFormat.pdf
+                          ? Icons.picture_as_pdf
+                          : Icons.image,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
                   ),
-                  PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.6)),
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'share':
-                          _shareDocuments([document]);
-                          break;
-                        case 'download':
-                          _exportDocument(document);
-                          break;
-                        case 'rename':
-                          _renameDocument(document);
-                          break;
-                        case 'delete':
-                          _deleteDocuments([document]);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'share',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.share,
-                                size: 20, color: Colors.blue),
-                            const SizedBox(width: 12),
-                            Text(_localization.translate('share')),
-                          ],
-                        ),
+            onTap: () => _onCardTap(document),
+            onLongPress: () => _onCardLongPress(document),
+            title: Text(
+              document.name,
+              style: AppTextStyles.bodyText.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_getScanTypeLabel(document.scanType).toUpperCase()} • ${_getFormatLabel(document.format).toUpperCase()}',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_formatDateTime(document.createdAt)} • ${_pagesLabel(document)} • ${_formatFileSize(document.fileSize)}',
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (missing) _buildMissingBadge(),
+                ],
+              ),
+            ),
+            trailing: isSelectionMode
+                ? null
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.visibility,
+                            color: AppColors.primary, size: 20),
+                        onPressed: () => _previewDocument(document),
+                        tooltip: _localization.translate('preview'),
+                        visualDensity: VisualDensity.compact,
                       ),
-                      PopupMenuItem(
-                        value: 'download',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.download,
-                                size: 20, color: Colors.green),
-                            const SizedBox(width: 12),
-                            Text(_localization.translate('download')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'rename',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.edit,
-                                size: 20, color: Colors.grey),
-                            const SizedBox(width: 12),
-                            Text(_localization.translate('rename')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.delete,
-                                size: 20, color: Colors.red),
-                            const SizedBox(width: 12),
-                            Text(_localization.translate('delete')),
-                          ],
-                        ),
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6)),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'share':
+                              _shareDocuments([document]);
+                              break;
+                            case 'download':
+                              _exportDocument(document);
+                              break;
+                            case 'rename':
+                              _renameDocument(document);
+                              break;
+                            case 'delete':
+                              _deleteDocuments([document]);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'share',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.share,
+                                    size: 20, color: Colors.blue),
+                                const SizedBox(width: 12),
+                                Text(_localization.translate('share')),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'download',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.download,
+                                    size: 20, color: Colors.green),
+                                const SizedBox(width: 12),
+                                Text(_localization.translate('download')),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'rename',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.edit,
+                                    size: 20, color: Colors.grey),
+                                const SizedBox(width: 12),
+                                Text(_localization.translate('rename')),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.delete,
+                                    size: 20, color: Colors.red),
+                                const SizedBox(width: 12),
+                                Text(_localization.translate('delete')),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-      ),
+          )),
     );
   }
 
@@ -1439,19 +1468,21 @@ class _ScannerViewState extends State<ScannerView> {
                                   Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             const SizedBox(width: 3),
-                            Text(
-                              _formatFileSize(document.fileSize),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                    fontSize: 10,
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                            Flexible(
+                              child: Text(
+                                _formatFileSize(document.fileSize),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                      fontSize: 10,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
                             ),
                           ],
                         ),

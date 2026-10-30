@@ -65,6 +65,21 @@ class MapFilterBar extends StatelessWidget {
   /// Tells the person something short (why Near Me could not be turned on).
   final void Function(String message) onMessage;
 
+  /// The established 48px row grows only when the scaled label needs it.
+  static double heightOf(BuildContext context) {
+    final painter = TextPainter(
+      text: TextSpan(
+          text: 'Ag',
+          style: Theme.of(context).textTheme.bodyMedium?.merge(
+              const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final height = (painter.height + 16 + 3 + 8).clamp(48.0, double.infinity);
+    painter.dispose();
+    return height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = viewModel;
@@ -79,7 +94,7 @@ class MapFilterBar extends StatelessWidget {
         MapLayerControls.shows(entity, control);
 
     return SizedBox(
-      height: 48,
+      height: heightOf(context),
       child: ListView(
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
@@ -569,15 +584,16 @@ class _PriceRangeSheetState extends State<_PriceRangeSheet> {
               ),
             ],
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 TextButton(
                   onPressed: () => Navigator.of(context)
                       .pop(const _Choice<MapPriceRange>(null)),
                   child: Text(loc.translate('mapPriceClear')),
                 ),
-                const SizedBox(width: 8),
                 FilledButton(
                   onPressed: _apply,
                   child: Text(loc.translate('mapPriceApply')),

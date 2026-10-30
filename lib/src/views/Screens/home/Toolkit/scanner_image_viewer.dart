@@ -10,10 +10,14 @@ class ScannerImageViewer extends StatelessWidget {
     super.key,
     required this.file,
     required this.title,
+    this.imageProvider,
   });
 
   final File file;
   final String title;
+
+  /// Optional in-memory preview for local widget tests.
+  final ImageProvider<Object>? imageProvider;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +40,7 @@ class ScannerImageViewer extends StatelessWidget {
         iconTheme: IconThemeData(color: colors.onSurface),
       ),
       body: PhotoView(
-        imageProvider: FileImage(file),
+        imageProvider: imageProvider ?? FileImage(file),
         backgroundDecoration: BoxDecoration(color: colors.surface),
         minScale: PhotoViewComputedScale.contained,
         maxScale: PhotoViewComputedScale.covered * 4,

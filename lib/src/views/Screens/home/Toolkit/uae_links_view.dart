@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/tool_header_card.dart';
@@ -8,6 +7,7 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/data/models/uae_links_catalogue.dart';
 import 'package:broker_wallet/src/data/models/uae_links_model.dart';
+import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:broker_wallet/src/services/uae_links/uae_link_launcher.dart';
 import 'package:broker_wallet/src/services/uae_links/uae_link_report.dart';
 import 'package:broker_wallet/src/services/uae_links/uae_links_search.dart';
@@ -156,13 +156,11 @@ class _UAELinksViewState extends State<UAELinksView> {
     }
   }
 
-  static Future<void> _shareWithSystem(String text, String subject) async {
-    final result = await SharePlus.instance.share(
-      ShareParams(text: text, subject: subject),
-    );
-    if (result.status == ShareResultStatus.unavailable) {
-      throw StateError('share unavailable');
-    }
+  // The app's shared share layer opens the sheet (and anchors it on an iPad);
+  // it throws a ShareFailure when the sheet cannot open, which the caller
+  // reports. Closing the sheet is not an error.
+  Future<void> _shareWithSystem(String text, String subject) async {
+    await ShareLive.sendText(context, text, subject: subject);
   }
 
   void _openReportSheet(UaeLinkEntry entry) {
@@ -638,21 +636,29 @@ class _ServiceCard extends StatelessWidget {
                 ],
               ),
             ),
-            Row(
+            // A Wrap, not a Row: with large text the open button drops to its
+            // own line instead of running off the card.
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                IconButton(
-                  key: Key('uaeLinkReport-${entry.id}'),
-                  tooltip: translate('ulxReportIssue'),
-                  icon: const Icon(Icons.flag_outlined, size: 20),
-                  onPressed: onReport,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      key: Key('uaeLinkReport-${entry.id}'),
+                      tooltip: translate('ulxReportIssue'),
+                      icon: const Icon(Icons.flag_outlined, size: 20),
+                      onPressed: onReport,
+                    ),
+                    IconButton(
+                      key: Key('uaeLinkCopy-${entry.id}'),
+                      tooltip: translate('copyLink'),
+                      icon: const Icon(Icons.copy_rounded, size: 20),
+                      onPressed: onCopy,
+                    ),
+                  ],
                 ),
-                IconButton(
-                  key: Key('uaeLinkCopy-${entry.id}'),
-                  tooltip: translate('copyLink'),
-                  icon: const Icon(Icons.copy_rounded, size: 20),
-                  onPressed: onCopy,
-                ),
-                const Spacer(),
                 FilledButton.tonalIcon(
                   key: Key('uaeLinkOpen-${entry.id}'),
                   onPressed: onOpen,

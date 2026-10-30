@@ -558,12 +558,12 @@ void main() {
     });
 
     test('a wider chip leaves fewer in the same rows', () {
-      final widths = [250.0, 250, 250, 250, 250, 250];
+      final widths = <double>[250.0, 250, 250, 250, 250, 250];
       expect(plan(widths), [0, 1, 2]);
     });
 
     test('a chip wider than the row takes a row to itself', () {
-      final widths = [500.0, 100, 100, 100, 100, 100, 100, 100];
+      final widths = <double>[500.0, 100, 100, 100, 100, 100, 100, 100];
       final shown = plan(widths);
       expect(rowsOf(widths, shown), 3);
       expect(shown.first, 0);

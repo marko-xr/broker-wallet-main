@@ -39,7 +39,9 @@ SliverGridDelegate _favoritesGridDelegate(
   final cardWidth = (crossAxisExtent - _gridSpacing) / _gridColumns;
   final extent = math.max(
     cardWidth / _gridCardAspectRatio,
-    SearchResultCard.minHeightForText(context),
+    // Flex allocation can round the content band down by a fraction of a
+    // logical pixel at enlarged text sizes.
+    SearchResultCard.minHeightForText(context) + 1,
   );
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: _gridColumns,
@@ -50,52 +52,65 @@ SliverGridDelegate _favoritesGridDelegate(
 }
 
 class FavoritesView extends StatelessWidget {
-  const FavoritesView({super.key});
+  const FavoritesView({super.key, this.viewModel});
+
+  /// Optional externally-owned state for production-widget tests.
+  /// Production routes omit it and retain the existing screen-owned model.
+  final FavoritesViewModel? viewModel;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
+    final content = Consumer2<FavoritesViewModel, OptimisticFavoritesService>(
+      builder: (context, vm, optimisticService, _) {
+        final localization = AppLocalizations.of(context);
+
+        vm.updateLocalization(localization);
+
+        final slivers = <Widget>[
+          // Header. It listens to the profile itself, so a profile update
+          // does not rebuild the list.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 12),
+              child: UserScreenHeader(
+                subtitle: localization.translate('favoritesOverviewTitle'),
+              ),
+            ),
+          ),
+          _buildFilterBar(context, vm),
+          ..._buildBodySlivers(context, vm, localization),
+        ];
+
+        return SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: vm.refresh,
+            color: Theme.of(context).colorScheme.primary,
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              scrollCacheExtent: const ScrollCacheExtent.pixels(1200),
+              slivers: slivers,
+            ),
+          ),
+        );
+      },
+    );
+
+    final injected = viewModel;
+    if (injected != null) {
+      return ChangeNotifierProvider<FavoritesViewModel>.value(
+        value: injected,
+        child: content,
+      );
+    }
+    return ChangeNotifierProvider<FavoritesViewModel>(
       create: (context) => FavoritesViewModel(
         optimisticFavoritesService:
             Provider.of<OptimisticFavoritesService>(context, listen: false),
       ),
-      child: Consumer2<FavoritesViewModel, OptimisticFavoritesService>(
-        builder: (context, vm, optimisticService, _) {
-          final localization = AppLocalizations.of(context);
-
-          vm.updateLocalization(localization);
-
-          final slivers = <Widget>[
-            // Header. It listens to the profile itself, so a profile update
-            // does not rebuild the list.
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 12),
-                child: UserScreenHeader(
-                  subtitle: localization.translate('favoritesOverviewTitle'),
-                ),
-              ),
-            ),
-            _buildFilterBar(context, vm),
-            ..._buildBodySlivers(context, vm, localization),
-          ];
-
-          return SafeArea(
-            bottom: false,
-            child: RefreshIndicator(
-              onRefresh: vm.refresh,
-              color: Theme.of(context).colorScheme.primary,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                scrollCacheExtent: const ScrollCacheExtent.pixels(1200),
-                slivers: slivers,
-              ),
-            ),
-          );
-        },
-      ),
+      child: content,
     );
   }
 

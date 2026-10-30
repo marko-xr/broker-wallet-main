@@ -15,11 +15,18 @@ class MatchDetailsView extends StatefulWidget {
     required this.requestId,
     required this.offerId,
     this.matchScore,
+    this.requestLoader,
+    this.offerLoader,
   });
 
   final String requestId;
   final String offerId;
   final double? matchScore;
+
+  /// Optional data seams for production-widget tests. Runtime routes omit
+  /// these and retain the existing services.
+  final Future<RequestModel?> Function(String requestId)? requestLoader;
+  final Future<OfferModel?> Function(String offerId)? offerLoader;
 
   @override
   State<MatchDetailsView> createState() => _MatchDetailsViewState();
@@ -49,8 +56,10 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
     try {
       // Load both request and offer in parallel
       final results = await Future.wait([
-        _requestService.getRequest(widget.requestId),
-        _offerService.getOffer(widget.offerId),
+        widget.requestLoader?.call(widget.requestId) ??
+            _requestService.getRequest(widget.requestId),
+        widget.offerLoader?.call(widget.offerId) ??
+            _offerService.getOffer(widget.offerId),
       ]);
 
       setState(() {
@@ -75,25 +84,21 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
     final localization = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final compactHeader = MediaQuery.sizeOf(context).width < 360 ||
+        MediaQuery.textScalerOf(context).scale(14) > 20;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(localization.translate('matchDetails')),
+        toolbarHeight: compactHeader ? 88 : null,
+        title: Text(
+          localization.translate('matchDetails'),
+          maxLines: 2,
+        ),
         actions: [
-          if (widget.matchScore != null)
+          if (!compactHeader && widget.matchScore != null)
             Padding(
               padding: const EdgeInsets.only(right: 16),
-              child: Chip(
-                avatar: Icon(Icons.verified, color: colors.primary, size: 18),
-                label: Text(
-                  '${(widget.matchScore! * 100).toStringAsFixed(0)}% ${localization.translate('match')}',
-                  style: TextStyle(
-                    color: colors.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                backgroundColor: colors.primary.withValues(alpha: 0.1),
-              ),
+              child: _buildMatchScoreChip(localization, colors),
             ),
         ],
       ),
@@ -143,6 +148,15 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.matchScore != null &&
+                (MediaQuery.sizeOf(context).width < 360 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 20)) ...[
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: _buildMatchScoreChip(localization, colors),
+              ),
+              const SizedBox(height: 12),
+            ],
             // Match banner
             Container(
               padding: const EdgeInsets.all(16),
@@ -213,25 +227,38 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
 
             const SizedBox(height: 32),
 
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _viewRequestDetails(context),
-                    icon: const Icon(Icons.search),
-                    label: Text(localization.translate('viewRequest')),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => _viewOfferDetails(context),
-                    icon: const Icon(Icons.home_work),
-                    label: Text(localization.translate('viewOffer')),
-                  ),
-                ),
-              ],
+            // Action buttons retain the approved side-by-side layout when
+            // their labels fit and stack when enlarged text needs the width.
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stack = constraints.maxWidth < 340 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 20;
+                final buttonWidth = stack
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: buttonWidth,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _viewRequestDetails(context),
+                        icon: const Icon(Icons.search),
+                        label: Text(localization.translate('viewRequest')),
+                      ),
+                    ),
+                    SizedBox(
+                      width: buttonWidth,
+                      child: FilledButton.icon(
+                        onPressed: () => _viewOfferDetails(context),
+                        icon: const Icon(Icons.home_work),
+                        label: Text(localization.translate('viewOffer')),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 16),
@@ -269,11 +296,13 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
           child: Icon(icon, color: color, size: 20),
         ),
         const SizedBox(width: 12),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
         ),
       ],
     );
@@ -303,7 +332,10 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Request type badge
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 Container(
                   padding:
@@ -326,7 +358,6 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
                     ),
                   ),
                 ),
-                const Spacer(),
                 Text(
                   _formatDate(request.createdAt),
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -438,7 +469,10 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Offer type badge
-                Row(
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 12,
+                  runSpacing: 8,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -461,7 +495,6 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
                         ),
                       ),
                     ),
-                    const Spacer(),
                     Text(
                       _formatDate(offer.createdAt),
                       style: theme.textTheme.labelSmall?.copyWith(
@@ -556,15 +589,34 @@ class _MatchDetailsViewState extends State<MatchDetailsView> {
         children: [
           Icon(icon, size: 14, color: colors.onSurface.withValues(alpha: 0.7)),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: colors.onSurface.withValues(alpha: 0.8),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.onSurface.withValues(alpha: 0.8),
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMatchScoreChip(
+    AppLocalizations localization,
+    ColorScheme colors,
+  ) {
+    return Chip(
+      avatar: Icon(Icons.verified, color: colors.primary, size: 18),
+      label: Text(
+        '${(widget.matchScore! * 100).toStringAsFixed(0)}% ${localization.translate('match')}',
+        style: TextStyle(
+          color: colors.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      backgroundColor: colors.primary.withValues(alpha: 0.1),
     );
   }
 

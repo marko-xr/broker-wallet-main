@@ -115,6 +115,7 @@ class _DocumentViewState extends State<DocumentView> {
     final leave = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         title: Text(localization.translate('sigLeaveTitle')),
         content: Text(localization.translate('sigLeaveBody')),
         actions: [
@@ -400,7 +401,8 @@ class _DocumentViewState extends State<DocumentView> {
             icon: const Icon(Icons.chevron_left),
             onPressed: page > 0 ? () => _vm.selectPage(page - 1) : null,
           ),
-          InkWell(
+          Flexible(
+              child: InkWell(
             key: const ValueKey<String>('page-indicator'),
             onTap: _goToPage,
             borderRadius: BorderRadius.circular(20),
@@ -419,7 +421,7 @@ class _DocumentViewState extends State<DocumentView> {
                 ),
               ),
             ),
-          ),
+          )),
           IconButton(
             key: const ValueKey<String>('page-next'),
             tooltip: localization.translate('sigNextPage'),
@@ -486,7 +488,7 @@ class _DocumentViewState extends State<DocumentView> {
   Widget _buildError(SignatureFailure failure) {
     final localization = _localization;
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -552,8 +554,13 @@ class _DocumentViewState extends State<DocumentView> {
   Widget? _buildFab() {
     if (!_ready || _vm.isBusy) return null;
     final localization = _localization;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    // A Wrap, not a Row: with large text or a narrow screen the second button
+    // goes on a new line instead of running off the edge.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
       children: [
         if (_vm.hasPlacements) ...[
           SizedBox(
@@ -581,7 +588,6 @@ class _DocumentViewState extends State<DocumentView> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
         ],
         SizedBox(
           height: 48,
@@ -701,6 +707,7 @@ class _GoToPageDialogState extends State<_GoToPageDialog> {
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     return AlertDialog(
+      scrollable: true,
       title: Text(localization.translate('sigGoToPage')),
       content: TextField(
         key: const ValueKey<String>('goto-field'),

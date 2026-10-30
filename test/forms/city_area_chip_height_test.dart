@@ -518,7 +518,14 @@ void main() {
       );
       await _tap(tester, find.byKey(const ValueKey<String>('city-chip-Dubai')));
       final areas = UaeAreaCatalog.areasFor('Dubai');
+      // Selection-cap coverage needs the fourth option too; the approved
+      // three-row collapsed layout need not build that option.
+      await _tap(tester, find.byKey(_toggle));
       for (var i = 0; i < 4; i++) {
+        if (i == 3) {
+          expect(tester.widget<SelectableChip>(_areaChip(areas[i])).isEnabled,
+              isFalse);
+        }
         await _tap(tester, _areaChip(areas[i]));
       }
       final selected = tester

@@ -45,8 +45,12 @@ class _SignUpViewState extends State<SignUpView> {
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            // SafeArea keeps the last line clear of the Android gesture bar
+            // and the iOS home indicator; the extra 32 gives it breathing room.
+            body: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -284,8 +288,10 @@ class _SignUpViewState extends State<SignUpView> {
                     // Offers, Requests and Owners lists: a line that fades out
                     // toward the outer edge on each side of the label.
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Expanded(
+                        SizedBox(
+                          width: 56,
                           child: Container(
                             height: 1,
                             decoration: BoxDecoration(
@@ -300,16 +306,28 @@ class _SignUpViewState extends State<SignUpView> {
                             ),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            localization.translate('orSignInWith'),
-                            style: AppTextStyles.bodyText.copyWith(
-                              color: colors.onSurface.withValues(alpha: 0.6),
+                        // The label gets most of the row so it stays on one
+                        // line; the fading lines are only short accents.
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                localization.translate('orSignInWith'),
+                                maxLines: 1,
+                                softWrap: false,
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.bodyText.copyWith(
+                                  color:
+                                      colors.onSurface.withValues(alpha: 0.6),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                        Expanded(
+                        SizedBox(
+                          width: 56,
                           child: Container(
                             height: 1,
                             decoration: BoxDecoration(
@@ -345,8 +363,9 @@ class _SignUpViewState extends State<SignUpView> {
 
                   // Already have account
                   Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           localization.translate('alreadyHaveAccount'),
@@ -368,6 +387,7 @@ class _SignUpViewState extends State<SignUpView> {
                   ),
                 ],
               ),
+            ),
             ),
           );
         },
@@ -625,7 +645,7 @@ class _SignupTabs extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Container(
-      height: 50,
+      constraints: const BoxConstraints(minHeight: 50),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: colors.primary.withValues(alpha: 0.1),
@@ -644,12 +664,16 @@ class _SignupTabs extends StatelessWidget {
                   borderRadius: BorderRadius.circular(26),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  localization.translate('phoneNumber'),
-                  style: AppTextStyles.tabText.copyWith(
-                    color: method == SignupMethod.phone
-                        ? Colors.white
-                        : colors.onSurface,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    localization.translate('phoneNumber'),
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.tabText.copyWith(
+                      color: method == SignupMethod.phone
+                          ? Colors.white
+                          : colors.onSurface,
+                    ),
                   ),
                 ),
               ),
@@ -666,12 +690,16 @@ class _SignupTabs extends StatelessWidget {
                   borderRadius: BorderRadius.circular(26),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  localization.translate('email'),
-                  style: AppTextStyles.tabText.copyWith(
-                    color: method == SignupMethod.email
-                        ? Colors.white
-                        : colors.onSurface,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    localization.translate('email'),
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.tabText.copyWith(
+                      color: method == SignupMethod.email
+                          ? Colors.white
+                          : colors.onSurface,
+                    ),
                   ),
                 ),
               ),

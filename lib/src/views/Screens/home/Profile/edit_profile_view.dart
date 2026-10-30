@@ -23,6 +23,7 @@ import 'package:broker_wallet/src/Views/Widgets/profile_text_field.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/edit_profile_viewmodel.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
+import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/viewmodels/change_password_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/email_change_viewmodel.dart';
@@ -32,7 +33,16 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'dart:async';
 
 class EditProfileView extends StatefulWidget {
-  const EditProfileView({super.key});
+  const EditProfileView({
+    super.key,
+    this.userRepository,
+    this.authRepository,
+  });
+
+  /// Optional repository seams for production-widget tests. Runtime routes
+  /// omit these and retain the configured repository provider.
+  final UserRepository? userRepository;
+  final AuthRepository? authRepository;
 
   @override
   State<EditProfileView> createState() => _EditProfileViewState();
@@ -163,6 +173,8 @@ class _EditProfileViewState extends State<EditProfileView> {
           name: _nameController.text,
           email: _emailController.text,
           phone: _phoneController.text,
+          userRepository: widget.userRepository,
+          authRepository: widget.authRepository,
         );
       },
       child: Consumer<EditProfileViewModel>(

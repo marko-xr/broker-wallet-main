@@ -30,7 +30,12 @@ import 'package:broker_wallet/src/services/ScreenServices/watchmen_service.dart'
 import 'package:broker_wallet/src/common/utils/images.dart';
 
 class MapViewScreen extends StatefulWidget {
-  const MapViewScreen({super.key});
+  const MapViewScreen({super.key, this.viewModel, this.mapSurface});
+
+  /// Optional local boundaries for exercising the real shell without a native
+  /// map or production repositories. Normal routes use the defaults.
+  final MapViewViewModel? viewModel;
+  final Widget? mapSurface;
 
   @override
   State<MapViewScreen> createState() => _MapViewScreenState();
@@ -185,7 +190,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final localization = AppLocalizations.of(context);
 
     return ChangeNotifierProvider(
-      create: (_) => MapViewViewModel(),
+      create: (_) => widget.viewModel ?? MapViewViewModel(),
       child: Consumer<MapViewViewModel>(
         builder: (context, vm, _) {
           vm.updateLocalization(localization);
@@ -202,6 +207,22 @@ class _MapViewScreenState extends State<MapViewScreen> {
           }
 
           final colors = Theme.of(context).colorScheme;
+          final searchPainter = TextPainter(
+            text: TextSpan(
+                text: 'Ag',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.merge(AppTextStyles.bodyText)),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout();
+          final searchExtra =
+              (searchPainter.height + 24 - 60).clamp(0.0, double.infinity);
+          searchPainter.dispose();
+          final filterTop = 76 + searchExtra;
+          final filterExtra = MapFilterBar.heightOf(context) - 48;
+          final statusTop = _statusLineTop + searchExtra + filterExtra;
           return Scaffold(
             backgroundColor: colors.surface,
             resizeToAvoidBottomInset:
@@ -247,33 +268,35 @@ class _MapViewScreenState extends State<MapViewScreen> {
                           // it really has (the search bar and filters cover the
                           // top, the location button the bottom). That is its
                           // starting camera, so nothing moves it afterwards.
-                          builder: (context, constraints) => GoogleMap(
-                            mapType: vm.mapType,
-                            initialCameraPosition: vm.initialCameraFor(
-                              MapViewport(
-                                width: constraints.maxWidth,
-                                height: constraints.maxHeight,
-                                top: MediaQuery.of(context).padding.top +
-                                    _controlsBelowTop,
-                                bottom: _controlsAboveBottom,
-                                left: _controlsSideGap,
-                                right: _controlsSideGap,
+                          builder: (context, constraints) =>
+                              widget.mapSurface ??
+                              GoogleMap(
+                                mapType: vm.mapType,
+                                initialCameraPosition: vm.initialCameraFor(
+                                  MapViewport(
+                                    width: constraints.maxWidth,
+                                    height: constraints.maxHeight,
+                                    top: MediaQuery.of(context).padding.top +
+                                        _controlsBelowTop,
+                                    bottom: _controlsAboveBottom,
+                                    left: _controlsSideGap,
+                                    right: _controlsSideGap,
+                                  ),
+                                ),
+                                onMapCreated: (controller) =>
+                                    _onMapCreated(controller, vm),
+                                markers: vm.filteredMarkers,
+                                onTap: vm.onMapTap,
+                                myLocationEnabled: vm
+                                    .hasLocationPermission, // Only enable if permission granted
+                                myLocationButtonEnabled:
+                                    false, // Disable default button
+                                zoomControlsEnabled: true,
+                                mapToolbarEnabled: false,
+                                compassEnabled: true,
+                                trafficEnabled: false,
+                                buildingsEnabled: true,
                               ),
-                            ),
-                            onMapCreated: (controller) =>
-                                _onMapCreated(controller, vm),
-                            markers: vm.filteredMarkers,
-                            onTap: vm.onMapTap,
-                            myLocationEnabled: vm
-                                .hasLocationPermission, // Only enable if permission granted
-                            myLocationButtonEnabled:
-                                false, // Disable default button
-                            zoomControlsEnabled: true,
-                            mapToolbarEnabled: false,
-                            compassEnabled: true,
-                            trafficEnabled: false,
-                            buildingsEnabled: true,
-                          ),
                         ),
                       ),
 
@@ -382,7 +405,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // sideways on a small phone.
                 Positioned(
                   top: MediaQuery.of(context).padding.top +
-                      76, // Below search bar
+                      filterTop, // Below the scaled search bar
                   left: 0,
                   right: 0,
                   child: MapFilterBar(
@@ -396,7 +419,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // differ from the default. The count is the published draw's
                 // own (the markers' places).
                 PositionedDirectional(
-                  top: MediaQuery.of(context).padding.top + _statusLineTop,
+                  top: MediaQuery.of(context).padding.top + statusTop,
                   start: 16,
                   end: 16,
                   child: MapFilterStatusLine(
@@ -442,21 +465,28 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // Floating Bottom Info Panel (when location is selected)
                 if (vm.selectedCluster != null)
                   Positioned(
-                    bottom: 16,
+                    top: MediaQuery.paddingOf(context).top +
+                        statusTop +
+                        MapFilterBar.heightOf(context) +
+                        8,
+                    bottom: 16 + MediaQuery.paddingOf(context).bottom,
                     left: 16,
                     right: 16,
-                    child: _FloatingLocationCarousel(
-                      cluster: vm.selectedCluster!,
-                      onClose: vm.clearSelectedLocation,
-                      localization: localization,
-                      titleOf: vm.displayTitle,
-                      cardMedia: vm.cardMedia,
-                      onPageChanged: (index) {
-                        vm.updateClusterActiveIndex(index);
-                      },
-                      onItemTap: (locationInfo) =>
-                          _navigateToDetails(context, locationInfo),
-                    ),
+                    child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: SingleChildScrollView(
+                            child: _FloatingLocationCarousel(
+                          cluster: vm.selectedCluster!,
+                          onClose: vm.clearSelectedLocation,
+                          localization: localization,
+                          titleOf: vm.displayTitle,
+                          cardMedia: vm.cardMedia,
+                          onPageChanged: (index) {
+                            vm.updateClusterActiveIndex(index);
+                          },
+                          onItemTap: (locationInfo) =>
+                              _navigateToDetails(context, locationInfo),
+                        ))),
                   ),
               ],
             ),
@@ -606,17 +636,23 @@ class _FloatingLocationCarouselState extends State<_FloatingLocationCarousel> {
   /// the close button the shown card has, so the frame is never shorter than
   /// the card on show.
   Widget _measureCard(LocationInfo item, ColorScheme colors) {
-    return _LocationCarouselCard(
-      locationInfo: item,
-      title: widget.titleOf(item),
-      cardMedia: widget.cardMedia,
-      onClose: () {},
-      localization: widget.localization,
-      onTap: () {},
-      showCloseButton: true,
-      measureOnly: true,
-      colors: colors,
-    );
+    return LayoutBuilder(
+        builder: (context, constraints) => Padding(
+            padding: EdgeInsets.symmetric(
+                horizontal: constraints.maxWidth *
+                    (1 - _pageController.viewportFraction) /
+                    2),
+            child: _LocationCarouselCard(
+              locationInfo: item,
+              title: widget.titleOf(item),
+              cardMedia: widget.cardMedia,
+              onClose: () {},
+              localization: widget.localization,
+              onTap: () {},
+              showCloseButton: true,
+              measureOnly: true,
+              colors: colors,
+            )));
   }
 
   @override
@@ -850,51 +886,61 @@ class _LocationCarouselCard extends StatelessWidget {
                           // Type badge and close button
                           Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: locationInfo.color.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (measureOnly)
-                                      const SizedBox.square(dimension: 14)
-                                    else if (locationInfo.iconAsset != null)
-                                      SvgPicture.asset(
-                                        locationInfo.iconAsset!,
-                                        width: 14,
-                                        height: 14,
-                                        color: locationInfo.color,
-                                      )
-                                    else
-                                      Icon(
-                                        locationInfo.icon,
-                                        size: 14,
-                                        color: locationInfo.color,
-                                      ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      localization.translate(
-                                        locationInfo.type
-                                            .toString()
-                                            .split('.')
-                                            .last,
-                                      ),
-                                      style: AppTextStyles.hintText.copyWith(
-                                        color: locationInfo.color,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
+                              Expanded(
+                                  child: Align(
+                                      alignment:
+                                          AlignmentDirectional.centerStart,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: locationInfo.color
+                                              .withValues(alpha: 0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (measureOnly)
+                                              const SizedBox.square(
+                                                  dimension: 14)
+                                            else if (locationInfo.iconAsset !=
+                                                null)
+                                              SvgPicture.asset(
+                                                locationInfo.iconAsset!,
+                                                width: 14,
+                                                height: 14,
+                                                color: locationInfo.color,
+                                              )
+                                            else
+                                              Icon(
+                                                locationInfo.icon,
+                                                size: 14,
+                                                color: locationInfo.color,
+                                              ),
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                                child: Text(
+                                              localization.translate(
+                                                locationInfo.type
+                                                    .toString()
+                                                    .split('.')
+                                                    .last,
+                                              ),
+                                              style: AppTextStyles.hintText
+                                                  .copyWith(
+                                                color: locationInfo.color,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 11,
+                                              ),
+                                            )),
+                                          ],
+                                        ),
+                                      ))),
+                              const SizedBox(width: 8),
                               if (showCloseButton)
                                 GestureDetector(
                                   onTap: onClose,
@@ -1219,7 +1265,7 @@ class _CompactActionButtons extends StatelessWidget {
         // WhatsApp button
         Expanded(
           child: Container(
-            height: 36, // Reduced from 40
+            constraints: const BoxConstraints(minHeight: 36),
             decoration: BoxDecoration(
               color: hasPhone
                   ? const Color(0xFF25D366).withValues(alpha: 0.1)
@@ -1232,31 +1278,36 @@ class _CompactActionButtons extends StatelessWidget {
               child: InkWell(
                 onTap: hasPhone ? () => _openWhatsApp(phoneNumber!) : null,
                 borderRadius: BorderRadius.circular(10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      hasPhone ? AppImages.whatsapp : AppImages.whatsAppDisable,
-                      width: 22, // Reduced from 20
-                      height: 22,
-                      color: hasPhone
-                          ? null
-                          : colors.onSurface.withValues(alpha: 
-                              0.3), // Apply gray tint when disabled
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      loc.translate('whatsapp'),
-                      style: TextStyle(
-                        color: hasPhone
-                            ? const Color(0xFF25D366)
-                            : colors.onSurface.withValues(alpha: 0.3),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12, // Reduced from 13
-                      ),
-                    ),
-                  ],
-                ),
+                child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          hasPhone
+                              ? AppImages.whatsapp
+                              : AppImages.whatsAppDisable,
+                          width: 22, // Reduced from 20
+                          height: 22,
+                          color: hasPhone
+                              ? null
+                              : colors.onSurface.withValues(
+                                  alpha: 0.3), // Apply gray tint when disabled
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                            child: Text(
+                          loc.translate('whatsapp'),
+                          style: TextStyle(
+                            color: hasPhone
+                                ? const Color(0xFF25D366)
+                                : colors.onSurface.withValues(alpha: 0.3),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12, // Reduced from 13
+                          ),
+                        )),
+                      ],
+                    )),
               ),
             ),
           ),
@@ -1265,7 +1316,7 @@ class _CompactActionButtons extends StatelessWidget {
         // Phone button
         Expanded(
           child: Container(
-            height: 36, // Reduced from 40
+            constraints: const BoxConstraints(minHeight: 36),
             decoration: BoxDecoration(
               color: hasPhone
                   ? colors.primary.withValues(alpha: 0.1)
@@ -1277,31 +1328,34 @@ class _CompactActionButtons extends StatelessWidget {
               child: InkWell(
                 onTap: hasPhone ? () => _makePhoneCall(phoneNumber!) : null,
                 borderRadius: BorderRadius.circular(10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      hasPhone
-                          ? Icons.phone_rounded
-                          : Icons.phone_disabled_rounded,
-                      color: hasPhone
-                          ? colors.primary
-                          : colors.onSurface.withValues(alpha: 0.3),
-                      size: 18, // Reduced from 20
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      loc.translate('call'),
-                      style: TextStyle(
-                        color: hasPhone
-                            ? colors.primary
-                            : colors.onSurface.withValues(alpha: 0.3),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12, // Reduced from 13
-                      ),
-                    ),
-                  ],
-                ),
+                child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          hasPhone
+                              ? Icons.phone_rounded
+                              : Icons.phone_disabled_rounded,
+                          color: hasPhone
+                              ? colors.primary
+                              : colors.onSurface.withValues(alpha: 0.3),
+                          size: 18, // Reduced from 20
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                            child: Text(
+                          loc.translate('call'),
+                          style: TextStyle(
+                            color: hasPhone
+                                ? colors.primary
+                                : colors.onSurface.withValues(alpha: 0.3),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12, // Reduced from 13
+                          ),
+                        )),
+                      ],
+                    )),
               ),
             ),
           ),

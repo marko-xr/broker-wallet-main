@@ -1721,6 +1721,7 @@ class AddQuotationViewModel extends ChangeNotifier {
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
+            scrollable: true,
             title: const Text('Discard Changes?'),
             content:
                 const Text('Are you sure you want to discard your changes?'),

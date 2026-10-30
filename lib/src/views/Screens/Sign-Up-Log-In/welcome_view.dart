@@ -100,7 +100,11 @@ class _WelcomeViewState extends State<WelcomeView>
 
             // Main Content
             SafeArea(
-              child: Center(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
                   child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32.0),
                 child: FadeTransition(
@@ -281,7 +285,11 @@ class _WelcomeViewState extends State<WelcomeView>
                     ),
                   ),
                 ),
-              )),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             ),
           ],
         ),
@@ -313,7 +321,7 @@ class _WelcomeViewState extends State<WelcomeView>
 
     return Container(
       width: double.infinity,
-      height: 56,
+      constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
@@ -337,12 +345,15 @@ class _WelcomeViewState extends State<WelcomeView>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              text,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+            Flexible(
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -362,7 +373,7 @@ class _WelcomeViewState extends State<WelcomeView>
 
     return Container(
       width: double.infinity,
-      height: 56,
+      constraints: const BoxConstraints(minHeight: 56),
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
@@ -375,13 +386,16 @@ class _WelcomeViewState extends State<WelcomeView>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              text,
-              style: const TextStyle(
-                fontSize: 18,
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+            Flexible(
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -417,16 +431,16 @@ class _WelcomeViewState extends State<WelcomeView>
               ? Colors.white.withValues(alpha: 0.15)
               : Colors.white.withValues(alpha: 0.05),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
           children: [
             Text(
               flag,
               style: const TextStyle(fontSize: 20),
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
+            Text(
                 text,
                 style: TextStyle(
                   fontSize: 14,
@@ -435,7 +449,6 @@ class _WelcomeViewState extends State<WelcomeView>
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
                 textAlign: TextAlign.center,
-              ),
             ),
           ],
         ),

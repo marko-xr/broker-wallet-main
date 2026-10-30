@@ -113,7 +113,8 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  child: Column(
+                  child: SingleChildScrollView(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       IconButton(
@@ -122,9 +123,7 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                             color: colors.primary, size: 28),
                       ),
                       const SizedBox(height: 12),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
+                      Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Container(
@@ -309,13 +308,12 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                                 ),
                               ),
                             ],
-                          ),
-                        ),
                       ),
                     ],
                   ),
                 ),
               ),
+            ),
             ),
           );
         },

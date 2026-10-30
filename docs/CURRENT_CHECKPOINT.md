@@ -15165,3 +15165,617 @@ NEXT - after those pass: the uninstall / reinstall proof, then the legal text (P
 STOP - no commit or push; no hosted change.
 
 Owner update 2026-10-22: Samsung document listing in all four tools is OWNER VERIFIED (the previously saved documents appear). NOT separately confirmed: every download/open, clean uninstall-reinstall recovery, and production acceptance tests.
+
+## RESPONSIVE LAYOUT HARDENING R1 — TOOLKIT AND LANGUAGE SMOKE (2026-10-23)
+
+Status: **CODE_PROVEN for the tested widget scenarios; NOT VERIFIED_RUNTIME.** Active checkout before edits: branch `update-some-issues`, HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`, clean worktree. No commit, push, deployment, hosted write, device run, migration or C3.6 document-library logic change. The C3.6 Samsung listing observation above remains the latest owner device evidence for that feature, not responsive verification.
+
+Scope and inventory from `lib/app.dart` routes (risk is a testing priority, not a proven defect):
+
+| Family / active routes | Local state needed and existing coverage | Responsive result / next risk |
+| --- | --- | --- |
+| Auth `/`, `/welcome`, `/sign-up`, `/sign-in`, `/phone-otp`, password reset, email verification | Auth and locale fakes; existing auth unit and route tests | Not in R1 matrix. Forms and keyboard are high priority. |
+| Shell `/home`, `/search`, `/favorites`, `/profile` | Provider graph plus fake repositories; existing search and favorites tests | Not in R1 matrix. Navigation and result grids are high priority. |
+| Six entity lists, six add forms, six details routes | Fake entity repositories, media and location state; existing form, media, detail tests | Not in R1 matrix. Long cards, keyboard and bottom actions are high priority. |
+| `/map-view`, `/quotation-list`, `/add-quotation` | Fake map/platform services and quotation repository; existing map and quotation tests | Not in R1 matrix. Map overlays and quotation forms are high priority. |
+| `/toolkit-list` | No hosted state; real `ToolkitView` | **9/9 R1 cases pass** after bounded fix. |
+| `/combine-pdfs` | `CombineHarness` local files/picker/auth stream, offline usage gate; existing Combine view tests | **11/11 R1 cases pass** for empty and populated lists; existing view regression suite passed in focused run. Cloud list failure and open/download remain outside R1. |
+| `/scanner`, `/imageToPdf`, `/signature`, `/uae-links`; PDF/media viewers and tool dialogs | Scanner/Image/Signature fixture seams and local files; existing store, cloud and review tests | Not in R1 matrix. Scanner grid is owner-protected; do not change its layout without approval. |
+| `/language`, other profile/settings, subscription shells, dialogs and bottom sheets | Fake `LocaleViewModel`; existing profile and form-action tests | `/language` **5/5 R1 cases pass**. Remaining settings/sheets not in R1 matrix. |
+
+R1 harness: `test/responsive/responsive_harness.dart` sets `tester.view.devicePixelRatio` and `physicalSize = logicalSize * pixelRatio`, resets the view in teardown, loads actual en/ar localization assets, applies the app Light/Dark themes, and simulates text scale, safe-area padding and keyboard inset. It calls `tester.takeException()` after pump and fails on Flutter layout exceptions. The pre-fix runs failed on real production widgets, demonstrating the failure path. The matrix covers logical **280×600, 320×568, 360×640, 393×852, 430×932, 640×360, 600×800 and 800×600**, English/LTR, Arabic/RTL, Light/Dark, text scales **1.0, 1.3, 1.6 and 2.0**, one 32/24 safe-area case, one 28/20 safe-area plus 300 keyboard-inset case, and long English/Arabic document names. These are representative combinations, not the full Cartesian product. The Toolkit last card and Combine list item are scrolled into the viewport; the Combine empty primary action and Language Save action are checked.
+
+Reproduced and fixed (widget tests, not device proof):
+
+- `ToolkitView` cards: RenderFlex bottom overflow by **49 px** at 280×600 en 1.0 and **41 px** at 320×568 ar 1.3; additional enlarged-text cases failed. The old width-based aspect ratio gave the title/description column too little height. Grid tiles now have a minimum height based on the actual parent width and text scale. The page uses one `CustomScrollView` with a sliver grid so the unchanged header and actions remain reachable on 640×360 at 2.0, where the former fixed header/Expanded combination overflowed by **77 px**.
+- Shared `ToolHeaderCard`: Combine PDFs empty library overflowed by **10 px** at 280×600 and 430×932 en 1.0, and **15 px** at 640×360 en 2.0. Its 100 px scaled height is now a minimum, allowing localized content to grow. This shared layout fix applies to the four Toolkit document screens; those other screens have not been matrix-tested here.
+- Combine PDFs populated library: the heading row overflowed **17 px right** at 393×852 en 1.0; the file-size row overflowed **3.4 px right** at 320×568 ar 1.6. Both text children now receive flexible width while the view toggle and three document action buttons remain. A 640×360 en 2.0 populated case also failed before the row fix. No document data, cloud or business behavior changed.
+
+Scanner protection: current source still uses two columns and `mainAxisExtent` derived from 200 px, with three icon actions at the card bottom. The previously rejected grid-card change was **not edited or runtime reproduced in R1** because `ScannerView` creates its own platform/auth wiring rather than accepting the existing fake `ScannerViewModel`; source inspection alone is not proof of an overflow. Proposed approval item for a later batch: add a fake view-model seam, reproduce at 280/320 logical widths and Arabic 1.6/2.0, then present a screenshot and an exact grid-only patch (likely constraint-based tile extent/column count while preserving View/Share/Download). **Owner approval is required before changing that protected grid.**
+
+Validation: `flutter analyze --no-pub lib/src/views/Screens/home/Toolkit/toolkit_view.dart lib/src/views/Screens/home/Toolkit/combine_pdfs_view.dart lib/src/views/Widgets/tool_header_card.dart test/responsive` reported **1 info, 0 errors, 0 warnings**: the pre-existing deprecated `.value` access in `toolkit_view.dart:299` (present in HEAD); exit code 1. `flutter test --no-pub test/responsive test/combine_pdf/combine_pdfs_view_test.dart test/forms/save_cancel_buttons_test.dart --reporter compact` passed **110/110** before the long-title fixture adjustment. After that fixture edit, `flutter test --no-pub test/responsive --reporter expanded` passed **25/25**. `git diff --check` passed. The direct Dart formatter reported **4 files, 0 changes** in its final check but returned exit 1 afterwards because it could not update the user-level telemetry session file; formatting itself is clean.
+
+Not covered: Android or iPhone runtime, real fonts/rendering, hardware keyboard/notches, rotation during state changes, hosted Toolkit list/open/download, scanner populated cards, the remaining routes and error/loading states beyond existing focused tests. No full-app or every-device guarantee is claimed. No checkpoint is closed until real-device verification.
+
+NOW — review the R1 diff and run the same scenarios on one real phone with Arabic/English and enlarged text; keep this R1 source uncommitted. NEXT — extend the same fake-backed matrix to Auth, Home/Search/Favorites, entity forms/details, Map/Quotations, and the remaining Toolkit views in small batches; separately present the Scanner grid reproduction and proposed UI patch for owner approval before editing it. A real-phone acceptance pass is still required to change R1 from CODE_PROVEN to VERIFIED_RUNTIME.
+
+## RESPONSIVE LAYOUT HARDENING R2 — HOME, SEARCH, FAVORITES AND BOTTOM NAVIGATION (2026-10-24)
+
+Status: **CODE_PROVEN for the tested widget scenarios; NOT VERIFIED_RUNTIME.** Work remains uncommitted on branch `update-some-issues` at HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`. The existing R1 work and Toolkit document-library C3.6 source were preserved. No deploy, hosted write, migration, package install, commit, push or real-device run was performed. The Scanner grid was not changed.
+
+R1 verification before R2:
+
+- The actual dirty diff and every R1 responsive file were inspected. The pre-R2 worktree contained only `docs/CURRENT_CHECKPOINT.md`, the three R1 production files and `test/responsive/`; the C3.6 implementation remained present in the current checkout.
+- `flutter test --no-pub test/responsive --reporter expanded`: **25/25 passed, exit 0**.
+- `flutter test --no-pub test/combine_pdf/combine_pdfs_view_test.dart test/forms/save_cancel_buttons_test.dart --reporter compact`: **90/90 passed, exit 0**.
+- The R1 scoped `flutter analyze --no-pub ...` run returned **exit 1** for one info only: deprecated `Color.value` in `toolkit_view.dart:299`, already present at HEAD before R1. R2 replaced it with the equivalent `toARGB32()` call; the final scoped Dart analyzer is clean.
+- A normal formatter check formatted the requested files but then returned **exit 1** because Dart could not write `C:\Users\xr343\AppData\Roaming\.dart-tool\dart-flutter-telemetry-session.json`. This was kept separate from source formatting. With `APPDATA` redirected for that process only to the workspace, the final formatter check reports **16 changed/new Dart files, 0 changed, exit 0**. No global telemetry setting was changed.
+
+R2 harness and coverage:
+
+- The R1 harness now supports a one-frame pump for intentional loading spinners and resolves app assets from the unit-test asset bundle. Quiet fake auth, user, notification and favorite dependencies let the real production `HomeView`, `SearchView`, `FavoritesView` and `BottomNavBar` render without a hosted connection. Optional externally owned view models are test seams only; normal routes keep the existing construction and behavior.
+- R2 adds **24 production-widget cases** across logical **280×600, 320×568, 360×640, 393×852, 430×932, 640×360 landscape and 800×1280 tablet** windows. Representative combinations cover English/LTR, Arabic/RTL, Light/Dark, text scales **1.0, 1.6 and 2.0**, top/bottom safe-area padding, a **240 px** keyboard inset, long localized/user content, scrolling and essential-control reachability.
+- Search covers initial, loading, error, no-results and populated states plus keyboard submit and clear. Favorites covers loading, error, empty and populated states. Home covers the production dashboard with long labels/counts. The custom navigation verifies all destinations remain visible and tappable. These are representative combinations, not a complete Cartesian product or a claim about every device.
+
+Reproduced and fixed (widget evidence only):
+
+- The custom bottom navigation reproduced a **10 px bottom RenderFlex overflow** at 2.0 text scale. Its approved 80 dp height remains at ordinary scale and now grows only enough for the existing two-line labels at enlarged scale.
+- Home `GridItemCard` reproduced right-side RenderFlex overflows, including about **77 px at 280×600**, with more enlarged-text failures. The existing three-column design is preserved; the tile extent now derives from available width and scaled text height, while the label and count share a bounded, centered two-line text region with ellipsis.
+- Favorites reproduced a **0.240 px bottom overflow** at 393×852 and 2.0 text scale from fractional flex rounding. Search and Favorites now give their existing card minimum one additional logical pixel. Card content, grid columns and business behavior are unchanged.
+
+Final validation:
+
+- `flutter test --no-pub test/responsive --reporter expanded`: **49/49 passed, exit 0** (all 25 R1 plus 24 R2 cases).
+- `flutter test --no-pub test/search test/favorites --reporter compact`: **408/408 passed, exit 0**.
+- Focused Home regression run (`home_filter_chips`, `screen_header_unity`, `home_filter_wiring`, `home_unified_item_model`): **100/100 passed, exit 0**.
+- Full `test/home` run: **243 passed, 9 failed, exit 1**. The nine failures are existing clock/timestamp filter rule/controller expectations outside the responsive files and remain unresolved; the focused UI/wiring set above passes. They are not treated as responsive or runtime acceptance.
+- Direct Dart analyzer on the changed production Dart files (plus the shared search-result card inspected by the R2 grids) and `test/responsive`: **No issues found, exit 0**. The Flutter analyzer wrapper was also attempted with process-local telemetry storage; it stalled before output and returned **exit 1 only after interruption**. This environment/tooling stall is reported separately from the successful analyzer engine result.
+- Direct Dart formatter with process-local telemetry storage: **16 changed/new Dart files, 0 changed, exit 0**. `git diff --check`: **exit 0**, with Git's known LF-to-CRLF working-copy notice for `combine_pdfs_view.dart` only.
+
+Remaining limits and problems:
+
+- No RenderFlex overflow, clipping or unreachable essential control remains in the covered R1/R2 matrix. Screens and states outside that matrix remain unproven. Android/iPhone fonts, system navigation insets, rotation during state changes and physical keyboard behavior still require runtime checks.
+- The nine unrelated Home clock/timestamp tests remain failing and need a separate bounded investigation before any full-suite green claim.
+- The Scanner grid remains owner-protected. It was neither edited nor included in R2; any proposed layout change still requires a reproduced case and owner approval before implementation.
+- R1 and R2 remain **CODE_PROVEN**, not **VERIFIED_RUNTIME**, until real-phone acceptance is completed.
+
+NOW — install the current uncommitted build on one representative real phone and check Home, Search, Favorites, the bottom navigation, Toolkit and Language in English and Arabic at default and enlarged system text, including landscape and the on-screen keyboard. Record any exact screen/state and overflow stripe; do not mark the checkpoint runtime-verified from widget tests alone.
+
+NEXT — after that device pass, take the next bounded family as Profile, Notifications and profile/settings screens using the same real-widget harness. Keep Auth/forms as the following keyboard-heavy family. Handle the nine Home clock/timestamp failures as a separate test-logic checkpoint. Do not alter the Scanner grid without the owner's specific approval of a concrete reproduced proposal.
+
+## RESPONSIVE LAYOUT HARDENING R2.1 + R3 — HOME RULE VERIFICATION, PROFILE, SETTINGS AND IN-APP NOTIFICATIONS (2026-10-24)
+
+Status: **CODE_PROVEN for the tested widget scenarios; NOT VERIFIED_RUNTIME.** Work remains uncommitted on branch `update-some-issues` at HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`. The earlier R1/R2 diff and Toolkit document-library C3.6 source were preserved. No deployment, hosted write, backend/auth/subscription change, package install, commit, push or physical-device run was performed. The protected Scanner grid was not edited.
+
+### R2.1 — exact cause of the nine Home failures
+
+The nine failures were reproduced before editing: full `test/home` was **243 passed / 9 failed, exit 1** and the focused rules/controller run was **134 passed / 9 failed, exit 1**. Production `HomeFilterRules`, Git history (`22de358e`, 2026-10-11), and the earlier checkpoint all agree on the owner's accepted rules: Recently Added is created within 24 hours; Recently Updated is updated within 24 hours and strictly after creation; missing timestamps are excluded. The R2 production diff changed only a HomeViewModel stream/test seam and did not alter these rules.
+
+All nine failures were stale tests that still encoded the superseded 12-hour window:
+
+1. controller: a record changed after the injected clock moved on was expected to drop after 12 hours;
+2. controller: loading/filter application used a 12-hour stale fixture;
+3. controller: the retained records/read-once case described a 12-hour-old record as expired;
+4. rules: the definition test explicitly expected a 12-hour constant;
+5. rules: Recently Added expected a record older than 12 hours to be excluded;
+6. rules: Recently Added's injected-clock test advanced by the obsolete 12-hour boundary;
+7. rules: the local-time/UTC-equivalent case used an age outside 12 hours but still inside 24 hours;
+8. rules: Recently Updated expected a record older than 12 hours to be excluded;
+9. rules: Recently Updated's injected-clock test advanced by the obsolete 12-hour boundary.
+
+Only those deterministic test names and timestamp fixtures were repaired to use the production 24-hour constants and 24-hour boundary cases. Production filtering behavior was not changed. The focused rules/controller rerun passed **143/143, exit 0**; the final full Home run passed **252/252, exit 0**. There is no unresolved R2 Home functional regression in the exercised suite.
+
+### R3 harness, screens and states
+
+R3 reuses `test/responsive/responsive_harness.dart` and adds quiet repository/stream fakes. Optional constructor dependencies were added to `ProfileView`, `EditProfileView`, `NotificationSettingsView`, their view models, and `MatchDetailsView` so the real production widgets can run without Supabase, Firebase or hosted services; normal routes omit those parameters and retain the configured repositories/services.
+
+The **26 R3 production-widget cases** cover Profile overview, Security, Edit Profile, Notification Settings, in-app Notifications, match-notification details, Contact Us, Feedback, Privacy and Terms. States include notification loading, empty, unavailable and populated; match loading, error and populated; long profile identities, long English/Arabic notification content, settings toggles, scrolling to final controls, keyboard inset, same-widget resize and a reachable child-screen back control.
+
+Representative logical windows are **280×600, 320×568, 360×640, 393×852, 640×360 landscape and 800×1280 tablet**. Combined R1-R3 coverage also includes **430×932, 600×800 and 800×600**. The cases exercise English/LTR, Arabic/RTL, Light/Dark, text scales **1.0, 1.3, 1.6 and 2.0**, top/bottom safe-area insets, a **240 px** keyboard inset and long content. This is representative automated coverage, not a complete Cartesian product or real-device acceptance.
+
+### R3 reproduced defects and bounded fixes
+
+- Shared `SettingsTile`: its fixed 72 px row reproduced a **12 px bottom overflow** at 280×600 with 2.0 text. It now uses 72 px as a minimum and grows for wrapped title/subtitle/trailing content. The existing icon, spacing, section cards, switches, destructive styling and tap behavior remain.
+- Notifications list header: the simultaneous localized title and `Mark all read` action reproduced right overflows of **101 px** at 280×600 en 2.0, **164 px** at 393×852 ar 1.6 and **48 px** in 640×360 ar 2.0. At compact width/enlarged text the same localized text action moves immediately below a two-line app bar title; ordinary layouts retain the original app-bar action.
+- Match details: narrow/enlarged cases reproduced horizontal overflows in the app-bar score chip, section headings, badge/date rows, info chips and action row (observed failures included **20 px, 43 px, 55 px and 87 px**). The existing content now receives constraints: the score chip moves below the compact header, headings flex, badge/date pairs wrap, info labels wrap, and the two approved actions stack only when their labels cannot fit. Ordinary-width layout remains side by side.
+- No business logic, data handling, localized production copy, backend, auth, subscription behavior or Scanner UI was changed.
+
+### Validation and tooling evidence
+
+- `flutter test --no-pub test/responsive/r3_profile_settings_notifications_responsive_test.dart --reporter expanded`: **26/26 passed, exit 0** after final formatting.
+- `flutter test --no-pub test/responsive --reporter expanded`: **75/75 passed, exit 0** across R1, R2 and R3.
+- `flutter test --no-pub test/home --reporter expanded`: **252/252 passed, exit 0**.
+- `flutter test --no-pub test/profile --reporter expanded`: **58/58 passed, exit 0**.
+- Separate compatibility run: `test/auth/profile_fcm_compatibility_test.dart` failed to compile, **exit 1**, because `NotificationService` is undefined at lines 246, 264, 280 and 295. The file was unchanged by R3; this is retained as an unrelated existing test blocker.
+- Full direct Dart analyzer with writable process-local telemetry storage completed with **103 existing repository issues and analyzer exit 3**: **14 errors** (three `List<num>`/`List<double>` errors in `test/areas/expandable_area_chips_test.dart`, four undefined `NotificationService` errors above, and seven ambiguous/invocation `Harness` errors in `test/scanner/scanner_cloud_test.dart`) plus 89 info notices. No reported issue points to an R2.1/R3 changed file. `dart analyze test/responsive` reports **No issues found, exit 0**.
+- The ordinary analyzer/formatter environment problem was reproduced separately: analysis reported `No issues found` for the R3 responsive test, then unified analytics could not update `C:\Users\xr343\AppData\Roaming\.dart-tool\dart-flutter-telemetry-session.json` and changed the command to **exit 1**. With `APPDATA` redirected only for the process to a writable temporary folder, the bounded formatter completed **11 files, 7 changed, exit 0** and responsive analysis completed normally. No user/global telemetry setting was changed.
+- `git diff --check`: **exit 0**, with only the known LF-to-CRLF working-copy notice for `combine_pdfs_view.dart`.
+
+### Remaining limits and next checkpoint
+
+No RenderFlex overflow, clipping or unreachable essential control remains in the covered R3 scenarios. Screens/states outside the matrix, native font differences, system navigation insets, rotation timing and real keyboard/device behavior remain unproven. R1-R3 stay **CODE_PROVEN**, not **VERIFIED_RUNTIME**. The full-repository analyzer and the separate FCM compatibility test remain blocked by the unrelated existing errors listed above. The Scanner grid remains protected and requires owner approval of a concrete reproduced UI proposal before any layout edit.
+
+NOW — review the uncommitted R2.1/R3 diff and retain it with the earlier R1/R2/C3.6 work. A one-phone English/Arabic default/enlarged-text smoke run can add runtime evidence when available, but automated implementation does not wait for multiple devices.
+
+NEXT — take **R4: startup, sign-in, sign-up, phone/email verification and password-recovery forms** as the next bounded responsive family, emphasizing keyboard insets, validation/error states, RTL and same-widget portrait/landscape resize. Keep entity add/detail forms as the following family, and keep the Scanner proposal separate and approval-gated.
+
+## RESPONSIVE LAYOUT HARDENING R4 — AUTHENTICATION AND STARTUP UI (2026-10-28)
+
+Status: **CODE_PROVEN for the exact widget scenarios below; NOT VERIFIED_RUNTIME.** Active checkout before and after: branch `update-some-issues`, HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`, dirty/uncommitted. Existing R1–R3 work, the Home 24-hour rules, Toolkit C3.6 and the protected Scanner grid were preserved. R4 made no auth/session/security/backend/business change, hosted request, package install, device run, commit, push or deployment.
+
+### Pre-edit verification and inventory
+
+- `git branch --show-current`, `git rev-parse HEAD`, `git status --short` and the existing diff confirmed the active checkout above and the earlier R1–R3 source/tests/docs. The C3.6 source remains in this checkout; no R4 edit touched its files.
+- `flutter test --no-pub test/responsive --reporter expanded`: **75/75 PASS, exit 0** before R4 edits.
+- A combined pre-edit auth run (`password_ui_test.dart`, `real_email_verification_route_test.dart`, `navigation_authority_test.dart`, `session_superseded_dialog_test.dart`) finished **31 passed, 2 failed, exit 1**. Both failures were in `session_superseded_dialog_test.dart`: the displacement test still found `HOME`, and the validation-unavailable test left a timer pending. The isolated post-edit run remained **4 passed, 2 failed, exit 1**, with those same two descriptions. No session behavior was changed to mask them.
+- Actual route inventory from `lib/app.dart`: `/` (`AuthWrapper` / splash), `/welcome`, `/sign-in`, `/sign-up`, `/email-verification`, `/phone-otp`, `/reset-password`; the forgot-password request is an existing sheet. Existing `docs/DECISIONS.md` keeps Supabase identity, password-recovery callback/session authority and deferred phone SMS rules unchanged.
+
+### R4 test implementation and exact matrix
+
+`test/responsive/r4_auth_responsive_test.dart` reuses the R1 harness, real en/ar localization assets and actual app Light/Dark themes. It renders the production `SplashScreen`, `WelcomeView`, `SignInView`, `SignUpView`, `EmailVerificationView`, `PhoneOtpView`, `ResetPasswordView` and `PasswordResetRequestSheet` in **eight cases each (64 matrix cases)**. The eight pairwise logical-window scenarios are:
+
+| Logical window | Locale / direction | Theme | Text scale | Insets |
+| --- | --- | --- | ---: | --- |
+| 280×600 | EN / LTR | Light | 2.0 | none |
+| 320×568 | AR / RTL | Dark | 1.6 | none |
+| 360×640 | EN / LTR | Light | 1.0 | top 24, bottom 20, keyboard 280 |
+| 393×852 | AR / RTL | Light | 1.3 | none |
+| 430×932 | EN / LTR | Dark | 1.0 | none |
+| 640×360 landscape | AR / RTL | Dark | 2.0 | keyboard 240 |
+| 600×800 | EN / LTR | Light | 1.6 | none |
+| 800×1280 tablet | AR / RTL | Dark | 1.3 | none |
+
+Eight more widget tests cover `AuthWrapper` bootstrap rendering, same `SignInView` portrait-to-landscape resize while keyboard, entered text and focus remain, Arabic large-text sign-in validation and password visibility, both existing phone tabs and reachable submit actions, Arabic signup validation, local invalid OTP entry, local invalid reset-password entry and visibility, and the forgot-password sheet's unavailable/error state. The verification screen uses a long email fixture. Each matrix case checks Flutter layout exceptions and scrolls the existing primary action into view, asserting a nonzero action rect entirely above the simulated keyboard. Fake quiet auth/user repositories are provider-owned and never initialize a hosted session; OTP receives a nonempty layout-only verification ID, and the only OTP action exercised is local invalid-code validation. The reset gateway is in memory and the exercised password is invalid before any backend call. No real account, OTP, network, auth bypass or verification success was used. These combinations are representative, not a Cartesian product.
+
+### Reproductions and bounded production fixes
+
+- Welcome: 280×600 EN at 2.0 produced right overflows of **43 and 41 px** in language controls; short/enlarged windows also lacked a scroll path to the actions. The existing centered composition now gains viewport-minimum scroll space, language flag/label pairs wrap when narrow, and the two existing action labels flex while their 56 px button height becomes a minimum. The visual hierarchy and labels stay in place at ordinary size.
+- Splash: 280×600 EN 2.0 produced a **181 px bottom overflow**; 640×360 AR 2.0 with a 240 px keyboard produced **385 px bottom overflow**. The existing centered content now scrolls within SafeArea when its natural height exceeds the window.
+- Sign-in/sign-up: the first R4 run reproduced right overflows in enlarged text (including **154 px** for sign-up at 600×800 EN 1.6). The sign-in phone tab separately produced a **360 px right overflow** at 280×600 AR 2.0 with keyboard 240. Existing tab heights now grow for wrapped labels; divider labels receive flexible width; bottom sign-in/sign-up links wrap. The phone tab remains present and its auth capability is unchanged.
+- Email verification: 600×800 EN 1.6 reproduced a **167 px bottom overflow**; compact and keyboard cases also failed. The existing column scrolls when needed, with minimum viewport height and its bottom help text still placed below the actions on roomy windows.
+- OTP screen: on 640×360 AR 2.0 with keyboard 240, the Verify button rect ended at **132 px** while the keyboard began at **120 px** even after scrolling. The back row and content now share one scrollable, making the Verify action fully reachable without changing code entry, countdown or verification logic.
+- Reset form and forgot-password sheet needed no production change in the exercised states. The final tests scroll and locate their action buttons, test local error display, and exercise password visibility where applicable.
+
+R4 production files changed: `lib/src/views/Screens/Sign-Up-Log-In/{welcome_view.dart,splash_screen.dart,login_view.dart,signup_view.dart,email_verification_view.dart,phone_otp_view.dart}`. R4 adds `test/responsive/r4_auth_responsive_test.dart` and this checkpoint entry. The shared harness was reused without changes.
+
+### Validation, open issues and handoff
+
+- Final `flutter test --no-pub test/responsive/r4_auth_responsive_test.dart --reporter expanded`: **72/72 PASS, exit 0**. Final `flutter test --no-pub test/responsive --reporter expanded`: **147/147 PASS, exit 0** (75 earlier cases + 72 R4).
+- Independent auth regression run (`password_ui_test.dart`, `password_recovery_test.dart`, `real_email_verification_route_test.dart`, `navigation_authority_test.dart`, `phone_verification_test.dart`): **97/97 PASS, exit 0**. The separate session-dialog result above stays red and is not included in that green count.
+- Direct `dart analyze lib/src/views/Screens/Sign-Up-Log-In` and `dart analyze test/responsive/r4_auth_responsive_test.dart`, with process-local writable `APPDATA`: **No issues found, exit 0** for each. Full `dart analyze .` remains **exit 3, 14 errors, 0 warnings, 89 info notices**, exactly the existing categories: three `List<num>`/`List<double>` errors in `test/areas/expandable_area_chips_test.dart`, four undefined `NotificationService` errors in `test/auth/profile_fcm_compatibility_test.dart`, and seven ambiguous/invocation `Harness` errors in `test/scanner/scanner_cloud_test.dart`. None is in an R4 edited file.
+- The new test file was narrowly formatted with the process-local telemetry workaround. Tracked auth source was not bulk-formatted, respecting `CLAUDE.md` and preserving a bounded diff. `git diff --check` was clean; Git still emits its prior LF-to-CRLF notice for `combine_pdfs_view.dart`.
+
+Covered cases have no remaining RenderFlex/layout exception or unreachable tested primary action. **Not yet covered:** the separate `PhoneOtpDialog` used for account phone-change, session-unavailable `AuthWrapper` retry UI, every loading/disabled variant, real auth navigation/back transitions, physical font/IME behavior, all translated/error strings and visual pixel clipping in every state. The existing English-only copy on `EmailVerificationView` was not rewritten in this layout checkpoint. No Android/iPhone device PASS is claimed; one-phone runtime acceptance remains pending, and the unrelated session-dialog failures and full-analyzer issues remain open. C3.6 production-readiness decisions and Scanner approval gate are unchanged.
+
+NOW — review the uncommitted R1–R4 diff and, when practical, run one-phone English/Arabic default/enlarged-text startup/auth/keyboard smoke checks. Record exact screen/state if a real overflow appears; do not relabel CODE_PROVEN as VERIFIED_RUNTIME from widget tests.
+
+NEXT — propose one bounded **R5 core entity create/edit/details** responsive checkpoint with fake repositories, long content, keyboard and landscape cases; begin only after scope authorization. Track the session-dialog and full-analyzer failures separately. Keep the Scanner grid protected pending a concrete owner-approved UI proposal.
+
+## RESPONSIVE LAYOUT HARDENING R5A — REQUESTS (2026-10-28)
+
+Status: **CODE_PROVEN for the tested Request widgets; NOT VERIFIED_RUNTIME.** Active checkout: branch `update-some-issues`, HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`, dirty and uncommitted. The pre-edit worktree and diff were inspected; R1–R4, C3.6, the Home 24-hour rules and the protected Scanner grid remain present. No hosted request/write, database or auth change, package install, commit, push, deployment or device run occurred.
+
+Pre-edit baseline: `flutter test --no-pub test/responsive --reporter expanded` **147/147 PASS, exit 0**. The earlier 14 full-analyzer errors and two `session_superseded_dialog_test.dart` failures were tracked separately. R5A did not change session behavior or the Scanner tests.
+
+### R5A implementation and coverage
+
+`test/responsive/r5a_requests_responsive_test.dart` reuses the real localization/themes and R1 harness. It renders production `AddRequestedView` (add and preloaded edit), `RequestedListView` (with a stream-only fake RequestService), and `RequestDetailsView` (with the existing quiet provider fakes). No save, delete, phone call, navigation to hosted data or backend write is exercised. The list view accepts an optional view model for tests; its normal route still creates the same default view model.
+
+The **35 R5A tests** include 8 cases each for add, edit with long values, populated list, and long details, plus initial/empty/error list states, phone-to-landscape notes editing, and an archive-filter tap. List cards and detail sections are scrolled into view to trigger lazy layout; the form's last field and floating actions are checked for reachability. At 640×360 with a 240 px simulated keyboard, the tall notes field cannot fit entirely in the 64 px space below the app bar, so the test checks a usable visible portion; floating actions are hidden by the existing keyboard rule. The matrix uses logical windows **280×600, 320×568, 360×640, 393×852, 430×932, 640×360 landscape, 600×800 and 800×1280 tablet**; EN/LTR and AR/RTL; Light/Dark; text scales **1.0, 1.3, 1.6, 2.0**; one 24/20 top/bottom safe area; and 240 px keyboard insets. This is pairwise representative coverage, not every combination or physical-device proof.
+
+Reproduced RenderFlex defects and minimal layout fixes:
+
+- Add/edit form: expanded area toggle overflowed **40 px right** and number selectors **100 px right** at 280×600 EN 2.0. The toggle and selectors now wrap at narrow width while retaining the ordinary row layout.
+- Details: the hero column overflowed **90 px bottom**, action row **260 px right**, and stat labels **42/124 px right** at 280×600 EN 2.0. The hero height grows with text scale; actions wrap and stat labels flex. A separate 320×568 AR 1.6 notes heading overflowed **22 px right** and now flexes.
+- Populated list: the title/date row overflowed **38 px right**, area badge **8.9 px right**, and price badge **222 px right** at 320×568 AR 1.6. Those labels now receive bounded flexible width. Scrolling exposed additional **41 px right** in the date separator and **32 px right** in the shared status chip at 280×600 EN 2.0; both labels now flex within their existing rows.
+- Empty/error list states: a fixed-height message column overflowed **60/106 px bottom** at 320×568 AR 1.6. The same centered content can now scroll when needed.
+
+The two shared UI fixes are limited to `expandable_area_chips.dart` and `property_status_indicator.dart`; there is no color, font, copy, data, filter, Request service or approved-design change. Two existing numeric test lists in `expandable_area_chips_test.dart` were explicitly typed as `double`, allowing that directly affected regression suite to compile; this removed three of the original 14 repository analyzer errors.
+
+### Actual validation and open limits
+
+- Final R5A widget matrix: `flutter test --no-pub test/responsive/r5a_requests_responsive_test.dart --reporter expanded` **35/35 PASS, exit 0**. Combined `flutter test --no-pub test/responsive --reporter expanded` **182/182 PASS, exit 0** (147 R1–R4 + 35 R5A).
+- Adjacent tests: `test/forms/save_cancel_buttons_test.dart` **80/80 PASS, exit 0**; `test/areas/expandable_area_chips_test.dart` initially **compile failure, exit 1** at lines 562/567/568 from two `List<num>` literals; after the test-only type correction, **35/35 PASS, exit 0**.
+- Process-local writable `APPDATA` plus direct `dart analyze` on all seven R5A source/test files: **No issues found, exit 0**. Final full direct `dart analyze .`: **100 issues, exit 3**: **11 pre-existing errors** (4 undefined `NotificationService` in `test/auth/profile_fcm_compatibility_test.dart`, 7 ambiguous/invoked `Harness` in `test/scanner/scanner_cloud_test.dart`), **0 warnings, 89 infos**. The earlier baseline had 14 errors; three directly related chip-test typing errors were corrected here. The normal `flutter analyze --no-pub` attempt did not finish and was interrupted after prolonged silence; it is not reported as a pass. The scoped analyzer and full direct analyzer above are the actual completed analyzer results.
+- The new test file was narrowly formatted with process-local writable `APPDATA`, **exit 0**. An initial formatter invocation changed the file but returned **exit 1** from the known user-level telemetry file access error; the final formatter check used the writable process-local path. `git diff --check`: **exit 0**; Git retained its existing LF-to-CRLF notice for `combine_pdfs_view.dart`.
+
+No RenderFlex overflow was observed in the final covered R5A scenarios. Untested Request states, device fonts/IME/safe-area behavior, all physical sizes, actual backend operations and visual pixel clipping remain unproven. The two session-superseded test failures remain open and were not rerun in R5A. R1–R5A stay CODE_PROVEN only; no real-device acceptance is claimed. C3.6 decisions and Scanner's approval gate are unchanged.
+
+NOW — review the uncommitted R5A diff with the preserved R1–R4/C3.6 work; retain the current checkout. A one-phone English/Arabic default/enlarged-text Request smoke run can add runtime evidence when available, without blocking further automated work.
+
+NEXT — take **R5B Offers create/edit/list/details** as the next bounded responsive screen family with fake repositories, long content, keyboard and scroll-through coverage. Track the unrelated analyzer and session-dialog failures separately. Present a concrete Scanner grid change for owner approval before any protected-grid edit.
+
+## RESPONSIVE LAYOUT HARDENING R5B — OFFERS (2026-10-29)
+
+Status: **CODE_PROVEN for the tested Offer widgets; NOT VERIFIED_RUNTIME.** Active checkout stayed on branch `update-some-issues` at HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`, with uncommitted R1–R5A and Toolkit C3.6 work preserved. The R5B pre-edit responsive baseline was **182/182 PASS, exit 0**. No Scanner, authentication, Supabase, Cloudflare, billing, media transport, Plan lifecycle or other business logic was edited. No real upload, download, share, delete, hosted request, device run, package install, commit, push or deployment occurred.
+
+### R5B implementation and automated coverage
+
+`test/responsive/r5b_offers_responsive_test.dart` adds **42 tests** using the existing responsive harness, real production Offer widgets and local fake Offer/Plan dependencies. The matrix runs add, preloaded edit with an existing long-name Plan, populated list and long details with a separately fetched Plan at each of **280×600, 320×568, 360×640, 393×852, 430×932, 640×360 landscape, 600×800 and 800×1280 tablet** logical windows. It covers EN/LTR and AR/RTL, Light/Dark, text scales **1.0, 1.3, 1.6 and 2.0**, 24/20 top/bottom safe insets and 240 px simulated keyboard insets. Keyboard insets apply to the form cases; list and details use the same size/locale/theme/text-scale pairings without a keyboard. This is a representative matrix, not every combination. Tests scroll through lazy list and detail sections, assert absence of Flutter layout exceptions, and check form actions and the Plan Open control for reachability where applicable.
+
+Additional tests exercise list initial/empty/error and archive toggle; Plan none/existing/working/failed presentation; Offer video media queued/retrying/permanent-failure presentation; detail media loading and local failure/retry UI; notes text, focus and city surviving same-widget portrait/landscape/portrait resize; one list stream subscription across resize; and the narrow Arabic delete confirmation opened by a swipe and cancelled without invoking deletion. Fake services and no-op UI callbacks keep all tested operations local. Normal production constructors retain their existing service defaults; optional injection points are used only by the widget tests.
+
+Failure-first reproductions and bounded fixes:
+
+- Add/edit number selectors overflowed **100 px right** at 280×600 EN 2.0; they wrap when space is narrow.
+- Offer details hero overflowed **26 px bottom**, hero badge/actions **102 px right**, stat labels **42/124 px right**, and the notes heading **22 px right** in enlarged-text cases. Expanded height now accounts for text scale, the existing actions wrap, and labels flex inside their current rows.
+- Populated list date/area/price text overflowed at narrow enlarged sizes (including **126/113/481 px right** at 280×600 EN 2.0); the date separator overflowed **41 px right**. Those labels now flex within the existing composition. Empty/error presentation had a **4.2 px bottom overflow** at 320×568 AR 1.6 and now scrolls when required.
+- Offer media queued/retrying states overflowed their fixed two-column tiles (**12/264 px bottom** at 280×600 AR 2.0). The shared preview grid computes enough tile height for status/action text and uses one column only for narrow, enlarged Offer upload-status tiles; ordinary two-column media remains as before. The existing Offer media upload UI regression passed.
+- A newly added swipe test reproduced four delete-confirmation overflows at 280×600 AR 2.0: **216 px right**, **83 px bottom**, and **116/149 px right** in the action buttons. The dialog title flexes, its content scrolls if necessary, and its existing action buttons stack only when narrow with enlarged text. The test opens and cancels the dialog; it does not delete an Offer.
+
+R5B source files: `lib/src/views/Screens/ViewAdd/add_offers_view.dart`, `lib/src/views/Screens/ViewDetails/offers_view_details.dart`, `lib/src/views/Screens/ViewLists/offers_list_view.dart`, and `lib/src/views/Widgets/unified_media_preview_grid.dart`. The new responsive test and this checkpoint entry are the only other R5B files.
+
+### Validation, remaining limits and handoff
+
+- `flutter test --no-pub test/responsive/r5b_offers_responsive_test.dart --reporter compact`: **42/42 PASS, exit 0**. `flutter test --no-pub test/responsive --reporter expanded`: **224/224 PASS, exit 0** (182 prior responsive cases + 42 R5B). The new swipe case was separately failure-first **exit 1**, then **PASS, exit 0** after the dialog fix.
+- Combined adjacent Offer media form/loading/load-coordinator/upload UI, Plan section/details/form, save/cancel and entity-list view-model tests: **201/201 PASS, exit 0**.
+- Direct `dart analyze` with process-local writable `APPDATA` on each of the four R5B source files and the new test file: **No issues found, exit 0** for each. Full direct `dart analyze .`: **100 issues, exit 3**: **11 previously tracked errors** (four undefined `NotificationService` in `test/auth/profile_fcm_compatibility_test.dart`; seven ambiguous/invoked `Harness` in `test/scanner/scanner_cloud_test.dart`), no warnings and 89 info notices. No full analyzer pass is claimed. The two previously reported `session_superseded_dialog_test.dart` failures remain separate and were not rerun or changed in R5B.
+- Narrow formatting of the new test and its format check: **exit 0**. `git diff --check`: **exit 0**, with the existing LF-to-CRLF notice for Toolkit `combine_pdfs_view.dart`. Tracked source was not bulk-formatted.
+
+No RenderFlex overflow was observed in the final covered R5B cases. Visual pixel clipping outside Flutter's overflow assertions, all media/Plan states, true font and IME behavior, backend operations and real-device acceptance remain unproven. The Scanner grid remains protected; any proposed grid change still requires explicit owner approval. The Toolkit C3.6 production-readiness decisions remain unchanged.
+
+NOW — review the uncommitted R5B diff alongside preserved R1–R5A/C3.6 work, and retain the checkout. When one phone is available, record a focused English/Arabic default/enlarged-text Offer add/edit/list/details smoke run, including keyboard and Plan/media presentation; do not relabel widget evidence as runtime verification.
+
+NEXT — scope **R5C: Owners create/edit/list/details** as the next bounded responsive family with local fakes and the same viewport harness. Track the 11 analyzer errors and two session-dialog failures separately; seek explicit approval before any Scanner grid UI change.
+
+
+## RESPONSIVE LAYOUT HARDENING R5C — OWNERS (2026-10-29 / 2026-10-30)
+
+الحالة: **CODE_PROVEN للحالات المختبرة فقط؛ NOT VERIFIED_RUNTIME**. التنفيذ المحلي على `update-some-issues`، وHEAD ثابت عند `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`. فُحص Git قبل التعديل وبعده، وحُفظ العمل السابق R1–R5B وC3.6 وقرارات Scanner. لم يحدث commit أو push أو deployment أو تعديل بنية مستضافة أو بيانات مستخدم أو حزمة جديدة. قُرئ ملف التسليم كاملًا؛ لم توجد مهارة `llm-council` مثبتة، ولا مهارة Flutter ذات صلة تستدعي مهارات أخرى.
+
+### نطاق التنفيذ والملفات
+
+- `lib/src/views/Screens/ViewAdd/add_owners_view.dart`: نقطة حقن ViewModel اختيارية للاختبارات؛ المسار الإنتاجي يحتفظ بإنشاء ViewModel الافتراضي.
+- `lib/src/views/Screens/ViewLists/owners_list_view.dart`: التاريخ والنصوص داخل الأزرار تُقيد بعرض متاح، وارتفاع أزرار الاتصال يصبح حدًا أدنى، والحالات الفارغة/الخطأ تستطيع التمرير. عنوان حوار الحذف مرن، ومحتواه قابل للتمرير، وترتيب أزراره يعتمد على OverflowBar الموجود في Material.
+- `lib/src/views/Screens/ViewDetails/owners_view_details.dart`: ارتفاع الرأس يتكيف مع تكبير الخط، وشارة المالك ومجموعة الاتصال تلتف عند ضيق العرض، وعنوان الملاحظات مرن؛ حوار الحذف قابل للتمرير وأزراره تتكيف. نقاط حقن اختيارية لخدمات Owner وPlan والعناصر المرتبطة، مع بقاء الخدمات الإنتاجية الافتراضية. تُحتفظ streams العناصر المرتبطة داخل حالة الشاشة وتُعاد فقط عند تغيّر رقم الهاتف؛ الاستعلامات والخدمات وإشعارات التحديث لم تتغير، ولا cache خارج عمر الشاشة.
+- `lib/src/views/Widgets/pickup_location_widget.dart`: إصلاح مشترك ثبت باختبار R5C أولًا؛ عرض زر الخريطة مقيد بنصف المساحة الفعلية المتاحة عبر LayoutBuilder محلي وConstrainedBox، وارتفاعاه السابقان أصبحا حدين أدنى للسماح بالتفاف التسمية. يبقى الحقل Expanded، فيأخذ كل المساحة المتبقية ويظل الزر في موضعه الأصلي بالحجم العادي. أضيف اختبار محدد لمستهلكه في نموذج Offer. نموذج Request الحالي لا يستعمل هذا المكوّن.
+- `test/responsive/r5c_owners_responsive_test.dart`: الحاضنة الحالية `responsive_harness.dart`، والمزوّدات الهادئة الحالية، و`FakePlanTransport`؛ لا توجد حاضنة بديلة. الشاشات المعروضة هي شاشات الإنتاج الفعلية، والوسائط محلية وهمية، بلا تشغيل picker أو viewer أو share أو خدمة مستضافة.
+- `test/lists/owners_list_view_test.dart`: دورة `pump` إضافية واحدة في مساعد `showOwners`، لتسليم حدث Stream ثم إعادة بناء Provider، بعد إثبات الإخفاقات الثلاثة نفسها على مصدر HEAD الأصلي في نسخة مؤقتة داخل `build/`؛ لا تغيير في دورة حياة القائمة الإنتاجية.
+
+### التغطية والإخفاق قبل الإصلاح
+
+المصفوفة التمثيلية: 280×600، 320×568، 360×640، 393×852، 430×932، 640×360، 600×800، 800×1280؛ EN/LTR وAR/RTL؛ Light/Dark؛ تكبير 1.0 و1.3 و1.6 و2.0؛ SafeArea علوي/سفلي 24/20، ولوحة مفاتيح 240 في حالات النماذج. ليست حاصل الضرب الكامل. تختبر الإضافة والتعديل المعبأ بقيم طويلة، المرور على الحقول، واستعادة أزرار الحفظ/الإلغاء بعد إغلاق لوحة المفاتيح (الإخفاء أثناء فتحها سلوك سابق محفوظ). تُختبر قيمة الهاتف غير الصالحة، اختيار نوع العقار، واستمرار النص والتحديد والتركيز والمدينة عند تدوير نفس الشجرة.
+
+القائمة تختبر التحميل الأولي والفراغ والخطأ، و8 سجلات طويلة مع تمرير إلى الوسط والنهاية وفحص قابلية إصابة زر الاتصال، وFAB، وفشل التحديث مع بقاء العناصر، وعرض حذف محلي بلا استدعاء حذف، واشتراك خدمة واحد مع تغيير المقاس/اللغة، وفتح حوار swipe وإلغائه. لا توجد مرشحات archive أو زر Retry مستقل في قائمة Owner الحالية؛ لم تُضف ميزات جديدة.
+
+التفاصيل تختبر الرأس دون وسائط، والتحميل/الفشل وزر إعادة المحاولة، وصورة محلية وفيديو ذي poster محلي وحالة pending دون تشغيل، وانكماش Sliver بالتمرير، وحوار الحذف وإلغاءه عند 280×600 و640×360 بالعربية 2.0. Plan مستقل: غائب/موجود باسم طويل/تحميل/فشل قراءة، وفتح Plan قابل للإصابة دون الضغط عليه، و`PlanParent.owner` مثبت. غياب بطاقة Plan أثناء التحميل/فشل القراءة هو السلوك الحالي المحفوظ، وليس نجاحًا وهميًا. حالات نموذج Plan تشمل none/existing/draft/replacing/working/failed؛ حالات الوسائط queued/retrying/permanentFailure، و5 عناصر pending مع توسيع +2 والاحتفاظ بها وPlan عند التدوير. عدد gallery لا يشمل Plan.
+
+- أول تشغيل قابل للتنفيذ لـR5C: **33 نجاحًا و9 إخفاقات، exit 1**، قبل إصلاحات التخطيط.
+- 280×600 EN 2.0: تاريخ فصل القائمة تجاوز **41 px**، وصف التاريخ داخل البطاقة **124 px**، وزرا الاتصال/WhatsApp **38/151 px**. النصوص أصبحت مرنة، وارتفاع الأزرار حد أدنى بدل القيد الثابت.
+- تفاصيل 280×600 EN 2.0: الرأس تجاوز **90 px أسفلًا** وصف الشارة/الاتصال **237 px يمينًا**. عند 320×568 AR 1.6، تجاوز عنوان الملاحظات **22 px**. ارتفاع الرأس يتبع التكبير، والتفاف مجموعة الأزرار والنص المرن يحلان العيوب دون تغيير الألوان أو الخطوط أو النصوص.
+- حالة قائمة فارغة 320×568 AR 1.6: تجاوز **4.2 px أسفلًا**؛ أصبح لها مسار تمرير.
+- بعد إتاحة القائمة، حوار swipe عند 280×600 AR 2.0 أظهر **256 px يمينًا** في العنوان، **523 px أسفلًا** في المحتوى، و**116/52 px** في الأزرار. حوار التفاصيل أظهر العيوب نفسها مع محتوى أطول (**763 px أسفلًا**). أزيل الاعتماد التجريبي على LayoutBuilder داخل actions بعد أن كشف اختبار landscape عدم دعمه قياسات AlertDialog الجوهرية؛ النسخة النهائية تستخدم أزرار AlertDialog الأصلية وOverflowBar التلقائي.
+- نموذج Owner عند 280×600 AR 2.0 كشف **39 px يمينًا** داخل `pickup_location_widget.dart:79` قبل الإصلاح المشترك. اختبار Offer المحدد يفحص قابلية إصابة زر الخريطة واحتواء حدود تسميته داخل الزر؛ لم يُفتح MapPicker.
+
+- فحص هندسي إضافي لـOffer عند 393×852 EN 1.0 كشف أن النسخة الوسيطة من إصلاح pickup أبعدت زر الخريطة **61.7 px** عن طرف صفه (**exit 1**). استُبدل Flexible الوسيط بقيد عرض محلي حول الزر، ليظل الحقل يأخذ باقي العرض؛ اختبار المحاذاة واختبار العربية الضيقة نجحا ضمن 54/54. لا تغيير في الترتيب أو الميزات أو النصوص.
+- فحص ثبات streams إضافي عند 393×852 EN 1.0 كشف **15 إنشاءً** لـstream العروض المرتبطة أثناء إعادة البناء الأولية (المتوقع 1)، **exit 1**، قبل الإصلاح. حفظ مرجعَي streams داخل حالة الشاشة وربطهما برقم الهاتف منع إعادة الإنشاء عند التحريك/التدوير؛ اختبار الحالة نجح ضمن مجموعة R5C النهائية.
+
+تبقى عقود الوسائط الخاصة والـ10 عناصر، وحدود الصور/الفيديو، وطابور الرفع وحالاته وعمره، وlost-data attribution، وعزل Plan الواحد عن gallery وOffer، وترتيب حفظ السجل قبل Plan، وRLS/الهوية/النقل كما كانت. لا تغييرات خدمات أو Repository أو Worker أو قاعدة بيانات. اختبارات الانحدار المجاورة تستعمل المحاكيات الموجودة في المشروع.
+
+### أدلة التحقق
+
+- خط الأساس قبل تعديل R5C: `flutter test --no-pub test/responsive --reporter expanded`: **224/224 PASS، exit 0**.
+- مجموعة R5C النهائية: `flutter test --no-pub test/responsive/r5c_owners_responsive_test.dart --reporter expanded`: **54/54 PASS، exit 0**؛ التراكمي النهائي `flutter test --no-pub test/responsive --reporter expanded`: **278/278 PASS، exit 0**.
+- الأمر المجاور: `flutter test --no-pub test/owners test/lists/owners_list_view_test.dart test/lists/entity_list_view_models_test.dart test/plan_attachment test/forms/save_cancel_buttons_test.dart test/offers/offer_media_form_test.dart test/offers/offer_media_loading_ui_test.dart test/offers/offer_details_load_coordinator_test.dart test/offers/offer_media_upload_ui_test.dart --reporter expanded`: **494 PASS و3 FAIL، exit 1**. الإخفاقات الثلاثة في اختبار القائمة سبق وجودها: تشغيل نسخة مصدر HEAD الأصلية داخل `build/r5c-baseline-owners-test.dart` أعاد **3 PASS و3 FAIL، exit 1**. بعد إصلاح pump المحدد: `flutter test --no-pub test/lists/owners_list_view_test.dart --reporter expanded`: **6/6 PASS، exit 0**. النتيجة المركبة على مستوى الملفات **497 حالة فريدة ناجحة**؛ لم يُعد تشغيل الأمر الكبير كله بعد إصلاح الاختبار، ولا يُنسب إليه exit 0.
+- `dart analyze` المباشر على ملفات المصدر الأربعة واختبار R5C: لا errors أو warnings، **exit 0**؛ ملف pickup وحده يحمل **18 info** من استخدام `Color.red/green/blue` الموجود في HEAD نفسه (18 استخدامًا). تحليل اختبار القائمة المعدل منفردًا: **No issues، exit 0**.
+- `dart analyze .` النهائي بعد التعديلات: **100 issues = 11 errors و89 info، exit 3**، مطابق لخط الأساس. الأخطاء: 4 undefined `NotificationService` في `profile_fcm_compatibility_test.dart`، و7 تعارض/استدعاء `Harness` في `scanner_cloud_test.dart`. إخفاقا `session_superseded_dialog_test.dart` السابقان لم يُعاد تشغيلهما ولا يزالان backlog منفصلًا.
+- تنسيق الملف الجديد والفحص المحدد للإضافة/القائمة/pickup/اختبار R5C واختبار القائمة: **exit 0**. فحص تنسيق `owners_view_details.dart` يعيد **exit 1** بسبب فروق سابقة خارج R5C (BOM، التفاف سطر uploadCompletions، catch فارغ)؛ تُركت كما هي. نُسّقت مناطق R5C المعدلة فقط، بلا bulk format.
+- `git diff --check` النهائي: **exit 0**؛ بقي تنبيه LF/CRLF السابق الخاص بـ`combine_pdfs_view.dart` دون تعديل هذا الملف في R5C. فحص Git النهائي يؤكد الفرع وHEAD نفسيهما، و42 ملفًا tracked معدلًا مع `test/responsive/` غير متتبع (14 ملفًا)، بلا staging أو commit.
+- أوامر Flutter داخل العزل لم تكمل/تعطل runtime؛ أُوقفت، والنتائج أعلاه تخص التشغيل المحلي الموافق عليه خارج العزل. تعذر تشغيل محاولة اختبار القراءات الإضافية بسبب فشل المراجعة الآلية عند حد استخدام الحساب؛ لم تُنفذ تلك المحاولة. استؤنفت في 2026-10-30 بعد طلب المالك المتابعة.
+
+### الحفظ والحدود والتسليم
+
+جميع التغييرات ما زالت غير ملتزمة. `test/responsive/` كله untracked، بما فيه الحاضنة وملفات R1–R5C السابقة؛ لا يكفي حفظ الملف الجديد وحده. التوصية عند موافقة المالك لاحقًا: حدود مراجعة/commit مستقلة لـR1–R4 ثم R5A ثم R5B ثم R5C، مع تجميع أي مكوّن مشترك واختباره المتأثر. ملفات Toolkit `toolkit_view.dart` و`combine_pdfs_view.dart` و`tool_header_card.dart` تحمل تغييرات الاستجابة R1 فوق مصدر C3.6؛ راجع hunks قبل تصنيفها أو staging. أبقِ قرارات/مصدر C3.6 ومجموعة Home 24-hour (ViewModel واختباراه) في حدود مراجعة مستقلة، واقسم إضافات المستندات عند المراجعة. لا `git add .` ولا commit تلقائي ولا backup خارج المشروع.
+
+لم تُختبر أجهزة فعلية أو IME/خطوط النظام أو كل حالات القص البصري. فحص يدوي مطلوب على Samsung الموجود: الإضافة/التعديل بالعربية والإنجليزية مع تكبير الخط ولوحة المفاتيح، وضوح النص داخل الحقول وزر الخريطة، تاريخ واسم البطاقة وأزرارها، الرأس بعد التدوير والانكماش، poster وحالة الوسائط، واسم Plan وأزراره وحوارات الإلغاء في landscape. لا ادعاء اكتمال checkpoint على الجهاز أو جاهزية المتجر، ولا إعادة فتح checklist #6/#7 أو تعديل Scanner.
+
+NOW — مراجعة فرق R5C مع إبقاء العمل غير ملتزم، وتسجيل اختبار Samsung المحدد أعلاه عندما يكون متاحًا. لا تتحول CODE_PROVEN إلى VERIFIED_RUNTIME دون هذا الدليل.
+
+NEXT — بعد نجاح الفحوص المحددة، اقتراح نطاق **R5D Offices/Brokers/Watchmen** منفصل فقط؛ الاحتفاظ بأخطاء analyzer الـ11 وملاحظاته الـ89 وإخفاقي session-dialog في backlog مستقل.
+
+
+## RESPONSIVE LAYOUT HARDENING R5D — OFFICES / BROKERS / WATCHMEN (2026-10-30)
+
+الحالة: **CODE_PROVEN للسيناريوهات المختبرة في الدفعات A/B/C؛ NOT VERIFIED_RUNTIME. نجحت 147/147 من اختبارات R5D و425/425 من التراكمي (exit 0 لكل منهما)؛ الانحدار المجاور 188/189، exit 1، مع إخفاق مستقل موضح أدناه. لا ادعاء أن كل فحوص المستودع خضراء أو أن checkpoint مقبول على الجهاز.** الفرع `update-some-issues` وHEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2` ثابتان. قُرئ تسليم R5D كاملًا وتعليمات AGENTS/CLAUDE وأحدث checkpoint وقرار دورة حياة القوائم. لم توجد `llm-council` مثبتة، ولم تستدعِ المهمة مهارة أخرى متاحة. لا commit/push/deploy أو خدمة/قاعدة بيانات/مصادقة/صلاحية أو بيانات مستخدم أو حزمة جديدة تغيرت.
+
+### نطاق الملفات والتغييرات
+
+- الشاشات التسع: `lib/src/views/Screens/ViewAdd/add_{offices,brokers,watchmen}_view.dart`؛ `ViewLists/{offices,brokers,watchmen}_list_view.dart`؛ `ViewDetails/{offices,brokers,watchmen}_view_details.dart`.
+- الإضافة/التعديل: نقاط ViewModel اختيارية محدودة للاختبارات فقط؛ تهيئة المسارات الإنتاجية الافتراضية باقية. النماذج الفعلية تعرض القيم الطويلة والحقول والتحقق المحلي من الهاتف دون Save/CRUD فعلي. لا حقول أو pickers أو city/area جديدة (هذه النماذج لا تملك كتالوج المدن/المناطق).
+- القوائم: Flexible للتاريخ والنصوص داخل أزرار الاتصال؛ ارتفاع الأزرار حد أدنى؛ حالات الفراغ والخطأ تتمرر عند ضيق المساحة. حوار الحذف قابل للتمرير، عنوانه مرن، وأزراره تستخدم ترتيب AlertDialog/OverflowBar الأصلي وتبقى Cancel/Delete موجودة؛ يُختبر الإلغاء فقط.
+- التفاصيل: يُقاس ارتفاع العنوان المترجم بـTextPainter، ويُجمع مع أبعاد الأيقونة والحواف والمسافة الموجودة أصلًا، مع الاحتفاظ بحد الرأس السابق 200 عند اتساع المحتوى. شارة الكيان ومجموعة الاتصال تلتف، وعنوان الملاحظات مرن، والحوار يتكيف. تتلقى شاشتا Office/Watchmen `mapPreview` اختياريًا؛ null يبقي GoogleMap والكاميرا والأحداث كما كانت، والاختبارات تمرر عنصرًا محليًا وتتحقق من وجوده دون استدعاء Maps SDK.
+- مراجع streams العناصر المرتبطة محفوظة داخل حالة كل شاشة وتتغير عند تغير رقم الهاتف؛ لا تغيير في استعلام أو مطابقة أو صلاحية أو refresh service. لا cache خارج عمر الشاشة، ولا قراءة أو اشتراك جديد بسبب حركة الدخول أو إعادة البناء/التدوير.
+- المكونات المشتركة المثبتة باختبارات: `lib/src/widgets/auto_scrolling_related_items_carousel.dart`، `compact_offer_card.dart`، `compact_request_card.dart`. تسمية auto-scroll مرنة، وتواريخ/مساحات/سعر Request مقيدة بالعرض المتاح. ارتفاع عرض carousel السابق 140 باقٍ؛ تستطيع البطاقة المكبرة التمرير رأسيًا داخله، مع بقاء PageView الأفقي والتحكم التلقائي والتصميم والألوان والنصوص الحالية. لم تُضف ellipsis أو clipping أو سقوف text scale لإخفاء العيوب.
+- الاختبارات الجديدة: `test/responsive/r5d_entity_cases.dart` (حالات مشتركة فوق الحاضنة الحالية، وليست حاضنة بديلة)، و`r5d_{offices,brokers,watchmen}_responsive_test.dart`، و`r5d_related_cards_test.dart`. الشاشات ومكونات البطاقات حقيقية، وحدود البيانات Streams محلية آمنة، وquiet providers الحالية؛ نماذج edit تُملأ مسبقًا ولا تُستدعى عمليات الحفظ أو الخريطة أو الاتصال أو WhatsApp أو favorite/share أو الحذف. لم تُعدل خدمات/Repository/ViewModels أو Flutter dependencies.
+
+### الدفعات والتغطية وأدلة الإخفاق أولًا
+
+كل عائلة لها **41 اختبارًا**، وتوجد **24 حالة** مستقلة للمكونات المرتبطة (Offer مفرد، Request مفرد، كلاهما) = **147**. المصفوفة تمثيلية: 280×600، 320×568، 360×640، 393×852، 430×932، 640×360، 600×800، 800×1280؛ EN/LTR وAR/RTL؛ Light/Dark؛ 1.0/1.3/1.6/2.0؛ SafeArea 24/20 وkeyboard 240 في حالات النماذج. ليست حاصل الضرب الكامل.
+
+تشمل الحالات: نماذج فارغة وتعديل مع أسماء/عناوين/ملاحظات طويلة، الوصول لكل حقل، أزرار Save/Cancel، إخفاء الأزرار أثناء keyboard وفق السلوك السابق وعودتها مع بقاء النص بعد إغلاقه؛ بقاء النص/التحديد/التركيز في نفس الشجرة عبر portrait-landscape-portrait؛ هاتف محلي غير صالح؛ قائمة تحميل/فراغ/خطأ وتحديث فاشل يبقي العناصر واشتراكًا واحدًا؛ 8 سجلات وتمرير أعلى/وسط/نهاية وفحص hit testing لزر الاتصال؛ حوارات swipe والتفاصيل عند 280×600 و640×360 AR 2.0 مع الإلغاء فقط؛ رأس Sliver وانكماشه، Share المرئي، وجود map preview محلي عند الإحداثيات وfallback عند غيابها؛ العناصر المرتبطة pending/empty/error/populated وثبات إنشاء streams؛ حدود PageView والبطاقات المفردة/المتعددة والتمرير في البطاقات المكبرة. الحالات التي لا تملك retry/loading UI مستقلة تحتفظ بسلوكها الحالي، ولم تُضف ميزات بدلًا منها.
+
+| الدفعة | الإخفاق الأول قبل إصلاح العائلة | أمثلة مثبتة قبل الإصلاح |
+|---|---|---|
+| A Offices | 29 PASS / 12 FAIL، exit 1 | 280×600 EN 2.0: تاريخ الفصل 41 px، تاريخ البطاقة 122 px، Call/WhatsApp 38/151 px يمينًا؛ رأس التفاصيل 90 px أسفلًا، صف الشارة 57 px يمينًا. 320×568 AR 1.6: عنوان الملاحظات 22 px؛ الفراغ 60 px أسفلًا. حوارا landscape أظهرا 163/243 px أسفلًا. |
+| B Brokers | 23 PASS / 18 FAIL، exit 1 | 280×600 EN 2.0: تاريخ الفصل 41 px وتاريخ البطاقة 124 px، Call/WhatsApp 38/151 px؛ الرأس 90 px أسفلًا وصف الشارة 57 px. عزل `Broker related pending` عند 393×852 AR 1.3 أثبت إنشاء stream **10 مرات بدل 1**، exit 1، ثم نجح بعد تثبيت المرجع. بعض الإخفاقات الأولى كانت محدد اختبار يفترض أيقونة هاتف واحدة؛ لدى البطاقة أيقونتان أصلًا، فحُدد زر الاتصال الحقيقي دون إزالة أي UI. |
+| C Watchmen | 28 PASS / 13 FAIL، exit 1 | 280×600 EN 2.0: تاريخ الفصل 37 px وتاريخ البطاقة 124 px، Call/WhatsApp 38/151 px؛ الرأس 154 px أسفلًا وصف الشارة 305 px يمينًا؛ العربية المكبرة كشفت صف الشارة وعنوان الملاحظات أيضًا. |
+
+المشترك: تشغيل Office مع Offer/Request مرتبطين أثبت تجاوز auto-scroll **186 px**، وتاريخ/مساحة Offer **126/87 px**، وارتفاع بطاقته **152 px** عند 280×600 AR 2.0 قبل إصلاح المكوّن. الاختبارات المستقلة أثبتت تجاوزات Request عند 280×600 EN 2.0: التاريخ **86 px**، المساحة **73 px**، السعر **306 px**؛ شملت قياسات أخرى عند المقاسات المتبقية. إصلاحات النصوص والتمرير المحدد عالجت تلك الحالات؛ لا ادعاء بأن كل قص بصري أو كل محتوى قد ثبت.
+
+إصلاحات أدوات الاختبار: سحب بطاقة أكبر من viewport يبدأ من زر اتصال ظاهر وقابل للإصابة، بدل مركز بطاقة خارج الشاشة؛ PageView يُمرر إلى موضع ظاهر قبل السحب. لم تُستخدم `warnIfMissed: false` أو ابتلاع الاستثناءات لإنتاج PASS. النماذج نفسها لم تحتاج إصلاح تخطيط جديد؛ نقاط الحقن والتغطية هي تغييراتها.
+
+### التحقق الفعلي والحفظ
+
+- قبل أي تعديل: `flutter test --no-pub test/responsive --reporter expanded` **278/278 PASS، exit 0**.
+- نجاحات الدفعات: Office + related cards **65/65 PASS، exit 0**؛ Brokers **41/41 PASS، exit 0**؛ Watchmen **41/41 PASS، exit 0**.
+- `flutter test --no-pub test/responsive/r5d_offices_responsive_test.dart test/responsive/r5d_brokers_responsive_test.dart test/responsive/r5d_watchmen_responsive_test.dart test/responsive/r5d_related_cards_test.dart --reporter expanded`: **147/147 PASS، exit 0**. أضيف بعد هذا النجاح تأكيد صريح لوجود map preview الوهمي في matrix؛ التحقق التراكمي التالي يثبت النسخة الحالية.
+- التراكمي النهائي: `flutter test --no-pub test/responsive --reporter expanded`: **425/425 PASS، exit 0**. يتضمن تأكيد map preview الحالي وكل اختبارات R1–R5C المحفوظة.
+- `dart analyze test/responsive`: **No issues، exit 0**. `dart analyze lib/src/views/Screens`: **0 errors / 0 warnings / 11 infos قديمة خارج ملفات R5D، exit 0** (Map/Quotation). `dart analyze lib/src/widgets`: **No issues، exit 0**. هذه النطاقات تشمل ملفات المصدر الـ12 والاختبارات الحالية؛ لا تشخيص جديد في ملف R5D.
+- `flutter test --no-pub test/lists test/related_items test/forms --reporter expanded`: **188 PASS / 1 FAIL من 189، exit 1**. الإخفاق: `test/forms/city_area_chip_height_test.dart`، الحالة `Request/Offer take three areas and dim the rest; Owner takes one`. أُعيد منفردًا بالأمر `flutter test --no-pub test/forms/city_area_chip_height_test.dart --plain-name 'Request/Offer take three areas and dim the rest; Owner takes one' --reporter expanded`: **0 PASS / 1 FAIL، exit 1**. `Bad state: No element` في `_tap:240` عند استدعاء `_areaChip(areas[i])` من السطر 522 بعد اختيار Dubai؛ لم يُحسم هل يلزم توسيع القائمة في الاختبار أو تحقيق آخر في حالة الطي/التحديد. الاختبار والمكونات التي يستخدمها ليست من تغييرات R5D، وملفاتها السابقة محفوظة. لا يُخفى الإخفاق ولا يُعاد تصنيفه PASS؛ يُحمل كـbacklog تحقق مستقل دون تعديل Request/Offer/Owner أو shared chips خارج النطاق. اختبار Owner list الذي أصلح توقيته في R5C نجح ضمن هذا التشغيل؛ لا إعادة كتابة لتاريخ 494/3 السابق.
+- سجل التحليل الكامل `build/r5d-analyze.log` اكتمل إلى **100 issues = 11 errors و89 infos**، مطابق للفئات السابقة؛ انتهت صلاحية session قبل استرجاع exit code، فلا يُنسب لهذا التشغيل exit مسترجع. الأخطاء الـ11 في `profile_fcm_compatibility_test.dart` و`scanner_cloud_test.dart`، وإخفاقا session-dialog السابقان لم يُعاد تشغيلهما أو إصلاحهما.
+- فحص تنسيق ملفات الاختبارات الخمسة: **exit 0، 0 changed**. فحص المصادر الـ11 باستثناء CompactOffer: **exit 0، 0 changed**؛ فحص المصادر الـ12: **exit 1** بسبب انحراف تنسيق سابق واحد في `compact_offer_card.dart`، أثبتت مقارنته بنسخة HEAD وحُفظ دون تعديله؛ فُصلت اقتراحات التنسيق السابقة عن hunks R5D ولم يحدث bulk format. `git diff --check`: **exit 0**؛ تنبيه LF/CRLF القديم لـCombine PDFs باقٍ.
+- احتُفظت بصمات SHA-256 لكل الملفات المعدلة/غير المتتبعة عند بدء R5D في ملف محلي gitignored داخل `build/`. المقارنة بعد التنفيذ: **لا ملف سابق تغيّر** خارج `docs/CURRENT_CHECKPOINT.md`. تشمل الحماية R1–R5C وC3.6 وHome وScanner وprivate media/Plan. ملفات R5D الجديدة داخل `test/responsive/` غير متتبعة، كما كان المجلد السابق؛ جميع تغييرات المصدر غير ملتزمة.
+- محاولة التراكمي الأولى لم تنفذ بسبب فشل المراجعة الآلية عند حد استخدام الحساب؛ استؤنفت بطلب المالك المتابعة. لا تجاوز لآلية الموافقة ولا استخدام لطريقة بديلة للتحايل عليها.
+
+للحفظ لاحقًا فقط بعد موافقة المالك: راجع R5D كدفعة ذات شاشات تسع + مكونات مشتركة ثلاثة + اختبارات خمسة + إضافة tracker، مع تضمين اختبارات المستهلكين المتأثرين. افصل حدود R1–R5C وC3.6 ومجموعة Home عند المراجعة؛ لا `git add .` ولا commit تلقائي، ولا تنسَ `test/responsive/` غير المتتبع. لم يحدث تغيير فرع/HEAD أو staging أو حذف/استبدال عمل سابق.
+
+لا VERIFIED_RUNTIME أو قبول جهاز/متجر. الفحص اليدوي الباقي: النصوص داخل الحقول وأسماء/تواريخ البطاقات والـellipsis السابق عند التكبير، رؤوس التفاصيل بعد التدوير والانكماش، هدف اللمس وألوان الثيمين، تمرير البطاقات المرتبطة رأسيًا وأفقيًا، وحوارات landscape وIME على Samsung الموجود؛ Maps الحقيقي وعمليات البيانات/الوسائط/المشاركة خارج هذا التحقق. لا تعديل لخوارزمية Maps أو Scanner أو private media/Plan.
+
+NOW — مراجعة فرق R5D (12 مصدرًا + 5 اختبارات + إضافة tracker) مع إبقاء العمل غير ملتزم، وتسجيل smoke اختياري على Samsung الموجود للعائلات الثلاث AR/EN مع تكبير الخط وkeyboard وlandscape والبطاقات المرتبطة وحوارات الإلغاء. فتح تحقيق منفصل في إخفاق اختبار المناطق المجاور؛ لا تحويل CODE_PROVEN إلى VERIFIED_RUNTIME من widget tests.
+
+NEXT — بعد نجاح فحوص R5D المحددة، اقتراح **R6 Smart Map + Quotations، layout-only** بنطاق وموافقة منفصلين، مع إبقاء backlog التحليل والجلسة واختبار المناطق المجاور مستقلًا. العائلات الثلاث منفذة ومغطاة آليًا؛ لا عائلة R5D متروكة، لكن قبول الجهاز والإخفاق المجاور لم يُغلقا.
+
+
+## RESPONSIVE HARDENING R5D.1 — CITY/AREA TEST TRIAGE (2026-10-30)
+
+الحالة: **CODE_PROVEN للاختبار المصحح؛ بوابة الانتقال إلى R6A مسموحة. NOT VERIFIED_RUNTIME.** قُرئ ملف تعليمات المالك كاملاً، مع AGENTS/CLAUDE والأجزاء الحالية ذات الصلة وقرارات المشروع. فُحصت المهارات المتاحة؛ لا `llm-council` مثبتة ولا مهارة Flutter مناسبة، ولم ينشأ قرار معماري/أمني يستدعي مجلساً. لا محاكاة لمهارة مفقودة.
+
+- Git قبل التنفيذ: الفرع `update-some-issues`، HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`، والعمل السابق غير ملتزم. فحص diff سليم، مع تنبيه LF/CRLF السابق لـCombine PDF. حُفظت بصمات 73 مساراً سابقاً في `build/r6a-preserved-hashes.json`؛ عند المقارنة النهائية تطابق 72 مساراً، والاستثناء الوحيد هو سجل checkpoint المحدث بإذن المهمة. اختبار المناطق كان نظيفاً عند البداية وصُحح ضمن النطاق المصرح. لم يُستعمل reset/clean/stash/checkout أو staging.
+- إعادة الملف الأصلي: `flutter test --no-pub test/forms/city_area_chip_height_test.dart --reporter expanded` أعادت **34 PASS / 1 FAIL، exit 1** (`build/r5d1-before.log`). الفشل المحدد: `Request/Offer take three areas and dim the rest; Owner takes one`، `Bad state: No element` في `_tap`/`ensureVisible` عند السطر 522.
+- نسخة تشخيص داخل build أعادت **0 PASS / 1 FAIL، exit 1**: EN، 412×4000، DPR 1، تكبير 1.0. بعد اختيار Dubai كانت Dubai Marina وDowntown Dubai وBusiness Bay مبنية، أما الخيار الرابع JVC فغير مبني في الطيّ. `planCollapsedAreaChips` يبني بادئة تقع في ثلاثة صفوف، ويثبت المختار؛ هذه الخيارات تشغل الصفوف الثلاثة بخط الاختبار. لم يكن الفشل توقيتاً عشوائياً أو انحدار R5D.
+- التصنيف **(b) توقع اختبار غير صالح بصورة حتمية**: اختبار سقف التحديد يفترض وجود الخيار الرابع دون فتح «عرض المزيد». التصحيح الوحيد في `test/forms/city_area_chip_height_test.dart`: فتح القائمة بالمفتاح الموجود قبل حلقة الخيارات، وإضافة تأكيد أن الرابع معطل بعد اختيار ثلاثة. بقيت تأكيدات عدد الثلاثة وتعتيم البقية واستبدال اختيار Owner الواحد، ولم تتغير هندسة الرقائق أو no-wrap أو حدود التحديد أو أي مصدر إنتاجي مشترك. لا skip أو كتم أخطاء.
+- تحقق منفصل: `flutter test --no-pub test/forms/city_area_chip_height_test.dart test/areas/expandable_area_chips_test.dart test/owners/owner_location_test.dart test/owners/owner_property_type_test.dart --reporter expanded`: **159/159 PASS، exit 0** (`build/r5d1-after.log`). لاحقاً نجحت حالات المناطق أيضاً ضمن التشغيل المجاور المذكور في R6A؛ لا يُعاد وصف تشغيل R5D التاريخي 188/189 بأنه نجح آنذاك.
+
+NOW — الاحتفاظ بتصحيح الاختبار المحدد مع أعمال R5A–R5D السابقة ومراجعة فرقه دون تغيير عقد الرقائق.
+
+NEXT — بوابة R5D.1 حُسمت بالدليل؛ متابعة تحقق R6A أدناه فقط، دون فتح نطاق Quotations.
+
+## RESPONSIVE HARDENING R6A — SMART MAP PRESENTATION (2026-10-30)
+
+الحالة: **CODE_PROVEN لحالات R6A المختبرة؛ نجح التراكمي 522/522، exit 0. NOT VERIFIED_RUNTIME. ثلاثة إخفاقات مستقلة في اختبارات الخريطة مفتوحة، ولا ادعاء نجاح المستودع كله.** النطاق واجهة الخريطة المتجاوبة فقط؛ لا R6B أو إصلاحات سلوكية للخريطة.
+
+### التغييرات وأدلة الفشل
+
+- `lib/src/views/Screens/home/map/map_view.dart`: حدان اختياريان `viewModel` و`mapSurface` لا يستخدمهما أي route إنتاجي؛ المسار الافتراضي لا يزال ينشئ ViewModel الأصلي وGoogleMap داخل AfterRouteTransition. اختبارات الواجهة تستعمل الشاشة الحقيقية باستبدال سطح SDK فقط، وليست دليلاً على عرض native tiles/markers أو جهاز فعلي.
+- نفس الملف: إزاحة المرشحات وحالة النتائج تنمو وفق ارتفاع النص، مع بقاء هندسة التكبير 1.0 (top=76، height=48) مثبتة بالاختبار. قبل الإصلاح انتهى حقل البحث عند y=106 وبدأت المرشحات عند y=100، في 280×600 EN/AR تكبير 2.0 وsafe top=24. لم تتغير ثوابت viewport الكاميرا أو `initialCameraFor` أو حركة الكاميرا؛ الإزاحات الجديدة تخص عناصر الواجهة العائمة فقط.
+- شارة نوع الكيان وزرّا التواصل داخل البطاقة: نص مرن يلتف عند الحاجة وارتفاع أدنى 36 بدلاً من إجبار النص على ارتفاع ثابت؛ الألوان والخطوط والتسميات والإجراءات الأصلية باقية. أثبت التشغيل الأول Overflow أفقي 65/128/27 بكسل في بطاقة 280×600 EN تكبير 2.0. حافظت الشارة على موضع زر الإغلاق عند طرف الرأس.
+- قياس ارتفاع البطاقة يأخذ عرض صفحة الـCarousel الفعلي من `viewportFraction` نفسه؛ قياسها بعرض الإطار الأوسع كان يقلل ارتفاع النص الملتف. حُصر عرض البطاقة أسفل عناصر التحكم وفوق safe bottom وأضيف تمرير رأسي عند ضيق الارتفاع، مع بقاء pager والمؤشرات وأرضية الارتفاع. التشغيل الأول أثبت أن أعلى pager في landscape يعلو أسفل حالة المرشحات (180 مقابل 198، و135 مقابل 198 للمتعدد).
+- `lib/src/views/Screens/home/map/map_filter_bar.dart`: ارتفاع صف الرقائق محسوب من نمط النص المعتمد وتكبيره مع أرضية 48؛ كان ارتفاع النص الممنوح 21 مقابل ارتفاع مطلوب 29.9 على الأقل في تكبير 1.6. أزرار نافذة السعر تستعمل Wrap مع المسافة الأصلية 8؛ أثبتت اختبارات 280×600 تكبير 2.0 Overflow مقداره 258 EN و200 AR في الصف السابق. لا تغيير للتحقق من السعر أو إدخاله أو المرشحات المحلية.
+- `test/map/map_screen_wiring_test.dart`: تحديث تأكيد موضع المرشحات الثابت وحده ليتبع النمو المثبت، مع إبقاء تأكيدات ثوابت الكاميرا وviewport. هندسة 76/48 الطبيعية وفصل العناصر عند التكبير مختبران فعلياً في R6A؛ لم يُحذف الفحص أو يُخفَ الفشل.
+- إضافتان فقط تحت `test/responsive/`: `r6a_map_fakes.dart` و`r6a_smart_map_responsive_test.dart`. المصدر المحلي يرجع بيانات فارغة أو فشلاً محلياً أو read مؤجلاً؛ cache محلي لا يصل إلى RepositoryProvider، media بلا جلسة/روابط، وdevice لا يسمح بأي طلب موقع. بيانات البطاقات وNearby fixtures للعرض فقط، وليست ادعاء اختبار markers أو حساب نتائج إنتاجية. assert للقراءة الواحدة وفحص صلاحية واحد، ولعدم أي وصول آخر للجهاز.
+
+### التغطية والتحقق الفعلي
+
+- إعادة استعمال `responsive_harness.dart` وTheme/localization الحقيقيين. الأحجام: 280×600، 320×568، 360×640، 393×852، 430×932، 640×360، 600×800، 800×1280؛ EN/AR وLTR/RTL، عينات Light/Dark و1.0/1.3/1.6/2.0 وsafe top=24/bottom=16. هذه مصفوفة تمثيلية وليست جميع التركيبات الممكنة.
+- تغطية الشاشة الفعلية: التحميل قبل اكتمال القراءة لا يعلن صفراً؛ الصفر والفشل؛ رقائق Layers/Location/Nearby وحقول Offers الخاصة؛ نوافذ الكيان والمدينة ونوع العقار وRent/Sale وSort؛ سعر غير صالح ورسالة الخطأ وسعر صالح مع keyboard 120/220 على الأحجام الثمانية. البطاقات الفردية والمتعددة تشمل Offers/Owners/Offices/Watchmen، عناوين وعناوين مواقع طويلة، والتنقل بين الصفحات الأربع. فحص إضافي للأعلى/الوسط/الأسفل ووصول زر الإغلاق والتواصل دون إطلاق مكالمة/WhatsApp. Nearby radius يعرض 5/10/25 والإيقاف من fixture فقط، بلا إذن/موقع. فحص count طويل/مجهول وReset، وتغيير الحجم على نفس الشاشة مع بقاء النص وfocus/controller والمدينة وread count.
+- قبل أي تعديل: `flutter test --no-pub test/responsive --reporter expanded`: **425/425 PASS، exit 0** (`build/r6a-baseline.log`).
+- `flutter test --no-pub test/responsive/r6a_smart_map_responsive_test.dart --reporter expanded`: **97/97 PASS، exit 0** (`build/r6a-final.log`). قبل إضافة حالة التحميل والتحقق الإضافي نجحت 96/96؛ تشغيل فشل أولي 22 PASS/58 FAIL يتضمن أيضاً أخطاء تفاعل في الاختبار الجديد (التمرير قبل بناء خيار، ونسخة قياس مخفية/مسافة swipe ثابتة)، عولجت في الاختبار دون كتمها أو اعتبار جميعها عيوب منتج.
+- تقوية تمرير البطاقات: `flutter test --no-pub test/responsive/r6a_smart_map_responsive_test.dart --plain-name 'map selected' --reporter expanded`: **32/32 PASS، exit 0** (`build/r6a-scroll.log`).
+- التراكمي النهائي: `flutter test --no-pub test/responsive --reporter expanded`: **522/522 PASS، exit 0** (`build/r6a-responsive-final.log`). يشمل النسخة النهائية لاختبارات البطاقات الـ32 وحالة التحميل؛ بلا إخفاقات تخطيط في السيناريوهات المختبرة.
+- `flutter test --no-pub test/map test/lists test/related_items test/forms --reporter expanded`: **825 PASS / 4 FAIL من 829، exit 1** (`build/r6a-regressions.log`). الفشل الرابع كان فحص موضع المرشحات الثابت، وصُحح عقده كما سبق؛ لا أخطاء في lists/related_items/forms ضمن هذا التشغيل، ولا ادعاء exit 0 للأمر الكبير.
+- إعادة `flutter test --no-pub test/map/map_opening_test.dart test/map/map_ux_phase1_test.dart test/map/map_screen_wiring_test.dart --reporter expanded`: **97 PASS / 3 FAIL من 100، exit 1** (`build/r6a-map-recheck.log`). فحص ربط الكاميرا بعد التحديث ناجح؛ لا حاجة لإعادة مجموعات مستقرة لم تتغير.
+- مقارنة HEAD دون تبديل checkout: نسختا الاختبارين ومصدرا view/bar الأصليان داخل build، ثم `flutter test --no-pub build/r6a-head-map_opening_test.dart build/r6a-head-map_ux_phase1_test.dart --reporter expanded`: **33 PASS / 3 FAIL من 36، exit 1** (`build/r6a-map-head-baseline.log`). فشلا AfterRouteTransition (`the child waits for the page to slide in` و`the child appears after maxWait even if the page never finishes`) يتوقعان placeholder غير موجود؛ والثالث في `map_ux_phase1_test.dart` يتوقع `{count}` في English `mapResultsNone`. مصدر `map_opening.dart` وملفا ARB مطابقون لـHEAD. الإخفاقات الثلاثة مستقلة عن R6A ومفتوحة؛ لم يُعدّل المنتج أو الاختباران لإخفائها. رقم 610/610 السابق يبقى دليلاً تاريخياً فقط.
+- التحليل المحدد بـ`dart analyze` للمصدرين واختبار wiring والملفين الجديدين واختبار المناطق: **exit 0، صفر errors/warnings، ملاحظتا info سابقتان عن SvgPicture.color فقط** (`build/r6a-analyze-final.log`). لا full analyze جديد: تُحفظ **11 errors + 89 infos، exit 3** كخط أساس سابق مفتوح، وكذلك إخفاقا Session Dialog دون ادعاء إصلاح.
+- `dart format --output=none --set-exit-if-changed` للملفين الجديدين واختبار المناطق: **exit 0، بلا تغيير**. فحص الستة المعدلة يعيد **exit 1** في view/bar/wiring بسبب تنسيق سابق؛ نسخ HEAD للثلاثة نفسها تعيد **exit 1** أيضاً (`build/r6a-format*.log`). نُسّقت المناطق المعدلة وأُعيدت فروق التنسيق المحضة خارجها لتجنب bulk format؛ لم تُكتب تغييرات أداة التنسيق في الفحص الأخير.
+- `git diff --check`: **exit 0** مع تنبيه LF/CRLF السابق لـCombine PDF. البصمات السابقة الـ72 خارج سجل checkpoint مطابقة؛ سجل checkpoint وحده محدث في مجموعة البصمات الأصلية؛ جميع R1–R5D/C3.6 وAGENTS/CLAUDE محفوظة. Git: الفرع وHEAD ثابتان، **58 ملفاً tracked معدلاً و21 ملفاً untracked** (مجلد responsive كله، بما فيه 19 ملفاً سابقاً)، بلا staging/commit/push/deploy أو تبعيات/ملفات مولدة جديدة. سجلات build محلية gitignored.
+
+### الحدود والتسليم
+
+لا تغيير في ViewModel/تحميل البيانات أو Supabase/Auth/RLS أو صلاحيات الموقع أو city catalog أو Nearby math أو marker clustering أو media lifecycle أو الكاميرا أو routing أو Scanner أو Plan/PDF/Share/Viewer. لم تُفتح خدمات مستضافة أو Google Maps/geocoding أو prompts موقع. لم تُختبر native tiles/markers أو خطوط النظام وIME على جهاز؛ لا قبول متجر أو VERIFIED_RUNTIME أو إغلاق بوابة إصدار من widget tests.
+
+المراجع الرسمية المقروءة المتعلقة بقيود الواجهة وحدود الاختبار: https://docs.flutter.dev/ui/adaptive-responsive/general وhttps://docs.flutter.dev/testing/overview .
+
+خطة حفظ مقترحة للمراجعة فقط، دون تنفيذ: إبقاء جميع الملفات uncommitted؛ مراجعة hunks السابقة في حدود R1–R4 ثم R5A/B/C/D مع اختبارات المكونات المشتركة، وعزل تصحيح اختبار R5D.1، ثم حد R6A (المصدران + اختبار wiring + ملفا الاختبار الجديدان + الإضافة ذات الصلة في tracker). C3.6 وHome 24-hour لهما حدود مراجعة مستقلة، وToolkit يحمل عملاً متراكباً يُراجع بالـhunk. لا `git add .` أو commit تلقائي، ولا نسيان كامل مجلد responsive غير المتتبع عند الحفظ الموافق عليه لاحقاً.
+
+NOW — مراجعة فرق R5D.1/R6A الحالي، وإجراء smoke على Samsung الموجود متى أتيح: AR/EN، تكبير الخط، بطاقة مختارة وcluster، scroll، نوافذ المرشحات والسعر مع IME، landscape، وعدم ظهور طلب إذن عند الفتح. التحقيق المستقل في إخفاقات الخريطة الثلاثة محفوظ ولا يبرر تغيير سلوك معتمد ضمن مهمة تخطيط.
+
+NEXT — بعد قبول فحوص R6A المحددة، اقتراح R6B Quotations responsive UI كنطاق جديد وموافقة مستقلة فقط؛ لا بدء تلقائي، ولا PDF-generation أو async cleanup أو private media أو Share/Viewer modernization. إبقاء أخطاء analyzer وإخفاقي Session Dialog والإخفاقات الثلاثة أعلاه مفتوحة حتى دليل منفصل.
+
+
+## RESPONSIVE HARDENING R6B — QUOTATIONS UI (2026-10-30)
+
+الحالة: **CODE_PROVEN لحالات R6B الآلية المختبرة؛ NOT VERIFIED_RUNTIME. نجحت 108/108 منفردة و630/630 في التراكمي النهائي، exit 0 لكليهما.** لا قبول جهاز أو PDF/Share/backend أو جاهزية متجر من هذه النتائج.
+
+### الاستمرارية والنطاق والحفظ
+
+قُرئ تسليم R6B المرفق كاملاً، وAGENTS.md وCLAUDE.md وآخر R5D.1/R6A وقرار Quotation السابق الخاص بتداخل الحفظ وتجهيز PDF وسباق تنظيف الملف المؤقت المغلق، والأجزاء المتعلقة من DECISIONS/PROJECT_STATE. فُحصت المهارات المثبتة فعلياً في `.codex/skills` وcache الإضافات، بما فيها SKILL.md المخفية: لا `llm-council` أو مهارة Flutter مباشرة مناسبة، ولم ينشأ قرار معماري أو أمني يستدعي مجلساً. لا تثبيت أو محاكاة مهارة.
+
+Git عند البداية: `update-some-issues`، HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`، 58 tracked معدلاً و21 ملفاً untracked في responsive، بلا staging. نُفّذ preflight read-only وdiff/stat/check وجرد untracked. حُفظت SHA-256 للمسارات الـ79 في `build/r6b-preserved-hashes.json`؛ قبل إضافة هذا القسم كانت كلها مطابقة. لا عمل سابق أعيد تنسيقه أو حذفه أو استُبدل. الفحص النهائي: تطابقت المسارات الـ78 الأخرى، والتغيير الوحيد بين الـ79 هو هذه الإضافة المصرح بها؛ بادئة checkpoint السابقة مطابقة بايتياً وفق `build/r6b-checkpoint-prefix.json`.
+
+ملفات R6B الستة فقط:
+
+- `lib/src/views/Screens/home/quotation/add_quotation_view.dart`: قيود العرض/ارتفاع الحقول وتسميات العملة والمعاينة وزر إضافة الرسوم والصفوف، وMaterial محلي لخيار الترحيب.
+- `lib/src/views/Screens/home/quotation/list_quotation_view.dart`: حقن ViewModel اختياري افتراضيه الأصلي، وحدود الحالات والبطاقات وحوار تأكيد الحذف.
+- `lib/src/views/Screens/home/quotation/add_quotation_viewmodel.dart`: **خاصية UI واحدة فقط** `scrollable: true` لحوار Discard Changes بعد إثبات Overflow؛ لا تعديل حساب أو حفظ أو PDF أو إلغاء/تنقل.
+- `test/responsive/r6b_quotations_responsive_test.dart` و`test/responsive/r6b_quotation_fakes.dart`: اختبارات جديدة، مع إعادة استعمال responsive_harness والثيم والترجمة الفعليين.
+- هذه الإضافة فقط إلى `docs/CURRENT_CHECKPOINT.md`.
+
+### أدلة الفشل والإصلاحات المحدودة
+
+- في 280×600 AR Light تكبير 2.0 وsafe top=24/bottom=16: Row عنوان معاينة الترحيب overflow 228 بكسل، وتسميات العملة overflow 377/281 بكسل في money؛ أُعطيت النصوص مساحة مرنة مع بقاء النص والرمز والنمط والألوان. زر إضافة الرسوم كان غير مقيد بعرضه؛ صار النص مرناً بحد ارتفاع أدنى 52.
+- قياس RenderEditable أثبت ارتفاعاً ممنوحاً 32 لسطر يحتاج 41.9 في حقول الدفعات عند 430×932 AR تكبير 2.0. استُبدلت ارتفاعات 52 الإجبارية بقيود minHeight=52 في حقول Quotation والمفاتيح المحلية، دون تصغير خط أو سقف تكبير. حدّ النمو يأتي من المحتوى. بقيت أحجام/مكوّنات SaveCancel المشتركة دون تعديل.
+- Overflow متبقٍ 60 بكسل عند إضافة صف في 280×600 AR 2.0 كان Row زر Add Row غير المحدود؛ حُصر TextButton.icon في Flexible، دون تغيير عمليات إضافة/حذف الصفوف. بقي ترتيب جدول التاريخ/المبلغ والرسوم ومكوّناته الأصلية.
+- فحص قصّ إضافي بعد نجاح Overflow كشف نص Bank Transfer محصوراً في 48، مقابل 575.9 مطلوباً في عرض خلية ضيق بخط اختبار Flutter عند 280×600 AR 2.0؛ وفي 320×568 EN 1.6 كان المطلوب 227.9. **هذه قياسات خط الاختبار، وليست قياسات Montserrat على جهاز.** فشل 6/8 في هذا الفحص قبل الإصلاح. صار DropdownButton يستعمل ارتفاع عناصر طبيعياً، ويتدفق حقلا طريقة الدفع/الرقم عمودياً فقط عندما لا تكفي نسبة 6:2 لعرض أطول تسمية مقاسة بالثيم والتكبير. العتبة مشتقة من أبعاد الحقول والسهم والمسافات الأصلية، وليست breakpoint أو text-scale cap. التاريخ/المبلغ والمنطق والخيارات الأصلية باقية. نجح الفحص 8/8 بعد الإصلاح.
+- خيارات الترحيب الثلاثة أثارت assertion Flutter لأن DecoratedBox الملون يفصل ListTile عن Material الذي يرسم الحبر. أضيف Material شفاف محلي داخل الزخرفة نفسها؛ لا كتم للاستثناء أو تغيير للتسميات أو الاختيار.
+- بطاقات القائمة: قبل الإصلاح overflow في صف View PDF وShare، وفي الرأس/PDF status (20 EN و235 AR عند 280×600 تكبير 2.0 في إعادة التحقق). النصوص داخل الأزرار مرنة مع minHeight=40. الرأس يحتفظ بصفه الطبيعي عندما يتسع؛ وعند ضيق النص المقاس ينتقل badge إلى السطر التالي ويستطيع الالتفاف. hasPdf وألوان/إجراءات التفعيل والتعطيل بقيت كما هي. التفاصيل ذات ellipsis الأصلي لم تُستبدل بتصميم جديد.
+- حوار الحذف: title overflow وcontent overflow رأسي 283 في 640×360 AR Dark 2.0؛ أصبح محتواه قابلاً للتمرير وتسميات العنوان والأزرار مرنة. الاختبارات تفتح التأكيد وتضغط Cancel فقط. لا callback حذف أو View PDF أو Share فعلي.
+- حوار إلغاء النموذج: overflow رأسي 64 في 280×600 EN/AR 2.0؛ خاصية scrollable الوحيدة المذكورة أعلاه جعلت Keep Editing قابلاً للوصول، وبقيت البيانات كما هي. النصوص الإنجليزية الموجودة مسبقاً في هذا الحوار وخيارات طريقة الدفع لم تُعد ترجمتها ضمن مهمة التخطيط.
+- حالات القائمة الفارغة/الفشل احتفظت بحدها الطبيعي 0.6 من النافذة، لكنها تستطيع النمو داخل Sliver بدلاً من ارتفاع قسري؛ لا تغيير لتمييز loading/empty/error أو stream. جميع إصلاحات العرض محلية؛ لا shared-widget تغيّر.
+
+### الاختبارات وحدود الدليل
+
+مصفوفة تمثيلية: 280×600، 320×568، 360×640، 393×852، 430×932، 640×360، 600×800، 800×1280. النموذج بأقسامه الستة أخذ AR Light/EN Dark وتكبير 2.0/1.6/1.3/1.0 حسب الحالة؛ البطاقات اختُبرت EN وAR في الأحجام والثيمين، مع حالات إضافية EN/AR Light. safe top=24/bottom=16، وkeyboard=240 في حقول حقيقية، بما فيها landscape. ليست جميع التركيبات Cartesian.
+
+التغطية: create/edit، فتح الأقسام والتمرير للأعلى/الوسط/الأسفل، العنوان/النوع/المواقف والتواريخ والعملة والمبلغ، إدخال غير رقمي ثم صالح دون save، طريقة الدفع والدفعات والرسوم الحكومية والإدارية، إضافة/إزالة صفوف محلية، رسائل الترحيب auto/custom/hidden والمعاينة والنص الطويل، الشعار الفارغ والاسم الطويل ومفتاح الخلفية المعطل وحالة المعالجة المرئية، حفظ busy/loading/error/retry، وSave/Cancel callbacks محلية فقط. SaveCancel يبقى مخفياً عند لوحة المفاتيح وفق العقد السابق؛ لم تُغير رؤيته. الإلغاء يختبر Keep Editing فقط. في resize بقي controller/focus والعنوان وخيار الترحيب والصفوف دون إعادة load أو حساب smart أو إضافة رسوم؛ وفي القائمة بقي stream واحد وsubscription واحدة عبر تغيير الحجم واللغة.
+
+قائمة populated تحمل خمس بطاقات بأسماء ومبالغ كبيرة و120 قسطاً، PDF موجود/مفقود؛ اختُبرت الأولى والوسط والأخيرة والبطاقة المفقودة PDF، وصول View PDF/Share وحالة callbacks دون تنفيذها، وإلغاء الحذف. الـFake service يرفض كل استدعاء خارج stream المحلي ويرصدها، وauth/creation gate/PDF generator/file picker لا تُستعمل. fixtures للشعار اسم فقط بلا ملف أو رابط. لا PDF/Worker/Supabase أو بيانات عميل حقيقية داخل اختبارات R6B الجديدة.
+
+النتائج الفعلية، والسجلات تحت build محلياً وgitignored:
+
+- خط الأساس قبل تعديل المصدر: `flutter test --no-pub test/responsive --reporter expanded`: **522/522 PASS، exit 0** (`r6b-baseline-retry.log`). المحاولة الأولى توقفت عند تحميل أول ملف وأُوقفت دون نتيجة حالات؛ أُعيدت بإعداد APPDATA خاص بالعملية داخل build، دون تغيير إعداد عام أو الادعاء بأن المحاولة المعلقة نجحت.
+- تشغيل failure-first للملف الجديد: **33 PASS / 71 FAIL من 104، exit 1** (`r6b-before.log`). ليست كلها عيوب منتج: أصلح الاختبار توقع ظهور spinner الفوري رغم DelayedReveal، وتوقع تعطيل callback في حالة empty رغم أن العقد الحالي يستعمل tint ويمرر الحفظ للتحقق (AED الافتراضي نفسه محتوى)، والنقر على مركز نص رأس خارج مساحة landscape مع keyboard. الفحص النهائي ينتظر reveal، يستعمل fixture فارغاً فعلياً، وينقر الجزء المرئي من InkWell؛ لا warnIfMissed:false أو skip أو كتم استثناءات.
+- بعد الدفعات: 80 PASS /24 FAIL، ثم 99 PASS /5 FAIL، ثم 102 PASS /2 FAIL، جميعها exit 1. الإخفاقان الأخيران كشفا حوار Discard أعلاه. نجحت 106/106 بعد إصلاحه، ثم أضيف فحص القصّ الأدق المذكور؛ لا توصف تلك التشغيـلات الفاشلة بأنها PASS.
+- `flutter test --no-pub test/responsive/r6b_quotations_responsive_test.dart --plain-name 'quotation form downpayments' --reporter expanded`: قبل إصلاح القص **2 PASS /6 FAIL، exit 1**؛ بعده **8/8 PASS، exit 0** (`r6b-dropdown-before/after.log`). ثم نجحت **106/106، exit 0** (`r6b-final2.log`).
+- بعد إكمال placeholder وتقوية اختيار الترحيب وfocus وإتاحة field: `flutter test --no-pub test/responsive/r6b_quotations_responsive_test.dart --name 'quotation (office placeholder|resize|keyboard)' --reporter expanded`: **12/12 PASS، exit 0** (`r6b-extra.log`).
+- **R6B النهائي**: `flutter test --no-pub test/responsive/r6b_quotations_responsive_test.dart --reporter expanded`: **108/108 PASS، exit 0** (`r6b-final-suite.log`).
+- التراكمي الأول على 106 حالات R6B: **628/628 PASS، exit 0** (`r6b-responsive-final.log`). التراكمي النهائي بعد آخر حالتي تغطية: `flutter test --no-pub test/responsive --reporter expanded`: **630/630 PASS، exit 0** (`r6b-responsive-complete.log`).
+- `flutter test --no-pub test/quotation test/share/share_quotation_test.dart test/share/share_options_dialog_test.dart test/forms/save_cancel_buttons_test.dart --reporter expanded`: **325/325 PASS، exit 0** (`r6b-regressions.log`). تشمل اختبارات محلية بمصادر HTTP/remote وهمية وملفات fixtures المؤقتة الخاصة بها؛ لا اختبارات hosted أو PDF إنتاجي. لا تعديل في ShareOptionsDialog/Viewer/PDF lifecycle.
+- تأكيد مخصص بعد آخر تعديل Dropdown: `flutter test --no-pub test/quotation/add_quotation_viewmodel_test.dart --reporter expanded`: **48/48 PASS، exit 0** (`r6b-vm-final.log`)، بما فيها تداخل الحفظ وPDF والتنظيف وإعادة المحاولة وdouble Save. هذه انحدارات كود وليست PDF runtime أو حفظاً على حساب فعلي.
+- `dart analyze` للمصادر الثلاثة والملفين الجديدين: **exit 0، 0 errors و0 warnings، 7 infos سابقة عن red/green/blue/withOpacity** (`r6b-analyze-last.log`). فحص نهائي للاختبارات الجديدة بعد آخر إضافتين: `dart analyze test/responsive/r6b_quotation_fakes.dart test/responsive/r6b_quotations_responsive_test.dart`: **No issues found، exit 0** (`r6b-analyze-tests.log`)؛ لا full analyzer جديد.
+- `dart format --output=none --set-exit-if-changed test/responsive/r6b_quotation_fakes.dart test/responsive/r6b_quotations_responsive_test.dart`: **exit 0، 0 changed** (`r6b-format-final.log`). نُسّقت عقد العرض المعدلة فقط عبر نسخ build ونقل العقد المكافئة؛ لا formatter شامل لملف متتبع أو مصدر غير متعلق.
+- `git diff --check`: **exit 0**. تنبيه LF/CRLF السابق لـCombine PDF باقٍ، ولا تعديل لذلك الملف في R6B. الفرع وHEAD ثابتان؛ الحالة **61 tracked معدلاً و23 ملفاً untracked** (21 سابقاً + اختباران جديدان)، وstaged=0. لا commit/push/deploy/migration أو تبعيات/ملفات مولدة جديدة، ولا حذف بيانات أو تغيير مستضاف.
+
+تبقى OPEN: إخفاقات Map الثلاثة المثبتة سابقاً على HEAD (AfterRouteTransition اثنان وتوقع ترجمة count واحد)، وإخفاقا Session Dialog، وخط أساس التحليل الكامل السابق 11 errors و89 infos؛ لم تُعد هذه المجموعات أو تُصلح في R6B ولم تُعلن مغلقة من نجاح scoped tests. لم يتغير مصدرها. لا تغيير في Supabase/Cloudflare/Auth/RLS/canonical identity أو حسابات المبالغ/الضرائب/الدفعات أو save/persistence أو PDF bytes/fonts/generation أو async temp cleanup أو media workflow/private queue أو logo optimization/background service أو Share protocol/Viewer أو Toolkit C3.6/Scanner.
+
+مراجع Flutter الرسمية المقروءة ذات الصلة: https://docs.flutter.dev/ui/adaptive-responsive/safearea-mediaquery وhttps://docs.flutter.dev/cookbook/testing/widget/scrolling . يبقى فحص Montserrat/النصوص المقتطعة مسبقاً وtouch/IME وألوان التطبيق على الجهاز مطلوباً؛ لا يُستنتج ذلك من خط widget test أو غياب RenderFlex exceptions وحده.
+
+خطة Git للمراجعة فقط: الحفاظ على حدود R1–R6A وC3.6 وHome السابقة، ومراجعة R6B كحد مستقل (المصدران + خاصية dialog في ViewModel + ملفا الاختبار + هذه الإضافة فقط في tracker). لا staging أو commit تلقائي ولا git add .، مع الحفاظ على كامل test/responsive غير المتتبع عند موافقة المالك لاحقاً.
+
+NOW — مراجعة فرق R6B وإجراء smoke على Samsung الموجود: EN/AR، خط كبير، صفوف الدفعات والرسوم الطويلة، الشعار، keyboard/landscape، حالات أزرار PDF ومتابعة التحرير وإلغاء الحذف فقط. PDF/Share الحقيقيان يحتاجان تحققاً منفصلاً مصرحاً، ولا تتحول الحالة إلى VERIFIED_RUNTIME دون دليل جهاز.
+
+NEXT — بعد قبول تحقق R6B، اقتراح R7 محدود لشاشات Toolkit المتبقية وإعادة إثبات مشكلة Scanner/قرار تصميم يوافق عليه المالك قبل أي تعديل، ثم مصفوفة الاستجابة والفحوص الأمنية/الإصدار النهائية. لا بدء تلقائي ولا إعادة فتح C3.6 أو Viewer modernization.
+
+
+## RESPONSIVE HARDENING R7A — SCANNER NON-GRID & IMAGES-TO-PDF (2026-10-30)
+
+الحالة: **CODE_PROVEN للأسطح المسموح بها في الحالات المختبرة؛ NOT VERIFIED_RUNTIME. Scanner Grid يبقى OWNER_DECISION_REQUIRED، ولا نجاح شامل للمستودع.** قُرئ ملف تعليمات المالك كاملاً، وAGENTS/CLAUDE واستمرارية R6B والقرارات ذات الصلة بـScanner وImages-to-PDF وToolkit/C3.6. فُحصت المهارات المثبتة؛ لا مهارة Flutter مناسبة أو `llm-council` مثبتة، ولا قرار معماري/أمني جديد يستدعي مجلساً.
+
+### النطاق والتغييرات المثبتة
+
+- Git عند البداية: `update-some-issues`، HEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`، **61 tracked معدلاً +23 ملفاً untracked، staged=0**. خط الأساس السابق أُعيد قبل الإصلاحات: `flutter test --no-pub test/responsive --reporter expanded`: **630/630 PASS، exit 0** (`build/r7a-baseline.log`). لم تُعد المراحل السابقة أو تُستبدل أعمالها.
+- `scanner_view.dart`: حقن ViewModel اختياري للاختبارات مع بقاء `ScannerWiring.createViewModel()` افتراضياً وملكية التخلص للنسخة المنشأة بالشاشة. نص رأس قائمة المستندات مرن. `Material` شفاف حول ListTile القائمة ومحتوى إعدادات Scanner يصلح assertion حديثاً عن حجب الحبر بواسطة DecoratedBox، دون تغيير الألوان أو خيارات الجودة غير المتاحة أو الإعدادات الأصلية. لا تعديل لبطاقة الشبكة أو delegate أو helper إجراءاتها أو badge المشترك.
+- `scanner_review_screen.dart`: تمرير موحد للمراجعة عند نقص الارتفاع، مع بقاء ترتيب الملخص والصفحات والاسم والإجراءات. الحالة العادية تحتفظ بتمرير الصفحات داخل المساحة الممتدة؛ الاختيار يعتمد على قياس النص الحالي وأبعاد صف الصور، دون كبح textScale. نفس شبكة المراجعة ثلاثية الأعمدة وأبعاد الصور؛ معاينة PDF الأصلية لم تُستبدل. GlobalKey مملوك للحالة يحافظ على حقل الاسم وfocus عند انتقال footer بين التخطيطين. قبل الإصلاح ثبت Overflow رأسي **200 px** في landscape و**664/440 px** مع keyboard. حفظ المسودة/الفشل/إعادة المحاولة/التراجع لم تتغير.
+- `scanner_image_viewer.dart` ومراجعة الصفحات: حدود ImageProvider اختيارية محلية؛ الافتراضي يبقى FileImage، وcacheWidth=480 للمراجعة وPhotoView contained/covered×4 كما كانت. الاختبارات الجديدة تعرض PNG بالذاكرة بنسبة 2:3، ولا تقرأ ملفات المسح أو تشغّل native scanner أو PDF canvas.
+- `image_to_pdf_view.dart`: نص اسم الملف ورأس المكتبة مرنان، وزر retry مقيد بالعرض المتاح. ثبت تجاوز صف اسم الملف **66 px** عند 280 AR 2× وretry **186 px**. Material شفاف حول بطاقات الصور/القائمة، وFlexible لحجم الملف داخل شبكة Images-to-PDF المسموح بها؛ لا تعديل للحسابات أو التحويل أو quota أو الحفظ/الاسترجاع/الرفع/المشاركة.
+- أزرار الإنشاء العائمة في Scanner وImages: تسمية بعرض محدود وارتفاع ينمو مع النص، مع بقاء حد Material 2/3 الأصلي والإجراءات والألوان. إثبات القص مستقل عن RenderFlex: نسخ تشخيص في build تستخدم **طريقة FAB من HEAD** مع الحدود المحلية الحالية أعادت **0 PASS /4 FAIL، exit 1** (`r7a-fab-before.log`)، بعرض 280 وتكبير 2× EN/AR. مثال Scanner EN: حدود النص x=-70.7..378.7 مقابل الزر x=0..280. أضيف تأكيد احتواء النص داخل الزر، وليس الاكتفاء بعدم وجود exception.
+- `image_pdf_settings_sheet.dart`: تسمية slider مرنة، والإعدادات كلها قابلة للتمرير عند نقص ارتفاع الرأس؛ GlobalKey ثابت يحفظ الحقول عند تغيير التخطيط. نافذة modal الفعلية تُزاح فوق لوحة المفاتيح مع تقليص ارتفاع المحتوى. قبل الإزاحة أعادت حالتا الموضع **0/2 PASS، exit 1** (`r7a-modal-before.log`): أسفل المحتوى y=600 مقابل حد مرئي360، وy=360 مقابل120. لا تغيير لقواعد القياسات والوحدات أو password/watermark أو تطبيق الإعدادات.
+
+### التغطية والنتائج الفعلية
+
+إضافتان تحت `test/responsive/`: `r7a_test_fakes.dart` و`r7a_scanner_images_responsive_test.dart`؛ نفس harness وTheme/localization الحقيقيين. الأحجام الثمانية السابقة 280×600 إلى800×1280 تشمل landscape640×360، عينات AR/EN وLight/Dark و1.0/1.3/1.6/2.0، safe top24/bottom16 وkeyboard240. ليست جميع التركيبات الممكنة. النماذج المحلية لا تنشئ Repository أو Auth/Cloud أو محركات معالجة؛ أي استدعاء غير متوقع يفشل ويُحصى. SharedPreferences وهمية بالذاكرة، والاختبارات لا تضغط scan/pick/export/share/delete أو تنشئ PDF حقيقياً. اختبارات الانحدار القائمة تستعمل fixtures ووسائط محلية خاصة بها.
+
+تشمل الحالات: الانتظار والتحميل والفشل/retry والانشغال؛ مكتبات فارغة/ممتلئة، بيانات طويلة وحالة cloud-only للعرض دون تنزيل؛ أول/وسط/آخر القائمة، اختيار Scanner وإلغاؤه وإعداداته؛ صور سليمة/فاشلة/قيد الفحص وduplicate؛ إعدادات custom/watermark والتحقق من القياس قبل Apply؛ مراجعة12 صفحة والاسم وإلغاء تأكيد discard وفشل save/retry المحلي؛ overlay الحفظ وتعطيل الحقول؛ PhotoView وفك PNG بالذاكرة؛ بقاء controller والنص وfocus والاختيارات وعدد بدء النماذج بعد resize/keyboard. جودة/crop/rotate داخل محرر النظام تبقى قرارات native السابقة، وليست Flutter UI أعيد تصميمها.
+
+- التشغيل الأول القابل للتنفيذ: **99 PASS /65 FAIL، exit 1** (`r7a-before2.log`)، يتضمن عيوب المنتج المذكورة وأخطاء إعداد اختبارات جديدة؛ لا تُعد جميع الإخفاقات عيوب منتج. صُححت تواقيع Fake الأولية والوصول إلى عناصر lazy والتمرير إلى زر ظاهر، وعدم استعمال `.first` قبل بناء العنصر. Image decoding ينتظر عبر runAsync/precacheImage، دون كتم أخطاء أو warnIfMissed:false أو skip.
+- بعد الإصلاحات الأولى: **166/166 PASS، exit 0** (`r7a-extra.log`). أضيفت بعدها قياسات FAB/modal وحالات overlay.
+- أول تحقق موسع: R7A **175 PASS /3 FAIL** (`r7a-final-suite.log`)، والتراكمي **805 PASS /3 FAIL، exit 1** (`r7a-responsive-final.log`). الثلاثة من إعداد حالات الحفظ الجديدة: افترضت بناء حقل footer lazy قبل التمرير إليه. أصبح الاختبار يعرض الحقل في ready أولاً ثم ينتقل إلى isSaving ويثبت تعطيله مع overlay؛ لا تغيير في مصدر التطبيق بسبب هذه الإخفاقات. إعادة الحالات المحددة: **12/12 PASS، exit 0** (`r7a-presentation-final.log`).
+- **التراكمي النهائي:** `flutter test --no-pub test/responsive --reporter expanded`: **808/808 PASS، exit 0** (`build/r7a-responsive-complete.log`)، منها **178 حالة R7A** بالنسخة النهائية، مع630 حالة سابقة محفوظة. يتضمن إعادة الحالات الثلاث المصححة وجميع قياسات FAB وmodal؛ ليس ادعاء نجاح اختبار Scanner Grid المحمي أو الاختبارات المجاورة.
+- التحليل النهائي للمصادر الخمسة والملفات الاختبارية الثلاثة: **No issues found، exit 0** (`r7a-analyze-final.log`). ليس full analyzer جديداً. فحص تنسيق الملفات الاختبارية الثلاثة ومصادر Review/Viewer/Settings: **0 changed، exit 0** (`r7a-format-final.log`). نُسقت العقد المعدلة فقط في الملفين الكبيرين عبر نسخ build، مع إبقاء كود Scanner Grid المحمي حرفياً.
+- `flutter test --no-pub test/scanner test/image_to_pdf test/toolkit_documents --reporter expanded`: **658 PASS /3 FAIL من661، exit 1** (`r7a-regressions.log`). لا ادعاء نجاح الأمر الكبير. الإخفاقات: ترجمة `scanner_cloud_test.dart` بسبب تعارض استيرادي Harness؛ `a delete that cannot reach the server hides the document and waits` (المتوقع id والمحصل قائمة فارغة)؛ Worker source guard يتوقع علم التعطيل مرتين والمحصل0. أُعيد الاختباران الأخيران وحدهما: **0 PASS /2 FAIL، exit 1** (`r7a-adjacent-recheck.log`). ملفات الاختبار وخدمات Toolkit والـWorker مطابقة لـHEAD؛ اختبار cloud-sync لا يستورد واجهات R7A. يبقيان OPEN لتحقيق العقد السابق بصورة منفصلة؛ لم تُقلب أعلام Worker أو يُغيّر سلوك حذف أو تُضعف فحوص لإنتاج PASS.
+
+### Scanner Grid المحمي — نتيجة منفصلة لا تدخل PASS أعلاه
+
+الملف `test/responsive_pending/r7a_scanner_grid_repro.dart` اختبار تشخيص صريح، خارج discovery الخاص بـ`test/responsive` وبلا skip، ويُشغّل مباشرة باسمه. النتيجة النهائية **0 PASS /2 FAIL، exit 1** (`r7a-grid-final.log`): شبكة حقيقية بعمودين، AR 2×، عرض280/320، تجاوز **88/68 px** في **صف حجم الملف** داخل `_buildDocumentGridCard`. تأكد بناء البطاقة بالتمرير إليها؛ التشغيل الاستكشافي الأول 2/2 PASS كان لا يصل إلى الشبكة ولا يصلح دليلاً على غياب العيب. أُبقيت النتيجتان موثقتين، ولم يُحذف اختبار قديم أو يُخفَ إخفاق داخل المجموعة المطلوبة.
+
+القياس أظهر أن أيقونات View/Share/Download الثلاث **داخل حدود البطاقة** في العينتين؛ لا ادعاء بإعادة إنتاج العيب التاريخي نفسه في أزرار Samsung أو بحلّه. التصميم الحالي إجراءات أيقونية، وليس تسميات أزرار جديدة. بطاقة Scanner ووظيفة الإجراءات وdelegate حافظت على بصماتها السابقة (`build/r7a-protected-grid.json`).
+
+**اقتراح ينتظر موافقة المالك:** لفّ Text الخاص بحجم الملف وحده بـFlexible ليُقاس ضمن العرض المتبقي ويلتف داخل منطقة التفاصيل القابلة للتمرير الموجودة؛ إبقاء الخط/اللون/العمودين/ارتفاع البلاطة وأيقونات الإجراءات الثلاث ومسافاتها. لا تطبيق لهذا الاقتراح في R7A. بعد الموافقة يلزم تحقق جديد لارتفاع التفاصيل والوصول إلى الإجراءات وSamsung قبل أي قبول تصميم.
+
+### الحفظ وحدود التحقق
+
+حُفظت بصمات84 مساراً سابقاً في `build/r7a-preserved-hashes.json`، وتطابقت84/84 قبل إضافة هذا السجل. بعد الإضافة الاستثناء الوحيد هو checkpoint، مع حفظ بادئته السابقة حرفياً. `git diff --check`: **exit 0**؛ تنبيه LF/CRLF السابق لـCombine PDFs باقٍ. الفرع وHEAD ثابتان، والحالة النهائية **66 tracked معدلاً +26 ملفاً untracked، staged=0**؛ الزيادة خمسة مصادر R7A وثلاثة ملفات اختبار/تشخيص فقط. لا registrants أو تبعيات جديدة، ولا staging/commit/push/deploy/migration أو تعديل خارجي أو حذف بيانات مستخدم. لا reset/clean/stash/restore أو إعادة كتابة للعمل السابق.
+
+يبقى OPEN أيضاً: إخفاقات Map الثلاثة المثبتة سابقاً، وإخفاقا Session Dialog، وخط أساس التحليل الكامل **11 errors +89 infos**؛ لم تُعد أو تُحل في R7A. لا VERIFIED_RUNTIME: يلزم smoke على Samsung الموجود لـAR/EN والخط الكبير وkeyboard/landscape والوصول الفعلي للإجراءات، مع قرار منفصل لبطاقة Scanner. غياب exceptions لا يثبت كل قص بصري أو native scanning أو PDF/share runtime. نظام Toolkit الحالي والخصوصية وC3.6 والوسائط الخاصة وPlan وAuth والخريطة محفوظة؛ لا تغيير Supabase/Cloudflare/PDF processing أو dependencies أو infrastructure.
+
+NOW — مراجعة فرق المصادر الخمسة + الاختبارين الجديدين + التشخيص المحمي + إضافة tracker، وتجربة الأسطح المسموح بها على Samsung؛ طلب قرار المالك حول اقتراح حجم الملف داخل Scanner Grid دون تطبيقه تلقائياً. إبقاء العمل غير ملتزم، وعدم استخدام git add .
+
+NEXT — بعد قبول تحقق R7A وقرار Scanner المنفصل، اقتراح R7B محدود لـSignature وواجهات PDF Viewer الحالية وUAE Links ثم R8؛ لا تحديث T01/Viewer modernization أو بدء مرحلة جديدة دون نطاق وموافقة منفصلين. إخفاقات Toolkit/Map/Session/Analyzer تحقيقات مستقلة لا يغيّرها نجاح responsive.
+
+
+### Scanner Grid — إصلاح حجم الملف المعتمد فقط (2026-10-30)
+
+الحالة: **CODE_PROVEN للحالات المحددة؛ NOT VERIFIED_RUNTIME.** وافق المالك الآن على اقتراح Flexible السابق وحده؛ لا R7B/R8 أو تحقق نهائي شامل. قُرئ المرفق كاملاً، والقواعد وقرار Scanner الحالي؛ لا مهارة Flutter مناسبة أو llm-council مثبتة، ولا قرار معماري/أمني يستدعي مجلساً.
+
+- البداية: نفس الفرع `update-some-issues` وHEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2`، 66 tracked معدلاً و26 ملفاً untracked وstaged=0. حُفظت بصمات92 مساراً سابقاً في `build/scanner-grid-preserved.json`، مع نسخة Scanner قبل هذا الإصلاح لفصل الفرق عن أعمال R7A.
+- التعديل الإنتاجي الوحيد: `lib/src/views/Screens/home/Toolkit/scanner_view.dart:1471`، لفّ Text حجم الملف بـFlexible داخل `_buildDocumentGridCard`. لا تغيير للنص أو تنسيق الحجم أو icon المجلد/المسافة3 أو الألوان أو الشبكة أو الإجراءات أو منطق الأعمال؛ لا قص/ellipsis أو كبح textScale. فحص الفرق مقابل نسخة بداية المهمة يثبت هذه العقدة وحدها.
+- الإضافة الاختبارية الوحيدة: `test/responsive/scanner_grid_file_size_test.dart`. الشاشة الحقيقية وR7A LocalScannerModel والـharness السابق، دون إنشاء خدمات أو قراءة مستندات أو تشغيل preview/share/export. خمس عينات: AR 280×600 و320×568 بتكبير2؛ EN 280×600 بتكبير2 و320×568 بتكبير1.6؛ EN 393×852 بتكبير1. النص كامل وقابل للوصول بتمرير التفاصيل الموجود، بلا truncation في الحالات المختبرة. اختُبرت أبعاد العمودين والبلاطة كما كانت، وارتفاع إجراءات36 وإتاحة الأيقونات/callbacks، واختيار البطاقة بالضغط المطول وإلغاؤه محلياً. لم تُنفذ عمليات وسائط فعلية.
+
+النتائج الفعلية والأوامر:
+
+- قبل الإصلاح: `flutter test --no-pub test/responsive_pending/r7a_scanner_grid_repro.dart --reporter expanded`: **0 PASS /2 FAIL، exit 1** (`build/scanner-grid-before.log`)، AR 280×600 و320×600، تكبير2؛ نفس تجاوز صف الحجم **88/68 px**. التشخيص التاريخي لم يُحذف أو يُعدل.
+- بعده: `flutter test --no-pub test/responsive/scanner_grid_file_size_test.dart test/responsive_pending/r7a_scanner_grid_repro.dart --reporter expanded`: **7/7 PASS، exit 0** (`build/scanner-grid-after.log`). حالتا إعادة الإنتاج السابقتان ناجحتان الآن، دون تغيير تصميم البطاقة.
+- `flutter test --no-pub test/responsive/r7a_scanner_images_responsive_test.dart test/scanner/scanner_source_guards_test.dart test/scanner/scanner_review_screen_test.dart --reporter expanded`: **216/216 PASS، exit 0** (`build/scanner-grid-r7a-regressions.log`). لا ادعاء نجاح scanner_cloud أو أي مجموعة لم تُشغّل.
+- `dart analyze lib/src/views/Screens/home/Toolkit/scanner_view.dart test/responsive/scanner_grid_file_size_test.dart`: **No issues found، exit 0** (`build/scanner-grid-analyze.log`). فحص تنسيق الاختبار الجديد: **0 changed، exit 0**؛ `git diff --check`: **exit 0**. لا bulk format للمصدر أو full analyzer.
+- **NOT RUN:** المجموعة الكاملة `test/responsive` لتوفير الرصيد وحصر المهمة؛ آخر **808/808** دليل R7A تاريخي، وليس إعادة تحقق في هذا الإصلاح. إخفاقات Map وSession Dialog وAnalyzer وScanner Cloud وToolkit السابقة تبقى OPEN كما سجلت أعلاه؛ لم تُعد أو تُصلح هنا.
+
+الملفات المعدلة في هذه المتابعة ثلاثة فقط: مصدر Scanner المذكور، الاختبار الجديد، وهذه الإضافة في checkpoint. جميع المسارات السابقة محفوظة عدا تعديل Scanner المحدد وإضافة السجل؛ بادئة tracker السابقة محفوظة حرفياً. الحالة النهائية66 tracked معدلاً و27 ملفاً untracked، staged=0، والفرع/HEAD ثابتان. لا تغييرات في الشاشات الأخرى أو C3.6 أو الخدمات أو تبعيات/registrants، ولا commit/push/deploy أو حذف بيانات. تبقى مراجعة الجهاز مطلوبة؛ لا ادعاء Samsung/iOS أو حل العيب التاريخي في أزرار الجهاز من widget tests.
+
+NOW — انتهى إصلاح Scanner المحدد والتحقق المحلي؛ التوقف عند هذا النطاق وإبقاء العمل غير ملتزم للمراجعة.
+
+NEXT — يقرر المالك لاحقاً توقيت وأداة التحقق النهائي الشامل؛ لا بدء R7B/R8 أو تعديل إضافي تلقائياً.
+
+
+## RESPONSIVE HARDENING R7B — SIGNATURE, PDF VIEWER PRESENTATION & UAE LINKS (2026-10-30)
+
+**النطاق:** تخطيط فقط لـDocument Signature وعرض PDF Viewer الحالي وUAE Useful Links. لا تغيير في الأنظمة الخلفية أو المصادقة أو PDF processing أو المشاركة أو التخزين، ولا dependencies جديدة. Scanner خارج النطاق ولم يُمس. لا staging/commit/push/deploy.
+
+**خط الأساس بعد إصلاح Scanner:** `flutter test --no-pub test/responsive`: **813/813 PASS، exit 0** (`build/r7b-baseline.log`) = 808 السابقة + 5 اختبارات Scanner Grid.
+
+**اختبارات جديدة (شاشات حقيقية + fakes بلا قرص/شبكة/متصفح/محرك PDF):** `test/responsive/r7b_test_fakes.dart`، `test/responsive/r7b_signature_pdf_links_responsive_test.dart`. 32 عيّنة نافذة×لغة×سمة×تكبير (280×600 حتى 800×1280 و640×360؛ AR/EN؛ فاتح/داكن؛ 1.0/1.3/1.6/2.0؛ safe area؛ لوحة مفاتيح 40% كحد أقصى حيث يوجد حقل). مغطى: مكتبة التوقيع (فارغة، انتظار، فشل+إعادة، طبقة الجلب، شبكة وقائمة بأسماء طويلة، وضع التحديد مع بقاء الاختيار عبر تغيير حجم النافذة، تأكيد الحذف، إعادة التسمية)، المحرر (صفحة وصفحات كثيرة مع عنصر محدد وبقاء الصفحة، فشل الفتح، تأكيد المغادرة، ورقة الإضافة، حوار النص والتاريخ)، حالة تحميل PDF Viewer بعنوان طويل، وUAE Links (القائمة حتى الذيل، الفلاتر، البحث والفراغ مع لوحة المفاتيح، ورقة البلاغ، بقاء البحث عبر تغيير الحجم). لوحة الرسم: مغطاة فقط حيث تتسع (انظر OWNER_DECISION_REQUIRED).
+
+**أدلة الفشل أولاً** (أول تشغيل، أكثر من 200 إخفاق قبل أي إصلاح): تجاوز أفقي في صف حجم الملف ببطاقة الشبكة (signature_view)، وصف أزرار بطاقة UAE (فلاغ/نسخ/فتح)، وصف FAB (حفظ/إضافة) في المحرر، ومؤشر الصفحات، وعناصر قوائم النقاط الثلاث، وتجاوز عمودي في حوارات (حذف، إعادة تسمية، مغادرة، نص) وفي شاشة فشل فتح المحرر. بعد ذلك فُصلت أخطاء الاختبار نفسه (عناصر خارج الشاشة في قوائم lazy) عن العيوب الحقيقية.
+
+**الإصلاحات (أقل تعديل قائم على القيود، بلا ClipRect/FittedBox/سقف تكبير):** `signature_view.dart` (Flexible لنص حجم الملف في الشبكة؛ Flexible لنصوص 7 عناصر في قوائم النقاط؛ scrollable لحواري الحذف والرفض وإعادة التسمية)، `document_view.dart` (Wrap بدل Row للـFAB؛ Flexible لمؤشر الصفحات؛ SingleChildScrollView لشاشة الخطأ؛ scrollable لحوار المغادرة وحوار الذهاب إلى صفحة)، `signature_stamp_dialogs.dart` (scrollable لحواري النص والتاريخ)، `uae_links_view.dart` (Wrap بدل Row لأزرار البطاقة). جُرّب scrollable على حوار «تطبيق على الصفحات» وتسبب بكسر اختبارين قائمين فتُراجع عنه. جُرّب تمرير أعلى لوحة الرسم فكسر حارس `signature_pad_test` (اللوحة يجب ألا تتمرر) فتُراجع عنه كلياً؛ ملف اللوحة مطابق لـHEAD.
+
+**OWNER_DECISION_REQUIRED — لوحة التوقيع/الأحرف الأولى:** عناصرها الثابتة (تعليمات، ألوان، سماكة، أزرار) تتجاوز عمودياً في الأفقي 640×360، وبتكبير 1.6× و2.0× على هواتف حتى 360×640، وبتكبير 1.3× على 320×568. الحارس القائم يمنع تمرير الصفحة خلف اللوحة، فالحل قرار تصميم (مثلاً تصغير/طي أقسام الأدوات أو ملء الشاشة أفقياً). لم يُنفذ شيء.
+
+**النتائج الفعلية:**
+- ملف R7B وحده (النسخة النهائية): **744/744 PASS، exit 0** (`build/r7b-ninth.log`).
+- المجموعة الشاملة النهائية `test/responsive`: **1557/1557 PASS، exit 0** (`build/r7b-final-responsive.log`) = 813 + 744.
+- المجاورة `test/signature test/uae_links test/share test/quotation`: **984 PASS /2 FAIL، exit 1** (`build/r7b-adjacent.log`). الإخفاقان حارسا مصدر: `signature_source_guards_test` ("the engine only reads the source file"، يقرأ `signature_pdf_engine.dart` غير المعدّل) و`share_source_guards_test` ("only the share code talks to the share plugin"). لم أعدّل أياً من الملفين المفحوصين ولا أضفت استيراد share_plus؛ لم أتحقق بتشغيلهما على HEAD نظيف، فيبقيان OPEN كتحقيق مستقل ولا يُعلن PASS.
+- `dart analyze` على مجلد signature وuae_links_view والاختبارين الجديدين: **No issues found**. `git diff --check`: exit 0 (تنبيه LF/CRLF السابق لـCombine PDFs باقٍ). لم يُنسَّق الملفات المعدّلة القديمة (تحوي انحرافات تنسيق سابقة)؛ نُسّق الاختباران الجديدان فقط. لم يُعد تحليل كامل.
+
+**غير مشمول/لم يُجرَ:** عرض PDF الفعلي (SfPdfViewer) وحالة خطأ التحميل (يلزم محرك أصلي)، SignaturePreviewScreen (يتطلب مسودة موقعة على القرص)، نقر الروابط الخارجية، أي جهاز Samsung/iOS أو قص بصري لا يظهر كاستثناء. لا VERIFIED_RUNTIME.
+
+**ملفات R7B:** معدّلة: signature_view.dart، document_view.dart، signature_stamp_dialogs.dart، uae_links_view.dart، وهذا الملف. جديدة: اختباران في test/responsive. المفتوح سابقاً دون تغيير: إخفاقات Map الثلاثة، وSession Dialog، وخط الأساس التحليلي 11 errors/89 infos (تاريخي لم يُعد). Git: نفس الفرع/HEAD، كل شيء غير ملتزم، staged=0.
+
+CODE_PROVEN (اختبارات تخطيط محلية بـfakes). NOW — اكتمل R7B؛ التوقف هنا. NEXT — مراجعة المالك لقرار لوحة التوقيع والحارسين، ثم R8 كمهمة مستقلة بموافقته.
+
+
+## R8A — RESPONSIVE VERIFICATION & TEST-INTEGRITY GATE (2026-10-30)
+
+**النطاق:** تحقق وتشخيص فقط. لم يُغيَّر منطق التطبيق ولا Supabase/Cloudflare/PDF ولا لوحة التوقيع ولا بطاقة Scanner. الفرع `update-some-issues` وHEAD `f130ddb7dd141d2a27fd5ad5be1ab1b9de83eed2` كما كانا؛ لا staging/commit/push/deploy.
+
+**١) المجموعة التراكمية:** `flutter test --no-pub test/responsive --reporter expanded`: **1557/1557 PASS، exit 0** (`build/r8a-responsive.log`)، مطابقة لنتيجة R7B.
+
+**٢) حارسا المصدر المجاوران (كل منهما أُعيد وحده):**
+- `signature_source_guards_test` — "the engine only reads the source file": فشل `RangeError` (`build/r8a-guard-signature.log`). **السبب:** شجرة العمل CRLF (index LF؛ `git ls-files --eol` = i/lf w/crlf) والاختبار يبحث عن النمط LF-only `'\n}\n'` فيعيد -1. المصدر `signature_pdf_engine.dart` والاختبار مطابقان لـHEAD؛ الثابت المحمي (الملف المصدر يُقرأ فقط) لم يتغير. **تصحيح اختباري فقط:** `read()` في الاختبار يطبّع `\r\n` إلى `\n`. بعده: **23/23 PASS، exit 0** (`build/r8a-guard-signature-after.log`)، `dart analyze` نظيف.
+- `share_source_guards_test` — "only the share code talks to the share plugin": فشل (`build/r8a-guard-share.log`): `lib/src/views/Screens/home/Toolkit/uae_links_view.dart` يستورد `package:share_plus` ويستدعي `SharePlus.instance.share` مباشرة. `git show HEAD:` يثبت أن ذلك موجود في HEAD أصلاً (غير مرتبط بـR7B). **ليس اختباراً قديماً:** الثابت (كل مشاركة عبر طبقة Share) منتهك فعلاً في مصدر الإنتاج. **لم يُعدَّل شيء.** الحل المقترح بانتظار المالك: توجيه مشاركة بلاغ UAE عبر طبقة Share الموجودة (تغيير سلوك إنتاجي صغير) أو استثناء موثّق صريح في الحارس؛ كلاهما قرار مالك.
+- بعد التصحيح: `flutter test --no-pub test/signature test/uae_links test/share test/quotation`: **985 PASS /1 FAIL، exit 1** (`build/r8a-adjacent.log`)، والإخفاق الوحيد حارس Share. أي أن 984/2 في R7B كان فعلاً هذين الحارسين فقط.
+
+**٣) جودة تغطية Responsive (قراءة المصدر):** لا `skip` ولا ابتلاع استثناءات (`catch`/تجاهل) في `test/responsive`؛ الـharness يتحقق من عدم وجود استثناء بعد كل عرض. حاضر: AR وEN، فاتح وداكن، تكبير حتى 2.0 (≈77 موضع)، لوحة مفاتيح في 9 ملفات، أفقي في 14 ملفاً، تغيير حجم النافذة على widget مُركَّب في 5 ملفات (Profile وRequests وOffers وOwners وR7B). **ثغرات حقيقية:** (أ) ليست كل الشاشات مصفوفة كاملة؛ العينات مختارة لا جداء ديكارتي. (ب) الأفقي غالباً 640×360 فقط. (ج) اختبارات الـfakes لا تُثبت قصاً بصرياً ولا رسماً أصلياً. (د) لوحة التوقيع مستثناة جزئياً (انظر أدناه). (هـ) غير مغطى: عرض PDF الفعلي (SfPdfViewer) وخطأ تحميله، SignaturePreviewScreen، حوار «تطبيق على الصفحات» وحوار «الذهاب إلى صفحة» بلوحة مفاتيح، مشاركة/فتح روابط فعلي، قراءة شاشة (TalkBack)، خطوط الجهاز الحقيقية. لم تُضف اختبارات جديدة في R8A.
+
+**٤) لوحة التوقيع — OWNER_DECISION_DEFERRED:** تتجاوز عمودياً في 640×360 وبتكبير 1.6×/2.0× على هواتف حتى 360×640 وبـ1.3× على 320×568. حارس `signature_pad_test` يمنع `Scrollable` في الشاشة. لم يُمس الملف (مطابق لـHEAD)، ولا تُعدّ المشكلة محلولة.
+
+**٥) سجل المشكلات المفتوحة المنفصلة (أُعيد تصنيفها بتشغيل ضيق):** `flutter test --no-pub test/map test/auth/session_superseded_dialog_test.dart`: **641 PASS /5 FAIL، exit 1** (`build/r8a-backlog.log`) — Map ×3: `map_opening_test` "AfterRouteTransition the child waits for the page to slide in" و"…appears after maxWait even if the page never finishes"، و`map_ux_phase1_test` "the result count every form exists in both languages…"؛ Session ×2: "displacement signs out before the one-shot dialog and OK leaves Welcome unauthenticated" و"validation unavailable keeps Retry and has no dialog". لم تُحقَّق أسبابها هنا. خط الأساس التحليلي الكامل التاريخي **11 errors /89 infos** لم يُعد في R8A ولا يُدّعى نجاحه.
+
+**٦) Git (للقراءة فقط):** staged=0، 73 مدخلاً (71 معدلاً + مجلدان untracked: `test/responsive/` و`test/responsive_pending/`). `git diff --check` نظيف (تنبيه LF/CRLF السابق لـCombine PDFs باقٍ). ملاحظة: لا تغييرات في `lib/src/services/toolkit_documents` — أي C3.6 غير ظاهر كفرق في هذه الشجرة؛ فروق Toolkit هي واجهات شاشات (responsive + أي تعديل C3.6 المتراكم داخل الملفات نفسها، لا يمكن فصله دون مراجعة سطرية).
+**اقتراح تقسيم Commits (غير منفذ):** ١) Widgets مشتركة + 3 viewmodels + اختباراتها (expandable_area_chips، city_area_chip_height، home_filter_*). ٢) Auth (6 ملفات Sign-Up-Log-In + r4). ٣) Entities: ViewAdd/ViewDetails/ViewLists (18) + r5a–r5d + owners_list_view_test. ٤) Home وProfile وSearch وFavorites وNotifications وbottom nav + r2/r3. ٥) Map + Quotation (map_view، map_filter_bar، quotation/*) + r6a/r6b + map_screen_wiring_test. ٦) Toolkit (combine، image-to-pdf، scanner، signature، uae، toolkit_view، tool_header_card) + r7a/r7b/combine/language/toolkit/scanner_grid؛ تبقى ملفات Toolkit الكبيرة (image_to_pdf_view، scanner_view، combine_pdfs_view) في commit واحد لتعذر فصل الاستجابة عن غيرها. ٧) اختبار: تصحيح CRLF في signature_source_guards. ٨) `test/responsive_pending/` (إثبات Scanner Grid): يقرر المالك الإبقاء أو الحذف. ٩) docs: AGENTS.md وCLAUDE.md وCURRENT_CHECKPOINT.md. اختبارات responsive تعتمد على إصلاحات المصدر فيجب ألا تنفصل عن مصدرها. لا حذف لملفات قديمة ولا أسرار.
+
+**٧) خطة R8B (تخطيط فقط، لم يُنفذ):** Samsung واحد، لاحقاً iOS. لكل بند سجّل: جهاز، إصدار، لغة، نتيجة، لقطة. الصفوف: خط النظام الافتراضي ثم الأكبر وحجم العرض الأكبر؛ AR وEN؛ عمودي وأفقي؛ لوحة المفاتيح (بحث، إعادة تسمية، حوارات النص)؛ Home وRequests/Offers والقوائم والتفاصيل؛ Scanner (مسح، شبكة، مراجعة)؛ Images→PDF وCombine؛ التوقيع (المكتبة، المحرر، اللوحة أفقياً لتأكيد المشكلة المسجلة)؛ Plans/Quotations؛ عارض PDF الفعلي ومشاركة الملفات؛ UAE Links؛ Map؛ قص بصري وإتاحة (TalkBack، تباين، أهداف لمس). iOS: يبقى NOT VERIFIED حتى تشغيله فعلياً.
+
+**الحالة:** CODE_PROVEN (اختبارات محلية)، NOT VERIFIED_RUNTIME. NOW — مراجعة المالك لقرار حارس Share ولوحة التوقيع وتقسيم Commits. NEXT — R8B بعد موافقة منفصلة.
+
+
+## R8A-FOLLOW-UP — UAE LINKS ROUTED THROUGH THE SHARED SHARE LAYER (2026-10-30)
+
+**بموافقة المالك (Route via Share)، النطاق: إصلاح حارس Share في `uae_links_view.dart` فقط.** لا تغيير في تجربة المستخدم أو محتوى البلاغ أو عنوانه أو معاينته أو نسخه؛ لا استثناء في الحارس؛ لا Map/Session/Analyzer/لوحة التوقيع/R8B؛ لا staging/commit/push/deploy.
+
+- **قبل الربط:** روجعت `ShareLive.sendText(context, text, subject:)` (يستعملها `share_app_view.dart`): تمرّر طلباً إلى `ShareLauncher` الذي يرفع `ShareFailure` عند تعذر فتح الورقة أو عند فراغ المحتوى، ويعيد null إذا كانت ورقة مفتوحة، ويثبّت أصل الورقة على iPad عبر `originOf(context)`.
+- **التعديل:** حُذف `import package:share_plus` واستدعاء `SharePlus.instance.share` من الشاشة. المشاركة الافتراضية صارت دالة مثيل `_shareWithSystem(text, subject)` تستدعي `ShareLive.sendText`. بقي حقن `shareText` للاختبارات كما هو، وبقي `_shareReport` يلتقط أي استثناء ويعرض الرسالة المحلية `ulxReportShareFailed`. نص البلاغ وعنوان الموضوع `Broker Wallet - UAE Links report` لم يتغيرا.
+- **فرق سلوكي وحيد مقصود وموثّق:** كان `ShareResultStatus.unavailable` يُرفع سابقاً كـStateError فتظهر رسالة فشل؛ الطبقة المشتركة تُحوّله إلى `ShareOutcome.unknown` (ليس فشلاً) كما في بقية التطبيق، فلا تظهر رسالة فشل خاطئة بعد مشاركة قد تكون نجحت. الإلغاء (dismissed) ليس خطأ كما كان.
+- **الاختبارات:** `flutter test --no-pub test/share test/uae_links test/responsive/r7b_signature_pdf_links_responsive_test.dart --reporter expanded`: **1244/1244 PASS، exit 0** (`build/r8a-share-fix.log`)، منها حارسا Share كلاهما (بما فيه "only the share code talks to the share plugin"). `dart analyze lib/src/views/Screens/home/Toolkit/uae_links_view.dart`: **No issues found**.
+- **تصحيح سجل:** عند إلحاق قسمي R7B/R8A حُوّلت تسلسلات هروب في نص التوثيق إلى محارف CR/LF فعلية (CR منفرد واحد جعل Git يعدّ الملف غير نصي ويُظهر `git diff --check` أخطاء على كل سطر). أُصلح النص بعدها؛ `git diff --check` لا يُظهر الآن أخطاء، وفرق الملف 600 سطراً مضافاً فقط. تنبيه: عبارة "git diff --check نظيف" في قسمي R7B وR8A كانت تخص الشيفرة؛ الوثيقة نفسها لم تكن نظيفة حتى هذا الإصلاح.
+- **لم يُنفذ/لم يُثبت:** مشاركة فعلية على جهاز (Android/iOS)؛ يبقى في R8B. **لم** تُعَد المجموعات الأخرى (signature/quotation/الشاملة 1557) في هذه المهمة لأن التعديل محصور في ملف واحد؛ آخر نتائجها في قسم R8A أعلاه.
+
+الحالة: CODE_PROVEN. NOW — مراجعة المالك. NEXT — R8B بموافقة منفصلة؛ يبقى مفتوحاً: Map ×3، Session ×2، Analyzer 11/89 التاريخي، قرار لوحة التوقيع.

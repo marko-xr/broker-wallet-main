@@ -115,12 +115,14 @@ class PropertyStatusChip extends StatelessWidget {
               size: 14,
             ),
             const SizedBox(width: 2),
-            Text(
-              _localizedStatus(context, status),
-              style: TextStyle(
-                color: color,
-                fontSize: fontSize ?? 12,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                _localizedStatus(context, status),
+                style: TextStyle(
+                  color: color,
+                  fontSize: fontSize ?? 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

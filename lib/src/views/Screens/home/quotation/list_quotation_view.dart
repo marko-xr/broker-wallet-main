@@ -14,7 +14,10 @@ import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
 
 class QuotationListView extends StatefulWidget {
-  const QuotationListView({super.key});
+  const QuotationListView({super.key, this.viewModel});
+
+  /// Optional local dependency; production routes retain the original model.
+  final QuotationListViewModel? viewModel;
 
   @override
   State<QuotationListView> createState() => _QuotationListViewState();
@@ -28,7 +31,7 @@ class _QuotationListViewState extends State<QuotationListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => QuotationListViewModel(),
+      create: (_) => widget.viewModel ?? QuotationListViewModel(),
       child: Consumer<QuotationListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -85,10 +88,11 @@ class _QuotationListViewState extends State<QuotationListView> {
       TextTheme texts, AppLocalizations loc,
       [String? errorMessage]) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.6),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(20),
@@ -131,10 +135,11 @@ class _QuotationListViewState extends State<QuotationListView> {
   Widget _buildEmptyWidget(
       ColorScheme colors, TextTheme texts, AppLocalizations loc) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.6),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(32),
@@ -389,6 +394,7 @@ class _QuotationListViewState extends State<QuotationListView> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+          scrollable: true,
           title: Row(
             children: [
               Icon(
@@ -397,12 +403,13 @@ class _QuotationListViewState extends State<QuotationListView> {
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
+              Flexible(
+                  child: Text(
                 loc.translate('deleteQuotation'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
-              ),
+              )),
             ],
           ),
           content: Column(
@@ -479,14 +486,15 @@ class _QuotationListViewState extends State<QuotationListView> {
                           color: colors.onSurface.withValues(alpha: 0.7),
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        Flexible(
+                            child: Text(
                           loc.translate('cancel'),
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                             color: colors.onSurface.withValues(alpha: 0.8),
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),
@@ -518,14 +526,15 @@ class _QuotationListViewState extends State<QuotationListView> {
                           color: Colors.white,
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        Flexible(
+                            child: Text(
                           loc.translate('delete'),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                             color: Colors.white,
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),
@@ -680,9 +689,30 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header Row
-                    Row(
-                      children: [
+                    // Keep the normal header row; wrap its status below only
+                    // when the scaled labels cannot share the available width.
+                    LayoutBuilder(builder: (context, constraints) {
+                      final badgeStyle = texts.bodySmall
+                          ?.copyWith(fontWeight: FontWeight.w600);
+                      final badgeLabel = widget.loc
+                          .translate(widget.quotation.hasPdf ? 'pdf' : 'noPdf');
+                      final label = TextPainter(
+                        text: TextSpan(text: badgeLabel, style: badgeStyle),
+                        textDirection: Directionality.of(context),
+                        textScaler: MediaQuery.textScalerOf(context),
+                      )..layout();
+                      final title = TextPainter(
+                        text: TextSpan(
+                            text: widget.loc.translate('quotation'),
+                            style: texts.titleMedium),
+                        textDirection: Directionality.of(context),
+                        textScaler: MediaQuery.textScalerOf(context),
+                      )..layout();
+                      final compact = label.width + 36 + 52 + title.width >
+                          constraints.maxWidth;
+                      label.dispose();
+                      title.dispose();
+                      final heading = Row(children: [
                         Container(
                           width: 40,
                           height: 40,
@@ -725,43 +755,55 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                             ],
                           ),
                         ),
-                        // PDF Status Indicator
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: widget.quotation.hasPdf
-                                ? Colors.green.withValues(alpha: 0.1)
-                                : Colors.orange.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.picture_as_pdf,
-                                size: 16,
-                                color: widget.quotation.hasPdf
-                                    ? Colors.green
-                                    : Colors.orange,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                widget.quotation.hasPdf
-                                    ? widget.loc.translate('pdf')
-                                    : widget.loc.translate('noPdf'),
-                                style: texts.bodySmall?.copyWith(
+                      ]);
+                      final badge = ConstrainedBox(
+                          constraints:
+                              BoxConstraints(maxWidth: constraints.maxWidth),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: widget.quotation.hasPdf
+                                  ? Colors.green.withValues(alpha: 0.1)
+                                  : Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.picture_as_pdf,
+                                  size: 16,
                                   color: widget.quotation.hasPdf
                                       ? Colors.green
                                       : Colors.orange,
-                                  fontWeight: FontWeight.w600,
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                    child: Text(
+                                  widget.quotation.hasPdf
+                                      ? widget.loc.translate('pdf')
+                                      : widget.loc.translate('noPdf'),
+                                  style: texts.bodySmall?.copyWith(
+                                    color: widget.quotation.hasPdf
+                                        ? Colors.green
+                                        : Colors.orange,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )),
+                              ],
+                            ),
+                          ));
+                      return compact
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                  heading,
+                                  const SizedBox(height: 8),
+                                  badge
+                                ])
+                          : Row(children: [Expanded(child: heading), badge]);
+                    }),
 
                     const SizedBox(height: 12),
 
@@ -840,7 +882,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                         // View PDF Button (always shows, but disabled if no PDF)
                         Expanded(
                           child: Container(
-                            height: 40,
+                            constraints: const BoxConstraints(minHeight: 40),
                             decoration: BoxDecoration(
                               color: widget.quotation.hasPdf
                                   ? const Color(0xFFE3F2FD) // Blue for View PDF
@@ -867,7 +909,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
-                                    Text(
+                                    Flexible(child: Text(
                                       widget.quotation.hasPdf
                                           ? widget.loc.translate('viewPdf')
                                           : widget.loc.translate(
@@ -879,7 +921,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                                 : Colors.grey,
                                         fontWeight: FontWeight.w600,
                                       ),
-                                    ),
+                                    )),
                                   ],
                                 ),
                               ),
@@ -892,7 +934,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                         // Share Button (only active if PDF exists)
                         Expanded(
                           child: Container(
-                            height: 40,
+                            constraints: const BoxConstraints(minHeight: 40),
                             decoration: BoxDecoration(
                               color: widget.quotation.hasPdf
                                   ? const Color(0xFFFFF3E0) // Orange for share
@@ -918,7 +960,8 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
-                                    Text(
+                                    Flexible(
+                                        child: Text(
                                       widget.loc.translate('share'),
                                       style: texts.bodyMedium?.copyWith(
                                         color: widget.quotation.hasPdf
@@ -927,7 +970,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                             : Colors.grey,
                                         fontWeight: FontWeight.w600,
                                       ),
-                                    ),
+                                    )),
                                   ],
                                 ),
                               ),

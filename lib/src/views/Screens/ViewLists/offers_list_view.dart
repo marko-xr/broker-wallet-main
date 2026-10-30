@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
@@ -13,7 +13,9 @@ import '../../../viewmodels/ListScreens/list_offers_viewmodel.dart';
 import '../../../data/models/property_status.dart';
 
 class OffersListView extends StatefulWidget {
-  const OffersListView({super.key});
+  const OffersListView({super.key, this.viewModel});
+
+  final OffersListViewModel? viewModel;
 
   @override
   State<OffersListView> createState() => _OffersListViewState();
@@ -27,7 +29,7 @@ class _OffersListViewState extends State<OffersListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => OffersListViewModel(),
+      create: (_) => widget.viewModel ?? OffersListViewModel(),
       child: Consumer<OffersListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -193,45 +195,49 @@ class _OffersListViewState extends State<OffersListView> {
     AppLocalizations loc, [
     String? errorMessage,
   ]) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.6,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: colors.error.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.wifi_off_rounded,
-                size: 48,
-                color: colors.error,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              loc.translate('errorLoading'),
-              style: texts.headlineSmall?.copyWith(
-                color: colors.error,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                errorMessage ?? vm.error ?? loc.translate('errorLoading'),
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurface.withValues(alpha: 0.7),
-                  height: 1.5,
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: colors.error.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-                textAlign: TextAlign.center,
+                child: Icon(
+                  Icons.wifi_off_rounded,
+                  size: 48,
+                  color: colors.error,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                loc.translate('errorLoading'),
+                style: texts.headlineSmall?.copyWith(
+                  color: colors.error,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  errorMessage ?? vm.error ?? loc.translate('errorLoading'),
+                  style: texts.bodyMedium?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -242,56 +248,60 @@ class _OffersListViewState extends State<OffersListView> {
     TextTheme texts,
     AppLocalizations loc,
   ) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.6,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colors.primary.withValues(alpha: 0.1),
-                    colors.secondary.withValues(alpha: 0.1),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colors.primary.withValues(alpha: 0.1),
+                      colors.secondary.withValues(alpha: 0.1),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
                 ),
-                shape: BoxShape.circle,
-              ),
-              child: SvgPicture.asset(
-                'assets/icons/offers-svg.svg',
-                width: 64,
-                height: 64,
-                colorFilter: ColorFilter.mode(
-                  colors.primary,
-                  BlendMode.srcIn,
+                child: SvgPicture.asset(
+                  'assets/icons/offers-svg.svg',
+                  width: 64,
+                  height: 64,
+                  colorFilter: ColorFilter.mode(
+                    colors.primary,
+                    BlendMode.srcIn,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              loc.translate('noOffersYet'),
-              style: texts.headlineSmall?.copyWith(
-                color: colors.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                loc.translate('addFirstOffer'),
-                style: texts.bodyLarge?.copyWith(
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  height: 1.5,
+              const SizedBox(height: 32),
+              Text(
+                loc.translate('noOffersYet'),
+                style: texts.headlineSmall?.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.bold,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  loc.translate('addFirstOffer'),
+                  style: texts.bodyLarge?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.6),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -404,14 +414,18 @@ class _OffersListViewState extends State<OffersListView> {
           ),
 
           // Date text
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              displayText,
-              style: texts.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: accentColor,
-                letterSpacing: 0.5,
+          Flexible(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                displayText,
+                textAlign: TextAlign.center,
+                style: texts.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: accentColor,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ),
@@ -447,6 +461,7 @@ class _OffersListViewState extends State<OffersListView> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -458,11 +473,13 @@ class _OffersListViewState extends State<OffersListView> {
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
-                loc.translate('deleteOffer'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+              Flexible(
+                child: Text(
+                  loc.translate('deleteOffer'),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
             ],
           ),
@@ -512,79 +529,97 @@ class _OffersListViewState extends State<OffersListView> {
             ],
           ),
           actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      foregroundColor: colors.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.outline.withValues(alpha: 0.3),
-                          width: 1.5,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 260 &&
+                    MediaQuery.textScalerOf(context).scale(16) > 24;
+                final buttonWidth = stacked
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    SizedBox(
+                      width: buttonWidth,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colors.surface,
+                          foregroundColor: colors.onSurface,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: colors.outline.withValues(alpha: 0.3),
+                              width: 1.5,
+                            ),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: colors.onSurface.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                loc.translate('cancel'),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: colors.onSurface.withValues(alpha: 0.8),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      elevation: 0,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
+                    SizedBox(
+                      width: buttonWidth,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC81E1E),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          elevation: 2,
+                          shadowColor:
+                              const Color(0xFFC81E1E).withValues(alpha: 0.4),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFC81E1E),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.delete_rounded,
+                                size: 18, color: Colors.white),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Delete',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      elevation: 2,
-                      shadowColor:
-                          const Color(0xFFC81E1E).withValues(alpha: 0.4),
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.delete_rounded,
-                            size: 18, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text(
-                          'Delete',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ],
         );
@@ -978,14 +1013,15 @@ class _EnhancedOfferTile extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _getFormattedDate(offer.createdAt),
-                                  style: texts.bodySmall?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w500,
+                                Flexible(
+                                  child: Text(
+                                    _getFormattedDate(offer.createdAt),
+                                    textAlign: TextAlign.end,
+                                    style: texts.bodySmall?.copyWith(
+                                      color: colors.onSurface.withValues(alpha: 0.7),
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -1127,11 +1163,13 @@ class _EnhancedOfferTile extends StatelessWidget {
                                           color: colors.primary,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          '${squareFootageValue} ${loc.translate('squareFootageUnit')}',
-                                          style: texts.labelSmall?.copyWith(
-                                            color: colors.primary,
-                                            fontWeight: FontWeight.w600,
+                                        Flexible(
+                                          child: Text(
+                                            '${squareFootageValue} ${loc.translate('squareFootageUnit')}',
+                                            style: texts.labelSmall?.copyWith(
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -1165,11 +1203,13 @@ class _EnhancedOfferTile extends StatelessWidget {
                                       color: colors.tertiary,
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      _getPriceRange(offer),
-                                      style: texts.labelSmall?.copyWith(
-                                        color: colors.tertiary,
-                                        fontWeight: FontWeight.w600,
+                                    Flexible(
+                                      child: Text(
+                                        _getPriceRange(offer),
+                                        style: texts.labelSmall?.copyWith(
+                                          color: colors.tertiary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],

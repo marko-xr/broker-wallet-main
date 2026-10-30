@@ -1486,8 +1486,9 @@ void main() {
       ]) {
         expect(screen.contains(inset), isTrue, reason: inset);
       }
-      // The numbers are the layout's own: the filter row sits at 76 and is 48
-      // high; the my-location button is 40 high at 16 from the bottom.
+      // The opening camera retains the established normal-text insets. Only
+      // floating presentation grows for accessibility text; widget coverage in
+      // R6A checks the normal 76/48 geometry and scaled separation directly.
       expect(
         screen.contains('static const double _controlsBelowTop = 76 + 48 + 8;'),
         isTrue,
@@ -1499,11 +1500,13 @@ void main() {
       );
       expect(
         screen.contains(
-          'top: MediaQuery.of(context).padding.top + 76, // Below search bar left: 0,',
+          'top: MediaQuery.of(context).padding.top + filterTop,',
         ),
         isTrue,
-        reason: 'the filter row is where the frame assumes',
+        reason: 'the filter row follows the scaled search field',
       );
+      expect(screen.contains('final filterTop = 76 + searchExtra;'), isTrue);
+      expect(screen.contains('MapFilterBar.heightOf(context) - 48'), isTrue);
     });
   });
 

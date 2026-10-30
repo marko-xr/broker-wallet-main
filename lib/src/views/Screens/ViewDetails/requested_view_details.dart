@@ -147,7 +147,8 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     final isRTL = Directionality.of(context) == ui.TextDirection.rtl;
 
     return SliverAppBar(
-      expandedHeight: 200,
+      expandedHeight: 200 +
+          (MediaQuery.textScalerOf(context).scale(100) - 100),
       floating: false,
       pinned: true,
       stretch: true,
@@ -352,7 +353,10 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -374,9 +378,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                     ),
                   ),
                 ),
-                const Spacer(),
                 _buildCallButton(context),
-                const SizedBox(width: 8),
                 _buildWhatsAppButton(context),
               ],
             ),
@@ -802,8 +804,9 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
         children: [
           Icon(icon, size: 18, color: colors.primary),
           const SizedBox(width: 6),
-          Column(
-            children: [
+          Flexible(
+            child: Column(
+              children: [
               Text(
                 value,
                 style: texts.titleSmall?.copyWith(
@@ -813,12 +816,14 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
               ),
               Text(
                 label,
+                textAlign: TextAlign.center,
                 style: texts.bodySmall?.copyWith(
                   color: colors.onSurfaceVariant,
                   fontSize: 10,
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1049,10 +1054,12 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  loc.translate('notes'),
-                  style: texts.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    loc.translate('notes'),
+                    style: texts.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

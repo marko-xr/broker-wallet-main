@@ -12,9 +12,14 @@ import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
+import 'package:broker_wallet/src/repositories/user_repository.dart';
 
 class ProfileView extends StatelessWidget {
-  const ProfileView({super.key});
+  const ProfileView({super.key, this.userRepository});
+
+  /// Optional repository seam for production-widget tests.
+  /// Runtime routes omit it and keep the configured repository provider.
+  final UserRepository? userRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +29,7 @@ class ProfileView extends StatelessWidget {
         localeVM: ctx.read<LocaleViewModel>(),
         authVM: ctx.read<AuthViewModel>(),
         context: context,
+        userRepository: userRepository,
       ),
       child: Consumer2<ProfileViewModel, ThemeViewModel>(
         builder: (context, vm, themeVM, _) {
@@ -143,7 +149,8 @@ class ProfileView extends StatelessWidget {
                               iconAsset: SvgIcon.notifications,
                               isSvg: true,
                               title: localization.translate('notifications'),
-                              onTap: () => context.push('/notification-settings'),
+                              onTap: () =>
+                                  context.push('/notification-settings'),
                             ),
                           ],
                         ),

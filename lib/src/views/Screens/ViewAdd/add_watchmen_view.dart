@@ -16,12 +16,14 @@ class AddWatchmenView extends StatelessWidget {
   final AddWatchmenMode mode;
   final String? watchmenId;
   final WatchmenModel? watchmenData;
+  final AddWatchmenViewModel? viewModel;
 
   const AddWatchmenView({
     super.key,
     this.mode = AddWatchmenMode.add,
     this.watchmenId,
     this.watchmenData,
+    this.viewModel,
   });
 
   @override
@@ -29,11 +31,13 @@ class AddWatchmenView extends StatelessWidget {
     final localization = AppLocalizations.of(context);
 
     return ChangeNotifierProvider(
-      create: (_) => AddWatchmenViewModel(
-        mode: mode,
-        watchmenId: watchmenId,
-        watchmenData: watchmenData,
-      ),
+      create: (_) =>
+          viewModel ??
+          AddWatchmenViewModel(
+            mode: mode,
+            watchmenId: watchmenId,
+            watchmenData: watchmenData,
+          ),
       child: Consumer<AddWatchmenViewModel>(
         builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;

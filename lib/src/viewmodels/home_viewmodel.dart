@@ -131,13 +131,18 @@ class HomeViewModel extends ChangeNotifier {
   UserModel? get currentUser => _authRepository.currentUser;
   String? get currentUserId => _authRepository.currentUserId;
 
-  HomeViewModel({AuthRepository? authRepository})
-      : _authRepository =
+  HomeViewModel({
+    AuthRepository? authRepository,
+    @visibleForTesting bool initializeStreams = true,
+  }) : _authRepository =
             authRepository ?? RepositoryProvider.instance.authRepository {
     _filters.addListener(notifyListeners);
     _loadCachedCountsInstantly();
-    // Delay stream initialization until user is authenticated
-    _initializeStreamsWhenReady();
+    // Widget tests can render the real Home screen without connecting to an
+    // auth/backend stream. Production keeps the existing eager initialization.
+    if (initializeStreams) {
+      _initializeStreamsWhenReady();
+    }
   }
 
   /// Load cached counts instantly from memory - no async delays

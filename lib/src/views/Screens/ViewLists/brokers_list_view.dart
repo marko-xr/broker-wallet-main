@@ -1,4 +1,4 @@
-﻿import 'package:broker_wallet/src/common/utils/images.dart';
+import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
@@ -17,7 +17,9 @@ import '../../../viewmodels/ListScreens/list_brokers_viewmodel.dart';
 import '../../../services/phone_input_service.dart';
 
 class BrokersListView extends StatefulWidget {
-  const BrokersListView({super.key});
+  const BrokersListView({super.key, this.createViewModel});
+
+  final BrokersListViewModel Function()? createViewModel;
 
   @override
   State<BrokersListView> createState() => _BrokersListViewState();
@@ -31,7 +33,7 @@ class _BrokersListViewState extends State<BrokersListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => BrokersListViewModel(),
+      create: (_) => widget.createViewModel?.call() ?? BrokersListViewModel(),
       child: Consumer<BrokersListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -265,7 +267,8 @@ class _BrokersListViewState extends State<BrokersListView> {
           ),
 
           // Date text
-          Padding(
+          Flexible(
+              child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               displayText,
@@ -275,7 +278,7 @@ class _BrokersListViewState extends State<BrokersListView> {
                 letterSpacing: 0.5,
               ),
             ),
-          ),
+          )),
 
           // Right line
           Expanded(
@@ -304,42 +307,44 @@ class _BrokersListViewState extends State<BrokersListView> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFE6E6),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.wifi_off_rounded,
-                size: 48,
-                color: Color(0xFFFF6B6B),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              loc.translate('errorLoading'),
-              style: texts.headlineSmall?.copyWith(
-                color: const Color(0xFFE53E3E),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                errorMessage ?? vm.error ?? loc.translate('errorLoading'),
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurface.withValues(alpha: 0.7),
-                  height: 1.5,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE6E6),
+                  shape: BoxShape.circle,
                 ),
-                textAlign: TextAlign.center,
+                child: const Icon(
+                  Icons.wifi_off_rounded,
+                  size: 48,
+                  color: Color(0xFFFF6B6B),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                loc.translate('errorLoading'),
+                style: texts.headlineSmall?.copyWith(
+                  color: const Color(0xFFE53E3E),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  errorMessage ?? vm.error ?? loc.translate('errorLoading'),
+                  style: texts.bodyMedium?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -350,53 +355,55 @@ class _BrokersListViewState extends State<BrokersListView> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colors.tertiary.withValues(alpha: 0.1),
-                    colors.primary.withValues(alpha: 0.1),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colors.tertiary.withValues(alpha: 0.1),
+                      colors.primary.withValues(alpha: 0.1),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
                 ),
-                shape: BoxShape.circle,
-              ),
-              child: SvgPicture.asset(
-                'assets/icons/brokers-svg.svg',
-                width: 64,
-                height: 64,
-                colorFilter: ColorFilter.mode(
-                  colors.primary,
-                  BlendMode.srcIn,
+                child: SvgPicture.asset(
+                  'assets/icons/brokers-svg.svg',
+                  width: 64,
+                  height: 64,
+                  colorFilter: ColorFilter.mode(
+                    colors.primary,
+                    BlendMode.srcIn,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              loc.translate('noBrokersYet'),
-              style: texts.headlineSmall?.copyWith(
-                color: colors.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                loc.translate('addFirstBroker'),
-                style: texts.bodyLarge?.copyWith(
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  height: 1.5,
+              const SizedBox(height: 32),
+              Text(
+                loc.translate('noBrokersYet'),
+                style: texts.headlineSmall?.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.bold,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  loc.translate('addFirstBroker'),
+                  style: texts.bodyLarge?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.6),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -502,6 +509,7 @@ class _BrokersListViewState extends State<BrokersListView> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -513,12 +521,13 @@ class _BrokersListViewState extends State<BrokersListView> {
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
+              Flexible(
+                  child: Text(
                 loc.translate('deleteBroker'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
-              ),
+              )),
             ],
           ),
           content: Column(
@@ -564,87 +573,78 @@ class _BrokersListViewState extends State<BrokersListView> {
               ),
             ],
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
-            Row(
-              children: [
-                // Cancel Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      foregroundColor: colors.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.outline.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ],
-                    ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.surface,
+                foregroundColor: colors.onSurface,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: colors.outline.withValues(alpha: 0.3),
+                    width: 1.5,
                   ),
                 ),
-
-                const SizedBox(width: 12),
-
-                // Delete Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFC81E1E),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                elevation: 0,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('cancel'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: colors.onSurface.withValues(alpha: 0.8),
                       ),
-                      elevation: 2,
-                      shadowColor:
-                          const Color(0xFFC81E1E).withValues(alpha: 0.4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(
-                          Icons.delete_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Delete',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC81E1E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
+                elevation: 2,
+                shadowColor: const Color(0xFFC81E1E).withValues(alpha: 0.4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.delete_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('delete'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );
@@ -876,7 +876,8 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                Text(
+                                Flexible(
+                                    child: Text(
                                   broker.createdAt != null
                                       ? _getFormattedDate(broker.createdAt!)
                                       : loc.translate('notSpecified'),
@@ -885,7 +886,7 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                         colors.onSurface.withValues(alpha: 0.6),
                                     fontWeight: FontWeight.w500,
                                   ),
-                                ),
+                                )),
                               ],
                             ),
 
@@ -930,7 +931,8 @@ class _EnhancedBrokerTile extends StatelessWidget {
                       // Call Button
                       Expanded(
                         child: Container(
-                          height: 40,
+                          constraints: const BoxConstraints(minHeight: 40),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           decoration: BoxDecoration(
                             color: broker.phoneNumber.isNotEmpty
                                 ? const Color(0xFFE8F5E8)
@@ -958,7 +960,8 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                     size: 20,
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(
+                                  Flexible(
+                                      child: Text(
                                     loc.translate('call'),
                                     style: texts.bodyMedium?.copyWith(
                                       color: broker.phoneNumber.isNotEmpty
@@ -967,7 +970,7 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                               .withValues(alpha: 0.5),
                                       fontWeight: FontWeight.w600,
                                     ),
-                                  ),
+                                  )),
                                 ],
                               ),
                             ),
@@ -980,7 +983,8 @@ class _EnhancedBrokerTile extends StatelessWidget {
                       // WhatsApp Button
                       Expanded(
                         child: Container(
-                          height: 40,
+                          constraints: const BoxConstraints(minHeight: 40),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           decoration: BoxDecoration(
                             color: broker.phoneNumber.isNotEmpty
                                 ? const Color(0xFFE8F5E8)
@@ -1010,7 +1014,8 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                             .withValues(alpha: 0.5),
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(
+                                  Flexible(
+                                      child: Text(
                                     loc.translate('whatsapp'),
                                     style: texts.bodyMedium?.copyWith(
                                       color: broker.phoneNumber.isNotEmpty
@@ -1019,7 +1024,7 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                               .withValues(alpha: 0.5),
                                       fontWeight: FontWeight.w600,
                                     ),
-                                  ),
+                                  )),
                                 ],
                               ),
                             ),

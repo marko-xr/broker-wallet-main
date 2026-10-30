@@ -64,12 +64,16 @@ class SettingsTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (switchLabel != null)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 8),
-                  child: Text(
-                    switchLabel!,
-                    style: texts.bodySmall!.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.6),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 8),
+                    child: Text(
+                      switchLabel!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: texts.bodySmall!.copyWith(
+                        color: colors.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
                   ),
                 ),
@@ -90,71 +94,72 @@ class SettingsTile extends StatelessWidget {
                 color: colors.onSurface.withValues(alpha: 0.4),
               );
 
-    final rowContent = Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: isSvg
-                  ? SvgPicture.asset(
-                      iconAsset,
-                      width: 24,
-                      height: 24,
-                      colorFilter: ColorFilter.mode(
-                        accentColor,
-                        BlendMode.srcIn,
+    final rowContent = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 72),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: isSvg
+                    ? SvgPicture.asset(
+                        iconAsset,
+                        width: 24,
+                        height: 24,
+                        colorFilter: ColorFilter.mode(
+                          accentColor,
+                          BlendMode.srcIn,
+                        ),
+                      )
+                    : Icon(
+                        materialIcon ?? Icons.error,
+                        color: accentColor,
+                        size: 24,
                       ),
-                    )
-                  : Icon(
-                      materialIcon ?? Icons.error,
-                      color: accentColor,
-                      size: 24,
-                    ),
+              ),
             ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: texts.titleMedium!.copyWith(
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.2,
-                    color: destructive ? colors.error : null,
-                  ),
-                ),
-                if (hasSubtitle) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: texts.bodySmall!.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (trailingContent != null) ...[
             const SizedBox(width: 16),
-            trailingContent,
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: texts.titleMedium!.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                      color: destructive ? colors.error : null,
+                    ),
+                  ),
+                  if (hasSubtitle) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle!,
+                      style: texts.bodySmall!.copyWith(
+                        color: colors.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailingContent != null) ...[
+              const SizedBox(width: 16),
+              if (hasSwitch)
+                Flexible(child: trailingContent)
+              else
+                trailingContent,
+            ],
           ],
-        ],
+        ),
       ),
     );
 

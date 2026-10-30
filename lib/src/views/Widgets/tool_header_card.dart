@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 
 /// The card at the top of every toolbox screen.
 ///
-/// One widget for all the tools so they cannot drift apart: the same height,
-/// radius, shadow, icon box and text sizes. A tool only supplies its icon, its
-/// two lines of text and its colors. The height is fixed (and follows the
-/// system text size), so a long line is cut with an ellipsis instead of making
-/// one tool's card taller than another's.
+/// One widget for all the tools so they cannot drift apart: the same minimum
+/// height, radius, shadow, icon box and text sizes. A tool only supplies its
+/// icon, its two lines of text and its colors. The card can grow when its
+/// localized lines need more room at the current text size.
 class ToolHeaderCard extends StatelessWidget {
   const ToolHeaderCard({
     super.key,
@@ -36,7 +35,7 @@ class ToolHeaderCard extends StatelessWidget {
         .clamp(1.0, 1.6)
         .toDouble();
     return Container(
-      height: baseHeight * textScale,
+      constraints: BoxConstraints(minHeight: baseHeight * textScale),
       margin: margin,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(

@@ -47,6 +47,7 @@ class _ImagePdfSettingsSheetState extends State<ImagePdfSettingsSheet> {
   late final TextEditingController _watermark;
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
+  final GlobalKey _contentKey = GlobalKey();
   bool _inches = false;
   bool _changePassword = false;
   bool _showPassword = false;
@@ -150,226 +151,251 @@ class _ImagePdfSettingsSheetState extends State<ImagePdfSettingsSheet> {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_green, _green.withValues(alpha: 0.8)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.settings, color: AppColors.white, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    loc.translate('advancedPdfSettings'),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.white,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppColors.white),
-                ),
-              ],
-            ),
+    return Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: Container(
+          height: (MediaQuery.sizeOf(context).height * 0.9 -
+                  MediaQuery.viewInsetsOf(context).bottom)
+              .clamp(0.0, double.infinity),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          Expanded(
-            child: SingleChildScrollView(
+          child: LayoutBuilder(builder: (context, constraints) {
+            final header = Container(
               padding: const EdgeInsets.all(20),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [_green, _green.withValues(alpha: 0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(
                 children: [
-                  _sectionHeader(
-                      loc.translate('pageFormat'), Icons.aspect_ratio),
-                  const SizedBox(height: 12),
-                  _dropdown<PdfPageSize>(
-                    loc.translate('pageSize'),
-                    _s.pageSize,
-                    PdfPageSize.values,
-                    (v) => setState(() => _s = _s.copyWith(pageSize: v)),
-                    (v) => _sizeName(loc, v),
-                  ),
-                  if (_s.pageSize == PdfPageSize.custom) ..._customSize(loc),
-                  const SizedBox(height: 12),
-                  _dropdown<PdfOrientation>(
-                    loc.translate('orientation'),
-                    _s.orientation,
-                    PdfOrientation.values,
-                    (v) => setState(() => _s = _s.copyWith(orientation: v)),
-                    (v) {
-                      switch (v) {
-                        case PdfOrientation.portrait:
-                          return loc.translate('portrait');
-                        case PdfOrientation.landscape:
-                          return loc.translate('landscape');
-                        case PdfOrientation.auto:
-                          return loc.translate('auto');
-                      }
-                    },
-                  ),
-                  _hint(loc.translate('i2pOrientationHint'), colors),
-                  const SizedBox(height: 24),
-                  _sectionHeader(
-                      loc.translate('imageProcessing'), Icons.photo_filter),
-                  const SizedBox(height: 12),
-                  _dropdown<ImageQuality>(
-                    loc.translate('imageQuality'),
-                    _s.quality,
-                    ImageQuality.values,
-                    (v) => setState(() => _s = _s.copyWith(quality: v)),
-                    (v) => loc.translate('i2pQuality${_cap(v.name)}'),
-                  ),
-                  _hint(loc.translate('i2pQualityHint'), colors),
-                  const SizedBox(height: 12),
-                  _dropdown<CompressionLevel>(
-                    loc.translate('compression'),
-                    _s.compression,
-                    CompressionLevel.values,
-                    (v) => setState(() => _s = _s.copyWith(compression: v)),
-                    (v) => loc.translate('i2pCompression${_cap(v.name)}'),
-                  ),
-                  _hint(loc.translate('i2pCompressionHint'), colors),
-                  const SizedBox(height: 24),
-                  _sectionHeader(
-                      loc.translate('layoutAndDesign'), Icons.design_services),
-                  const SizedBox(height: 12),
-                  _dropdown<PdfLayout>(
-                    loc.translate('layoutStyle'),
-                    _s.layout,
-                    PdfLayout.values,
-                    (v) => setState(() => _s = _s.copyWith(layout: v)),
-                    (v) {
-                      switch (v) {
-                        case PdfLayout.fitToPage:
-                          return loc.translate('fitToPage');
-                        case PdfLayout.originalSize:
-                          return loc.translate('originalSize');
-                        case PdfLayout.centerFit:
-                          return loc.translate('centerFit');
-                        case PdfLayout.tileMultiple:
-                          return loc.translate('tileMultiple');
-                      }
-                    },
-                  ),
-                  _hint(loc.translate('i2pLayoutHint${_cap(_s.layout.name)}'),
-                      colors),
-                  if (_s.layout == PdfLayout.tileMultiple) ...[
-                    const SizedBox(height: 12),
-                    _dropdown<int>(
-                      loc.translate('i2pTilesPerPage'),
-                      _s.tilesPerPage,
-                      ImagePdfLimits.tileCounts,
-                      (v) => setState(() => _s = _s.copyWith(tilesPerPage: v)),
-                      (v) => '$v',
+                  const Icon(Icons.settings, color: AppColors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      loc.translate('advancedPdfSettings'),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.white,
+                      ),
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  _slider(
-                    loc.translate('pageMargin'),
-                    _s.marginMm,
-                    0,
-                    ImagePdfLimits.maxMarginMm,
-                    (v) => setState(() => _s = _s.copyWith(marginMm: v)),
-                    loc
-                        .translate('i2pMillimetres')
-                        .replaceAll('{value}', _s.marginMm.round().toString()),
                   ),
-                  const SizedBox(height: 24),
-                  _sectionHeader(loc.translate('professionalFeatures'),
-                      Icons.business_center),
-                  const SizedBox(height: 12),
-                  _switch(
-                    loc.translate('addPageNumbers'),
-                    loc.translate('includePageNumbersBottom'),
-                    _s.pageNumbers,
-                    (v) => setState(() => _s = _s.copyWith(pageNumbers: v)),
-                    Icons.format_list_numbered,
-                  ),
-                  _switch(
-                    loc.translate('addTimestamp'),
-                    loc.translate('includeCreationDateTime'),
-                    _s.timestamp,
-                    (v) => setState(() => _s = _s.copyWith(timestamp: v)),
-                    Icons.access_time,
-                  ),
-                  _switch(
-                    loc.translate('addWatermark'),
-                    loc.translate('includeAppWatermark'),
-                    _s.watermark,
-                    (v) => setState(() => _s = _s.copyWith(watermark: v)),
-                    Icons.branding_watermark,
-                  ),
-                  if (_s.watermark) _watermarkField(loc, colors),
-                  _switch(
-                    loc.translate('i2pCoverPage'),
-                    loc.translate('i2pCoverPageSub'),
-                    _s.coverPage,
-                    (v) => setState(() => _s = _s.copyWith(coverPage: v)),
-                    Icons.article_outlined,
-                  ),
-                  _switch(
-                    loc.translate('i2pPasswordProtect'),
-                    loc.translate('i2pPasswordProtectSub'),
-                    _s.passwordProtect,
-                    (v) => setState(() => _s = _s.copyWith(passwordProtect: v)),
-                    Icons.lock_outline,
-                  ),
-                  if (_s.passwordProtect) ..._passwordFields(loc, colors),
-                  const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.cancel),
-                          label: Text(loc.translate('cancel')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.card,
-                            foregroundColor: AppColors.textSecondary,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _canApply ? _apply : null,
-                          icon: const Icon(Icons.check),
-                          label: Text(loc.translate('applySettings')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _green,
-                            foregroundColor: AppColors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                    ],
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: AppColors.white),
                   ),
                 ],
               ),
-            ),
-          ),
-        ],
-      ),
-    );
+            );
+            final content = Column(
+              key: _contentKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionHeader(loc.translate('pageFormat'), Icons.aspect_ratio),
+                const SizedBox(height: 12),
+                _dropdown<PdfPageSize>(
+                  loc.translate('pageSize'),
+                  _s.pageSize,
+                  PdfPageSize.values,
+                  (v) => setState(() => _s = _s.copyWith(pageSize: v)),
+                  (v) => _sizeName(loc, v),
+                ),
+                if (_s.pageSize == PdfPageSize.custom) ..._customSize(loc),
+                const SizedBox(height: 12),
+                _dropdown<PdfOrientation>(
+                  loc.translate('orientation'),
+                  _s.orientation,
+                  PdfOrientation.values,
+                  (v) => setState(() => _s = _s.copyWith(orientation: v)),
+                  (v) {
+                    switch (v) {
+                      case PdfOrientation.portrait:
+                        return loc.translate('portrait');
+                      case PdfOrientation.landscape:
+                        return loc.translate('landscape');
+                      case PdfOrientation.auto:
+                        return loc.translate('auto');
+                    }
+                  },
+                ),
+                _hint(loc.translate('i2pOrientationHint'), colors),
+                const SizedBox(height: 24),
+                _sectionHeader(
+                    loc.translate('imageProcessing'), Icons.photo_filter),
+                const SizedBox(height: 12),
+                _dropdown<ImageQuality>(
+                  loc.translate('imageQuality'),
+                  _s.quality,
+                  ImageQuality.values,
+                  (v) => setState(() => _s = _s.copyWith(quality: v)),
+                  (v) => loc.translate('i2pQuality${_cap(v.name)}'),
+                ),
+                _hint(loc.translate('i2pQualityHint'), colors),
+                const SizedBox(height: 12),
+                _dropdown<CompressionLevel>(
+                  loc.translate('compression'),
+                  _s.compression,
+                  CompressionLevel.values,
+                  (v) => setState(() => _s = _s.copyWith(compression: v)),
+                  (v) => loc.translate('i2pCompression${_cap(v.name)}'),
+                ),
+                _hint(loc.translate('i2pCompressionHint'), colors),
+                const SizedBox(height: 24),
+                _sectionHeader(
+                    loc.translate('layoutAndDesign'), Icons.design_services),
+                const SizedBox(height: 12),
+                _dropdown<PdfLayout>(
+                  loc.translate('layoutStyle'),
+                  _s.layout,
+                  PdfLayout.values,
+                  (v) => setState(() => _s = _s.copyWith(layout: v)),
+                  (v) {
+                    switch (v) {
+                      case PdfLayout.fitToPage:
+                        return loc.translate('fitToPage');
+                      case PdfLayout.originalSize:
+                        return loc.translate('originalSize');
+                      case PdfLayout.centerFit:
+                        return loc.translate('centerFit');
+                      case PdfLayout.tileMultiple:
+                        return loc.translate('tileMultiple');
+                    }
+                  },
+                ),
+                _hint(loc.translate('i2pLayoutHint${_cap(_s.layout.name)}'),
+                    colors),
+                if (_s.layout == PdfLayout.tileMultiple) ...[
+                  const SizedBox(height: 12),
+                  _dropdown<int>(
+                    loc.translate('i2pTilesPerPage'),
+                    _s.tilesPerPage,
+                    ImagePdfLimits.tileCounts,
+                    (v) => setState(() => _s = _s.copyWith(tilesPerPage: v)),
+                    (v) => '$v',
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _slider(
+                  loc.translate('pageMargin'),
+                  _s.marginMm,
+                  0,
+                  ImagePdfLimits.maxMarginMm,
+                  (v) => setState(() => _s = _s.copyWith(marginMm: v)),
+                  loc
+                      .translate('i2pMillimetres')
+                      .replaceAll('{value}', _s.marginMm.round().toString()),
+                ),
+                const SizedBox(height: 24),
+                _sectionHeader(loc.translate('professionalFeatures'),
+                    Icons.business_center),
+                const SizedBox(height: 12),
+                _switch(
+                  loc.translate('addPageNumbers'),
+                  loc.translate('includePageNumbersBottom'),
+                  _s.pageNumbers,
+                  (v) => setState(() => _s = _s.copyWith(pageNumbers: v)),
+                  Icons.format_list_numbered,
+                ),
+                _switch(
+                  loc.translate('addTimestamp'),
+                  loc.translate('includeCreationDateTime'),
+                  _s.timestamp,
+                  (v) => setState(() => _s = _s.copyWith(timestamp: v)),
+                  Icons.access_time,
+                ),
+                _switch(
+                  loc.translate('addWatermark'),
+                  loc.translate('includeAppWatermark'),
+                  _s.watermark,
+                  (v) => setState(() => _s = _s.copyWith(watermark: v)),
+                  Icons.branding_watermark,
+                ),
+                if (_s.watermark) _watermarkField(loc, colors),
+                _switch(
+                  loc.translate('i2pCoverPage'),
+                  loc.translate('i2pCoverPageSub'),
+                  _s.coverPage,
+                  (v) => setState(() => _s = _s.copyWith(coverPage: v)),
+                  Icons.article_outlined,
+                ),
+                _switch(
+                  loc.translate('i2pPasswordProtect'),
+                  loc.translate('i2pPasswordProtectSub'),
+                  _s.passwordProtect,
+                  (v) => setState(() => _s = _s.copyWith(passwordProtect: v)),
+                  Icons.lock_outline,
+                ),
+                if (_s.passwordProtect) ..._passwordFields(loc, colors),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.cancel),
+                        label: Text(loc.translate('cancel')),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.card,
+                          foregroundColor: AppColors.textSecondary,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _canApply ? _apply : null,
+                        icon: const Icon(Icons.check),
+                        label: Text(loc.translate('applySettings')),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _green,
+                          foregroundColor: AppColors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+            final title = TextPainter(
+                text: TextSpan(
+                    text: loc.translate('advancedPdfSettings'),
+                    style: DefaultTextStyle.of(context).style.merge(
+                        const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold))),
+                textDirection: Directionality.of(context),
+                textScaler: MediaQuery.textScalerOf(context))
+              ..layout(
+                  maxWidth: (constraints.maxWidth - 40 - 28 - 12 - 48)
+                      .clamp(1.0, double.infinity));
+            final headerHeight = (title.height > 48 ? title.height : 48) + 40;
+            title.dispose();
+            final scrollContent =
+                Padding(padding: const EdgeInsets.all(20), child: content);
+            if (constraints.maxHeight <
+                headerHeight + kMinInteractiveDimension) {
+              return SingleChildScrollView(
+                  child: Column(children: [header, scrollContent]));
+            }
+            return Column(children: [
+              header,
+              Expanded(
+                  child: SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      child: scrollContent))
+            ]);
+          }),
+        ));
   }
 
   static String _cap(String name) => name[0].toUpperCase() + name.substring(1);
@@ -607,9 +633,10 @@ class _ImagePdfSettingsSheetState extends State<ImagePdfSettingsSheet> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            Flexible(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14))),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(

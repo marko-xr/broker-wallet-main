@@ -365,6 +365,7 @@ class _TypedStampDialogState extends State<_TypedStampDialog> {
     final localization = AppLocalizations.of(context);
     final isInitials = widget.kind == StampKind.initials;
     return AlertDialog(
+      scrollable: true,
       title: Text(localization
           .translate(isInitials ? 'sigTypeInitials' : 'sigAddText')),
       content: SingleChildScrollView(
@@ -496,6 +497,7 @@ class _DateStampDialogState extends State<_DateStampDialog> {
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     return AlertDialog(
+      scrollable: true,
       title: Text(localization.translate('sigAddDate')),
       content: SingleChildScrollView(
         child: Column(

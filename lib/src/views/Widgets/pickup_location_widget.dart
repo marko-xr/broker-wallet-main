@@ -74,102 +74,110 @@ class _PickUpInputWidgetState extends State<PickUpInputWidget> {
         children: [
           // Text input row
           Container(
-            height: 52,
+            constraints: const BoxConstraints(minHeight: 52),
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                Icon(
-                  vm?.hasSelectedLocation == true
-                      ? Icons.location_on
-                      : Icons.location_on_outlined,
-                  color: vm?.hasSelectedLocation == true
-                      ? colors.primary
-                      : const Color(0xFF8B959A),
-                  size: 25,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    readOnly: true, // Make the text field read-only
-                    enableInteractiveSelection: false, // Disable text selection
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: widget.hint,
-                      hintStyle: AppTextStyles.hintText,
-                    ),
-                    style: AppTextStyles.bodyText,
-                    // Remove onChanged since field is now read-only
-                    onTap: vm != null
-                        ? () => _openMapPicker(context, vm)
-                        : null, // Open map when tapped
+            child: LayoutBuilder(
+              builder: (context, constraints) => Row(
+                children: [
+                  Icon(
+                    vm?.hasSelectedLocation == true
+                        ? Icons.location_on
+                        : Icons.location_on_outlined,
+                    color: vm?.hasSelectedLocation == true
+                        ? colors.primary
+                        : const Color(0xFF8B959A),
+                    size: 25,
                   ),
-                ),
-
-                // Map button - only show if viewModel is provided
-                if (vm != null) ...[
-                  Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: vm.hasSelectedLocation
-                          ? Color.fromARGB(
-                              (0.1 * 255).round(),
-                              colors.primary.red,
-                              colors.primary.green,
-                              colors.primary.blue)
-                          : Color.fromARGB(
-                              (0.05 * 255).round(),
-                              colors.primary.red,
-                              colors.primary.green,
-                              colors.primary.blue),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: vm.hasSelectedLocation
-                            ? colors.primary
-                            : Color.fromARGB(
-                                (0.3 * 255).round(),
-                                colors.primary.red,
-                                colors.primary.green,
-                                colors.primary.blue),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      readOnly: true, // Make the text field read-only
+                      enableInteractiveSelection:
+                          false, // Disable text selection
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: widget.hint,
+                        hintStyle: AppTextStyles.hintText,
                       ),
+                      style: AppTextStyles.bodyText,
+                      // Remove onChanged since field is now read-only
+                      onTap: vm != null
+                          ? () => _openMapPicker(context, vm)
+                          : null, // Open map when tapped
                     ),
-                    child: TextButton.icon(
-                      onPressed: vm.isLocationLoading
-                          ? null
-                          : () => _openMapPicker(context, vm),
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        minimumSize: Size.zero,
-                      ),
-                      icon: vm.isLocationLoading
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colors.primary,
-                              ),
-                            )
-                          : Icon(
-                              vm.hasSelectedLocation
-                                  ? Icons.edit_location
-                                  : Icons.map,
-                              size: 18,
+                  ),
+
+                  // Map button - only show if viewModel is provided
+                  if (vm != null) ...[
+                    ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxWidth: constraints.maxWidth / 2),
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 36),
+                        decoration: BoxDecoration(
+                          color: vm.hasSelectedLocation
+                              ? Color.fromARGB(
+                                  (0.1 * 255).round(),
+                                  colors.primary.red,
+                                  colors.primary.green,
+                                  colors.primary.blue)
+                              : Color.fromARGB(
+                                  (0.05 * 255).round(),
+                                  colors.primary.red,
+                                  colors.primary.green,
+                                  colors.primary.blue),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: vm.hasSelectedLocation
+                                ? colors.primary
+                                : Color.fromARGB(
+                                    (0.3 * 255).round(),
+                                    colors.primary.red,
+                                    colors.primary.green,
+                                    colors.primary.blue),
+                          ),
+                        ),
+                        child: TextButton.icon(
+                          onPressed: vm.isLocationLoading
+                              ? null
+                              : () => _openMapPicker(context, vm),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colors.primary,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            minimumSize: Size.zero,
+                          ),
+                          icon: vm.isLocationLoading
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colors.primary,
+                                  ),
+                                )
+                              : Icon(
+                                  vm.hasSelectedLocation
+                                      ? Icons.edit_location
+                                      : Icons.map,
+                                  size: 18,
+                                ),
+                          label: Text(
+                            textAlign: TextAlign.center,
+                            vm.hasSelectedLocation
+                                ? widget.localization.translate('edit')
+                                : widget.localization.translate('map'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
-                      label: Text(
-                        vm.hasSelectedLocation
-                            ? widget.localization.translate('edit')
-                            : widget.localization.translate('map'),
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
 

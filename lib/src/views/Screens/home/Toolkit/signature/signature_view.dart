@@ -118,6 +118,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text(localization.translate('confirmDelete')),
         content: content,
         actions: [
@@ -325,6 +326,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         title: Text(localization.translate('sigCannotOpenTitle')),
         content: Text(message, key: const ValueKey<String>('open-refusal')),
         actions: [
@@ -467,7 +469,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                       children: [
                         const Icon(Icons.share, size: 20, color: Colors.blue),
                         const SizedBox(width: 12),
-                        Text(localization.translate('share')),
+                        Flexible(
+ child: Text(localization.translate('share')),
+ ),
                       ],
                     ),
                   ),
@@ -478,7 +482,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                         const Icon(Icons.download,
                             size: 20, color: Colors.green),
                         const SizedBox(width: 12),
-                        Text(localization.translate('download')),
+                        Flexible(
+ child: Text(localization.translate('download')),
+ ),
                       ],
                     ),
                   ),
@@ -488,7 +494,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                       children: [
                         const Icon(Icons.edit, size: 20, color: Colors.grey),
                         const SizedBox(width: 12),
-                        Text(localization.translate('rename')),
+                        Flexible(
+ child: Text(localization.translate('rename')),
+ ),
                       ],
                     ),
                   ),
@@ -498,7 +506,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                       children: [
                         const Icon(Icons.delete, size: 20, color: Colors.red),
                         const SizedBox(width: 12),
-                        Text(localization.translate('delete')),
+                        Flexible(
+ child: Text(localization.translate('delete')),
+ ),
                       ],
                     ),
                   ),
@@ -637,7 +647,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                             const Icon(Icons.edit,
                                 size: 18, color: Colors.grey),
                             const SizedBox(width: 8),
-                            Text(localization.translate('rename')),
+                            Flexible(
+ child: Text(localization.translate('rename')),
+ ),
                           ],
                         ),
                       ),
@@ -648,7 +660,9 @@ class _SignatureScreenState extends State<SignatureScreen> {
                             const Icon(Icons.download,
                                 size: 18, color: Colors.green),
                             const SizedBox(width: 8),
-                            Text(localization.translate('download')),
+                            Flexible(
+ child: Text(localization.translate('download')),
+ ),
                           ],
                         ),
                       ),
@@ -659,10 +673,12 @@ class _SignatureScreenState extends State<SignatureScreen> {
                             const Icon(Icons.delete,
                                 color: Colors.red, size: 18),
                             const SizedBox(width: 8),
-                            Text(
-                              localization.translate('delete'),
-                              style: const TextStyle(color: Colors.red),
-                            ),
+                            Flexible(
+ child: Text(
+ localization.translate('delete'),
+ style: const TextStyle(color: Colors.red),
+ ),
+ ),
                           ],
                         ),
                       ),
@@ -756,15 +772,20 @@ class _SignatureScreenState extends State<SignatureScreen> {
                             color: colors.onSurfaceVariant,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            SignedDocumentsHelper.formatFileSize(
-                                document.fileSize),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                  fontSize: 10,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          Flexible(
+                            child: Text(
+                              SignedDocumentsHelper.formatFileSize(
+                                  document.fileSize),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                    fontSize: 10,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            ),
                           ),
                         ],
                       ),
@@ -1194,6 +1215,7 @@ class _RenameDialogState extends State<_RenameDialog> {
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     return AlertDialog(
+      scrollable: true,
       title: Text(localization.translate('renameDocument')),
       content: TextField(
         key: const ValueKey<String>('rename-field'),

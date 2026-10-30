@@ -17,9 +17,16 @@ import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
 /// Pops with `true` once the scan is saved, `false` when it was discarded or the
 /// account changed under it.
 class ScannerReviewScreen extends StatefulWidget {
-  const ScannerReviewScreen({super.key, required this.viewModel});
+  const ScannerReviewScreen({
+    super.key,
+    required this.viewModel,
+    this.imageProviderForPath,
+  });
 
   final ScannerViewModel viewModel;
+
+  /// Optional local image boundary; normal previews still use their file.
+  final ImageProvider<Object> Function(String)? imageProviderForPath;
 
   @override
   State<ScannerReviewScreen> createState() => _ScannerReviewScreenState();
@@ -28,6 +35,8 @@ class ScannerReviewScreen extends StatefulWidget {
 class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
   late final TextEditingController _name;
   String? _error;
+  // Keep the name field mounted when the footer moves into the scroll view.
+  final GlobalKey _footerKey = GlobalKey();
   bool _closing = false;
 
   // Save is running from this screen: the scan leaves the view model on
@@ -166,82 +175,103 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
                   ),
                 ),
                 body: SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                        child: _summary(loc, colors, draft),
-                      ),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final summary = Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: _summary(loc, colors, draft),
+                    );
+                    final footer = Column(
+                        key: _footerKey,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            child: Text(
+                              loc.translate('scannerReviewHint'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: colors.onSurface
+                                        .withValues(alpha: 0.65),
+                                  ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            child: TextField(
+                              controller: _name,
+                              enabled: !saving,
+                              maxLength: ScannerNaming.maxNameRunes,
+                              decoration: InputDecoration(
+                                labelText: loc.translate('documentName'),
+                                border: const OutlineInputBorder(),
+                                counterText: '',
+                              ),
+                            ),
+                          ),
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.error_outline,
+                                      size: 18, color: colors.error),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _error!,
+                                      style: TextStyle(color: colors.error),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: saving ? null : _discard,
+                                    child: Text(loc.translate('discard')),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 2,
+                                  child: ElevatedButton.icon(
+                                    onPressed: saving ? null : _save,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    icon: const Icon(Icons.save),
+                                    label: Text(_error != null
+                                        ? loc.translate('retry')
+                                        : loc.translate('saveDocument')),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ]);
+                    if (constraints.maxHeight <
+                        _minimumReviewHeight(
+                            context, loc, draft, constraints.maxWidth)) {
+                      return CustomScrollView(slivers: [
+                        SliverToBoxAdapter(child: summary),
+                        _pages(loc, colors, draft,
+                            sliver: true, pdfHeight: constraints.maxHeight),
+                        SliverToBoxAdapter(child: footer),
+                      ]);
+                    }
+                    return Column(children: [
+                      summary,
                       Expanded(child: _pages(loc, colors, draft)),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: Text(
-                          loc.translate('scannerReviewHint'),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: colors.onSurface.withValues(alpha: 0.65),
-                              ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                        child: TextField(
-                          controller: _name,
-                          enabled: !saving,
-                          maxLength: ScannerNaming.maxNameRunes,
-                          decoration: InputDecoration(
-                            labelText: loc.translate('documentName'),
-                            border: const OutlineInputBorder(),
-                            counterText: '',
-                          ),
-                        ),
-                      ),
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          child: Row(
-                            children: [
-                              Icon(Icons.error_outline,
-                                  size: 18, color: colors.error),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _error!,
-                                  style: TextStyle(color: colors.error),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: saving ? null : _discard,
-                                child: Text(loc.translate('discard')),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 2,
-                              child: ElevatedButton.icon(
-                                onPressed: saving ? null : _save,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                ),
-                                icon: const Icon(Icons.save),
-                                label: Text(_error != null
-                                    ? loc.translate('retry')
-                                    : loc.translate('saveDocument')),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                      footer
+                    ]);
+                  }),
                 ),
               ),
               // The one progress indicator while the scan is stored: dims the
@@ -260,13 +290,58 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
     );
   }
 
-  Widget _summary(AppLocalizations loc, ColorScheme colors, ScanDraft draft) {
+  double _minimumReviewHeight(BuildContext context, AppLocalizations loc,
+      ScanDraft draft, double width) {
+    final theme = Theme.of(context);
+    double textHeight(String text, TextStyle? style, double maxWidth) {
+      final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context))
+        ..layout(maxWidth: maxWidth.clamp(1.0, double.infinity));
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final contentWidth = width - 32;
+    final summary = textHeight(
+        _summaryText(loc, draft),
+        theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+        contentWidth - 32);
+    final hint = textHeight(loc.translate('scannerReviewHint'),
+        theme.textTheme.bodySmall, contentWidth);
+    final input =
+        textHeight('Ag', theme.textTheme.titleMedium, contentWidth) + 32;
+    final discard = textHeight(loc.translate('discard'),
+        theme.textTheme.labelLarge, (contentWidth - 12) / 3 - 48);
+    final save = textHeight(
+        loc.translate(_error == null ? 'saveDocument' : 'retry'),
+        theme.textTheme.labelLarge,
+        (contentWidth - 12) * 2 / 3 - 80);
+    final actionText = discard > save ? discard : save;
+    final actions = actionText + 16 > kMinInteractiveDimension
+        ? actionText + 16
+        : kMinInteractiveDimension;
+    final row = (width - 32 - 16) / 3 / .72;
+    final error = _error == null
+        ? 0.0
+        : textHeight(_error!, theme.textTheme.bodyMedium, contentWidth - 26) +
+            8;
+    return summary + hint + input + actions + row + error + 64;
+  }
+
+  String _summaryText(AppLocalizations loc, ScanDraft draft) {
     final format = draft.format == ExportFormat.pdf
         ? loc.translate('pdf')
         : loc.translate('images');
     final pages = loc
         .translate('scannerPageCountLabel')
         .replaceAll('{count}', '${draft.pageCount}');
+    return '$format • $pages • ${_size(draft.totalBytes)}';
+  }
+
+  Widget _summary(AppLocalizations loc, ColorScheme colors, ScanDraft draft) {
     return Row(
       children: [
         Icon(
@@ -276,7 +351,7 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            '$format • $pages • ${_size(draft.totalBytes)}',
+            _summaryText(loc, draft),
             style: Theme.of(context)
                 .textTheme
                 .titleSmall
@@ -287,9 +362,10 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
     );
   }
 
-  Widget _pages(AppLocalizations loc, ColorScheme colors, ScanDraft draft) {
+  Widget _pages(AppLocalizations loc, ColorScheme colors, ScanDraft draft,
+      {bool sliver = false, double pdfHeight = 0}) {
     if (draft.format == ExportFormat.pdf) {
-      return Padding(
+      final preview = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
@@ -299,70 +375,82 @@ class _ScannerReviewScreenState extends State<ScannerReviewScreen> {
           ),
         ),
       );
+      return sliver
+          ? SliverToBoxAdapter(
+              child: SizedBox(height: pdfHeight, child: preview))
+          : preview;
     }
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 0.72,
-      ),
-      itemCount: draft.pages.length,
-      itemBuilder: (context, index) {
-        final page = draft.pages[index];
-        return InkWell(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ScannerImageViewer(
-                file: page.file,
-                title: loc
-                    .translate('scannerPageCountLabel')
-                    .replaceAll('{count}', '${index + 1}'),
-              ),
+    const grid = SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 3,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      childAspectRatio: 0.72,
+    );
+    final pages = SliverChildBuilderDelegate((context, index) {
+      final page = draft.pages[index];
+      return InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ScannerImageViewer(
+              file: page.file,
+              imageProvider: widget.imageProviderForPath?.call(page.file.path),
+              title: loc
+                  .translate('scannerPageCountLabel')
+                  .replaceAll('{count}', '${index + 1}'),
             ),
           ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  page.file,
-                  fit: BoxFit.cover,
-                  cacheWidth: 480,
-                  gaplessPlayback: true,
-                  errorBuilder: (context, error, stack) => Container(
-                    color: colors.surfaceContainerHighest,
-                    child: const Icon(Icons.broken_image_outlined),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image(
+                image: ResizeImage.resizeIfNeeded(
+                    480,
+                    null,
+                    widget.imageProviderForPath?.call(page.file.path) ??
+                        FileImage(page.file)),
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stack) => Container(
+                  color: colors.surfaceContainerHighest,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              top: 6,
+              start: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              PositionedDirectional(
-                top: 6,
-                start: 6,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+            ),
+          ],
+        ),
+      );
+    }, childCount: draft.pages.length);
+    if (sliver) {
+      return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverGrid(gridDelegate: grid, delegate: pages));
+    }
+    return GridView.custom(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        gridDelegate: grid,
+        childrenDelegate: pages);
   }
 
   String _size(int bytes) {

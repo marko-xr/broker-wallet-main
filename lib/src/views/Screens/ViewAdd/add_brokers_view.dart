@@ -15,12 +15,14 @@ class AddBrokersView extends StatelessWidget {
   final AddBrokersMode mode;
   final String? brokerId;
   final BrokerModel? brokerData;
+  final AddBrokersViewModel? viewModel;
 
   const AddBrokersView({
     super.key,
     this.mode = AddBrokersMode.add,
     this.brokerId,
     this.brokerData,
+    this.viewModel,
   });
 
   @override
@@ -28,11 +30,13 @@ class AddBrokersView extends StatelessWidget {
     final localization = AppLocalizations.of(context);
 
     return ChangeNotifierProvider(
-      create: (_) => AddBrokersViewModel(
-        mode: mode,
-        brokerId: brokerId,
-        brokerData: brokerData,
-      ),
+      create: (_) =>
+          viewModel ??
+          AddBrokersViewModel(
+            mode: mode,
+            brokerId: brokerId,
+            brokerData: brokerData,
+          ),
       child: Consumer<AddBrokersViewModel>(
         builder: (context, vm, _) {
           final colors = Theme.of(context).colorScheme;

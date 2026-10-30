@@ -1,4 +1,4 @@
-﻿import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/action_decorations.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/action_decorations.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -21,10 +21,12 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 
 class BrokersDetailsView extends StatefulWidget {
   final BrokerModel broker;
+  final RelatedItemsService? relatedItemsService;
 
   const BrokersDetailsView({
     super.key,
     required this.broker,
+    this.relatedItemsService,
   });
 
   @override
@@ -43,7 +45,11 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
 
   // Services
   final BrokerService _brokerService = BrokerService();
-  final RelatedItemsService _relatedItemsService = RelatedItemsService();
+  late final RelatedItemsService _relatedItemsService =
+      widget.relatedItemsService ?? RelatedItemsService();
+  String? _relatedPhone;
+  Stream<List<OfferModel>>? _relatedOffers;
+  Stream<List<RequestModel>>? _relatedRequests;
 
   // Favorite state - now managed by OptimisticFavoritesService
   late OptimisticFavoritesService _optimisticFavoritesService;
@@ -154,8 +160,20 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
     final texts = Theme.of(context).textTheme;
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
+    final headerTitle = TextPainter(
+      text: TextSpan(
+          text: AppLocalizations.of(context).translate('brokerDetails'),
+          style: texts.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.localeOf(context),
+    )..layout(maxWidth: MediaQuery.sizeOf(context).width);
+    // Existing 48px icon, 16px padding each side, and 16px title gap.
+    final contentHeight = 48 + 32 + 2 + 16 + headerTitle.height;
+    headerTitle.dispose();
+
     return SliverAppBar(
-      expandedHeight: 200,
+      expandedHeight: contentHeight > 200 ? contentHeight : 200,
       floating: false,
       pinned: true,
       stretch: true,
@@ -352,16 +370,23 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
 
   /// 🔗 Build related items carousel showing offers/requests with matching phone
   Widget _buildRelatedItemsCarousel(BuildContext context) {
-    if (_currentBroker.phoneNumber.isEmpty) {
+    final phone = _currentBroker.phoneNumber;
+    if (_relatedPhone != phone) {
+      _relatedPhone = phone;
+      _relatedOffers =
+          phone.isEmpty ? null : _relatedItemsService.getRelatedOffers(phone);
+      _relatedRequests =
+          phone.isEmpty ? null : _relatedItemsService.getRelatedRequests(phone);
+    }
+    if (phone.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return StreamBuilder<List<OfferModel>>(
-      stream: _relatedItemsService.getRelatedOffers(_currentBroker.phoneNumber),
+      stream: _relatedOffers,
       builder: (context, offersSnapshot) {
         return StreamBuilder<List<RequestModel>>(
-          stream: _relatedItemsService
-              .getRelatedRequests(_currentBroker.phoneNumber),
+          stream: _relatedRequests,
           builder: (context, requestsSnapshot) {
             final offers = offersSnapshot.data ?? [];
             final requests = requestsSnapshot.data ?? [];
@@ -411,7 +436,11 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -431,10 +460,11 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
                     ),
                   ),
                 ),
-                const Spacer(),
-                _buildCallButton(context),
-                const SizedBox(width: 8),
-                _buildWhatsAppButton(context),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  _buildCallButton(context),
+                  const SizedBox(width: 8),
+                  _buildWhatsAppButton(context),
+                ]),
               ],
             ),
             const SizedBox(height: 4),
@@ -790,12 +820,13 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
+                Flexible(
+                    child: Text(
                   loc.translate('notes'),
                   style: texts.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
-                ),
+                )),
               ],
             ),
             const SizedBox(height: 12),
@@ -939,6 +970,7 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -950,12 +982,13 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
+              Flexible(
+                  child: Text(
                 loc.translate('deleteBroker'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
-              ),
+              )),
             ],
           ),
           content: Column(
@@ -1003,87 +1036,78 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
               ),
             ],
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
-            Row(
-              children: [
-                // Cancel Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      foregroundColor: colors.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.outline.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ],
-                    ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.surface,
+                foregroundColor: colors.onSurface,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: colors.outline.withValues(alpha: 0.3),
+                    width: 1.5,
                   ),
                 ),
-
-                const SizedBox(width: 12),
-
-                // Delete Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFC81E1E),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                elevation: 0,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('cancel'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: colors.onSurface.withValues(alpha: 0.8),
                       ),
-                      elevation: 2,
-                      shadowColor:
-                          const Color(0xFFC81E1E).withValues(alpha: 0.4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.delete_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('delete'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC81E1E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
+                elevation: 2,
+                shadowColor: const Color(0xFFC81E1E).withValues(alpha: 0.4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.delete_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('delete'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );

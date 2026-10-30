@@ -163,8 +163,9 @@ class _ExpandableAreaChipsState extends State<ExpandableAreaChips> {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(2, 0, 8, 0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 4,
                           children: [
                             Text(
                               widget.localization.translate(
@@ -174,7 +175,6 @@ class _ExpandableAreaChipsState extends State<ExpandableAreaChips> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(width: 4),
                             Icon(
                               _expanded
                                   ? Icons.keyboard_arrow_up

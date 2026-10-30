@@ -7,6 +7,7 @@ import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dar
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:broker_wallet/src/services/plan_attachment/r2_plan_attachment_service.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_transport.dart';
 import 'package:broker_wallet/src/viewmodels/plan_attachment_details_loader.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
@@ -48,6 +49,8 @@ class OffersDetailsView extends StatefulWidget {
 
   /// This device's queued uploads for an Offer id, read synchronously.
   final PendingOfferMediaReader? readPendingMedia;
+  final OfferService? offerService;
+  final PlanAttachmentTransport? planTransport;
 
   const OffersDetailsView({
     super.key,
@@ -57,6 +60,8 @@ class OffersDetailsView extends StatefulWidget {
     this.resolveMedia,
     this.readCachedMedia,
     this.readPendingMedia,
+    this.offerService,
+    this.planTransport,
   });
 
   @override
@@ -77,7 +82,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   final ScrollController _scrollController = ScrollController();
 
   // Services
-  final OfferService _offerService = OfferService();
+  late final OfferService _offerService = widget.offerService ?? OfferService();
 
   // Upload completion listener
   StreamSubscription<UploadCompletedEvent>? _uploadCompletionSubscription;
@@ -125,7 +130,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     _planLoader = PlanAttachmentDetailsLoader(
       parent: PlanParent.offer,
       parentId: id,
-      transport: R2PlanAttachmentService(),
+      transport: widget.planTransport ?? R2PlanAttachmentService(),
       onChanged: _handlePlanChanged,
     );
   }
@@ -396,7 +401,8 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         _loadCoordinator.mediaAccessRevoked;
 
     return SliverAppBar(
-      expandedHeight: hasExpandedHeader ? 280 : 200,
+      expandedHeight: (hasExpandedHeader ? 280 : 200) +
+          (MediaQuery.textScalerOf(context).scale(100) - 100),
       floating: false,
       pinned: true,
       stretch: true,
@@ -859,7 +865,10 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -881,9 +890,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                     ),
                   ),
                 ),
-                const Spacer(),
                 _buildCallButton(context),
-                const SizedBox(width: 8),
                 _buildWhatsAppButton(context),
               ],
             ),
@@ -1310,23 +1317,26 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         children: [
           Icon(icon, size: 18, color: colors.primary),
           const SizedBox(width: 6),
-          Column(
-            children: [
-              Text(
-                value,
-                style: texts.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colors.onSurface,
+          Flexible(
+            child: Column(
+              children: [
+                Text(
+                  value,
+                  style: texts.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.onSurface,
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: texts.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontSize: 10,
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: texts.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1693,10 +1703,12 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  loc.translate('notes'),
-                  style: texts.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    loc.translate('notes'),
+                    style: texts.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

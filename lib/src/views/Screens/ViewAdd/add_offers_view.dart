@@ -23,19 +23,21 @@ class AddOffersView extends StatelessWidget {
   final AddOffersMode mode;
   final String? offerId;
   final OfferModel? offerData;
+  final AddOffersViewModel? viewModel;
 
   const AddOffersView({
     super.key,
     this.mode = AddOffersMode.add,
     this.offerId,
     this.offerData,
+    this.viewModel,
   });
 
   @override
   Widget build(BuildContext context) {
     final localization = AppLocalizations.of(context);
     return ChangeNotifierProvider(
-      create: (_) => AddOffersViewModel(
+      create: (_) => viewModel ?? AddOffersViewModel(
         mode: mode,
         offerId: offerId,
         offerData: offerData,
@@ -842,8 +844,8 @@ class _NumbersRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
+    return Wrap(
+      runSpacing: 10,
       children: List.generate(count, (idx) {
         final sel = (idx + 1) == selected;
         return GestureDetector(

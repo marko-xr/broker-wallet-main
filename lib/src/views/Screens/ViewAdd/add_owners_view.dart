@@ -22,11 +22,15 @@ class AddOwnersView extends StatelessWidget {
   final String? ownerId;
   final OwnerModel? ownerData;
 
+  /// Optional local test dependency; normal routes create the default model.
+  final AddOwnersViewModel? viewModel;
+
   const AddOwnersView({
     super.key,
     this.mode = AddOwnersMode.add,
     this.ownerId,
     this.ownerData,
+    this.viewModel,
   });
 
   @override
@@ -34,11 +38,13 @@ class AddOwnersView extends StatelessWidget {
     final localization = AppLocalizations.of(context);
 
     return ChangeNotifierProvider<AddOwnersViewModel>(
-      create: (context) => AddOwnersViewModel(
-        mode: mode,
-        ownerId: ownerId,
-        ownerData: ownerData,
-      ),
+      create: (context) =>
+          viewModel ??
+          AddOwnersViewModel(
+            mode: mode,
+            ownerId: ownerId,
+            ownerData: ownerData,
+          ),
       child: Consumer<AddOwnersViewModel>(
         builder: (context, vm, child) {
           final colors = Theme.of(context).colorScheme;

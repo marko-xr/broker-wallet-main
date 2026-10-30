@@ -145,7 +145,12 @@ class _SplashScreenState extends State<SplashScreen>
         child: Stack(
           children: [
             // Main content
-            Center(
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -243,6 +248,10 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
                 ],
+              ),
+                    ),
+                  ),
+                ),
               ),
             ),
 

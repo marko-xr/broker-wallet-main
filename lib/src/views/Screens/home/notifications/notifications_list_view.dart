@@ -22,55 +22,82 @@ class _NotificationsListViewState extends State<NotificationsListView> {
   Widget build(BuildContext context) {
     return Consumer<NotificationViewModel>(
       builder: (context, vm, _) {
+        final textScaler = MediaQuery.textScalerOf(context);
+        final compactHeader =
+            MediaQuery.sizeOf(context).width < 360 || textScaler.scale(14) > 20;
+        final markAllButton = vm.unreadCount > 0
+            ? TextButton(
+                onPressed: vm.markAllAsRead,
+                child: Text(
+                  AppLocalizations.of(context).translate('markAllRead'),
+                ),
+              )
+            : null;
+        final feed = RefreshIndicator(
+          onRefresh: () => _onRefresh(vm),
+          child: vm.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : vm.isEmpty
+                  ? _EmptyState(onRefresh: () => _onRefresh(vm))
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.metrics.pixels >=
+                            notification.metrics.maxScrollExtent - 200) {
+                          vm.loadMore();
+                        }
+                        return false;
+                      },
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        itemCount: vm.notifications.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final notification = vm.notifications[index];
+                          return _NotificationTile(
+                            notification: notification,
+                            onTap: () => _handleTap(context, vm, notification),
+                            onDismissed: () =>
+                                vm.deleteNotification(notification.id),
+                          );
+                        },
+                      ),
+                    ),
+        );
+
         return Scaffold(
           appBar: AppBar(
-            title:
-                Text(AppLocalizations.of(context).translate('notifications')),
+            toolbarHeight: compactHeader ? 72 : null,
+            title: Text(
+              AppLocalizations.of(context).translate('notifications'),
+              maxLines: 2,
+            ),
             actions: [
-              if (vm.unreadCount > 0)
-                TextButton(
-                  onPressed: vm.markAllAsRead,
-                  child: Text(
-                      AppLocalizations.of(context).translate('markAllRead')),
-                ),
+              if (!compactHeader && markAllButton != null) markAllButton,
             ],
           ),
-          body: RefreshIndicator(
-            onRefresh: () => _onRefresh(vm),
-            child: vm.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : vm.isEmpty
-                    ? _EmptyState(onRefresh: () => _onRefresh(vm))
-                    : NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (notification.metrics.pixels >=
-                              notification.metrics.maxScrollExtent - 200) {
-                            vm.loadMore();
-                          }
-                          return false;
-                        },
-                        child: ListView.separated(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          itemCount: vm.notifications.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, index) {
-                            final notification = vm.notifications[index];
-                            return _NotificationTile(
-                              notification: notification,
-                              onTap: () =>
-                                  _handleTap(context, vm, notification),
-                              onDismissed: () =>
-                                  vm.deleteNotification(notification.id),
-                            );
-                          },
+          body: compactHeader && markAllButton != null
+              ? Column(
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.fromSTEB(
+                          12,
+                          4,
+                          12,
+                          0,
                         ),
+                        child: markAllButton,
                       ),
-          ),
+                    ),
+                    Expanded(child: feed),
+                  ],
+                )
+              : feed,
         );
       },
     );

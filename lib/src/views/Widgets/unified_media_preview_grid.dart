@@ -305,24 +305,44 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
 
   Widget _buildMediaGrid(BuildContext context, ColorScheme colors,
       List<MediaPreviewItem> items, bool hasMore) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.1,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: items.length + (hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index < items.length) {
-          return _buildMediaTile(context, colors, items[index], index);
-        } else {
-          return _buildMoreTile(context, colors);
-        }
-      },
-    );
+    final hasUploadStatus = items.any((item) =>
+        item.offerMedia?.uploadPhase != null &&
+        item.offerMedia?.uploadPhase != OfferMediaUploadPhase.ready);
+    final hasRetryAction = items.any((item) =>
+        item.offerMedia?.uploadPhase == OfferMediaUploadPhase.retrying ||
+        item.offerMedia?.uploadPhase == OfferMediaUploadPhase.retryableFailure);
+    return LayoutBuilder(builder: (context, constraints) {
+      final enlargedText = MediaQuery.textScalerOf(context).scale(12) > 18;
+      final singleColumn =
+          hasUploadStatus && enlargedText && constraints.maxWidth < 300;
+      final columnCount = singleColumn ? 1 : 2;
+      final tileWidth =
+          (constraints.maxWidth - 12 * (columnCount - 1)) / columnCount;
+      final originalHeight = tileWidth / 1.1;
+      final statusHeight = 64 + MediaQuery.textScalerOf(context)
+          .scale(hasRetryAction ? 100 : 28);
+      final tileHeight = hasUploadStatus && statusHeight > originalHeight
+          ? statusHeight
+          : originalHeight;
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columnCount,
+          mainAxisExtent: tileHeight,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: items.length + (hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index < items.length) {
+            return _buildMediaTile(context, colors, items[index], index);
+          } else {
+            return _buildMoreTile(context, colors);
+          }
+        },
+      );
+    });
   }
 
   Widget _buildMediaTile(BuildContext context, ColorScheme colors,

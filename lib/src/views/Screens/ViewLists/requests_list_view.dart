@@ -13,7 +13,9 @@ import '../../../viewmodels/ListScreens/list_requests_viewmodel.dart';
 import '../../../data/models/property_status.dart';
 
 class RequestedListView extends StatefulWidget {
-  const RequestedListView({super.key});
+  const RequestedListView({super.key, this.viewModel});
+
+  final RequestedListViewModel? viewModel;
 
   @override
   State<RequestedListView> createState() => _RequestedListViewState();
@@ -27,7 +29,7 @@ class _RequestedListViewState extends State<RequestedListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => RequestedListViewModel(),
+      create: (_) => widget.viewModel ?? RequestedListViewModel(),
       child: Consumer<RequestedListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -290,14 +292,18 @@ class _RequestedListViewState extends State<RequestedListView> {
           ),
 
           // Date text
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              displayText,
-              style: texts.titleSmall?.copyWith(
-                color: accentColor,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+          Flexible(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                displayText,
+                textAlign: TextAlign.center,
+                style: texts.titleSmall?.copyWith(
+                  color: accentColor,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ),
@@ -326,9 +332,12 @@ class _RequestedListViewState extends State<RequestedListView> {
   Widget _buildErrorWidget(RequestedListViewModel vm, ColorScheme colors,
       TextTheme texts, AppLocalizations loc,
       [String? errorMessage]) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.6,
-      child: Center(
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -366,15 +375,19 @@ class _RequestedListViewState extends State<RequestedListView> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
   Widget _buildEmptyWidget(
       ColorScheme colors, TextTheme texts, AppLocalizations loc) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.6,
-      child: Center(
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -422,6 +435,7 @@ class _RequestedListViewState extends State<RequestedListView> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -980,14 +994,15 @@ class _EnhancedRequestTile extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _getFormattedDate(request.createdAt),
-                                  style: texts.bodySmall?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w500,
+                                Flexible(
+                                  child: Text(
+                                    _getFormattedDate(request.createdAt),
+                                    style: texts.bodySmall?.copyWith(
+                                      color: colors.onSurface.withValues(alpha: 0.7),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    textAlign: TextAlign.end,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -1129,11 +1144,13 @@ class _EnhancedRequestTile extends StatelessWidget {
                                           color: colors.primary,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text(
+                                        Flexible(
+                                          child: Text(
                                           '${squareFootageValue} ${loc.translate('squareFootageUnit')}',
                                           style: texts.labelSmall?.copyWith(
                                             color: colors.primary,
                                             fontWeight: FontWeight.w600,
+                                          ),
                                           ),
                                         ),
                                       ],
@@ -1166,11 +1183,13 @@ class _EnhancedRequestTile extends StatelessWidget {
                                       color: colors.tertiary,
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      _getPriceRange(request),
-                                      style: texts.labelSmall?.copyWith(
-                                        color: colors.tertiary,
-                                        fontWeight: FontWeight.w600,
+                                    Flexible(
+                                      child: Text(
+                                        _getPriceRange(request),
+                                        style: texts.labelSmall?.copyWith(
+                                          color: colors.tertiary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],

@@ -20,8 +20,7 @@ class ProfileViewModel extends ChangeNotifier {
   final LocaleViewModel localeVM;
   final BuildContext context;
   final AuthViewModel authVM;
-  final UserRepository _userRepository =
-      RepositoryProvider.instance.userRepository;
+  final UserRepository _userRepository;
   final AuthService _authService = AuthService();
 
   bool _notificationsEnabled = false;
@@ -36,7 +35,9 @@ class ProfileViewModel extends ChangeNotifier {
     required this.localeVM,
     required this.context,
     required this.authVM,
-  }) {
+    UserRepository? userRepository,
+  }) : _userRepository =
+            userRepository ?? RepositoryProvider.instance.userRepository {
     authVM.addListener(_handleAuthViewModelChanged);
     _initializeUser();
   }
@@ -93,8 +94,7 @@ class ProfileViewModel extends ChangeNotifier {
   bool get isLoggingOut => _isLoggingOut;
   bool get hasLinkedEmail => (authVM.currentUser?.email ?? '').isNotEmpty;
   bool get isEmailVerified => authVM.currentUser?.isEmailVerified ?? false;
-  bool get hasLinkedPhone =>
-      (authVM.currentUser?.phoneNumber ?? '').isNotEmpty;
+  bool get hasLinkedPhone => (authVM.currentUser?.phoneNumber ?? '').isNotEmpty;
   bool get isPhoneVerified => authVM.currentUser?.isPhoneVerified ?? false;
 
   @override

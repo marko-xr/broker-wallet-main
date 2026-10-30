@@ -14,7 +14,11 @@ import 'package:broker_wallet/src/Views/Screens/home/search/search_viewmodel.dar
 import 'widgets/search_result_card.dart';
 
 class SearchView extends StatelessWidget {
-  const SearchView({super.key});
+  const SearchView({super.key, this.viewModel});
+
+  /// Optional externally-owned state for production-widget tests.
+  /// Production routes omit it and retain the existing screen-owned model.
+  final SearchViewModel? viewModel;
 
   // Localized rotating hint suggestions
   List<String> _getSearchHints(AppLocalizations l) => [
@@ -30,80 +34,88 @@ class SearchView extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
 
-    return ChangeNotifierProvider(
-      create: (_) => SearchViewModel(),
-      child: _RefreshWhenShown(
-        child: Consumer<SearchViewModel>(
-          builder: (context, vm, _) {
-            return SafeArea(
-              bottom: false,
-              child: CustomScrollView(
-                // Dragging the results dismisses the keyboard; the results
-                // themselves stay.
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                // bigger cache to make scrolling silky
-                scrollCacheExtent: const ScrollCacheExtent.pixels(1400),
-                slivers: [
-                  // Header. It listens to the profile itself, so a profile
-                  // update does not rebuild the results.
-                  SliverToBoxAdapter(
+    final content = _RefreshWhenShown(
+      child: Consumer<SearchViewModel>(
+        builder: (context, vm, _) {
+          return SafeArea(
+            bottom: false,
+            child: CustomScrollView(
+              // Dragging the results dismisses the keyboard; the results
+              // themselves stay.
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              // bigger cache to make scrolling silky
+              scrollCacheExtent: const ScrollCacheExtent.pixels(1400),
+              slivers: [
+                // Header. It listens to the profile itself, so a profile
+                // update does not rebuild the results.
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding:
+                        const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
+                    child: UserScreenHeader(
+                      subtitle: l.translate('searchHeaderSubtitle'),
+                    ),
+                  ),
+                ),
+                // Search bar
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding:
+                        const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 12),
+                    child: SearchBar(
+                      hint: l.translate('searchHint'),
+                      onChanged: vm.updateQuery,
+                      onSubmitted: vm.submitQuery,
+                      animatedHints: _getSearchHints(l),
+                    ),
+                  ),
+                ),
+                // Filters. Pinned, so they stay reachable, but nothing is
+                // drawn behind them: no panel, no shadow, no tint. The bar is
+                // the page's own colour, so the chips float on the page and
+                // the results simply scroll away under them.
+                SliverAppBar(
+                  pinned: true,
+                  automaticallyImplyLeading: false,
+                  elevation: 0,
+                  scrolledUnderElevation: 0,
+                  shadowColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                  toolbarHeight: FilterChips.rowHeightOf(context),
+                  flexibleSpace: Align(
+                    alignment: Alignment.center,
                     child: Padding(
-                      padding:
-                          const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
-                      child: UserScreenHeader(
-                        subtitle: l.translate('searchHeaderSubtitle'),
+                      padding: const EdgeInsetsDirectional.symmetric(
+                        horizontal: 16,
+                      ),
+                      child: FilterChips(
+                        filters: vm.filters,
+                        onToggle: vm.toggleFilter,
                       ),
                     ),
                   ),
-                  // Search bar
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding:
-                          const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 12),
-                      child: SearchBar(
-                        hint: l.translate('searchHint'),
-                        onChanged: vm.updateQuery,
-                        onSubmitted: vm.submitQuery,
-                        animatedHints: _getSearchHints(l),
-                      ),
-                    ),
-                  ),
-                  // Filters. Pinned, so they stay reachable, but nothing is
-                  // drawn behind them: no panel, no shadow, no tint. The bar is
-                  // the page's own colour, so the chips float on the page and
-                  // the results simply scroll away under them.
-                  SliverAppBar(
-                    pinned: true,
-                    automaticallyImplyLeading: false,
-                    elevation: 0,
-                    scrolledUnderElevation: 0,
-                    shadowColor: Colors.transparent,
-                    surfaceTintColor: Colors.transparent,
-                    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                    toolbarHeight: FilterChips.rowHeightOf(context),
-                    flexibleSpace: Align(
-                      alignment: Alignment.center,
-                      child: Padding(
-                        padding: const EdgeInsetsDirectional.symmetric(
-                          horizontal: 16,
-                        ),
-                        child: FilterChips(
-                          filters: vm.filters,
-                          onToggle: vm.toggleFilter,
-                        ),
-                      ),
-                    ),
-                  ),
+                ),
 
-                  // Content area
-                  ..._contentSlivers(context, vm, l),
-                ],
-              ),
-            );
-          },
-        ),
+                // Content area
+                ..._contentSlivers(context, vm, l),
+              ],
+            ),
+          );
+        },
       ),
+    );
+
+    final injected = viewModel;
+    if (injected != null) {
+      return ChangeNotifierProvider<SearchViewModel>.value(
+        value: injected,
+        child: content,
+      );
+    }
+    return ChangeNotifierProvider<SearchViewModel>(
+      create: (_) => SearchViewModel(),
+      child: content,
     );
   }
 
@@ -204,7 +216,9 @@ class SearchView extends StatelessWidget {
             // The shape stays 3 : 4 unless the text needs more room.
             final extent = math.max(
               cardWidth / _cardAspectRatio,
-              SearchResultCard.minHeightForText(context),
+              // Flex allocation can round the content band down by a
+              // fraction of a logical pixel at enlarged text sizes.
+              SearchResultCard.minHeightForText(context) + 1,
             );
             // Cards keep their state when results change order or a filter is
             // applied, instead of being rebuilt from nothing.

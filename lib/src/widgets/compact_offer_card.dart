@@ -125,7 +125,8 @@ class CompactOfferCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              Text(
+                              Flexible(
+                                  child: Text(
                                 _getFormattedDate(offer.createdAt),
                                 style: texts.bodySmall?.copyWith(
                                   color:
@@ -133,7 +134,7 @@ class CompactOfferCard extends StatelessWidget {
                                   fontWeight: FontWeight.w500,
                                 ),
                                 overflow: TextOverflow.ellipsis,
-                              ),
+                              )),
                             ],
                           ),
 
@@ -272,13 +273,14 @@ class CompactOfferCard extends StatelessWidget {
                                         color: colors.primary,
                                       ),
                                       const SizedBox(width: 2),
-                                      Text(
+                                      Flexible(
+                                          child: Text(
                                         '$squareFootageValue ${loc.translate('squareFootageUnit')}',
                                         style: texts.labelSmall?.copyWith(
                                           color: colors.primary,
                                           fontWeight: FontWeight.w600,
                                         ),
-                                      ),
+                                      )),
                                     ],
                                   ),
                                 ),

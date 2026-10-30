@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -41,23 +43,27 @@ class GridItemCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  item.labelKey != null
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text.rich(
+                TextSpan(
+                  text: item.labelKey != null
                       ? localization.translate(item.labelKey!)
                       : item.label,
                   style: textTheme.bodySmall,
+                  children: item.count == null
+                      ? const <InlineSpan>[]
+                      : <InlineSpan>[
+                          TextSpan(
+                            text: ' (${item.count})',
+                            style: textTheme.bodyMedium,
+                          ),
+                        ],
                 ),
-                if (item.count != null) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    '(${item.count})',
-                    style: textTheme.bodyMedium,
-                  ),
-                ],
-              ],
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),
@@ -66,18 +72,43 @@ class GridItemCard extends StatelessWidget {
   }
 
   static Widget list(BuildContext context, List<GridItemModel> items) {
-    return GridView.count(
-      crossAxisCount: 3,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 12,
-      childAspectRatio: 0.8,
-      padding: const EdgeInsets.only(bottom: 96),
-      children: items
-          .map((item) => GridItemCard(
-                item: item,
-                onTap: getOnTapCallback(context, item.label),
-              ))
-          .toList(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const columns = 3;
+        const crossSpacing = 8.0;
+        final cardWidth =
+            (constraints.maxWidth - crossSpacing * (columns - 1)) / columns;
+        final textTheme = Theme.of(context).textTheme;
+        final fontSize = math.max(
+          textTheme.bodySmall?.fontSize ?? 12,
+          textTheme.bodyMedium?.fontSize ?? 14,
+        );
+        final lineHeight = math.max(
+          textTheme.bodySmall?.height ?? 1.2,
+          textTheme.bodyMedium?.height ?? 1.2,
+        );
+        final scaledLine =
+            MediaQuery.textScalerOf(context).scale(fontSize) * lineHeight;
+        final minimumHeight = 40 + 8 + (scaledLine * 2) + 16;
+
+        return GridView.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: crossSpacing,
+            mainAxisSpacing: 12,
+            mainAxisExtent: math.max(cardWidth / 0.8, minimumHeight),
+          ),
+          padding: const EdgeInsets.only(bottom: 96),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return GridItemCard(
+              item: item,
+              onTap: getOnTapCallback(context, item.label),
+            );
+          },
+        );
+      },
     );
   }
 

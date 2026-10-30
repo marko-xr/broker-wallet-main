@@ -906,10 +906,11 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
           Icon(Icons.error_outline, color: colors.error, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(localization.translate('i2pErrLoad'))),
-          TextButton(
+          Flexible(
+              child: TextButton(
             onPressed: _vm.refresh,
             child: Text(localization.translate('retry')),
-          ),
+          )),
         ],
       ),
     );
@@ -975,13 +976,14 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
             children: [
               const Icon(Icons.edit, size: 20, color: _green),
               const SizedBox(width: 8),
-              Text(
+              Expanded(
+                  child: Text(
                 localization.translate('fileName'),
                 style: AppTextStyles.bodyText.copyWith(
                   fontWeight: FontWeight.w600,
                   color: _green,
                 ),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 12),
@@ -1250,103 +1252,107 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 80,
-          height: 60,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: thumbnail,
-          ),
-        ),
-        title: Text(
-          '${localization.translate('image')} ${index + 1}',
-          style: AppTextStyles.bodyText.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                localization
-                    .translate('positionOf')
-                    .replaceAll('{position}', '${index + 1}')
-                    .replaceAll('{total}', '${_vm.items.length}'),
-                style: AppTextStyles.bodyText.copyWith(
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  fontSize: 12,
-                ),
+      child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              width: 80,
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: colors.outline.withValues(alpha: 0.2)),
               ),
-              Text(
-                detail,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: item.status == ImageItemStatus.failed
-                      ? colors.error
-                      : colors.onSurface.withValues(alpha: 0.6),
-                ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: thumbnail,
               ),
-              if (item.possibleDuplicate)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    localization.translate('i2pDuplicate'),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.orange,
-                      fontWeight: FontWeight.w600,
+            ),
+            title: Text(
+              '${localization.translate('image')} ${index + 1}',
+              style: AppTextStyles.bodyText.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    localization
+                        .translate('positionOf')
+                        .replaceAll('{position}', '${index + 1}')
+                        .replaceAll('{total}', '${_vm.items.length}'),
+                    style: AppTextStyles.bodyText.copyWith(
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: item.status == ImageItemStatus.failed
+                          ? colors.error
+                          : colors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  if (item.possibleDuplicate)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        localization.translate('i2pDuplicate'),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  enabled: !locked,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colors.outline.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.drag_handle,
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      size: 16,
                     ),
                   ),
                 ),
-            ],
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ReorderableDragStartListener(
-              index: index,
-              enabled: !locked,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: colors.outline.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: colors.error,
+                    size: 20,
+                  ),
+                  onPressed: locked ? null : () => _vm.removeItem(item.id),
+                  tooltip: localization.translate('i2pRemoveImage'),
+                  style: IconButton.styleFrom(
+                    backgroundColor: colors.error.withValues(alpha: 0.1),
+                    foregroundColor: colors.error,
+                  ),
                 ),
-                child: Icon(
-                  Icons.drag_handle,
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                  size: 16,
-                ),
-              ),
+              ],
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: Icon(
-                Icons.delete_outline,
-                color: colors.error,
-                size: 20,
-              ),
-              onPressed: locked ? null : () => _vm.removeItem(item.id),
-              tooltip: localization.translate('i2pRemoveImage'),
-              style: IconButton.styleFrom(
-                backgroundColor: colors.error.withValues(alpha: 0.1),
-                foregroundColor: colors.error,
-              ),
-            ),
-          ],
-        ),
-      ),
+          )),
     );
   }
 
@@ -1370,14 +1376,14 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          Expanded(
+              child: Text(
             '${localization.translate('convertedDocuments')} (${_vm.documents.length})',
             style: AppTextStyles.bodyText.copyWith(
               fontWeight: FontWeight.w600,
               color: _green,
             ),
-          ),
-          const Spacer(),
+          )),
           IconButton(
             icon: Icon(
               _isViewMode ? Icons.grid_view : Icons.view_list,
@@ -1417,150 +1423,154 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: _vm.isSelectionMode
-            ? Checkbox(
-                value: isSelected,
-                onChanged: (_) => _vm.toggleSelection(document.id),
-                activeColor: _green,
-              )
-            : Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  document.encrypted ? Icons.lock : Icons.picture_as_pdf,
-                  color: _green,
-                  size: 24,
-                ),
+      child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: _vm.isSelectionMode
+                ? Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => _vm.toggleSelection(document.id),
+                    activeColor: _green,
+                  )
+                : Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      document.encrypted ? Icons.lock : Icons.picture_as_pdf,
+                      color: _green,
+                      size: 24,
+                    ),
+                  ),
+            title: Text(
+              document.name,
+              style: AppTextStyles.bodyText.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: colors.onSurface,
               ),
-        title: Text(
-          document.name,
-          style: AppTextStyles.bodyText.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-            color: colors.onSurface,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Row(
-            children: [
-              Icon(
-                missing ? Icons.warning_amber_rounded : Icons.info_outline,
-                size: 14,
-                color: missing
-                    ? colors.error
-                    : colors.onSurface.withValues(alpha: 0.6),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  missing
-                      ? localization.translate('documentFileNotFound')
-                      : _documentMeta(document, localization),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    missing ? Icons.warning_amber_rounded : Icons.info_outline,
+                    size: 14,
                     color: missing
                         ? colors.error
                         : colors.onSurface.withValues(alpha: 0.6),
-                    fontSize: 12,
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.visibility, color: _green, size: 20),
-              onPressed: () => _previewConvertedDocument(document),
-              tooltip: localization.translate('preview'),
-              visualDensity: VisualDensity.compact,
-            ),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert,
-                  color: colors.onSurface.withValues(alpha: 0.6)),
-              onSelected: (value) {
-                switch (value) {
-                  case 'share':
-                    _shareConvertedDocument(document);
-                    break;
-                  case 'download':
-                    _saveToDeviceStorage(document);
-                    break;
-                  case 'rename':
-                    _renameConvertedDocument(document);
-                    break;
-                  case 'delete':
-                    _deleteConvertedDocument(document);
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'share',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.share, size: 18, color: Colors.blue),
-                      const SizedBox(width: 8),
-                      Text(localization.translate('share')),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'download',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.download, size: 18, color: Colors.green),
-                      const SizedBox(width: 8),
-                      Text(localization.translate('download')),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'rename',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(localization.translate('rename')),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.delete, color: Colors.red, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        localization.translate('delete'),
-                        style: const TextStyle(color: Colors.red),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      missing
+                          ? localization.translate('documentFileNotFound')
+                          : _documentMeta(document, localization),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: missing
+                            ? colors.error
+                            : colors.onSurface.withValues(alpha: 0.6),
+                        fontSize: 12,
                       ),
-                    ],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.visibility, color: _green, size: 20),
+                  onPressed: () => _previewConvertedDocument(document),
+                  tooltip: localization.translate('preview'),
+                  visualDensity: VisualDensity.compact,
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert,
+                      color: colors.onSurface.withValues(alpha: 0.6)),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'share':
+                        _shareConvertedDocument(document);
+                        break;
+                      case 'download':
+                        _saveToDeviceStorage(document);
+                        break;
+                      case 'rename':
+                        _renameConvertedDocument(document);
+                        break;
+                      case 'delete':
+                        _deleteConvertedDocument(document);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'share',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.share, size: 18, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Text(localization.translate('share')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'download',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.download,
+                              size: 18, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Text(localization.translate('download')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit, size: 18, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Text(localization.translate('rename')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.delete, color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            localization.translate('delete'),
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-        onTap: () {
-          if (_vm.isSelectionMode) {
-            _vm.toggleSelection(document.id);
-          } else {
-            _previewConvertedDocument(document);
-          }
-        },
-      ),
+            onTap: () {
+              if (_vm.isSelectionMode) {
+                _vm.toggleSelection(document.id);
+              } else {
+                _previewConvertedDocument(document);
+              }
+            },
+          )),
     );
   }
 
@@ -1607,96 +1617,96 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
               SizedBox(
                 height: 28,
                 child: Row(
-                children: [
-                  // Selection indicator or document type icon
-                  _vm.isSelectionMode
-                      ? Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? _green
-                                : Colors.grey.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            isSelected
-                                ? Icons.check
-                                : Icons.radio_button_unchecked,
-                            color: isSelected ? Colors.white : Colors.grey,
-                            size: 18,
-                          ),
-                        )
-                      : Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: _green.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            document.encrypted
-                                ? Icons.lock
-                                : Icons.picture_as_pdf,
-                            color: _green,
-                            size: 16,
-                          ),
-                        ),
-
-                  const Spacer(),
-
-                  // More options menu
-                  PopupMenuButton<String>(
-                    // A sized child instead of the default icon button,
-                    // which would add 48 px of height to this row.
-                    child: SizedBox(
-                      width: 32,
-                      height: 28,
-                      child: Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'rename':
-                          _renameConvertedDocument(document);
-                          break;
-                        case 'delete':
-                          _deleteConvertedDocument(document);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'rename',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.edit,
-                                size: 18, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Text(localization.translate('rename')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.delete,
-                                color: Colors.red, size: 18),
-                            const SizedBox(width: 8),
-                            Text(
-                              localization.translate('delete'),
-                              style: const TextStyle(color: Colors.red),
+                  children: [
+                    // Selection indicator or document type icon
+                    _vm.isSelectionMode
+                        ? Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? _green
+                                  : Colors.grey.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                          ],
+                            child: Icon(
+                              isSelected
+                                  ? Icons.check
+                                  : Icons.radio_button_unchecked,
+                              color: isSelected ? Colors.white : Colors.grey,
+                              size: 18,
+                            ),
+                          )
+                        : Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: _green.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              document.encrypted
+                                  ? Icons.lock
+                                  : Icons.picture_as_pdf,
+                              color: _green,
+                              size: 16,
+                            ),
+                          ),
+
+                    const Spacer(),
+
+                    // More options menu
+                    PopupMenuButton<String>(
+                      // A sized child instead of the default icon button,
+                      // which would add 48 px of height to this row.
+                      child: SizedBox(
+                        width: 32,
+                        height: 28,
+                        child: Icon(
+                          Icons.more_vert,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'rename':
+                            _renameConvertedDocument(document);
+                            break;
+                          case 'delete':
+                            _deleteConvertedDocument(document);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'rename',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit,
+                                  size: 18, color: Colors.grey),
+                              const SizedBox(width: 8),
+                              Text(localization.translate('rename')),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.delete,
+                                  color: Colors.red, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                localization.translate('delete'),
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
 
@@ -1780,15 +1790,17 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
                             color: colors.onSurfaceVariant,
                           ),
                           const SizedBox(width: 3),
-                          Text(
+                          Flexible(
+                              child: Text(
                             _formatFileSize(document.fileSize),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                  fontSize: 10,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                          ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                      fontSize: 10,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                          )),
                         ],
                       ),
                     ],
@@ -1867,25 +1879,45 @@ class _ImageToPdfViewState extends State<ImageToPdfView> {
   Widget _buildFloatingActionButton(AppLocalizations localization) {
     final working = _vm.isBuilding || _vm.isSaving || _converting;
     final canConvert = !_vm.isBusy && !_vm.isChecking && !_vm.hasFailedItems;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      child: _vm.items.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: canConvert && !_converting ? _convertToPDF : null,
-              // The button keeps its look while the overlay shows the work.
-              icon: const Icon(Icons.picture_as_pdf),
-              label: Text(localization.translate('convertToPdf')),
-              backgroundColor: canConvert || working ? _green : Colors.grey,
-              foregroundColor: Colors.white,
-            )
-          : FloatingActionButton.extended(
-              onPressed: _vm.isBusy ? null : _pickImages,
-              icon: const Icon(Icons.add_photo_alternate),
-              label: Text(localization.translate('selectImages')),
-              backgroundColor: _green,
-              foregroundColor: Colors.white,
-            ),
-    );
+    final theme = Theme.of(context);
+    final labelWidth = (MediaQuery.sizeOf(context).width -
+            MediaQuery.paddingOf(context).horizontal -
+            32 -
+            36 -
+            24 -
+            8)
+        .clamp(0.0, double.infinity);
+    Widget boundedLabel(Widget text) => ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: labelWidth),
+        child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8), child: text));
+    // Keep the Material 2/3 minimum; release only the fixed maximum height.
+    return Theme(
+        data: theme.copyWith(
+            floatingActionButtonTheme: theme.floatingActionButtonTheme.copyWith(
+                extendedSizeConstraints:
+                    BoxConstraints(minHeight: theme.useMaterial3 ? 56 : 48))),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          child: _vm.items.isNotEmpty
+              ? FloatingActionButton.extended(
+                  onPressed: canConvert && !_converting ? _convertToPDF : null,
+                  // The button keeps its look while the overlay shows the work.
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: boundedLabel(
+                      Text(localization.translate('convertToPdf'))),
+                  backgroundColor: canConvert || working ? _green : Colors.grey,
+                  foregroundColor: Colors.white,
+                )
+              : FloatingActionButton.extended(
+                  onPressed: _vm.isBusy ? null : _pickImages,
+                  icon: const Icon(Icons.add_photo_alternate),
+                  label: boundedLabel(
+                      Text(localization.translate('selectImages'))),
+                  backgroundColor: _green,
+                  foregroundColor: Colors.white,
+                ),
+        ));
   }
 
   @override

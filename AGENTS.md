@@ -36,3 +36,30 @@
 - Every handoff states NOW (the exact action to perform now) and NEXT (the exact
   action after that succeeds).
 - Do not mark CODE_PROVEN work as VERIFIED_RUNTIME.
+
+## Graphify (supporting tool only)
+
+A local Graphify graph of `lib/` exists in `graphify-out/` (generated,
+git-excluded through `.git/info/exclude`, never committed). It was validated on
+2026-10-27 and is a navigation aid, never evidence.
+
+- Trust, after a spot-check against the source line: class, mixin, `extends`,
+  `implements` and `with` relations, `Provider.of` lookups, route/`Navigator`
+  references, and which members a file defines. Cloudflare Worker `.js` modules
+  also extract well.
+- Do not trust for dependencies, call flow, communities or architecture:
+  own-package and relative `import` edges point at dead string nodes, not at
+  file nodes (no import graph); only 2 `calls` edges exist; community, bridge
+  and "god node" results follow from that. Use `grep` on `import` lines and read
+  the source.
+- 27 files show a file node labelled `_` (a `Foo._()` constructor collides with
+  the file node id); the edges are intact, only the label is wrong.
+- Supabase `.sql` yields nothing (`tree_sitter_sql` is not installed, and it
+  would model identifiers only, not RLS, grants or RPC behaviour). Read
+  migrations and run the pgTAP/validation scripts instead.
+- Files with no symbols are fully commented out or empty, not extractor
+  failures; `favorites_item_model.g.dart` is the one unexplained miss.
+- Do not rebuild the graph for routine work; refresh only after a meaningful
+  structural change. Install no parsers and scan no further directories without
+  a real task. Cross-check any graph answer with the source, `flutter analyze`,
+  tests and these docs before it influences code.

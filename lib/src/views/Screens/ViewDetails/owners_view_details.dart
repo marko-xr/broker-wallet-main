@@ -5,6 +5,7 @@ import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dar
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:broker_wallet/src/services/plan_attachment/r2_plan_attachment_service.dart';
+import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_transport.dart';
 import 'package:broker_wallet/src/viewmodels/plan_attachment_details_loader.dart';
 import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
@@ -39,9 +40,17 @@ import 'package:provider/provider.dart';
 class OwnersDetailsView extends StatefulWidget {
   final OwnerModel owner;
 
+  /// Optional local test dependencies; production keeps its existing services.
+  final OwnerService? ownerService;
+  final PlanAttachmentTransport? planTransport;
+  final RelatedItemsService? relatedItemsService;
+
   const OwnersDetailsView({
     super.key,
     required this.owner,
+    this.ownerService,
+    this.planTransport,
+    this.relatedItemsService,
   });
 
   @override
@@ -62,9 +71,13 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   final ScrollController _scrollController = ScrollController();
 
   // Services
-  final OwnerService _ownerService = OwnerService();
+  late final OwnerService _ownerService = widget.ownerService ?? OwnerService();
   late OptimisticFavoritesService _optimisticFavoritesService;
-  final RelatedItemsService _relatedItemsService = RelatedItemsService();
+  late final RelatedItemsService _relatedItemsService =
+      widget.relatedItemsService ?? RelatedItemsService();
+  String? _relatedPhone;
+  Stream<List<OfferModel>>? _relatedOffers;
+  Stream<List<RequestModel>>? _relatedRequests;
 
   // Upload completion listener
   StreamSubscription<UploadCompletedEvent>? _uploadCompletionSubscription;
@@ -108,7 +121,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     _planLoader = PlanAttachmentDetailsLoader(
       parent: PlanParent.owner,
       parentId: id,
-      transport: R2PlanAttachmentService(),
+      transport: widget.planTransport ?? R2PlanAttachmentService(),
       onChanged: _handlePlanChanged,
     );
   }
@@ -315,7 +328,8 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return SliverAppBar(
-      expandedHeight: _hasMediaHeader ? 280 : 200,
+      expandedHeight: (_hasMediaHeader ? 280 : 200) +
+          (MediaQuery.textScalerOf(context).scale(100) - 100),
       floating: false,
       pinned: true,
       stretch: true,
@@ -679,16 +693,25 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
 
   /// 🔗 Build related items carousel showing offers/requests with matching phone
   Widget _buildRelatedItemsCarousel(BuildContext context) {
-    if (_currentOwner.phoneNumber.isEmpty) {
+    final phone = _currentOwner.phoneNumber;
+    // Keep the same subscriptions through animation, resize and locale rebuilds.
+    // An edited phone gets its own streams; the services still own refreshes.
+    if (_relatedPhone != phone) {
+      _relatedPhone = phone;
+      _relatedOffers =
+          phone.isEmpty ? null : _relatedItemsService.getRelatedOffers(phone);
+      _relatedRequests =
+          phone.isEmpty ? null : _relatedItemsService.getRelatedRequests(phone);
+    }
+    if (phone.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return StreamBuilder<List<OfferModel>>(
-      stream: _relatedItemsService.getRelatedOffers(_currentOwner.phoneNumber),
+      stream: _relatedOffers,
       builder: (context, offersSnapshot) {
         return StreamBuilder<List<RequestModel>>(
-          stream: _relatedItemsService
-              .getRelatedRequests(_currentOwner.phoneNumber),
+          stream: _relatedRequests,
           builder: (context, requestsSnapshot) {
             final offers = offersSnapshot.data ?? [];
             final requests = requestsSnapshot.data ?? [];
@@ -738,7 +761,11 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -758,10 +785,14 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
                     ),
                   ),
                 ),
-                const Spacer(),
-                _buildCallButton(context),
-                const SizedBox(width: 8),
-                _buildWhatsAppButton(context),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildCallButton(context),
+                    const SizedBox(width: 8),
+                    _buildWhatsAppButton(context),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -1348,12 +1379,13 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
+                Flexible(
+                    child: Text(
                   loc.translate('notes'),
                   style: texts.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
-                ),
+                )),
               ],
             ),
             const SizedBox(height: 12),
@@ -1581,6 +1613,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -1592,12 +1625,13 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
+              Flexible(
+                  child: Text(
                 loc.translate('deleteOwner'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
-              ),
+              )),
             ],
           ),
           content: Column(
@@ -1645,87 +1679,78 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
               ),
             ],
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
-            Row(
-              children: [
-                // Cancel Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      foregroundColor: colors.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.outline.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ],
-                    ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.surface,
+                foregroundColor: colors.onSurface,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: colors.outline.withValues(alpha: 0.3),
+                    width: 1.5,
                   ),
                 ),
-
-                const SizedBox(width: 12),
-
-                // Delete Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFC81E1E),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                elevation: 0,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('cancel'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: colors.onSurface.withValues(alpha: 0.8),
                       ),
-                      elevation: 2,
-                      shadowColor:
-                          const Color(0xFFC81E1E).withValues(alpha: 0.4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.delete_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          loc.translate('delete'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC81E1E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
+                elevation: 2,
+                shadowColor: const Color(0xFFC81E1E).withValues(alpha: 0.4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.delete_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      loc.translate('delete'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );

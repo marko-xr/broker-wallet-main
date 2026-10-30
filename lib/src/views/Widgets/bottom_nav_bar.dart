@@ -1,4 +1,6 @@
 // lib/src/widgets/bottom_nav_bar.dart
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +33,16 @@ class BottomNavBar extends StatelessWidget {
     final localization = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final locale = Localizations.localeOf(context);
+    final labelFontSize = locale.languageCode == 'ar' ? 10.0 : 11.0;
+    final scaledLabelLine =
+        MediaQuery.textScalerOf(context).scale(labelFontSize) * 1.05;
+    // Two lines are permitted by the labels. Keep the approved 80 dp bar at
+    // ordinary sizes and add only the room enlarged text actually needs.
+    final barHeight = math.max(
+      _barHeight,
+      16 + 24 + 4 + (scaledLabelLine * 2),
+    );
 
     final items = <_NavItemData>[
       _NavItemData(
@@ -71,11 +83,10 @@ class BottomNavBar extends StatelessWidget {
       right: false,
       bottom: shouldApplyBottomSafeArea,
       child: SizedBox(
-        height: _barHeight,
+        height: barHeight,
         child: CustomPaint(
           painter: _CurvedBarPainter(
-            backgroundColor:
-                isDark ? AppColors.darkSurface : AppColors.white,
+            backgroundColor: isDark ? AppColors.darkSurface : AppColors.white,
             shadowColor: isDark
                 ? Colors.black.withValues(alpha: 0.4)
                 : Colors.black.withValues(alpha: 0.1),
@@ -270,8 +281,7 @@ class _NavItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: isArabic ? 10 : 11,
                     height: 1.05,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                     color: isSelected ? selectedColor : unselectedColor,
                   ),
                 ),

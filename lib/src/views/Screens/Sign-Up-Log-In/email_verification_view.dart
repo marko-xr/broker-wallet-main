@@ -104,7 +104,12 @@ class _EmailVerificationViewState extends State<EmailVerificationView> {
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: Padding(
+            body: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -258,6 +263,10 @@ class _EmailVerificationViewState extends State<EmailVerificationView> {
                     textAlign: TextAlign.center,
                   ),
                 ],
+              ),
+                    ),
+                  ),
+                ),
               ),
             ),
           );

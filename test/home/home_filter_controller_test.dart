@@ -444,8 +444,8 @@ void main() {
       ]);
       expect(ids(h.controller.items), ['a']);
 
-      // A later re-read, 13 hours on, sees the same record as too old.
-      h.clock = now.add(hour * 13);
+      // A later re-read, 24 hours on, sees the same record as 25 hours old.
+      h.clock = now.add(HomeFilterRules.recentlyUpdatedWindow);
       final call = h.source.calls;
       h.controller.onDataChanged();
       h.source.answer(call, [
@@ -530,12 +530,12 @@ void main() {
 
     test('the filter is applied with the clock it is given', () async {
       final h = Harness();
-      final item = record(ItemType.offer, 'a', age: const Duration(hours: 11));
+      final item = record(ItemType.offer, 'a', age: const Duration(hours: 23));
       await h.tapAndAnswer(recentlyAdded, [item]);
       expect(ids(h.controller.items), ['a']);
 
       h.controller.toggle(recentlyAdded); // clear
-      h.clock = now.add(const Duration(hours: 2)); // the item is now 13 h old
+      h.clock = now.add(const Duration(hours: 2)); // the item is now 25 h old
       await h.tapAndAnswer(recentlyAdded, [item]);
       expect(h.controller.items, isEmpty);
     });
@@ -981,7 +981,7 @@ void main() {
       final h = Harness();
       await h.tapAndAnswer(recentlyAdded, [
         record(ItemType.offer, 'a',
-            age: const Duration(hours: 11, minutes: 58)),
+            age: const Duration(hours: 23, minutes: 58)),
       ]);
       expect(ids(h.controller.items), ['a']);
 
@@ -991,7 +991,7 @@ void main() {
       h.controller.toggle(recentlyAdded); // on again
       expect(h.source.calls, 1, reason: 'the records are held');
       expect(h.controller.items, isEmpty,
-          reason: '12 h 1 min old now: outside the window');
+          reason: '24 h 1 min old now: outside the window');
     });
 
     test('records older than the time they are trusted are read again',

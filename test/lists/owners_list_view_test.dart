@@ -111,6 +111,8 @@ void main() {
   Future<void> showOwners(WidgetTester tester, List<OwnerModel> owners) async {
     service.controller.add(owners);
     await tester.pump();
+    // Deliver the async stream event, then rebuild the listening Provider.
+    await tester.pump();
   }
 
   BuildContext screenContext(WidgetTester tester) =>

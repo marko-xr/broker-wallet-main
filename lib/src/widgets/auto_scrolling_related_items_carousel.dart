@@ -250,7 +250,8 @@ class _AutoScrollingRelatedItemsCarouselState
                           color: colors.secondary,
                         ),
                         const SizedBox(width: 4),
-                        Text(
+                        Flexible(
+                            child: Text(
                           _isUserScrolling
                               ? loc.translate('paused')
                               : loc.translate('autoScroll'),
@@ -258,7 +259,7 @@ class _AutoScrollingRelatedItemsCarouselState
                             color: colors.secondary,
                             fontWeight: FontWeight.w600,
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),
@@ -279,14 +280,16 @@ class _AutoScrollingRelatedItemsCarouselState
                   final Widget card = SizedBox(
                     width: _cardVisualWidth,
                     child: isOffer
-                        ? CompactOfferCard(
+                        ? SingleChildScrollView(
+                            child: CompactOfferCard(
                             offer: widget.offers[0],
                             showShadow: true,
-                          )
-                        : CompactRequestCard(
+                          ))
+                        : SingleChildScrollView(
+                            child: CompactRequestCard(
                             request: widget.requests[0],
                             showShadow: true,
-                          ),
+                          )),
                   );
                   return _buildSingleItem(context, card);
                 }
@@ -310,10 +313,11 @@ class _AutoScrollingRelatedItemsCarouselState
                             horizontal: _cardSpacing / 2),
                         child: SizedBox(
                           width: _cardVisualWidth,
-                          child: CompactOfferCard(
+                          child: SingleChildScrollView(
+                              child: CompactOfferCard(
                             offer: widget.offers[index],
                             showShadow: true,
-                          ),
+                          )),
                         ),
                       );
                     } else {
@@ -323,10 +327,11 @@ class _AutoScrollingRelatedItemsCarouselState
                             horizontal: _cardSpacing / 2),
                         child: SizedBox(
                           width: _cardVisualWidth,
-                          child: CompactRequestCard(
+                          child: SingleChildScrollView(
+                              child: CompactRequestCard(
                             request: widget.requests[requestIndex],
                             showShadow: true,
-                          ),
+                          )),
                         ),
                       );
                     }

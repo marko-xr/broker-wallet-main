@@ -15779,3 +15779,56 @@ CODE_PROVEN (اختبارات تخطيط محلية بـfakes). NOW — اكتم
 - **لم يُنفذ/لم يُثبت:** مشاركة فعلية على جهاز (Android/iOS)؛ يبقى في R8B. **لم** تُعَد المجموعات الأخرى (signature/quotation/الشاملة 1557) في هذه المهمة لأن التعديل محصور في ملف واحد؛ آخر نتائجها في قسم R8A أعلاه.
 
 الحالة: CODE_PROVEN. NOW — مراجعة المالك. NEXT — R8B بموافقة منفصلة؛ يبقى مفتوحاً: Map ×3، Session ×2، Analyzer 11/89 التاريخي، قرار لوحة التوقيع.
+
+## Firebase removal - Phase 1 (Auth repositories), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME.
+Branch `remove-firebase` cut from `update-some-issues` at `a9bc445`; no commit yet.
+
+Phase 0 (read-only) classified the Firebase usages; Phase 1 only touched the
+repository layer.
+
+Evidence that the Firebase repositories were not a production path:
+
+- `USE_SUPABASE_AUTH` defaults to `true`; nothing outside `lib/` and `docs/`
+  (no launch/CI/script config) sets it to `false`.
+- `FirebaseAuthRepository`, `FirestoreUserRepository` and
+  `FirestoreNotificationRepository` were only constructed in the `else` branch
+  of `RepositoryProvider`.
+- `FirestorePropertyRepository` / `PropertyRepository` were built but
+  `RepositoryProvider.propertyRepository` had no reader in `lib/` or `test/`.
+- `RepositoryProvider.initializeWithCustomRepositories` had no caller.
+
+Changes:
+
+- `repository_provider.dart`: Supabase-only construction; the property
+  repository field, getter and parameter removed; `USE_SUPABASE_AUTH=false` now
+  throws a `StateError` at first use instead of silently building Firebase.
+- Deleted `firebase_auth_repository.dart`, `firestore_user_repository.dart`,
+  `firestore_property_repository.dart`, `property_repository.dart`.
+- `auth_failure.dart`: doc comment no longer links the deleted class.
+
+Deliberately kept (not Phase 1):
+
+- `firestore_notification_repository.dart` - `test/auth/profile_fcm_compatibility_test.dart`
+  imports it (Phase 5 with notifications).
+- `AuthService` (Firebase Auth, phone/OTP/email link) - still called by
+  `login_viewmodel`, `signup_viewmodel`, `phone_otp_viewmodel`,
+  `profile_viewmodel`; reachability under Supabase mode is UNCERTAIN, so it is
+  not touched.
+- All Firebase packages and native config (pubspec, Gradle, iOS, rules,
+  `functions/`), quotas/usage gates, subscription, media services.
+
+Verification run:
+
+- `flutter analyze --no-pub lib/src/repositories lib/main.dart test/auth`:
+  5 issues, none from this change - one deprecation info in
+  `canonical_identity_test.dart`, and 4 pre-existing `undefined_identifier`
+  errors for `NotificationService` in `profile_fcm_compatibility_test.dart`
+  (that class is fully commented out at `a9bc445`).
+- `flutter test`: `auth_failure_mapping_test`, `canonical_identity_test`,
+  `search_results_ui_test` - 61 passed.
+- Not run: full suite, device run.
+
+NOW: owner reviews the Phase 1 diff. NEXT: on explicit approval, Phase 2
+(Firestore domain cleanup) on the same branch.

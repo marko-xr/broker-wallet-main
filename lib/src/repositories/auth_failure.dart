@@ -54,7 +54,7 @@ enum AuthFailureCode {
 
 /// Unified, backend-neutral authentication failure representation.
 ///
-/// Both [FirebaseAuthRepository] and [SupabaseAuthRepository] translate their
+/// Both the Firebase and [SupabaseAuthRepository] repositories translate their
 /// vendor-specific exceptions into [AuthFailure]. ViewModels and UI layers
 /// only handle [AuthFailure] without needing vendor-specific imports.
 class AuthFailure implements Exception {

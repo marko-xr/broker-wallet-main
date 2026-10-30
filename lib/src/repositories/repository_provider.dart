@@ -1,10 +1,5 @@
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
-import 'package:broker_wallet/src/repositories/property_repository.dart';
-import 'package:broker_wallet/src/repositories/firebase_auth_repository.dart';
-import 'package:broker_wallet/src/repositories/firestore_user_repository.dart';
-import 'package:broker_wallet/src/repositories/firestore_property_repository.dart';
-import 'package:broker_wallet/src/repositories/firestore_notification_repository.dart';
 import 'package:broker_wallet/src/repositories/supabase_notification_repository.dart';
 import 'package:broker_wallet/src/repositories/notification_repository.dart';
 import 'package:broker_wallet/src/repositories/supabase_auth_repository.dart';
@@ -21,35 +16,32 @@ class RepositoryProvider {
   // Repository instances
   late final UserRepository _userRepository;
   late final AuthRepository _authRepository;
-  late final PropertyRepository _propertyRepository;
   late final NotificationRepository _notificationRepository;
 
   RepositoryProvider._internal() {
-    // Identity/profile migration is feature-flagged. Property and notification
-    // repositories intentionally remain on Firebase during this stage.
-    if (SupabaseConfig.useSupabaseAuth) {
-      if (!SupabaseConfig.isConfigured ||
-          !SupabaseBootstrapService.isInitialized) {
-        throw StateError(
-          'USE_SUPABASE_AUTH requires an initialized Supabase client. '
-          'Provide SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.',
-        );
-      }
-
-      _userRepository = SupabaseUserRepository();
-      _authRepository = SupabaseAuthRepository(
-        userRepository: _userRepository,
+    // Supabase is the only identity/profile/notification backend. The Firebase
+    // repositories were retired; a build that sets USE_SUPABASE_AUTH=false has
+    // no repository to fall back to and must fail loudly, not run half-wired.
+    if (!SupabaseConfig.useSupabaseAuth) {
+      throw StateError(
+        'USE_SUPABASE_AUTH=false is no longer supported: the Firebase '
+        'repositories were removed.',
       );
-      _notificationRepository = SupabaseNotificationRepository();
-    } else {
-      _userRepository = FirestoreUserRepository();
-      _authRepository = FirebaseAuthRepository(
-        userRepository: _userRepository,
-      );
-      _notificationRepository = FirestoreNotificationRepository();
     }
 
-    _propertyRepository = FirestorePropertyRepository();
+    if (!SupabaseConfig.isConfigured ||
+        !SupabaseBootstrapService.isInitialized) {
+      throw StateError(
+        'USE_SUPABASE_AUTH requires an initialized Supabase client. '
+        'Provide SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.',
+      );
+    }
+
+    _userRepository = SupabaseUserRepository();
+    _authRepository = SupabaseAuthRepository(
+      userRepository: _userRepository,
+    );
+    _notificationRepository = SupabaseNotificationRepository();
   }
 
   /// Get singleton instance
@@ -66,7 +58,6 @@ class RepositoryProvider {
   // Repository getters
   AuthRepository get authRepository => _authRepository;
   UserRepository get userRepository => _userRepository;
-  PropertyRepository get propertyRepository => _propertyRepository;
   NotificationRepository get notificationRepository => _notificationRepository;
 
   /// Initialize repositories with custom implementations
@@ -74,13 +65,11 @@ class RepositoryProvider {
   static void initializeWithCustomRepositories({
     required UserRepository userRepository,
     required AuthRepository authRepository,
-    required PropertyRepository propertyRepository,
     required NotificationRepository notificationRepository,
   }) {
     final instance = RepositoryProvider._internal();
     instance._userRepository = userRepository;
     instance._authRepository = authRepository;
-    instance._propertyRepository = propertyRepository;
     instance._notificationRepository = notificationRepository;
     _instance = instance;
   }

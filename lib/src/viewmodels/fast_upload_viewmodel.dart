@@ -13,9 +13,6 @@ class FastUploadViewModel extends ChangeNotifier {
   int get pendingProfileUploads => _pendingProfileUploads;
   int get totalPendingUploads => _pendingUploads + _pendingProfileUploads;
 
-  bool _isRetrying = false;
-  bool get isRetrying => _isRetrying;
-
   /// Initialize and check for pending uploads
   Future<void> initialize() async {
     try {
@@ -36,28 +33,6 @@ class FastUploadViewModel extends ChangeNotifier {
           await _profileUploadService.getPendingUploadCount();
       notifyListeners();
     } catch (e) {
-    }
-  }
-
-  /// Retry all pending uploads
-  Future<void> retryPendingUploads() async {
-    if (_isRetrying) return;
-
-    _isRetrying = true;
-    notifyListeners();
-
-    try {
-      // Retry media uploads
-      await _uploadService.retryPendingUploads();
-
-      // Retry profile uploads
-      await _profileUploadService.retryFailedUploads();
-
-      await _checkPendingUploads(); // Refresh count
-    } catch (e) {
-    } finally {
-      _isRetrying = false;
-      notifyListeners();
     }
   }
 

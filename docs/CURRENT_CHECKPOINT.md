@@ -16223,3 +16223,58 @@ responsive, notifications): 425 passed, 7 failed - exactly the known set
 files, `session_superseded_dialog_test` 2), identical to the earlier baselines.
 
 NOW: owner reviews the Phase 7C diff. NEXT: on approval, commit; then 7D.
+
+## Firebase removal - Phase 7D (Firebase Storage code), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 7C commit `6d2b5b1`. `firebase_storage` imports in `lib/`: 2 -> 0
+(`cloud_firestore` imports: 11 -> 9). Supabase, R2, the Offer/Owner/profile upload
+queues, Offline Cache, every screen and every public stream are unchanged.
+
+Evidence the removed code could not run: after Phase 4 nothing calls
+`FastMediaUploadService.saveDataWithMedia` or
+`FastProfileUploadService.saveProfileImageFast` (their callers were the Firestore
+tails already removed from `offer_service`/`owner_service` and
+`edit_profile_viewmodel`), and nothing calls `FastUploadViewModel.retryPendingUploads`
+or the services' retry methods (no UI consumer exists). The upload pipeline was
+reachable only through those entry points.
+
+Removed:
+
+- `fast_media_upload_service.dart`: `saveDataWithMedia`, `_makeHiveCompatible`,
+  `_saveMediaLocally`, `_uploadInBackground`, `_uploadToFirebaseStorage`,
+  `retryPendingUploads`, `retryFailedUploads`, the Firebase fields and imports.
+- `fast_profile_upload_service.dart`: `saveProfileImageFast`, `_saveImageLocally`,
+  `_uploadInBackground`, `retryFailedUploads`, the Firebase fields and imports.
+- `fast_upload_viewmodel.dart`: `retryPendingUploads`, `isRetrying`.
+
+Kept on purpose (nothing here was deleted or cleaned):
+
+- Both `onUploadCompleted` streams and their event classes: the Offer Details,
+  Owner Details and Edit Profile screens still listen to them; no producer remains,
+  so they stay silent.
+- `getPendingUploadCount`, `getLocalData`, `getLocalMediaPaths`, `clearLocalMedia`,
+  `cleanupLocalFiles`, `getLocalProfileUrl`, `clearLocalCache`.
+- `FastUploadViewModel` and its startup `initialize()` (counts the legacy boxes),
+  and the `pending_uploads` box that `main.dart` opens. Its content, the
+  `pending_profile_uploads`/`local_media`/`local_profile` boxes and every stored
+  Firebase Storage URL are untouched.
+- `offline_media_service` URL mapping and the `firebasestorage` error handling in
+  `offline_image_service`, `offline_media_service`, `media_cache_manager`: read-side
+  compatibility for URLs that were stored earlier; they need no SDK.
+
+Consequence to decide later: any entry still sitting in the legacy
+`pending_uploads` / `pending_profile_uploads` boxes can no longer be uploaded to
+Firebase Storage. Before this change nothing in the app invoked the retry either,
+so no working path was lost; whether to migrate or discard those entries is an
+owner decision.
+
+Verification: `flutter analyze --no-pub lib` 84 issues, no error/warning;
+`git diff --check` exit 0; targeted tests (offers, owners, plan_attachment,
+services, profile, quotation, R5b/R5c responsive): 967 passed, 0 failed.
+
+What still blocks removing the `firebase_storage` package: only the packages
+phase itself (no Dart import remains; `pubspec.yaml`, `pubspec.lock`, generated
+registrants and `storage.rules` are out of this phase's scope).
+
+NOW: owner reviews the Phase 7D diff. NEXT: on approval, commit.

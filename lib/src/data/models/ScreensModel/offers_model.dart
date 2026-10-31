@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../property_status.dart';
 
 class OfferModel {
@@ -67,86 +66,6 @@ class OfferModel {
     required this.mediaUrls,
     this.mediaObjectIds = const <String>[],
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'offerType': offerType,
-      'selectedCity': selectedCity,
-      'selectedAreas': selectedAreas,
-      'location': location,
-      'phoneNumber': phoneNumber,
-      'countryCode': countryCode,
-      'minPrice': minPrice,
-      'maxPrice': maxPrice,
-      'squareFootage': squareFootage,
-      'notes': notes,
-      'propertyType': propertyType,
-      'specificPropertyType': specificPropertyType,
-      'rooms': rooms,
-      'bathrooms': bathrooms,
-      'pickUpLocation': pickUpLocation,
-      'pickUpLatitude': pickUpLatitude,
-      'pickUpLongitude': pickUpLongitude,
-      'pickUpAddress': pickUpAddress,
-      'uploadedFileName': uploadedFileName,
-      'mediaUrl': mediaUrl,
-      'status': status.toFirestoreString(),
-      'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': Timestamp.fromDate(updatedAt),
-      'mediaUrls': mediaUrls,
-    };
-  }
-
-  // Create from Firestore document
-  factory OfferModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-
-    // Safe timestamp handling - server timestamps can be null during read operations
-    DateTime parseTimestamp(dynamic timestamp) {
-      if (timestamp == null) {
-        return DateTime.now();
-      }
-      if (timestamp is Timestamp) {
-        return timestamp.toDate();
-      }
-      if (timestamp is DateTime) {
-        return timestamp;
-      }
-      // Fallback for other types or malformed data
-      return DateTime.now();
-    }
-
-    return OfferModel(
-      id: doc.id,
-      userId: data['userId'] ?? '',
-      offerType: data['offerType'] ?? 'rent',
-      selectedCity: data['selectedCity'] ?? '',
-      selectedAreas: List<String>.from(data['selectedAreas'] ?? []),
-      location: data['location'] ?? '',
-      phoneNumber: data['phoneNumber'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      minPrice: data['minPrice'] ?? '',
-      maxPrice: data['maxPrice'] ?? '',
-      squareFootage: data['squareFootage'] ?? '',
-      notes: data['notes'] ?? '',
-      propertyType: data['propertyType'],
-      specificPropertyType: data['specificPropertyType'] ?? '',
-      rooms: data['rooms'] ?? 1,
-      bathrooms: data['bathrooms'] ?? 1,
-      pickUpLocation: data['pickUpLocation'] ?? '',
-      pickUpLatitude: data['pickUpLatitude'] ?? 0.0,
-      pickUpLongitude: data['pickUpLongitude'] ?? 0.0,
-      pickUpAddress: data['pickUpAddress'] ?? '',
-      uploadedFileName: data['uploadedFileName'] ?? '',
-      mediaUrl: data['mediaUrl'],
-      status: PropertyStatus.fromString(data['status'] ?? 'available'),
-      createdAt: parseTimestamp(data['createdAt']),
-      updatedAt: parseTimestamp(data['updatedAt']),
-      mediaUrls: List<String>.from(data['mediaUrls'] ?? []),
-    );
-  }
 
   // Copy with method for updates
   OfferModel copyWith({

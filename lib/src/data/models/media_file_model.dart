@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum MediaFileType { image, video, pdf, unknown }
 
@@ -32,50 +31,6 @@ class MediaFileModel {
     required this.ownerUid,
     required this.createdAt,
   });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'mediaType': mediaType.name,
-      'format': format,
-      'contentType': contentType,
-      'downloadUrl': downloadUrl,
-      'thumbnailUrl': thumbnailUrl,
-      'storagePath': storagePath,
-      'width': width,
-      'height': height,
-      'durationMs': durationMs,
-      'sizeBytes': sizeBytes,
-      'ownerUid': ownerUid,
-      'createdAt': Timestamp.fromDate(createdAt),
-    };
-  }
-
-  factory MediaFileModel.fromMap(Map<String, dynamic> map) {
-    return MediaFileModel(
-      id: map['id'] ?? '',
-      mediaType: MediaFileType.values.firstWhere(
-        (e) => e.name == map['mediaType'],
-        orElse: () => MediaFileType.unknown,
-      ),
-      format: map['format'] ?? '',
-      contentType: map['contentType'] ?? '',
-      downloadUrl: map['downloadUrl'] ?? '',
-      thumbnailUrl: map['thumbnailUrl'],
-      storagePath: map['storagePath'] ?? '',
-      width: map['width'],
-      height: map['height'],
-      durationMs: map['durationMs'],
-      sizeBytes: map['sizeBytes'] ?? 0,
-      ownerUid: map['ownerUid'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-    );
-  }
-
-  factory MediaFileModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return MediaFileModel.fromMap({...data, 'id': doc.id});
-  }
 }
 
 class MediaUploadProgress {

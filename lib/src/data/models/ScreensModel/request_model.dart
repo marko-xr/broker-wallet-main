@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../property_status.dart';
 
 class RequestModel {
@@ -43,72 +42,6 @@ class RequestModel {
     required this.createdAt,
     required this.updatedAt,
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'requestType': requestType,
-      'selectedCity': selectedCity,
-      'selectedAreas': selectedAreas,
-      'location': location,
-      'phoneNumber': phoneNumber,
-      'countryCode': countryCode,
-      'minPrice': minPrice,
-      'maxPrice': maxPrice,
-      'squareFootage': squareFootage,
-      'notes': notes,
-      'propertyType': propertyType,
-      'specificPropertyType': specificPropertyType,
-      'rooms': rooms,
-      'bathrooms': bathrooms,
-      'status': status.toFirestoreString(),
-      'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': Timestamp.fromDate(updatedAt),
-    };
-  }
-
-  // Create from Firestore document
-  factory RequestModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-
-    // Safe timestamp handling - server timestamps can be null during read operations
-    DateTime parseTimestamp(dynamic timestamp) {
-      if (timestamp == null) {
-        return DateTime.now();
-      }
-      if (timestamp is Timestamp) {
-        return timestamp.toDate();
-      }
-      if (timestamp is DateTime) {
-        return timestamp;
-      }
-      // Fallback for other types or malformed data
-      return DateTime.now();
-    }
-
-    return RequestModel(
-      id: doc.id,
-      userId: data['userId'] ?? '',
-      requestType: data['requestType'] ?? 'rent',
-      selectedCity: data['selectedCity'] ?? '',
-      selectedAreas: List<String>.from(data['selectedAreas'] ?? []),
-      location: data['location'] ?? '',
-      phoneNumber: data['phoneNumber'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      minPrice: data['minPrice'] ?? '',
-      maxPrice: data['maxPrice'] ?? '',
-      squareFootage: data['squareFootage'] ?? '',
-      notes: data['notes'] ?? '',
-      propertyType: data['propertyType'],
-      specificPropertyType: data['specificPropertyType'] ?? '',
-      rooms: data['rooms'] ?? 1,
-      bathrooms: data['bathrooms'] ?? 1,
-      status: _normalizeStatus(data['status']),
-      createdAt: parseTimestamp(data['createdAt']),
-      updatedAt: parseTimestamp(data['updatedAt']),
-    );
-  }
 
   /// Create a request model from the Supabase/PostgREST row shape.
   ///

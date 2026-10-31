@@ -1,4 +1,3 @@
-import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
@@ -7,7 +6,6 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/services/supabase_core_entities_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'search_engine.dart';
 
@@ -26,12 +24,10 @@ abstract class SearchDataSource {
   Future<SearchData> load();
 }
 
-/// The app's own data: Supabase when it is the auth authority, otherwise the
-/// legacy Firestore collections of the signed-in user.
+/// The app's own data, read from Supabase.
 ///
-/// Every read is scoped to the signed-in user (Supabase by `owner_id` and RLS,
-/// Firestore by the user's own document), so Search can never see another
-/// user's records. Nothing is created until [load] is first called.
+/// Every read is scoped to the signed-in user (by `owner_id` and RLS), so
+/// Search can never see another user's records. Nothing is created until [load] is first called.
 class DefaultSearchDataSource implements SearchDataSource {
   DefaultSearchDataSource();
 
@@ -43,7 +39,7 @@ class DefaultSearchDataSource implements SearchDataSource {
 
   @override
   Future<SearchData> load() {
-    return SupabaseConfig.useSupabaseAuth ? _loadSupabase() : _loadFirestore();
+    return _loadSupabase();
   }
 
   Future<SearchData> _loadSupabase() async {
@@ -63,34 +59,6 @@ class DefaultSearchDataSource implements SearchDataSource {
       offices: results[3].cast<OfficeModel>(),
       brokers: results[4].cast<BrokerModel>(),
       watchmen: results[5].cast<WatchmenModel>(),
-    );
-  }
-
-  Future<SearchData> _loadFirestore() async {
-    final userId = currentUserId;
-    if (userId == null || userId.isEmpty) {
-      throw StateError('A session is required.');
-    }
-    final firestore = FirebaseFirestore.instance;
-    Future<QuerySnapshot<Map<String, dynamic>>> collection(String name) =>
-        firestore.collection('users').doc(userId).collection(name).get();
-
-    final snapshots = await Future.wait([
-      collection('requests'),
-      collection('offers'),
-      collection('owners'),
-      collection('offices'),
-      collection('brokers'),
-      collection('watchmen'),
-    ]);
-
-    return SearchData(
-      requests: snapshots[0].docs.map(RequestModel.fromFirestore).toList(),
-      offers: snapshots[1].docs.map(OfferModel.fromFirestore).toList(),
-      owners: snapshots[2].docs.map(OwnerModel.fromFirestore).toList(),
-      offices: snapshots[3].docs.map(OfficeModel.fromFirestore).toList(),
-      brokers: snapshots[4].docs.map(BrokerModel.fromFirestore).toList(),
-      watchmen: snapshots[5].docs.map(WatchmenModel.fromFirestore).toList(),
     );
   }
 }

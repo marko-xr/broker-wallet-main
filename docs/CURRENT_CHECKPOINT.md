@@ -16083,3 +16083,40 @@ Verification:
 
 NOW: owner reviews the Phase 5 diff. NEXT: on approval, commit; then decide
 the push option and the remaining blockers before Phase 6.
+
+## Firebase removal - Phase 7A (Search, Favorites, Related Items, model serializers), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 5 commit `b912b35`. `cloud_firestore` imports in `lib/`: 24 -> 13.
+
+Edited (all Firestore branches were behind `!useSupabaseAuth`, which cannot run since
+Phase 1; each already had a Supabase path, kept unchanged):
+
+- `search_data_source.dart`: `load()` calls `_loadSupabase()`; `_loadFirestore` removed.
+- `favorites_service.dart`: Firestore reads/writes removed from add, remove,
+  isFavorite, ids stream, metadata (cache + server) and the polling stream. Hive
+  per-account cache box, generation guard and Supabase tables untouched.
+- `related_items_service.dart`: Supabase only; the unused `firestore:` constructor
+  argument is gone (no caller passed it).
+- Models: removed `toFirestore`/`fromFirestore` from the six entity models, and the
+  Timestamp-shaped `toMap`/`fromMap` of `FeedbackModel` and `MediaFileModel`
+  (no callers). `fromSupabaseMap`, `copyWith`, `toFirestoreString` (used by
+  `core_entity_payload_builder`) are unchanged.
+- `test/search/search_results_ui_test.dart`: the guard that required
+  `.collection('users').doc(userId)` in the data source now requires the absence
+  of `cloud_firestore`/`FirebaseFirestore`; the Supabase-scoping assertions stay.
+
+Kept: `UserModel`/`UserSubscription` and `NotificationModel` Firestore methods
+(`AuthService`, legacy notification repository, Hive offline-auth `fromMap`
+Timestamp tolerance). Remaining `cloud_firestore` files: 2 models, legacy
+notification repository, `auth_service`, 4 usage gates, quota bridge, quota
+helper, subscription VM, 2 `fast_*` services.
+
+Verification: `flutter analyze --no-pub lib` 84 issues, no error/warning;
+`git diff --check` exit 0; targeted tests (search, favorites, related_items, lists,
+home, map, r2 search/favorites responsive, quotation, offers, owners, profile):
+1949 passed, 3 failed - the known `map_opening_test` (2) and `map_ux_phase1_test`
+(1), whose inputs this phase does not touch.
+
+NOW: owner reviews the Phase 7A diff. NEXT: on approval, commit; then 7B (push
+decision) or the Phone Auth migration.

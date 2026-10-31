@@ -1,7 +1,3 @@
-import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../data/models/ScreensModel/offers_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import 'supabase_core_entities_service.dart';
@@ -11,16 +7,11 @@ import 'supabase_core_entities_service.dart';
 class RelatedItemsService {
   RelatedItemsService({
     SupabaseCoreEntitiesService? coreEntities,
-    FirebaseFirestore? firestore,
-  })  : _coreEntitiesOverride = coreEntities,
-        _firestoreOverride = firestore;
+  }) : _coreEntitiesOverride = coreEntities;
 
   final SupabaseCoreEntitiesService? _coreEntitiesOverride;
-  final FirebaseFirestore? _firestoreOverride;
   late final SupabaseCoreEntitiesService _coreEntities =
       _coreEntitiesOverride ?? SupabaseCoreEntitiesService();
-  FirebaseFirestore get _firestore =>
-      _firestoreOverride ?? FirebaseFirestore.instance;
 
   /// Fetch offers matching the given phone number
   /// Returns a stream of offers where phoneNumber matches
@@ -30,26 +21,7 @@ class RelatedItemsService {
     }
 
     final cleanPhone = _cleanPhoneNumber(phoneNumber);
-    if (SupabaseConfig.useSupabaseAuth) {
-      return _coreEntities.getRelatedOffers(cleanPhone);
-    }
-
-    final userId = RepositoryProvider.instance.authRepository.currentUserId;
-    if (userId == null) {
-      return Stream.value([]);
-    }
-
-    // Clean phone number for matching (remove spaces, dashes, etc.)
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('offers')
-        .where('phoneNumber', isEqualTo: cleanPhone)
-        .limit(10) // Limit to prevent performance issues
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => OfferModel.fromFirestore(doc)).toList();
-    });
+    return _coreEntities.getRelatedOffers(cleanPhone);
   }
 
   /// Fetch requests matching the given phone number
@@ -60,28 +32,7 @@ class RelatedItemsService {
     }
 
     final cleanPhone = _cleanPhoneNumber(phoneNumber);
-    if (SupabaseConfig.useSupabaseAuth) {
-      return _coreEntities.getRelatedRequests(cleanPhone);
-    }
-
-    final userId = RepositoryProvider.instance.authRepository.currentUserId;
-    if (userId == null) {
-      return Stream.value([]);
-    }
-
-    // Clean phone number for matching
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('requests')
-        .where('phoneNumber', isEqualTo: cleanPhone)
-        .limit(10) // Limit to prevent performance issues
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => RequestModel.fromFirestore(doc))
-          .toList();
-    });
+    return _coreEntities.getRelatedRequests(cleanPhone);
   }
 
   /// Fetch all related items (offers + requests) for a given phone number
@@ -117,38 +68,7 @@ class RelatedItemsService {
       return 0;
     }
 
-    if (SupabaseConfig.useSupabaseAuth) {
-      final cleanPhone = _cleanPhoneNumber(phoneNumber);
-      return _coreEntities.getRelatedItemsCount(cleanPhone);
-    }
-
-    final userId = RepositoryProvider.instance.authRepository.currentUserId;
-    if (userId == null) {
-      return 0;
-    }
-
     final cleanPhone = _cleanPhoneNumber(phoneNumber);
-
-    try {
-      final offersSnapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('offers')
-          .where('phoneNumber', isEqualTo: cleanPhone)
-          .count()
-          .get();
-
-      final requestsSnapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('requests')
-          .where('phoneNumber', isEqualTo: cleanPhone)
-          .count()
-          .get();
-
-      return (offersSnapshot.count ?? 0) + (requestsSnapshot.count ?? 0);
-    } catch (e) {
-      return 0;
-    }
+    return _coreEntities.getRelatedItemsCount(cleanPhone);
   }
 }

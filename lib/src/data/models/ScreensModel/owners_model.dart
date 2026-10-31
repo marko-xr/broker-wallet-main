@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OwnerModel {
   final String? id;
@@ -38,68 +37,6 @@ class OwnerModel {
     required this.createdAt,
     required this.updatedAt,
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'name': name,
-      'phoneNumber': phoneNumber,
-      'countryCode': countryCode,
-      'typeOfProperties': typeOfProperties,
-      'propertyLocation': propertyLocation,
-      'notes': notes,
-      'pickUpLocation': pickUpLocation,
-      'pickUpLatitude': pickUpLatitude,
-      'pickUpLongitude': pickUpLongitude,
-      'pickUpAddress': pickUpAddress,
-      'uploadedFileName': uploadedFileName,
-      'mediaUrl': mediaUrl,
-      'mediaUrls': mediaUrls,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': Timestamp.fromDate(updatedAt),
-    };
-  }
-
-  // Create from Firestore document
-  factory OwnerModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-
-    // Safe timestamp handling - server timestamps can be null during read operations
-    DateTime parseTimestamp(dynamic timestamp) {
-      if (timestamp == null) {
-        return DateTime.now();
-      }
-      if (timestamp is Timestamp) {
-        return timestamp.toDate();
-      }
-      if (timestamp is DateTime) {
-        return timestamp;
-      }
-      // Fallback for other types or malformed data
-      return DateTime.now();
-    }
-
-    return OwnerModel(
-      id: doc.id,
-      userId: data['userId'] ?? '',
-      name: data['name'] ?? '',
-      phoneNumber: data['phoneNumber'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      typeOfProperties: data['typeOfProperties'] ?? '',
-      propertyLocation: data['propertyLocation'] ?? '',
-      notes: data['notes'] ?? '',
-      pickUpLocation: data['pickUpLocation'] ?? '',
-      pickUpLatitude: data['pickUpLatitude'] ?? 0.0,
-      pickUpLongitude: data['pickUpLongitude'] ?? 0.0,
-      pickUpAddress: data['pickUpAddress'] ?? '',
-      uploadedFileName: data['uploadedFileName'],
-      mediaUrl: data['mediaUrl'],
-      mediaUrls: List<String>.from(data['mediaUrls'] ?? []),
-      createdAt: parseTimestamp(data['createdAt']),
-      updatedAt: parseTimestamp(data['updatedAt']),
-    );
-  }
 
   // Copy with method for updates
   OwnerModel copyWith({

@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class WatchmenModel {
   final String? id;
@@ -32,46 +31,6 @@ class WatchmenModel {
     this.createdAt,
     this.updatedAt,
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'name': name,
-      'countryCode': countryCode,
-      'phoneNumber': phoneNumber,
-      'buildingName': buildingName,
-      'notes': notes,
-      'buildingLocation': buildingLocation,
-      'pickUpLocation': pickUpLocation,
-      'pickUpLatitude': pickUpLatitude,
-      'pickUpLongitude': pickUpLongitude,
-      'pickUpAddress': pickUpAddress,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
-    };
-  }
-
-  // Create from Firestore document
-  factory WatchmenModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return WatchmenModel(
-      id: doc.id,
-      userId: data['userId'],
-      name: data['name'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      phoneNumber: data['phoneNumber'] ?? '',
-      buildingName: data['buildingName'] ?? '',
-      notes: data['notes'] ?? '',
-      buildingLocation: data['buildingLocation'] ?? '',
-      pickUpLocation: data['pickUpLocation'] ?? '',
-      pickUpLatitude: (data['pickUpLatitude'] as num?)?.toDouble(),
-      pickUpLongitude: (data['pickUpLongitude'] as num?)?.toDouble(),
-      pickUpAddress: data['pickUpAddress'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
-    );
-  }
 
   // Copy with method for updates
   WatchmenModel copyWith({

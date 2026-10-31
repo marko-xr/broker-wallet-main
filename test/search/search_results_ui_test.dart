@@ -449,7 +449,8 @@ void main() {
       final source = _read(_dataSource);
       expect(source.contains('SupabaseCoreEntitiesService'), isTrue,
           reason: 'its reads are owner_id scoped, with RLS');
-      expect(source.contains(".collection('users').doc(userId)"), isTrue);
+      expect(source.contains('cloud_firestore'), isFalse);
+      expect(source.contains('FirebaseFirestore'), isFalse);
       expect(source.contains('authRepository.currentUserId'), isTrue);
     });
 

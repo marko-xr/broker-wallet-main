@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -22,13 +21,9 @@ class FavoriteMetadata {
 }
 
 class FavoriteService {
-  // Use lazy getters to avoid accessing Firebase before initialization
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-
   // Get current user ID
   String? get _activeUserId =>
       RepositoryProvider.instance.authRepository.currentUserId;
-  String? get _currentUserId => _activeUserId;
 
   String _supabaseTable(String type) {
     const tables = {
@@ -350,20 +345,6 @@ class FavoriteService {
         );
         return;
       }
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('favorites')
-          .doc(type)
-          .collection('items')
-          .doc(itemId)
-          .set({
-        'itemId': itemId,
-        'type': type,
-        'addedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // Note: Cache will be updated when favorites view loads fresh data
     } catch (e) {
       // Debug log suppressed: Error adding to favorites: $e
       rethrow;
@@ -385,14 +366,6 @@ class FavoriteService {
             .eq('target_id', itemId);
         return;
       }
-      await _firestore
-          .collection(_collectionName)
-          .doc(_currentUserId!)
-          .collection('favorites')
-          .doc(type)
-          .collection('items')
-          .doc(itemId)
-          .delete();
     } catch (e) {
       // Debug log suppressed: Error removing from favorites: $e
       rethrow;
@@ -406,49 +379,13 @@ class FavoriteService {
     }
 
     try {
-      if (SupabaseConfig.useSupabaseAuth) {
-        final row = await sb.Supabase.instance.client
-            .from(_supabaseTable(type))
-            .select('target_id')
-            .eq('owner_id', _activeUserId!)
-            .eq('target_id', itemId)
-            .maybeSingle();
-        return row != null;
-      }
-      // Try cache first
-      DocumentSnapshot doc;
-      try {
-        doc = await _firestore
-            .collection(_collectionName)
-            .doc(_currentUserId!)
-            .collection('favorites')
-            .doc(type)
-            .collection('items')
-            .doc(itemId)
-            .get(const GetOptions(source: Source.cache));
-
-        return doc.exists;
-      } catch (e) {
-        // Debug log suppressed: Cache read failed for isFavorite, trying server: $e
-      }
-
-      // Fallback to server with timeout
-      try {
-        doc = await _firestore
-            .collection(_collectionName)
-            .doc(_currentUserId!)
-            .collection('favorites')
-            .doc(type)
-            .collection('items')
-            .doc(itemId)
-            .get(const GetOptions(source: Source.server))
-            .timeout(const Duration(seconds: 3));
-
-        return doc.exists;
-      } on TimeoutException {
-        // Debug log suppressed: isFavorite server timeout - returning false
-        return false;
-      }
+      final row = await sb.Supabase.instance.client
+          .from(_supabaseTable(type))
+          .select('target_id')
+          .eq('owner_id', _activeUserId!)
+          .eq('target_id', itemId)
+          .maybeSingle();
+      return row != null;
     } catch (e) {
       // Debug log suppressed: Error checking favorite status: $e
       return false;
@@ -474,27 +411,15 @@ class FavoriteService {
       return Stream.value([]);
     }
 
-    if (SupabaseConfig.useSupabaseAuth) {
-      return sb.Supabase.instance.client
-          .from(_supabaseTable(type))
-          .stream(primaryKey: const ['owner_id', 'target_id'])
-          .eq('owner_id', _activeUserId!)
-          .order('added_at', ascending: false)
-          .map((rows) => rows
-              .map((row) => row['target_id']?.toString() ?? '')
-              .where((id) => id.isNotEmpty)
-              .toList(growable: false));
-    }
-
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('favorites')
-        .doc(type)
-        .collection('items')
-        .orderBy('addedAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => doc.id).toList());
+    return sb.Supabase.instance.client
+        .from(_supabaseTable(type))
+        .stream(primaryKey: const ['owner_id', 'target_id'])
+        .eq('owner_id', _activeUserId!)
+        .order('added_at', ascending: false)
+        .map((rows) => rows
+            .map((row) => row['target_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList(growable: false));
   }
 
   // Get all favorites with metadata (ID + timestamp)
@@ -508,77 +433,7 @@ class FavoriteService {
       }
     }
 
-    if (SupabaseConfig.useSupabaseAuth) {
-      return _getServerFavoritesWithMetadata();
-    }
-
-    try {
-      final Map<String, List<FavoriteMetadata>> favorites = {};
-
-      final types = [
-        _offersType,
-        _requestsType,
-        _ownersType,
-        _officesType,
-        _brokersType,
-        _watchmenType,
-      ];
-
-      // Check if this is likely a fresh install by checking if this
-      // account's cache box exists and is empty.
-      bool isFreshInstall = false;
-      try {
-        isFreshInstall = !_hasValidCacheBoxForCurrentUser || _cacheBox!.isEmpty;
-      } catch (e) {
-        isFreshInstall = true;
-      }
-
-      // For fresh installs, go directly to server to avoid empty cache delays
-      if (isFreshInstall) {
-        // Debug log suppressed: Fresh install detected, loading favorites from server...
-        return await _getServerFavoritesWithMetadata();
-      }
-
-      // For existing installs, try cache first with server fallback
-      for (final type in types) {
-        try {
-          final snapshot = await _firestore
-              .collection(_collectionName)
-              .doc(_currentUserId!)
-              .collection('favorites')
-              .doc(type)
-              .collection('items')
-              .orderBy('addedAt', descending: true)
-              .get(const GetOptions(source: Source.cache));
-
-          favorites[type] = snapshot.docs.map((doc) {
-            final data = doc.data();
-            return FavoriteMetadata(
-              itemId: doc.id,
-              type: type,
-              addedAt:
-                  (data['addedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-            );
-          }).toList();
-        } catch (e) {
-          // Debug log suppressed: Cache read failed for $type, will use server fallback
-          // Individual type cache failure - server fallback will handle this
-          favorites[type] = [];
-        }
-      }
-
-      // If cache returned empty results, fall back to server
-      if (favorites.values.every((list) => list.isEmpty)) {
-        // Debug log suppressed: Cache empty, falling back to server...
-        return await _getServerFavoritesWithMetadata();
-      }
-
-      return favorites;
-    } catch (e) {
-      // Debug log suppressed: Cache operation failed entirely: $e
-      // If cache fails entirely, try server data
-      return await _getServerFavoritesWithMetadata();
-    }
+    return _getServerFavoritesWithMetadata();
   }
 
   // Fallback method for server data with metadata when cache fails
@@ -601,43 +456,22 @@ class FavoriteService {
       ];
 
       for (final type in types) {
-        if (SupabaseConfig.useSupabaseAuth) {
-          final rows = await sb.Supabase.instance.client
-              .from(_supabaseTable(type))
-              .select('target_id, added_at')
-              .eq('owner_id', _activeUserId!)
-              .order('added_at', ascending: false);
-          favorites[type] = rows
-              .map((row) => FavoriteMetadata(
-                    itemId: row['target_id']?.toString() ?? '',
-                    type: type,
-                    addedAt: DateTime.tryParse(
-                          row['added_at']?.toString() ?? '',
-                        ) ??
-                        DateTime.now(),
-                  ))
-              .where((item) => item.itemId.isNotEmpty)
-              .toList(growable: false);
-          continue;
-        }
-        final snapshot = await _firestore
-            .collection(_collectionName)
-            .doc(_currentUserId!)
-            .collection('favorites')
-            .doc(type)
-            .collection('items')
-            .orderBy('addedAt', descending: true)
-            .get(const GetOptions(source: Source.server));
-
-        favorites[type] = snapshot.docs.map((doc) {
-          final data = doc.data();
-          return FavoriteMetadata(
-            itemId: doc.id,
-            type: type,
-            addedAt:
-                (data['addedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          );
-        }).toList();
+        final rows = await sb.Supabase.instance.client
+            .from(_supabaseTable(type))
+            .select('target_id, added_at')
+            .eq('owner_id', _activeUserId!)
+            .order('added_at', ascending: false);
+        favorites[type] = rows
+            .map((row) => FavoriteMetadata(
+                  itemId: row['target_id']?.toString() ?? '',
+                  type: type,
+                  addedAt: DateTime.tryParse(
+                        row['added_at']?.toString() ?? '',
+                      ) ??
+                      DateTime.now(),
+                ))
+            .where((item) => item.itemId.isNotEmpty)
+            .toList(growable: false);
       }
 
       return favorites;
@@ -665,45 +499,9 @@ class FavoriteService {
       return Stream.value({});
     }
 
-    final types = [
-      _offersType,
-      _requestsType,
-      _ownersType,
-      _officesType,
-      _brokersType,
-      _watchmenType,
-    ];
-
-    if (SupabaseConfig.useSupabaseAuth) {
-      return Stream.periodic(const Duration(seconds: 2))
-          .asyncMap((_) async => getAllFavorites())
-          .distinct((previous, next) => _areFavoritesEqual(previous, next));
-    }
-
-    // Combine all type streams into one
-    return Stream.periodic(const Duration(milliseconds: 100))
-        .asyncMap((_) async {
-      final Map<String, List<String>> favorites = {};
-
-      for (final type in types) {
-        try {
-          final snapshot = await _firestore
-              .collection(_collectionName)
-              .doc(_currentUserId!)
-              .collection('favorites')
-              .doc(type)
-              .collection('items')
-              .orderBy('addedAt', descending: true)
-              .get(const GetOptions(source: Source.cache));
-
-          favorites[type] = snapshot.docs.map((doc) => doc.id).toList();
-        } catch (e) {
-          favorites[type] = [];
-        }
-      }
-
-      return favorites;
-    }).distinct((previous, next) => _areFavoritesEqual(previous, next));
+    return Stream.periodic(const Duration(seconds: 2))
+        .asyncMap((_) async => getAllFavorites())
+        .distinct((previous, next) => _areFavoritesEqual(previous, next));
   }
 
   // Helper to compare favorites for stream optimization

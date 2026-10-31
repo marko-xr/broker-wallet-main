@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OfficeModel {
   final String? id;
@@ -32,46 +31,6 @@ class OfficeModel {
     this.createdAt,
     this.updatedAt,
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'officeName': officeName,
-      'managerName': managerName,
-      'countryCode': countryCode,
-      'phoneNumber': phoneNumber,
-      'officeLocation': officeLocation,
-      'notes': notes,
-      'pickUpLocation': pickUpLocation,
-      'pickUpLatitude': pickUpLatitude,
-      'pickUpLongitude': pickUpLongitude,
-      'pickUpAddress': pickUpAddress,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
-    };
-  }
-
-  // Create from Firestore document
-  factory OfficeModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return OfficeModel(
-      id: doc.id,
-      userId: data['userId'],
-      officeName: data['officeName'] ?? '',
-      managerName: data['managerName'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      phoneNumber: data['phoneNumber'] ?? '',
-      officeLocation: data['officeLocation'] ?? '',
-      notes: data['notes'] ?? '',
-      pickUpLocation: data['pickUpLocation'] ?? '',
-      pickUpLatitude: (data['pickUpLatitude'] as num?)?.toDouble(),
-      pickUpLongitude: (data['pickUpLongitude'] as num?)?.toDouble(),
-      pickUpAddress: data['pickUpAddress'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
-    );
-  }
 
   // Copy with method for updates
   OfficeModel copyWith({

@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class BrokerModel {
   final String? id;
@@ -20,34 +19,6 @@ class BrokerModel {
     this.createdAt,
     this.updatedAt,
   });
-
-  // Convert to Firestore document
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'name': name,
-      'countryCode': countryCode,
-      'phoneNumber': phoneNumber,
-      'notes': notes,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
-    };
-  }
-
-  // Create from Firestore document
-  factory BrokerModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return BrokerModel(
-      id: doc.id,
-      userId: data['userId'],
-      name: data['name'] ?? '',
-      countryCode: data['countryCode'] ?? '+971',
-      phoneNumber: data['phoneNumber'] ?? '',
-      notes: data['notes'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
-    );
-  }
 
   // Copy with method for updates
   BrokerModel copyWith({

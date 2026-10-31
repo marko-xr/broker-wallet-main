@@ -1,5 +1,4 @@
 // lib/src/data/models/feedback_model.dart
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum FeedbackStatus { unread, read, resolved }
 
@@ -29,42 +28,6 @@ class FeedbackModel {
     this.deviceInfo,
     this.status = FeedbackStatus.unread,
   });
-
-  // Convert to Map for Firebase storage
-  Map<String, dynamic> toMap() {
-    return {
-      'userId': userId,
-      'userName': userName,
-      'userEmail': userEmail,
-      'rating': rating,
-      'comment': comment,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'appVersion': appVersion,
-      'platform': platform,
-      'deviceInfo': deviceInfo,
-      'status': status.name,
-    };
-  }
-
-  // Create from Firebase document
-  factory FeedbackModel.fromMap(Map<String, dynamic> map, String documentId) {
-    return FeedbackModel(
-      id: documentId,
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? '',
-      userEmail: map['userEmail'] ?? '',
-      rating: map['rating'] ?? 0,
-      comment: map['comment'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
-      appVersion: map['appVersion'] ?? '',
-      platform: map['platform'] ?? '',
-      deviceInfo: map['deviceInfo'],
-      status: FeedbackStatus.values.firstWhere(
-        (e) => e.name == map['status'],
-        orElse: () => FeedbackStatus.unread,
-      ),
-    );
-  }
 
   // Copy with different values
   FeedbackModel copyWith({

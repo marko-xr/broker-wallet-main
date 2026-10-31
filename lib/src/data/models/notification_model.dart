@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 /// Supported in-app notification categories
@@ -109,61 +108,6 @@ class NotificationModel {
       senderUserId: senderUserId ?? this.senderUserId,
     );
   }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'title': title,
-      'body': body,
-      'category': category.firestoreValue,
-      'isRead': isRead,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'data': data,
-      'actionRoute': actionRoute,
-      'offerId': offerId,
-      'requestId': requestId,
-      'matchScore': matchScore,
-      'senderUserId': senderUserId,
-    };
-  }
-
-  factory NotificationModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    return NotificationModel(
-      id: doc.id,
-      title: data['title']?.toString() ?? '',
-      body: data['body']?.toString() ?? '',
-      category: NotificationCategoryParser.fromString(
-        data['category']?.toString(),
-      ),
-      isRead: data['isRead'] as bool? ?? false,
-      createdAt: _parseTimestamp(data['createdAt']) ?? DateTime.now(),
-      data: Map<String, dynamic>.from(data['data'] as Map? ?? {}),
-      actionRoute: data['actionRoute']?.toString(),
-      offerId: data['offerId']?.toString(),
-      requestId: data['requestId']?.toString(),
-      matchScore: (data['matchScore'] as num?)?.toDouble(),
-      senderUserId: data['senderUserId']?.toString(),
-    );
-  }
-
-  static DateTime? _parseTimestamp(dynamic raw) {
-    if (raw == null) return null;
-    if (raw is Timestamp) return raw.toDate();
-    if (raw is DateTime) return raw;
-    if (raw is int) {
-      return DateTime.fromMillisecondsSinceEpoch(raw);
-    }
-    if (raw is Map<String, dynamic>) {
-      final seconds = raw['seconds'] ?? raw['_seconds'];
-      final nanoseconds = raw['nanoseconds'] ?? raw['_nanoseconds'] ?? 0;
-      if (seconds is int) {
-        return DateTime.fromMillisecondsSinceEpoch(
-          seconds * 1000 + ((nanoseconds is int ? nanoseconds : 0) ~/ 1000000),
-        );
-      }
-    }
-    return DateTime.tryParse(raw.toString());
-  }
 }
 
 /// Metadata describing the device token currently registered for push
@@ -181,13 +125,4 @@ class FcmTokenMetadata {
     this.deviceName,
     this.locale,
   });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'platform': platform,
-      'updatedAt': Timestamp.fromDate(updatedAt),
-      'deviceName': deviceName,
-      'locale': locale,
-    };
-  }
 }

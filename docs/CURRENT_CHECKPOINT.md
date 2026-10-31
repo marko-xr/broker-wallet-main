@@ -16120,3 +16120,53 @@ home, map, r2 search/favorites responsive, quotation, offers, owners, profile):
 
 NOW: owner reviews the Phase 7A diff. NEXT: on approval, commit; then 7B (push
 decision) or the Phone Auth migration.
+
+## Firebase removal - Phase 7B (notifications, FCM kept), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 7A commit `9ef7f39`. Owner decision (option A): KEEP FCM for future
+push. Push notifications are NOT working and are not claimed to work; that is a
+separate release requirement.
+
+Kept for FCM: `firebase_messaging`, `firebase_core`, Android/iOS Firebase config
+(`google-services`, `GoogleService-Info.plist`, `FirebaseApp.configure()`,
+`remote-notification`), Supabase `push_devices`, in-app notifications and Realtime,
+`NotificationRepository.upsertFcmToken`/`deleteFcmToken`, `FcmTokenMetadata`, and
+`notification_service.dart` (100% commented; it is the only written design of the
+future FCM client, and `email_change_callback_test` reads its path). Today
+`SupabaseNotificationRepository.upsertFcmToken` throws `UnsupportedError('Push
+device registration is not configured.')`, so no token is ever registered.
+
+Deleted: `repositories/firestore_notification_repository.dart` - its only
+reference was `profile_fcm_compatibility_test`; the Firebase repository branch of
+`RepositoryProvider` went in Phase 1.
+
+Edited:
+
+- `notification_model.dart`: removed `toFirestore`, `fromFirestore`, `_parseTimestamp`
+  and `FcmTokenMetadata.toMap` (callers were only the deleted repository) and the
+  `cloud_firestore` import. Fields, `copyWith`, category parsing and
+  `firestoreValue` unchanged.
+- `test/auth/profile_fcm_compatibility_test.dart` -> `profile_name_persistence_test.dart`
+  (git mv): it did not compile since `NotificationService` was commented out. Its
+  three Supabase-mode profile-persistence tests are valid and now run and pass;
+  its "FCM logout compatibility by auth mode" group tested
+  `NotificationService.forTesting.clearToken` in Firebase mode against a Firestore
+  repository, both gone, so it was removed with its helper classes.
+- New `test/notifications/fcm_contract_guard_test.dart` (4 tests): the token
+  operations stay in the repository contract; Supabase owns `push_devices`; push
+  registration is not claimed to work; the notification layer holds no Firestore.
+
+`cloud_firestore` imports in `lib/`: 13 -> 11 (remaining: `user_model`,
+`auth_service`, 4 usage gates, quota bridge, quota helper, subscription VM,
+2 `fast_*`).
+
+Verification: `flutter analyze --no-pub lib` + the two test paths: 84 issues, no
+error or warning (the 4 `NotificationService` errors of earlier phases are gone);
+`git diff --check` exit 0; targeted tests (notifications, profile name
+persistence, email change callback guard, r3 notifications responsive, account,
+profile): 167 passed, 1 failed - the known `delete_account_test` migration
+setUpAll (missing migration file), unchanged from earlier baselines.
+
+NOW: owner reviews the Phase 7B diff. NEXT: on approval, commit; then 7C (Phone
+Auth on Supabase) or the quota project.

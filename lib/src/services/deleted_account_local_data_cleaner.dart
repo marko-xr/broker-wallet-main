@@ -107,6 +107,7 @@ class DeletedAccountLocalDataCleaner {
     await _step(
       () => Hive.deleteBoxFromDisk(FavoriteService.boxNameForUid(deletedUid)),
     );
+    await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 
     // Queued uploads first, so none keeps sending a deleted account's file.
     // Their local copies carry the account's file-name prefix, so the sweep
@@ -130,7 +131,7 @@ class DeletedAccountLocalDataCleaner {
     }
 
     await _step(OfflineAuthService.instance.clearAuthCache);
-    await _step(CountCacheService.instance.clearCache);
+    await _step(CountCacheService.instance.clearLegacyCache);
     await _step(() => _forgetProfileMedia());
     return offerMedia;
   }

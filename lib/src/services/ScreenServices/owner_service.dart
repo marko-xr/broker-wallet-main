@@ -1,15 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import '../../repositories/repository_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
-import '../fast_media_upload_service.dart';
-import '../map_data_cache_service.dart';
 import '../media_parent.dart';
 import '../offer_media_cache_identity.dart';
 import '../offer_media_policy.dart';
@@ -60,10 +56,6 @@ class OwnerService implements PrivateMediaStore {
             uploadQueue ?? (() => OfferMediaUploadQueue.instance),
         _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new;
 
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  final FastMediaUploadService _fastUploadService = FastMediaUploadService();
-  final _mapDataCache = MapDataCacheService();
-
   final R2OfferMediaUploadService Function() _ownerMediaUploadFactory;
   final OfferMediaUploadQueue Function() _uploadQueueFactory;
   final SupabaseCoreEntitiesService Function() _coreEntitiesFactory;
@@ -76,42 +68,12 @@ class OwnerService implements PrivateMediaStore {
 
   OfferMediaUploadQueue get _uploadQueue => _uploadQueueFactory();
 
-  String? get _currentUserId =>
-      RepositoryProvider.instance.authRepository.currentUserId;
-  static const String _collectionName = 'users';
-
   String generateNewOwnerId() {
-    if (SupabaseConfig.useSupabaseAuth) return const Uuid().v4();
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .doc()
-        .id;
+    return const Uuid().v4();
   }
 
   Future<String?> saveOwner(OwnerModel owner, {String? ownerId}) async {
-    if (SupabaseConfig.useSupabaseAuth) {
-      return _supabase.saveOwner(owner, ownerRecordId: ownerId);
-    }
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    final String docId = ownerId ?? generateNewOwnerId();
-    await _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .doc(docId)
-        .set(owner
-            .copyWith(
-              id: docId,
-              userId: _currentUserId!,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            )
-            .toFirestore());
-    _mapDataCache.invalidateCache();
-    return docId;
+    return _supabase.saveOwner(owner, ownerRecordId: ownerId);
   }
 
   /// Saves the Owner row, applies media removals, and hands new media to the
@@ -213,103 +175,35 @@ class OwnerService implements PrivateMediaStore {
     required List<File> mediaFiles,
     String? ownerId,
   }) async {
-    if (SupabaseConfig.useSupabaseAuth) {
-      // Supabase mode saves media through [saveOwnerWithMedia] and its upload
-      // queue. This legacy entry point uploads nothing there.
-      if (mediaFiles.isNotEmpty) {
-        throw StateError('Owner media is saved through saveOwnerWithMedia.');
-      }
-      return _supabase.saveOwner(owner, ownerRecordId: ownerId);
+    // Supabase mode saves media through [saveOwnerWithMedia] and its upload
+    // queue. This legacy entry point uploads nothing there.
+    if (mediaFiles.isNotEmpty) {
+      throw StateError('Owner media is saved through saveOwnerWithMedia.');
     }
-
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    final ownerData = {
-      'userId': owner.userId,
-      'name': owner.name,
-      'phoneNumber': owner.phoneNumber,
-      'countryCode': owner.countryCode,
-      'typeOfProperties': owner.typeOfProperties,
-      'propertyLocation': owner.propertyLocation,
-      'notes': owner.notes,
-      'pickUpLocation': owner.pickUpLocation,
-      'pickUpLatitude': owner.pickUpLatitude,
-      'pickUpLongitude': owner.pickUpLongitude,
-      'pickUpAddress': owner.pickUpAddress,
-      'uploadedFileName': owner.uploadedFileName,
-      'mediaUrl': owner.mediaUrl,
-      'createdAt': owner.createdAt,
-      'updatedAt': owner.updatedAt,
-    };
-    return _fastUploadService.saveDataWithMedia(
-      data: ownerData,
-      mediaFiles: mediaFiles,
-      collection: 'owners',
-      documentId: ownerId,
-    );
+    return _supabase.saveOwner(owner, ownerRecordId: ownerId);
   }
 
   Future<void> updateOwner(String ownerId, OwnerModel owner) async {
-    if (SupabaseConfig.useSupabaseAuth) {
-      await _supabase.updateOwner(ownerId, owner);
-      return;
-    }
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    await _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .doc(ownerId)
-        .update(owner
-            .copyWith(id: ownerId, updatedAt: DateTime.now())
-            .toFirestore());
-    _mapDataCache.invalidateCache();
+    await _supabase.updateOwner(ownerId, owner);
   }
 
   Stream<List<OwnerModel>> getUserOwners() {
-    if (SupabaseConfig.useSupabaseAuth) return _supabase.getOwners();
-    if (_currentUserId == null) return Stream.value([]);
-    return _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => OwnerModel.fromFirestore(doc)).toList());
+    return _supabase.getOwners();
   }
 
   Future<void> deleteOwner(String ownerId) async {
-    if (SupabaseConfig.useSupabaseAuth) {
-      await _supabase.deleteOwner(ownerId);
-      // Nothing queued for a deleted Owner may upload, and nothing this
-      // device holds for it is shown again. The server removes its stored
-      // media itself once the retention period has passed.
-      final accountId = _supabase.currentOwnerId;
-      if (accountId != null && accountId.isNotEmpty) {
-        unawaited(_forgetDeletedOwnerMedia(accountId, ownerId));
-      }
-      return;
+    await _supabase.deleteOwner(ownerId);
+    // Nothing queued for a deleted Owner may upload, and nothing this
+    // device holds for it is shown again. The server removes its stored
+    // media itself once the retention period has passed.
+    final accountId = _supabase.currentOwnerId;
+    if (accountId != null && accountId.isNotEmpty) {
+      unawaited(_forgetDeletedOwnerMedia(accountId, ownerId));
     }
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    await _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .doc(ownerId)
-        .delete();
-    _mapDataCache.invalidateCache();
   }
 
   Future<OwnerModel?> getOwner(String ownerId) async {
-    if (SupabaseConfig.useSupabaseAuth) return _supabase.getOwner(ownerId);
-    if (_currentUserId == null) throw Exception('User not authenticated');
-    final doc = await _firestore
-        .collection(_collectionName)
-        .doc(_currentUserId!)
-        .collection('owners')
-        .doc(ownerId)
-        .get();
-    return doc.exists ? OwnerModel.fromFirestore(doc) : null;
+    return _supabase.getOwner(ownerId);
   }
 
   // ---------------------------------------------------------------------------
@@ -321,8 +215,7 @@ class OwnerService implements PrivateMediaStore {
 
   /// The signed-in account, or null when there is no session.
   @override
-  String? get currentOwnerId =>
-      SupabaseConfig.useSupabaseAuth ? _supabase.currentOwnerId : _currentUserId;
+  String? get currentOwnerId => _supabase.currentOwnerId;
 
   /// What this device already holds for the Owner record [recordId], with no
   /// network at all. Always empty on the Firebase backend.

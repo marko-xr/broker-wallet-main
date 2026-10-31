@@ -15961,3 +15961,59 @@ FCM, models' `Timestamp`.
 
 NOW: owner reviews the Phase 3 diff. NEXT: on approval, commit, then Phase 4
 (legacy Firebase Storage and media paths).
+
+## Firebase removal - Phase 4 (legacy Firebase Storage and media), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 3 commit `bc78cc7`. Offer/Owner/profile R2 upload, the upload
+queue, Retry and the offline caches are untouched.
+
+Deleted (9, a closed dead cluster: no importer outside the cluster, no class
+reference in `lib/` or `test/`; the only outside mention is a commented import
+in `fast_network_image.dart`): `video_system_integration.dart` ->
+`media_upload_service.dart` -> `optimized_video_upload_service.dart` ->
+`regional_storage_config.dart` -> `optimized_storage_service.dart` ->
+`storage_performance_monitor.dart`; and `media_upload_service_compat.dart` ->
+`universal_media_upload_service.dart`; `media_type_service.dart` (imported only by
+the two groups above).
+
+Edited:
+
+- `edit_profile_viewmodel.dart`: `uploadProfileImage` and `uploadProfileImageFast`
+  call the R2 path directly; removed the `!useSupabaseAuth` Firebase upload
+  branch (unreachable since Phase 1) and the compat/fast-profile imports.
+- `offer_service.dart`, `owner_service.dart`: removed the unreachable Firestore
+  tails (save, update, list, delete, get, remove-media-urls, legacy
+  `saveXWithMediaFast`), the Firestore/`FastMediaUploadService`/map-cache
+  fields, the `RepositoryProvider` user-id getter and four imports. Public
+  methods, signatures and Supabase paths are unchanged.
+
+Classification of what remains:
+
+| Item | Class | Reason |
+|---|---|---|
+| `fast_media_upload_service.dart` | LEGACY_COMPATIBILITY | `FastUploadViewModel.initialize()` runs at startup (`main.dart`), and the Offer/Owner details views listen to its static `onUploadCompleted`; it also drains the legacy Hive `pending_uploads` box |
+| `fast_profile_upload_service.dart` | LEGACY_COMPATIBILITY | `edit_profile_view.dart` listens to its static `onUploadCompleted`; no caller invokes its upload any more |
+| `fast_upload_viewmodel.dart` | ACTIVE_KEEP (startup provider) | created and provided in `main.dart` |
+| `offline_media_service.dart`, `offer_media_upload_queue.dart`, `media_cache_manager` | ACTIVE_KEEP | 20+ importers; Supabase/R2 media and offline cache |
+| `firebase_storage` in `pubspec.yaml` | kept | removed with the packages phase, after the two legacy services above are retired |
+| Legacy Storage URL read handling in cards/previews | LEGACY_COMPATIBILITY | read paths for previously stored URLs were not touched |
+
+Needs an owner decision before it can go (Phase 5/6 or a media project): retire
+`FastMediaUploadService` + `FastProfileUploadService` + `FastUploadViewModel`
+together (needs edits to `main.dart`, two details views and `edit_profile_view`,
+and a decision on legacy pending uploads); confirm no real user holds Firebase
+Storage URLs. No media migration was started.
+
+Verification:
+
+- `flutter analyze --no-pub lib`: 84 issues (was 85), no error or warning.
+- `git diff --check`: exit 0.
+- Targeted `flutter test` (offers, owners, plan_attachment, services, profile,
+  lists, quotation, related_items, account): 971 passed, 1 failed -
+  `delete_account_test` migration setUpAll (missing
+  `supabase/migrations/20260913000100_account_deletion_jobs.sql`), the same
+  failure present on the Phase 3 baseline.
+
+NOW: owner reviews the Phase 4 diff. NEXT: on approval, commit, then Phase 5
+(notifications, analytics, version, feedback).

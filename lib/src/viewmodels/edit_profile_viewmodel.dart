@@ -2,8 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/services/media_upload_service_compat.dart';
-import 'package:broker_wallet/src/services/fast_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
@@ -74,16 +72,7 @@ class EditProfileViewModel extends ChangeNotifier {
       _uploadPercentage = 0.0;
       notifyListeners();
 
-      final downloadURL = SupabaseConfig.useSupabaseAuth
-          ? await _uploadProfileImageThroughR2(imageFile)
-          : await _mediaUploadService.uploadProfileImage(
-              imageFile,
-              onProgress: (progress) {
-                _uploadPercentage = progress;
-                _uploadProgress = "Uploading... ${(progress * 100).toInt()}%";
-                notifyListeners();
-              },
-            );
+      final downloadURL = await _uploadProfileImageThroughR2(imageFile);
 
       _uploadProgress = "Upload complete!";
       _uploadPercentage = 1.0;
@@ -125,34 +114,8 @@ class EditProfileViewModel extends ChangeNotifier {
         throw Exception('You must be signed in to update your profile');
       }
 
-      // Supabase profile media is confirmed by the Worker. Do not route this
-      // mode through the Firebase/Firestore background-upload path.
-      if (SupabaseConfig.useSupabaseAuth) {
-        return await _uploadProfileImageThroughR2(imageFile);
-      }
-
-      // Prepare user data for fast save (serialize complex objects for Firestore)
-      final userData = {
-        'name': _name.trim(),
-        'email': _email.trim(),
-        'phoneNumber': _formatPhoneNumber(),
-        'createdAt': currentUser.createdAt,
-        'lastLoginAt': DateTime.now(),
-        'isEmailVerified': currentUser.isEmailVerified,
-        'isPhoneVerified': currentUser.isPhoneVerified,
-        'subscription':
-            currentUser.subscription.toMap(), // Serialize to Map for Firestore
-        'preferences': currentUser.preferences,
-      };
-
-      // Use fast profile upload service for immediate save + background upload
-      final tempUrl = await FastProfileUploadService().saveProfileImageFast(
-        imageFile: imageFile,
-        userData: userData,
-      );
-
-      // Return immediately - no artificial delays
-      return tempUrl;
+      // Supabase profile media is confirmed by the Worker.
+      return await _uploadProfileImageThroughR2(imageFile);
     } catch (e) {
       // Debug log suppressed: Error with fast profile upload: $e
 
@@ -167,9 +130,6 @@ class EditProfileViewModel extends ChangeNotifier {
       }
     }
   }
-
-  MediaUploadServiceCompat get _mediaUploadService =>
-      MediaUploadServiceCompat();
 
   R2ProfileUploadService get _r2ProfileUploadServiceOrCreate =>
       _r2ProfileUploadService ??= R2ProfileUploadService();

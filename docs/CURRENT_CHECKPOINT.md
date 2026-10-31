@@ -16017,3 +16017,69 @@ Verification:
 
 NOW: owner reviews the Phase 4 diff. NEXT: on approval, commit, then Phase 5
 (notifications, analytics, version, feedback).
+
+## Firebase removal - Phase 5 (notifications, analytics, feedback, auxiliary), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 4 commit `37c443c`. Notification, Feedback and Analytics behaviour
+is unchanged.
+
+Deleted (zero importers in `lib/` and `test/`, no class reference; the test
+files that define their own `MockAuthRepository` do not import the lib one):
+`repositories/mock_auth_repository.dart`, `repositories/deferred_notification_repository.dart`,
+`common/config/email_config.dart` (only the unused `EmailProvider` enum),
+`views/Widgets/analytics_summary_card.dart`, `data/models/analytics_model.dart`
+(only the card and the service used it).
+
+Edited:
+
+- `analytics_service.dart`: nothing outside `main.dart` (`initialize()`) and one
+  singleton check in `canonical_identity_test` references it; `getAnalytics`,
+  `watchAnalytics`, `getCachedAnalytics` and the Firestore aggregation had no
+  caller. Kept `instance` and `initialize()` (still opens the `analytics_cache`
+  Hive box at startup, as before).
+- `feedback_service.dart`: `submitFeedback` now inserts into Supabase `feedback`
+  only (the Firestore `else` could not run since Phase 1); removed the admin
+  read/update/stats methods (no caller in `lib/` or `test/`) and the Firestore
+  field. The Supabase insert payload and error message are unchanged.
+- `main.dart`: removed the commented-out Firebase init block and two commented
+  Firebase imports. Nothing else.
+
+Kept, with reason:
+
+| Item | Class | Reason |
+|---|---|---|
+| `firebase_messaging` (pubspec) + native plugin | BLOCKED_REPLACEMENT | no Dart import remains, but whether Android push keeps FCM (Option A) or gets another transport (Option B) is an owner decision; Supabase `push_devices` already supports `fcm`/`apns` |
+| `notification_service.dart` (100% commented) | LEGACY_COMPATIBILITY / UNCERTAIN | `email_change_callback_test` reads its path (guard) and `profile_fcm_compatibility_test` imports it; delete only together with that test |
+| `firestore_notification_repository.dart` | LEGACY_COMPATIBILITY / UNCERTAIN | only caller is `profile_fcm_compatibility_test` (already not compiling: `NotificationService` is commented out) |
+| `auth_service.dart`, `professional_email_service.dart`, `auth_failure.dart`, login/signup/phone-otp view-models | ACTIVE_KEEP | Firebase Auth phone/OTP/link paths (owner excluded) |
+| quota gates, `quota_sync_service`, subscription VM | BLOCKED_REPLACEMENT | server-authoritative quota project |
+| `fast_*` upload services, `FastUploadViewModel` | LEGACY_COMPATIBILITY | owner excluded |
+| models' `Timestamp`, Search, Favorites, Related Items | ACTIVE_KEEP / BLOCKED | still call `fromFirestore` |
+| `offline_image_service`, `offline_media_service` Firebase URL handling | LEGACY_COMPATIBILITY | read-side handling of stored URLs |
+
+Direct Firebase imports still in `lib/`: `cloud_firestore` (models, 4 usage gates
++ bridge + helper, Search, Favorites, Related Items, `auth_service`, subscription VM,
+`fast_*`, `firestore_notification_repository`), `firebase_auth` (`auth_service`,
+`professional_email_service`, `auth_failure`, login/signup/phone-otp VMs),
+`firebase_storage` (`fast_*`), `cloud_functions` (`quota_sync_service`).
+`firebase_core` and `firebase_messaging` have no direct Dart import.
+
+Phase 6 (package/platform removal) therefore stays BLOCKED for every package
+except possibly `firebase_messaging` (owner decision), until the items above
+are retired.
+
+Verification:
+
+- `flutter analyze --no-pub lib`: 84 issues (was 84 after Phase 4's baseline of 85),
+  no error or warning.
+- `git diff --check`: exit 0.
+- Targeted `flutter test` (auth, profile, home, app, r3 notifications
+  responsive): 634 passed, 8 failed - exactly the already-known set:
+  `email_change_test` (1), `phone_security_hardening_test` (4, missing
+  migration files), `session_superseded_dialog_test` (2), and
+  `profile_fcm_compatibility_test` (does not compile). All were failing
+  identically on the Phase 3 baseline.
+
+NOW: owner reviews the Phase 5 diff. NEXT: on approval, commit; then decide
+the push option and the remaining blockers before Phase 6.

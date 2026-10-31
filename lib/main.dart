@@ -23,8 +23,6 @@ import 'package:broker_wallet/app.dart';
 import 'src/viewmodels/theme_viewmodel.dart';
 import 'src/viewmodels/locale_viewmodel.dart';
 import 'src/viewmodels/fast_upload_viewmodel.dart';
-// import 'package:firebase_core/firebase_core.dart';
-// import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -57,28 +55,6 @@ Future<void> initializeAppServices() async {
 
   // CRITICAL: Preload languages in background - DON'T block app startup
   _preloadLanguagesAsync();
-
-  // try {
-  //   // Firebase init with timeout for offline scenarios
-  //   await Firebase.initializeApp(
-  //     options: DefaultFirebaseOptions.currentPlatform,
-  //   ).timeout(
-  //     const Duration(seconds: 10),
-  //     onTimeout: () {
-  //       throw TimeoutException(
-  //           'Firebase init timeout', const Duration(seconds: 10));
-  //     },
-  //   );
-
-  //   // Enable offline persistence for Firestore
-  //   FirebaseFirestore.instance.settings = const Settings(
-  //     persistenceEnabled: true,
-  //     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  //   );
-  // } catch (e) {
-  //   // Firebase initialization failed - continuing in offline mode (log removed)
-  //   // Ensure the app continues to work even if Firebase fails to initialize
-  // }
 
   await Hive.initFlutter();
   await SharedPreferences.getInstance();

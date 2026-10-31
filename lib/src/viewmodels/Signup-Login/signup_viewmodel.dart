@@ -50,9 +50,9 @@ class SignUpViewModel extends ChangeNotifier {
   String get confirmPassword => confirmPasswordController.text;
   /// Whether phone registration can actually complete.
   ///
-  /// It is implemented only on the legacy Firebase backend; with Supabase as
-  /// the auth authority an account is created by email and a phone number is
-  /// verified for it afterwards from Edit Profile.
+  /// It is not implemented with Supabase as the auth authority: an account is
+  /// created by email and a phone number is verified for it afterwards from
+  /// Edit Profile.
   ///
   /// This reports capability only. It deliberately does **not** hide the Phone
   /// tab: the product owner owns that UI. Where registration cannot complete,
@@ -281,9 +281,8 @@ class SignUpViewModel extends ChangeNotifier {
       // Debug log suppressed: Email: ${email.trim()}
       // Debug log suppressed: Password length: ${password.length}
 
-      // Email/password authentication now goes through AuthViewModel so the
-      // same UI can use Firebase by default or Supabase behind the migration
-      // feature flag. Phone authentication remains on the legacy AuthService.
+      // Email/password authentication goes through AuthViewModel (Supabase).
+      // Phone registration is not available yet.
       final user = await context.read<AuthViewModel>().signUpWithEmail(
             email.trim(),
             password,

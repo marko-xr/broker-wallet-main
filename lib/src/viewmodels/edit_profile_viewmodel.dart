@@ -246,7 +246,7 @@ class EditProfileViewModel extends ChangeNotifier {
       final sanitizedName = _name.trim();
       final sanitizedPhone = formattedPhone.isEmpty ? null : formattedPhone;
       // Supabase profiles link media by ID in the Worker, never by a signed
-      // URL. Firebase mode keeps its legacy URL-based save behavior.
+      // URL. Outside Supabase mode the URL-based value is used.
       final resolvedImageUrl = SupabaseConfig.useSupabaseAuth
           ? null
           : profileImageUrl ?? currentUser.profileImageUrl;

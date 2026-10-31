@@ -404,7 +404,7 @@ class FavoritesViewModel extends ChangeNotifier {
               ?.snapshotMutationVersions() ??
           (versions: const <String, int>{}, pendingKeys: const <String>{});
 
-      // Get favorite metadata (IDs with timestamps) from Firestore
+      // Get favorite metadata (IDs with timestamps) from the backend
       final favoriteMetadata =
           await _favoriteService.getAllFavoritesWithMetadata();
 
@@ -922,7 +922,7 @@ class FavoritesViewModel extends ChangeNotifier {
     if (!_isCurrentForAccount) return;
 
     try {
-      // Remove from Firestore
+      // Remove from the backend
       await _favoriteService.removeFromFavorites(favorite.id, favorite.type);
 
       if (!_isCurrentForAccount) return;

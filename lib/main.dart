@@ -65,8 +65,7 @@ Future<void> initializeAppServices() async {
   MediaPickRecovery.reconcileAtStartup();
 
   // Initialize Supabase using production defaults, with optional --dart-define
-  // overrides for staging/testing. Firebase remains active for unmigrated
-  // features during the migration.
+  // overrides for staging/testing.
   await SupabaseBootstrapService.initialize();
 
   // Initialize caches with timeouts and error handling - don't block startup
@@ -134,9 +133,6 @@ Future<void> initializeAppServices() async {
   // Initialize analytics service in background - don't block startup
   _initializeAnalyticsServiceAsync();
 
-  // Initialize push notifications in background once Firebase is ready
-  // _initializeNotificationServiceAsync();
-
   // Note: Don't clear favorites cache on startup - let it persist for instant loading
   // The cache will be updated as favorites are added/removed
 }
@@ -184,14 +180,13 @@ void _initializeFavoritesServiceAsync() {
 
 // Non-blocking map data preload - runs in background for instant map loading
 void _preloadMapDataAsync() {
-  // Map data is still Firebase-backed and is not part of the Supabase
-  // Auth/Profile runtime. Avoid issuing those optional Firestore reads when
-  // Supabase is the active identity/profile authority.
+  // The map loads its data through Supabase when it opens, so this optional
+  // preload is skipped when Supabase is the identity/profile authority.
   if (SupabaseConfig.useSupabaseAuth) return;
 
   Future.microtask(() async {
     try {
-      // Wait a bit to ensure Firebase auth is ready
+      // Wait a bit so the preload does not compete with startup
       await Future.delayed(const Duration(milliseconds: 500));
 
       final mapDataCache = MapDataCacheService();
@@ -225,20 +220,6 @@ void _initializeAnalyticsServiceAsync() {
   });
 }
 
-// // Non-blocking notification service initialization
-// void _initializeNotificationServiceAsync() {
-//   Future.microtask(() async {
-//     try {
-//       await NotificationService.instance.initialize().timeout(
-//             const Duration(seconds: 8),
-//             onTimeout: () => null,
-//           );
-//     } catch (e) {
-//       // NotificationService init failed (log removed)
-//     }
-//   });
-// }
-
 void main() async {
   // Ensure all services are initialized before running the app
   await initializeAppServices();
@@ -267,13 +248,12 @@ void main() async {
         ChangeNotifierProvider.value(value: fastUploadViewModel),
 
         // .create is fine for ViewModels without persistent state to load on start
-        // IMPORTANT: AuthViewModel is created lazily when first accessed to ensure Firebase is ready
-        // Use ProxyProvider to delay AuthViewModel creation until Firebase is ready
+        // IMPORTANT: AuthViewModel is created lazily when first accessed
         ChangeNotifierProvider(
           create: (_) => AuthViewModel(),
           lazy: true, // This ensures it's only created when first accessed
         ),
-        // HomeViewModel must be lazy to avoid Firestore access before auth is ready
+        // HomeViewModel must be lazy to avoid backend access before auth is ready
         // Password recovery must be listening before any deep link can arrive,
         // so this one is deliberately not lazy. It observes the repository's
         // existing auth pipeline and adds no second session authority.

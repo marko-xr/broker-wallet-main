@@ -16339,3 +16339,33 @@ iOS/macOS build: NOT verified (Windows host).
 NOW: owner reviews the diff. NEXT: on approval, commit; the remaining Firebase work is
 the server-authoritative quota project (then `cloud_firestore`, `firebase_core` and the
 native Firebase setup can go), plus the decision on hosted Firebase resources.
+
+## Firebase removal - last dead-code cleanup (quota bridge), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted, on top
+of `3664502`. No feature, screen, route or Supabase path changed.
+
+- `core_entity_quota_bridge.dart`: removed the Firebase/Firestore branch that could only run
+  with `USE_SUPABASE_AUTH=false` (unsupported since Phase 1), its `cloud_firestore`,
+  `RepositoryProvider`, `QuotaHelper` and `SupabaseConfig` imports and the dead helpers.
+  Public API (`canCreate`, `recordCreated`) and the Supabase-mode behaviour are identical:
+  `canCreate` already returned `true` and `recordCreated` already did nothing. The doc comment
+  now says plainly that nothing is enforced.
+- Misleading comments corrected (comment text only): `supabase_bootstrap_service`, `main.dart`
+  (also removed a commented-out call to the deleted notification service), login/signup
+  phone-support docs, signup email comment, `edit_profile_viewmodel`, `feedback_viewmodel`,
+  `favorites_viewmodel`, `list_offers/requests_viewmodel`, `email_verification_dialog`,
+  `offline_auth_service`, `home_viewmodel`, `supabase_user_repository`. Historical notes and
+  legacy-URL compatibility comments were kept.
+- `cloud_firestore` imports in `lib/`: 6 -> 5 (the four Toolkit usage gates and
+  `quota_helper.dart`). Remaining Firebase serves the quotas only.
+- Quotas are NOT server-authoritative: core entities are bypassed (`canCreate` is `true`);
+  Toolkit gates read/write Firestore with no Firebase Auth session, so the local
+  `firestore.rules` should deny them and `QuotaHelper` fails open. Hosted rules unverified.
+  This is a production gap and needs its own project.
+
+Verification: `flutter analyze --no-pub lib` 84 issues, no error or warning; `git diff
+--check` exit 0; tests (scanner, combine_pdf, image_to_pdf, signature, quotation, owners,
+offers, plan_attachment, R5a-d responsive, canonical_identity): 1888 passed, 2 failed - the
+known `combine_source_guards_test` honesty case and the `scanner_cloud_test` `Harness` name
+clash, both unrelated to this change.

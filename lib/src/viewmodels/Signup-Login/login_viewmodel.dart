@@ -28,9 +28,8 @@ class SignInViewModel extends ChangeNotifier {
   String _countryCode = '+971';
   /// Whether phone sign-in can actually complete.
   ///
-  /// It is implemented only on the legacy Firebase backend; with Supabase as
-  /// the auth authority a phone number is verified for an already signed-in
-  /// account from Edit Profile instead.
+  /// It is not implemented with Supabase as the auth authority: a phone number
+  /// is verified for an already signed-in account from Edit Profile instead.
   ///
   /// This reports capability only. It deliberately does **not** hide the Phone
   /// tab: the product owner owns that UI. Where sign-in cannot complete,
@@ -160,8 +159,8 @@ class SignInViewModel extends ChangeNotifier {
         return;
       }
 
-      // Preload map data in background for instant map loading. During the
-      // migration this still targets Firebase and is intentionally non-blocking.
+      // Preload map data in background for instant map loading. It is
+      // intentionally non-blocking.
       MapDataCacheService().preloadMapData().catchError((e) {
         // Non-blocking - map will still work, just slower first load
       });

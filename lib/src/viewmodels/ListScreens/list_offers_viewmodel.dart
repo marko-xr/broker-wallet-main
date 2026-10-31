@@ -124,7 +124,7 @@ class OffersListViewModel extends ChangeNotifier
         updatedAt: DateTime.now(),
       );
 
-      // Update in Firestore
+      // Update the record
       await _offerService.updateOffer(offerId, updatedOffer);
 
       // The list re-reads by itself after the update; it stays on screen

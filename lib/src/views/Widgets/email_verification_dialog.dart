@@ -261,7 +261,7 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog> {
     setState(() => _isVerifying = true);
 
     try {
-      // Check if the email has been verified in Firebase Auth
+      // Check if the email has been verified with the auth backend
       final authRepo = RepositoryProvider.instance.authRepository;
       final success = await authRepo.checkEmailVerificationAndUpdate();
 

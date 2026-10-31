@@ -26,7 +26,7 @@ class FeedbackViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Submit feedback to Firebase for admin review
+  /// Submit feedback for admin review
   Future<void> submitFeedback(UserModel user) async {
     if (!canSubmit) {
       _setError('feedbackRatingCommentRequired');

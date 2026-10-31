@@ -3,7 +3,7 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'dart:convert';
 
 /// Service to cache user authentication state for offline access
-/// Ensures users remain authenticated even when Firestore is unreachable
+/// Ensures users remain authenticated even when the backend is unreachable
 class OfflineAuthService {
   static const String _userCacheKey = 'cached_user_model';
   static const String _authStateKey = 'is_authenticated';

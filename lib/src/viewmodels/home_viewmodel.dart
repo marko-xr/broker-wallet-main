@@ -271,7 +271,7 @@ class HomeViewModel extends ChangeNotifier {
   /// Create a single combined stream from all services
   Stream<Map<String, int>> _createCombinedStream() {
     return Stream.periodic(const Duration(seconds: 2), (_) {
-      // Use periodic to debounce rapid Firestore updates
+      // Use periodic to debounce rapid backend updates
       return null;
     }).asyncMap((_) async {
       // Get latest data from all services concurrently

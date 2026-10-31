@@ -10,11 +10,10 @@ import 'auth_callback_coordinator.dart';
 import 'password_recovery_state_store.dart';
 import 'supabase_secure_storage.dart';
 
-/// Initializes the Supabase client alongside the existing Firebase backend.
+/// Initializes the Supabase client.
 ///
 /// During the migration period this service is intentionally optional:
-/// without the two required `--dart-define` values, initialization is skipped
-/// and the existing Firebase application continues unchanged.
+/// without the two required `--dart-define` values, initialization is skipped.
 abstract final class SupabaseBootstrapService {
   static bool _initialized = false;
 

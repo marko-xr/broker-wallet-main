@@ -8,8 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Deliberately a separate capability rather than part of [UserRepository]:
 /// a signed URL is ephemeral presentation data, it is not profile state, and
 /// it must never sit inside an authoritative `public.profiles` read. Callers
-/// feature-test for this interface, so backends without private media (the
-/// Firestore repository) need no changes.
+/// feature-test for this interface, so backends without private media need no
+/// changes.
 abstract class ProfileImageUrlResolver {
   /// Returns a signed read URL for [profileMediaId], or null when it cannot be
   /// resolved. Never throws: an unresolved image is a presentation outcome,

@@ -109,7 +109,7 @@ class RequestedListViewModel extends ChangeNotifier
         updatedAt: DateTime.now(),
       );
 
-      // Update in Firestore
+      // Update the record
       await _requestService.updateRequest(requestId, updatedRequest);
 
       // The list re-reads by itself after the update; it stays on screen

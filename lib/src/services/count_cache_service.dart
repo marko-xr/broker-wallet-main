@@ -1,151 +1,132 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 
-/// Service to cache item counts for instant display and offline access
-/// Provides immediate count values to prevent 0→real number flicker
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Caches the Home dashboard counts so they show at once, also offline.
+///
+/// Counts are private to the account they were read for. Each account's
+/// counts live under their own key, named by the account's Supabase user id,
+/// and are only ever returned for that same id. With no signed-in account
+/// every count is 0.
+///
+/// The old single cache under [legacyCountsKey] belonged to no known account,
+/// so it is never read and never adopted into an account. It is left on disk
+/// untouched; only [clearLegacyCache] (used when the signed-in account is
+/// deleted) removes it.
 class CountCacheService {
-  static const String _countCacheKey = 'cached_item_counts';
-  static const String _lastUpdateKey = 'counts_last_updated';
+  @visibleForTesting
+  static const String legacyCountsKey = 'cached_item_counts';
+  @visibleForTesting
+  static const String legacyUpdatedKey = 'counts_last_updated';
+
+  static const String _countsKeyPrefix = 'cached_item_counts_by_account::';
+  static const String _updatedKeyPrefix = 'counts_last_updated_by_account::';
+
+  @visibleForTesting
+  static String countsKeyFor(String accountId) => '$_countsKeyPrefix$accountId';
+
+  /// The kinds of item Home counts.
+  static const List<String> countTypes = [
+    'watchmen',
+    'brokers',
+    'offers',
+    'offices',
+    'owners',
+    'requested',
+    'quotation',
+  ];
 
   static CountCacheService? _instance;
   static CountCacheService get instance => _instance ??= CountCacheService._();
   CountCacheService._();
 
-  Map<String, int> _memoryCache = {};
-  bool _isInitialized = false;
+  /// A separate cache with nothing in memory, so a test does not share the
+  /// app-wide instance.
+  @visibleForTesting
+  factory CountCacheService.forTesting() => CountCacheService._();
 
-  /// Initialize the count cache service - load from disk into memory
+  SharedPreferences? _prefs;
+  final Map<String, Map<String, int>> _memoryByAccount = {};
+
+  /// Opens the preferences so later reads are synchronous.
   Future<void> initialize() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedJson = prefs.getString(_countCacheKey);
+      _prefs = await SharedPreferences.getInstance();
+    } catch (_) {
+      // Without preferences every account simply starts from 0.
+    }
+  }
 
-      if (cachedJson != null) {
-        final cachedData = json.decode(cachedJson) as Map<String, dynamic>;
-        _memoryCache = Map<String, int>.from(cachedData);
-      } else {
-        // Initialize with zero counts if no cache exists
-        _memoryCache = {
-          'watchmen': 0,
-          'brokers': 0,
-          'offers': 0,
-          'offices': 0,
-          'owners': 0,
-          'requested': 0,
-          'quotation': 0,
-        };
+  static Map<String, int> _zeros() => {for (final type in countTypes) type: 0};
+
+  /// The counts cached for [accountId], at once. All 0 when [accountId] is
+  /// null or empty, or when nothing is cached for that account yet.
+  Map<String, int> getAllCachedCounts(String? accountId) {
+    if (accountId == null || accountId.isEmpty) return _zeros();
+    final inMemory = _memoryByAccount[accountId];
+    if (inMemory != null) return Map<String, int>.from(inMemory);
+
+    final counts = _zeros();
+    try {
+      final raw = _prefs?.getString(countsKeyFor(accountId));
+      if (raw != null) {
+        final decoded = json.decode(raw);
+        if (decoded is Map) {
+          for (final type in countTypes) {
+            final value = decoded[type];
+            if (value is int && value >= 0) counts[type] = value;
+          }
+        }
       }
-
-      _isInitialized = true;
-    } catch (e) {
-      // Fallback to zero counts
-      _memoryCache = {
-        'watchmen': 0,
-        'brokers': 0,
-        'offers': 0,
-        'offices': 0,
-        'owners': 0,
-        'requested': 0,
-        'quotation': 0,
-      };
-      _isInitialized = true;
+    } catch (_) {
+      // A damaged entry counts as nothing cached.
     }
+    _memoryByAccount[accountId] = counts;
+    return Map<String, int>.from(counts);
   }
 
-  /// Get cached count instantly (synchronous) - always returns immediately
-  int getCachedCount(String type) {
-    if (!_isInitialized) {
-      // Return 0 if not yet initialized to prevent null issues
-      return 0;
+  /// Stores [counts] as [accountId]'s counts and writes them to disk.
+  Future<void> updateCachedCounts(
+    String accountId,
+    Map<String, int> counts,
+  ) async {
+    if (accountId.isEmpty) return;
+    final merged = getAllCachedCounts(accountId);
+    for (final type in countTypes) {
+      final value = counts[type];
+      if (value != null) merged[type] = value;
     }
-    return _memoryCache[type] ?? 0;
-  }
+    _memoryByAccount[accountId] = merged;
 
-  /// Get all cached counts at once for efficiency
-  Map<String, int> getAllCachedCounts() {
-    if (!_isInitialized) {
-      return {
-        'watchmen': 0,
-        'brokers': 0,
-        'offers': 0,
-        'offices': 0,
-        'owners': 0,
-        'requested': 0,
-        'quotation': 0,
-      };
-    }
-    return Map<String, int>.from(_memoryCache);
-  }
-
-  /// Update cached count and persist to disk (async but non-blocking)
-  Future<void> updateCachedCount(String type, int count) async {
-    _memoryCache[type] = count;
-
-    // Persist to disk asynchronously without blocking
-    _persistToStorage();
-  }
-
-  /// Update multiple counts at once for efficiency
-  Future<void> updateCachedCounts(Map<String, int> counts) async {
-    _memoryCache.addAll(counts);
-
-    // Persist to disk asynchronously
-    _persistToStorage();
-  }
-
-  /// Persist cached counts to SharedPreferences (fire-and-forget)
-  void _persistToStorage() {
-    // Use microtask to avoid blocking the UI
-    Future.microtask(() async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final jsonString = json.encode(_memoryCache);
-        await prefs.setString(_countCacheKey, jsonString);
-        await prefs.setInt(
-            _lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
-      } catch (e) {
-        // Non-critical failure - continue with memory cache
-      }
-    });
-  }
-
-  /// Check if cached data is recent (less than 1 hour old)
-  Future<bool> isCacheRecent() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastUpdate = prefs.getInt(_lastUpdateKey) ?? 0;
-      final hourAgo = DateTime.now()
-          .subtract(const Duration(hours: 1))
-          .millisecondsSinceEpoch;
-      return lastUpdate > hourAgo;
-    } catch (e) {
-      return false;
+      final prefs = _prefs = await SharedPreferences.getInstance();
+      await prefs.setString(countsKeyFor(accountId), json.encode(merged));
+      await prefs.setInt(
+        '$_updatedKeyPrefix$accountId',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {
+      // Non-critical: the counts stay in memory for this run.
     }
   }
 
-  /// Clear all cached counts (useful for debugging or sign out)
-  Future<void> clearCache() async {
-    try {
-      _memoryCache.clear();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_countCacheKey);
-      await prefs.remove(_lastUpdateKey);
-    } catch (e) {
-    }
+  /// Removes [accountId]'s cached counts, and only those. Used when that
+  /// account is deleted; other accounts' counts stay.
+  Future<void> clearAccount(String accountId) async {
+    if (accountId.isEmpty) return;
+    _memoryByAccount.remove(accountId);
+    final prefs = _prefs = await SharedPreferences.getInstance();
+    await prefs.remove(countsKeyFor(accountId));
+    await prefs.remove('$_updatedKeyPrefix$accountId');
   }
 
-  /// Get cache age in minutes
-  Future<int> getCacheAgeMinutes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastUpdate = prefs.getInt(_lastUpdateKey) ?? 0;
-      if (lastUpdate == 0) return -1; // No cache
-
-      final now = DateTime.now().millisecondsSinceEpoch;
-      return ((now - lastUpdate) / (1000 * 60)).round();
-    } catch (e) {
-      return -1;
-    }
+  /// Removes the old unowned cache. Used when the signed-in account is
+  /// deleted, as that cache may still hold its counts.
+  Future<void> clearLegacyCache() async {
+    final prefs = _prefs = await SharedPreferences.getInstance();
+    await prefs.remove(legacyCountsKey);
+    await prefs.remove(legacyUpdatedKey);
   }
 }

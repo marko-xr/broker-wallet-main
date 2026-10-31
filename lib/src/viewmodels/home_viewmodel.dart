@@ -33,12 +33,23 @@ class HomeViewModel extends ChangeNotifier {
   final OwnerService _ownerService = OwnerService();
   final RequestService _requestService = RequestService();
   final QuotationService _quotationService = QuotationService();
-  final CountCacheService _countCache = CountCacheService.instance;
+  final CountCacheService _countCache;
   final SupabaseHomeCountsService _supabaseHomeCountsService =
       SupabaseHomeCountsService();
+  final Future<Map<String, int>> Function(Map<String, int> fallback)?
+      _readCountsOverride;
+  final Stream<AuthState>? _authStateChangesOverride;
 
   // Track if streams have been initialized
   bool _streamsInitialized = false;
+  bool _disposed = false;
+
+  // The account whose counts are held below (its Supabase user id), or null
+  // when nobody is signed in. Counts are never shown for any other account.
+  String? _countsAccountId;
+  // Changes whenever the counts' account changes or the user signs out, so a
+  // read that was started before can no longer change what is shown.
+  int _countsEpoch = 0;
 
   // Dynamic counts - initialized from cache for instant display
   int _watchmenCount = 0;
@@ -134,9 +145,17 @@ class HomeViewModel extends ChangeNotifier {
   HomeViewModel({
     AuthRepository? authRepository,
     @visibleForTesting bool initializeStreams = true,
-  }) : _authRepository =
-            authRepository ?? RepositoryProvider.instance.authRepository {
+    @visibleForTesting CountCacheService? countCache,
+    @visibleForTesting
+    Future<Map<String, int>> Function(Map<String, int> fallback)? readCounts,
+    @visibleForTesting Stream<AuthState>? authStateChanges,
+  })  : _authRepository =
+            authRepository ?? RepositoryProvider.instance.authRepository,
+        _countCache = countCache ?? CountCacheService.instance,
+        _readCountsOverride = readCounts,
+        _authStateChangesOverride = authStateChanges {
     _filters.addListener(notifyListeners);
+    _countsAccountId = _authRepository.currentUserId;
     _loadCachedCountsInstantly();
     // Widget tests can render the real Home screen without connecting to an
     // auth/backend stream. Production keeps the existing eager initialization.
@@ -145,9 +164,19 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  /// Load cached counts instantly from memory - no async delays
+  Map<String, int> get _shownCounts => {
+        'watchmen': _watchmenCount,
+        'brokers': _brokersCount,
+        'offers': _offersCount,
+        'offices': _officesCount,
+        'owners': _ownersCount,
+        'requested': _requestedCount,
+        'quotation': _quotationCount,
+      };
+
+  /// Load the counts cached for [_countsAccountId] at once - no async delays
   void _loadCachedCountsInstantly() {
-    final cachedCounts = _countCache.getAllCachedCounts();
+    final cachedCounts = _countCache.getAllCachedCounts(_countsAccountId);
     _watchmenCount = cachedCounts['watchmen'] ?? 0;
     _brokersCount = cachedCounts['brokers'] ?? 0;
     _offersCount = cachedCounts['offers'] ?? 0;
@@ -158,6 +187,26 @@ class HomeViewModel extends ChangeNotifier {
 
     // Don't call notifyListeners here - let the UI render immediately with cached values
   }
+
+  /// Makes [accountId] the owner of the counts. When it differs from the
+  /// current owner, nothing of the previous account stays: its pending update
+  /// is dropped, reads it started are ignored, and the new account's own
+  /// cached counts (or 0) are shown.
+  void _useAccount(String accountId) {
+    if (accountId == _countsAccountId) return;
+    _countsEpoch++;
+    _updateTimer?.cancel();
+    _countsAccountId = accountId;
+    _loadCachedCountsInstantly();
+    notifyListeners();
+  }
+
+  /// True while counts read for [accountId] in [epoch] may still be shown.
+  bool _isCurrentCounts(String accountId, int epoch) =>
+      !_disposed &&
+      epoch == _countsEpoch &&
+      accountId == _countsAccountId &&
+      accountId == _authRepository.currentUserId;
 
   /// Initialize streams only when Auth is ready
   void _initializeStreamsWhenReady() {
@@ -179,6 +228,7 @@ class HomeViewModel extends ChangeNotifier {
     // Otherwise, wait for auth state change
     _authSubscription ??= _authRepository.authStateChanges.listen(
       (user) {
+        if (user != null) _useAccount(user.uid);
         if (user != null && !_streamsInitialized) {
           _initializeLiveStreams();
           _streamsInitialized = true;
@@ -195,15 +245,19 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   void _initializeSupabaseCountsWhenReady() {
-    final client = Supabase.instance.client;
-
-    if (client.auth.currentSession != null) {
+    // The canonical identity is the Supabase user id, which the auth
+    // repository reads from the current Supabase session.
+    if (_authRepository.currentUserId != null) {
       unawaited(_loadSupabaseCounts());
     }
 
-    _supabaseAuthSubscription ??= client.auth.onAuthStateChange.listen(
+    final authStateChanges = _authStateChangesOverride ??
+        Supabase.instance.client.auth.onAuthStateChange;
+    _supabaseAuthSubscription ??= authStateChanges.listen(
       (data) {
-        if (data.session != null) {
+        final accountId = data.session?.user.id;
+        if (accountId != null) {
+          _useAccount(accountId);
           unawaited(_loadSupabaseCounts());
         } else {
           _resetCountsForSignedOutUser();
@@ -224,17 +278,18 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadSupabaseCounts() async {
+    final accountId = _authRepository.currentUserId;
+    if (accountId == null) return;
+    _useAccount(accountId);
+    final epoch = _countsEpoch;
     try {
-      final counts = await _supabaseHomeCountsService.getCounts(fallback: {
-        'watchmen': _watchmenCount,
-        'brokers': _brokersCount,
-        'offers': _offersCount,
-        'offices': _officesCount,
-        'owners': _ownersCount,
-        'requested': _requestedCount,
-        'quotation': _quotationCount,
-      });
-      _handleCombinedUpdate(counts);
+      // The fallback is what is shown now, which is this account's own.
+      final fallback = _shownCounts;
+      final counts = await (_readCountsOverride?.call(fallback) ??
+          _supabaseHomeCountsService.getCounts(fallback: fallback));
+      // Counts read for an account that is no longer shown are dropped.
+      if (!_isCurrentCounts(accountId, epoch)) return;
+      _handleCombinedUpdate(counts, accountId: accountId, epoch: epoch);
     } catch (error, stackTrace) {
       debugPrint('Supabase Home count refresh failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -243,6 +298,11 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   void _resetCountsForSignedOutUser() {
+    // Whatever is still being read or waiting to be shown belonged to the
+    // account that just left.
+    _countsEpoch++;
+    _updateTimer?.cancel();
+    _countsAccountId = null;
     _watchmenCount = 0;
     _brokersCount = 0;
     _offersCount = 0;
@@ -261,7 +321,13 @@ class HomeViewModel extends ChangeNotifier {
   void _initializeLiveStreams() {
     // Combine all streams and debounce updates to prevent excessive rebuilds
     _combinedSubscription = _createCombinedStream().listen(
-      _handleCombinedUpdate,
+      (counts) {
+        final accountId = _authRepository.currentUserId;
+        if (accountId == null) return;
+        _useAccount(accountId);
+        _handleCombinedUpdate(counts,
+            accountId: accountId, epoch: _countsEpoch);
+      },
       onError: (error) {
         // Continue with cached values on error
       },
@@ -328,11 +394,16 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   /// Handle combined stream updates with debouncing
-  void _handleCombinedUpdate(Map<String, int> newCounts) {
+  void _handleCombinedUpdate(
+    Map<String, int> newCounts, {
+    required String accountId,
+    required int epoch,
+  }) {
     // Cancel previous timer to debounce rapid updates
     _updateTimer?.cancel();
 
     _updateTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!_isCurrentCounts(accountId, epoch)) return;
       bool hasChanges = false;
 
       // Check if any counts actually changed
@@ -366,8 +437,8 @@ class HomeViewModel extends ChangeNotifier {
       }
 
       if (hasChanges) {
-        // Update cache with new counts
-        _countCache.updateCachedCounts(newCounts);
+        // Update this account's cache with its new counts
+        unawaited(_countCache.updateCachedCounts(accountId, newCounts));
 
         // Notify UI only once with all changes
         notifyListeners();
@@ -439,6 +510,7 @@ class HomeViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     // Cancel subscriptions and timers to prevent memory leaks
     _combinedSubscription?.cancel();
     _authSubscription?.cancel();

@@ -6,6 +6,7 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/account_deletion_service.dart';
+import 'package:broker_wallet/src/services/count_cache_service.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
@@ -638,6 +639,8 @@ void main() {
         'is_authenticated': true,
         'cached_item_counts': '{"offers":3}',
         'counts_last_updated': 1,
+        CountCacheService.countsKeyFor(_alice): '{"offers":3}',
+        CountCacheService.countsKeyFor(_bob): '{"offers":8}',
         'password_recovery_owner_uid': _alice,
         'signed_documents_list': <String>['device-document'],
       });
@@ -663,6 +666,10 @@ void main() {
       expect(prefs.getString('cached_user_model'), isNull);
       expect(prefs.getBool('is_authenticated'), isFalse);
       expect(prefs.getString('cached_item_counts'), isNull);
+      expect(prefs.getString(CountCacheService.countsKeyFor(_alice)), isNull);
+      expect(
+          prefs.getString(CountCacheService.countsKeyFor(_bob)), '{"offers":8}',
+          reason: "another account's own Home counts are not this deletion's");
       expect(prefs.getString('password_recovery_owner_uid'), isNull);
       expect(PasswordRecoveryStateStore.ownerUid, isNull);
       expect(media.calls, [null], reason: 'all avatar caches are cleared');
@@ -696,6 +703,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'cached_profile_snapshot_v1': json.encode({'uid': _bob}),
         'cached_item_counts': '{"offers":7}',
+        CountCacheService.countsKeyFor(_alice): '{"offers":2}',
+        CountCacheService.countsKeyFor(_bob): '{"offers":7}',
       });
       final repo = _AuthRepository(user: _user(_bob));
       final media = _MediaForgetter();
@@ -714,6 +723,10 @@ void main() {
       expect(vm.currentUserId, _bob);
       expect(prefs.getString('cached_profile_snapshot_v1'), isNotNull);
       expect(prefs.getString('cached_item_counts'), '{"offers":7}');
+      expect(prefs.getString(CountCacheService.countsKeyFor(_alice)), isNull,
+          reason: "the deleted account's own Home counts are removed");
+      expect(prefs.getString(CountCacheService.countsKeyFor(_bob)),
+          '{"offers":7}');
       expect(media.calls.single, isEmpty,
           reason: 'only the deleted account\'s own avatar ids, of which '
               'none are known here');

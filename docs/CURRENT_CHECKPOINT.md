@@ -15900,3 +15900,64 @@ baseline):
   changed file.
 
 These remain OPEN and are out of Firebase-removal scope.
+
+## Firebase removal - Phase 3 (quotas and subscriptions), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 2 commit `5681c7b`. Quota and subscription BEHAVIOUR is unchanged.
+
+IMPORTANT, still open and independent of Firebase removal: the current quotas
+are NOT server-authoritative.
+
+- `CoreEntityQuotaBridge.canCreate` returns `true` in Supabase mode (bypass).
+- The four Toolkit gates (Scanner, Combine PDFs, Images to PDF, Signature) call
+  `QuotaHelper.checkAndWarnQuota`, which reads Firestore `users/{uid}` and
+  allows when the document is missing or on any error (fail-open).
+- A server-authoritative entitlement/quota project (Supabase + RevenueCat) is a
+  separate production requirement. Nothing here removes or fakes a limit.
+
+Classification:
+
+| Item | Class | Evidence / reason |
+|---|---|---|
+| `quota_helper.dart` | ACTIVE_KEEP / BLOCKED_REPLACEMENT | `checkAndWarnQuota` called by the 4 gates and the bridge |
+| 4 Toolkit usage gates | ACTIVE_KEEP / BLOCKED_REPLACEMENT | wired in `*_wiring.dart`, view-models and views; guarded by source tests |
+| `core_entity_quota_bridge.dart` | ACTIVE_KEEP / BLOCKED_REPLACEMENT | 7 Add* view-models |
+| `quota_sync_service.dart` | UNCERTAIN | only caller is `SubscriptionViewModel` |
+| `subscription_viewmodel.dart` | UNCERTAIN | `SubscriptionViewModel` is not instantiated in `lib/` (only `canonical_identity_test`), but `enum SubscriptionPlan` in the same file is used by `app.dart`, `payment_viewmodel`, `payment_selection_view`; its demo Firestore plan write is a release blocker to replace with the quota project |
+| `count_reconciliation_service.dart` | SAFE_UNUSED - removed | only caller was the user-stream listener in `auth_viewmodel.dart`, behind `if (useSupabaseAuth) return;`; `USE_SUPABASE_AUTH=false` throws since Phase 1, so the block could not run |
+| `quota_service.dart` | SAFE_UNUSED - removed | callers were only `quota_aware_section_page` and the unused `QuotaHelper.buildQuotaWarningBanner` |
+| `quota_status_card.dart` | SAFE_UNUSED - removed | no reference to `QuotaStatusCard` in `lib/` or `test/` |
+| `quota_aware_section_page.dart` | SAFE_UNUSED - removed | no reference in `lib/` or `test/` |
+
+Edits: `auth_viewmodel.dart` - removed the unreachable reconciliation block, the
+private `_reconcileCountsInBackground` and its import (the callback now ends
+after `_applyProfile`, exactly as it did in Supabase mode). `quota_helper.dart` -
+removed the unused `buildQuotaWarningBanner`, the unused `_firestore` field and
+the `quota_service` import; `checkAndWarnQuota`, `showSuccessMessage` and
+`showErrorMessage` are untouched.
+
+Verification:
+
+- `flutter analyze --no-pub lib`: 85 issues, same count as before; no
+  error or warning lines.
+- `git diff --check`: exit 0.
+- Targeted `flutter test` (account, app, auth, profile, signature, scanner source
+  guards, combine_pdf, image_to_pdf, header unity, favorites isolation, share
+  guards): 1226 passed, 10 failed. The same four files
+  (`delete_account_test`, `email_change_test`, `phone_security_hardening_test`,
+  `session_superseded_dialog_test`) were re-run on an exported copy of `5681c7b`
+  (scratch folder, since deleted) and fail with the identical 8 tests, so they
+  are not caused by Phase 3. Causes seen: missing
+  `supabase/migrations/20260913000100_account_deletion_jobs.sql` and related
+  migration files, plus auth tests failing on baseline. The other 2 are the known
+  `combine_source_guards_test` honesty failure and the disabled
+  `profile_fcm_compatibility_test`.
+
+Still on Firebase after Phase 3: quota gates and `QuotaHelper` (Firestore),
+`QuotaSyncService` (Cloud Functions), the demo subscription write, legacy media
+services, Search/Favorites/Related Items, `AuthService`, Feedback/Analytics,
+FCM, models' `Timestamp`.
+
+NOW: owner reviews the Phase 3 diff. NEXT: on approval, commit, then Phase 4
+(legacy Firebase Storage and media paths).

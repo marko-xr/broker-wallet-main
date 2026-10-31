@@ -19,7 +19,6 @@ import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/offer_media_session.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
-import 'package:broker_wallet/src/services/count_reconciliation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart'
     show MediaCacheManager;
@@ -1373,61 +1372,11 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
 
         // _applyProfile owns the snapshot write.
         _applyProfile(userDoc, markHydrated: true);
-
-        // 🔒 SECURITY: The current reconciliation implementation is a
-        // Firebase Cloud Function. Do not invoke it for a Supabase-authenticated
-        // session. Supabase quota reconciliation will be wired in its own stage.
-        if (SupabaseConfig.useSupabaseAuth) {
-          return;
-        }
-
-        // Reconcile counts on first login or if stale.
-        try {
-          final lastReconciliation =
-              userDoc.preferences['lastCountReconciliation'] as int?;
-          final lastReconciliationTime = lastReconciliation != null
-              ? DateTime.fromMillisecondsSinceEpoch(lastReconciliation)
-              : null;
-
-          // Reconcile if never done or > 1 hour old
-          if (lastReconciliationTime == null ||
-              DateTime.now().difference(lastReconciliationTime).inHours >= 1) {
-            // Debug log suppressed: Triggering count reconciliation for security...
-            // Don't await - let it run in background
-            _reconcileCountsInBackground(uid);
-          }
-        } catch (e) {
-          // Debug log suppressed: Failed to check reconciliation status: $e
-        }
       },
       onError: (error) {
         // Debug log suppressed: User stream error: $error
       },
     );
-  }
-
-  /// Background count reconciliation to prevent quota bypass
-  Future<void> _reconcileCountsInBackground(String uid) async {
-    try {
-      // Import the reconciliation service
-      final reconciliationService = CountReconciliationService();
-      final result = await reconciliationService.reconcileUserCounts();
-
-      if (result.discrepanciesFound > 0) {
-        // Debug log suppressed: Count discrepancies fixed: ${result.discrepanciesFound}
-        // Debug log suppressed: ${result.discrepancies.join(', ')}
-      } else {
-        // Debug log suppressed: Counts verified accurate
-      }
-
-      // Update last reconciliation time in user preferences
-      await _userRepository.updateUserPreferences(uid, {
-        'lastCountReconciliation': DateTime.now().millisecondsSinceEpoch,
-      });
-    } catch (e) {
-      // Debug log suppressed: Background reconciliation failed (non-critical): $e
-      // Don't throw - this is a background security check
-    }
   }
 
   Future<void> signOut() async {

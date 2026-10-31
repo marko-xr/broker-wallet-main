@@ -2,7 +2,6 @@ import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:broker_wallet/src/services/quota_service.dart';
 import 'package:broker_wallet/src/common/utils/app_notifier.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
@@ -209,83 +208,6 @@ class QuotaHelper {
           ),
         ],
       ),
-    );
-  }
-
-  /// Add import for Firestore
-  static final _firestore = FirebaseFirestore.instance;
-
-  /// Show a banner at the top of add screens warning about remaining quota
-  static Widget buildQuotaWarningBanner({
-    required BuildContext context,
-    required String uid,
-    required String section,
-  }) {
-    return StreamBuilder<Map<String, int>>(
-      stream: QuotaService().countsStream(uid),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-
-        final counts = snapshot.data!;
-        final currentCount = counts[section] ?? 0;
-        const limit = 5;
-        final remaining = limit - currentCount;
-
-        // Only show for free users approaching limit
-        if (remaining > 2 || remaining <= 0) {
-          return const SizedBox.shrink();
-        }
-
-        final theme = Theme.of(context);
-        final colors = theme.colorScheme;
-
-        return Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: remaining == 1
-                ? colors.error.withValues(alpha: 0.1)
-                : Colors.orange.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: remaining == 1 ? colors.error : Colors.orange,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                remaining == 1 ? Icons.warning : Icons.info,
-                color: remaining == 1 ? colors.error : Colors.orange,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      remaining == 1
-                          ? '⚠️ Last slot remaining!'
-                          : '⚠️ $remaining slots remaining',
-                      style: theme.textTheme.titleSmall!.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Upgrade to Premium for unlimited items',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              TextButton(
-                onPressed: () => context.push('/subscription'),
-                child: const Text('Upgrade'),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 

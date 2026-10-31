@@ -15832,3 +15832,71 @@ Verification run:
 
 NOW: owner reviews the Phase 1 diff. NEXT: on explicit approval, Phase 2
 (Firestore domain cleanup) on the same branch.
+
+## Firebase removal - Phase 2 (dead Firestore code), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 1 commit `19e964a`.
+
+Deleted (no importer, no class reference in `lib/` or `test/`, no string/route
+reference outside docs): `firestore_service.dart`, `app_version_service.dart`
+(Firestore + Cloud Functions), `hls_transcoding_service.dart` (Cloud Functions
+HTTP), `storage_integration_examples.dart` (fully commented),
+`email_verification_service.dart` (Firebase Auth/Firestore; the dialog/view of
+the same topic are different files and untouched), `notification_test_view.dart`
+(fully commented).
+
+Edited: `broker_service.dart`, `office_service.dart`, `request_service.dart`,
+`watchmen_service.dart` now call `SupabaseCoreEntitiesService` only. Their
+Firestore tails ran only when `USE_SUPABASE_AUTH=false`; after Phase 1 that
+configuration throws in `RepositoryProvider` (touched at startup by `main.dart`),
+so those branches could not run in any buildable configuration. Public method
+names/signatures and the Supabase calls are unchanged.
+
+Kept, with reason:
+
+- `offer_service.dart`, `owner_service.dart`: Firestore branches are entangled with
+  the legacy media services (`FastMediaUploadService`); handled with media (Phase 4).
+- Models' `Timestamp`/`fromFirestore`/`toFirestore`: still called by Search,
+  Related Items, `AuthService`, `FirestoreNotificationRepository`. Removal would
+  change data contracts - BLOCKED until those callers are migrated.
+- `media_type_service.dart` and the chain `media_upload_service_compat` ->
+  `universal_media_upload_service`, `optimized_*`, `regional_storage_config`:
+  imported by active media code (Phase 4).
+- Quotas/usage gates, subscription, `AuthService`, Search/Favorites/Related Items,
+  Feedback/Analytics, FCM/notifications: out of Phase 2 scope.
+- `pubspec.*`, Android/iOS Firebase config: untouched.
+
+Verification:
+
+- `flutter analyze --no-pub lib`: 0 errors, 0 warnings (85 pre-existing infos).
+- `git diff --check`: exit 0.
+- Targeted `flutter test` (favorites, home, lists, offers, owners,
+  plan_attachment, quotation, search, related_items, combine_pdf, image_to_pdf,
+  scanner, signature, share, profile, single_active_session): 2819 passed, 2 failed;
+  responsive + map: 3 failed. None of the 5 reads a file this phase changed:
+  `combine_source_guards_test` (honesty/Future.delayed in combine sources),
+  `scanner_cloud_test` (two test helpers both export `Harness`, compile error),
+  `map_opening_test` x2 (imports only Flutter + `map_opening.dart`),
+  `map_ux_phase1_test` (result-count text). Treated as pre-existing; not re-run
+  against `a9bc445`.
+
+NOW: owner reviews the Phase 2 diff. NEXT: on approval, commit, then Phase 3
+(quotas/subscription classification only).
+
+Phase 2 failure review (read-only, vs baseline `a9bc445`): none of the 5 open
+failures reads a file this phase changed. The import closure of each test
+(and every `lib/...` path a source guard reads) has no file in
+`git diff a9bc445`, and `lib/src/services/combine_pdf`, the combine view-model,
+`Toolkit/` views and `test/` have no diff from the baseline. So they are
+unchanged-input failures, not regressions of Phases 1-2 (not re-run on the
+baseline):
+
+- `combine_source_guards_test` "honesty": `combine_pdfs_view.dart` contains
+  `LinearProgressIndicator` (last touched by `a9bc445`); the test forbids it.
+- `scanner_cloud_test`: `Harness` is exported by both `scanner_harness.dart`
+  and `toolkit_documents/toolkit_fakes.dart` - compile error.
+- `map_opening_test` (2) and `map_ux_phase1_test` (1): closures contain no
+  changed file.
+
+These remain OPEN and are out of Firebase-removal scope.

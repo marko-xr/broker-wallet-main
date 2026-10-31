@@ -1,15 +1,10 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart' show UserCredential;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
-import 'package:broker_wallet/src/services/auth_service.dart';
 import 'package:broker_wallet/src/common/utils/password_policy.dart';
-import 'package:broker_wallet/src/common/utils/phone_utils.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -19,8 +14,6 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 enum SignupMethod { phone, email }
 
 class SignUpViewModel extends ChangeNotifier {
-  final AuthService _authService = AuthService();
-
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
@@ -40,8 +33,6 @@ class SignUpViewModel extends ChangeNotifier {
   bool _isResendingEmail = false;
   bool get isResendingEmail => _isResendingEmail;
 
-  bool _phoneFlowCompleted = false;
-  String? _pendingVerifiedPhone;
 
   String? _verificationMessage;
   String? get verificationMessage => _verificationMessage;
@@ -93,9 +84,6 @@ class SignUpViewModel extends ChangeNotifier {
 
   void setSignupMethod(SignupMethod method) {
     signupMethod = method;
-    if (method == SignupMethod.phone) {
-      _phoneFlowCompleted = false;
-    }
     if (!_disposed) notifyListeners();
   }
 
@@ -384,24 +372,6 @@ class SignUpViewModel extends ChangeNotifier {
     }
   }
 
-  // Debug method - remove in production
-  Future<void> debugCheckCollections() async {
-    await _authService.debugLookupCollections();
-  }
-
-  // Test method to verify phone number normalization
-  Future<void> debugTestPhoneNormalization(String testPhone) async {
-    try {
-      final e164 = PhoneUtils.toE164Uae(testPhone);
-      // Debug log suppressed: Test phone: $testPhone → E164: $e164
-      await _authService.isPhoneRegistered(
-          e164); // result intentionally discarded in test helper
-      // Debug log suppressed: Registration check result: (discarded)
-    } catch (e) {
-      // Debug log suppressed: Test error: $e
-    }
-  }
-
   Future<void> signUpWithPhone(BuildContext context) async {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
@@ -412,263 +382,6 @@ class SignUpViewModel extends ChangeNotifier {
       _showToast(_phoneError!, Colors.orange);
       if (!_disposed) notifyListeners();
       return;
-    }
-
-    if (!_validatePhoneSignup(loc)) {
-      return;
-    }
-
-    _setLoading(true);
-
-    try {
-      final trimmedName = name.trim();
-      final localPhone = phoneController.text.trim();
-      final phoneE164 = PhoneUtils.toE164Uae(localPhone);
-
-      // Check if phone is already registered BEFORE sending OTP
-      // Debug log suppressed: Starting phone registration check for: $phoneE164
-      // Debug log suppressed: Local phone: $localPhone
-      // Debug log suppressed: E164 phone: $phoneE164
-
-      // Check if phone is already registered
-      // Debug log suppressed: Now checking if phone is registered...
-      bool isRegistered;
-      try {
-        isRegistered = await _authService.isPhoneRegistered(phoneE164);
-        // Debug log suppressed: Phone registration check result: $isRegistered
-        // Debug log suppressed: Validation check completed
-      } catch (e) {
-        // Debug log suppressed: Error checking phone registration: $e
-        _phoneError = e.toString().replaceAll('Exception: ', '');
-        _setLoading(false);
-        _showToast(_phoneError!, Colors.red);
-        if (!_disposed) notifyListeners();
-        return;
-      }
-
-      if (isRegistered) {
-        // Debug log suppressed: Phone already registered, blocking signup
-        final message = translate('phoneAlreadyRegistered');
-        _phoneError = message;
-        _setLoading(false);
-
-        // Show toast message
-        _showToast(message, Colors.orange);
-
-        // Update UI with error
-        if (!_disposed) notifyListeners();
-
-        // Show error dialog for more visibility
-        if (context.mounted) {
-          _showErrorDialog(
-            context,
-            translate('accountExists'),
-            '$message\n\n${translate('pleaseSignIn')}',
-          );
-        }
-
-        // CRITICAL: Return here to prevent OTP navigation
-        return;
-      }
-
-      // Debug log suppressed: Phone not registered, proceeding with OTP
-      _phoneFlowCompleted = false;
-
-      await _authService.sendOtp(
-        e164: phoneE164,
-        onCodeSent: (_) {},
-        onCodeSentWithToken: (verificationId, resendToken) {
-          _showToast(translate('otpSent'), Colors.green);
-          if (context.mounted) {
-            context.go(
-              '/phone-otp',
-              extra: PhoneOtpArgs(
-                phoneNumber: phoneE164,
-                verificationId: verificationId,
-                isSignup: true,
-                displayName: trimmedName,
-                resendToken: resendToken,
-              ),
-            );
-          }
-        },
-        onAutoVerified: (credential) async {
-          try {
-            final result = await _authService.signInWithCredential(credential);
-            await _handlePhoneCredential(
-              context,
-              result,
-              isSignup: true,
-              name: trimmedName,
-              phoneE164: phoneE164,
-            );
-          } catch (error) {
-            _showToast(error.toString(), Colors.red);
-          }
-        },
-        onFailed: (exception) {
-          final message = _mapAuthError(loc, exception.code);
-          _phoneError = message;
-          _showToast(message, Colors.red);
-          if (!_disposed) notifyListeners();
-        },
-        onTimeout: (_) {},
-      );
-    } catch (e) {
-      // Debug log suppressed: Error in signUpWithPhone: $e
-      _showToast(translate('errorOccurred'), Colors.red);
-    } finally {
-      if (!_disposed) {
-        _setLoading(false);
-      }
-    }
-  }
-
-  bool _validatePhoneSignup(AppLocalizations loc) {
-    bool isValid = true;
-    _nameError = null;
-    _phoneError = null;
-
-    final translate = loc.translate;
-    final trimmedName = name.trim();
-    final rawPhone = phoneController.text.trim();
-
-    if (trimmedName.isEmpty) {
-      _nameError = translate('nameRequired');
-      isValid = false;
-    }
-
-    if (rawPhone.isEmpty) {
-      _phoneError = translate('phoneNumberTooShort');
-      isValid = false;
-    } else if (!PhoneUtils.isValidUaeMobile(rawPhone)) {
-      _phoneError = translate('authInvalidPhone');
-      isValid = false;
-    }
-
-    notifyListeners();
-    return isValid;
-  }
-
-  Future<void> _handlePhoneCredential(
-    BuildContext context,
-    UserCredential credential, {
-    required bool isSignup,
-    String? name,
-    required String phoneE164,
-  }) async {
-    if (!phoneSignUpSupported) {
-      _showToast(
-        AppLocalizations.of(context).translate('phoneSignUpUnavailable'),
-        Colors.red,
-      );
-      return;
-    }
-
-    if (_phoneFlowCompleted) return;
-    _phoneFlowCompleted = true;
-
-    final loc = AppLocalizations.of(context);
-    _pendingVerifiedPhone = phoneE164;
-    final user = credential.user;
-    if (user == null) {
-      _phoneFlowCompleted = false;
-      throw Exception(loc.translate('verificationFailed'));
-    }
-
-    // Update user profile with phone info
-    await _authService.finalizePhoneUser(
-      user: user,
-      phoneE164: phoneE164,
-      displayName: name,
-      markAsSignup: isSignup,
-    );
-
-    // Wait for AuthViewModel to observe updated phone verification state
-    final authReady = await _waitForAuthReady(context);
-    if (authReady) {
-      // Debug log suppressed: Legacy SignUpViewModel: AuthViewModel confirmed authentication
-    } else {
-      // Debug log suppressed: Legacy SignUpViewModel: AuthViewModel did not confirm authentication before timeout
-    }
-
-    _showToast(loc.translate('otpVerifiedSuccess'), Colors.green);
-
-    if (context.mounted) {
-      final router = GoRouter.of(context);
-      router.go('/home');
-    }
-
-    _pendingVerifiedPhone = null;
-  }
-
-  Future<bool> _waitForAuthReady(BuildContext context) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    if (!context.mounted) return false;
-
-    try {
-      final authViewModel = context.read<AuthViewModel>();
-      final authRepo = RepositoryProvider.instance.authRepository;
-      final initialPhone = _pendingVerifiedPhone ??
-          authRepo.currentUser?.phoneNumber ??
-          authViewModel.currentUser?.phoneNumber ??
-          '';
-
-      if (initialPhone.isNotEmpty) {
-        await authViewModel.markPhoneVerified(phoneNumber: initialPhone);
-      }
-
-      const pollingInterval = Duration(milliseconds: 200);
-      const maxAttempts = 15;
-
-      for (var attempt = 0; attempt < maxAttempts; attempt++) {
-        if (authViewModel.isAuthenticated ||
-            authViewModel.currentUser?.isPhoneVerified == true) {
-          return true;
-        }
-
-        final currentRepoUser =
-            authRepo.currentUser ?? await authRepo.reloadUser();
-        if (currentRepoUser?.phoneNumber != null &&
-            currentRepoUser!.phoneNumber!.isNotEmpty) {
-          await authViewModel.markPhoneVerified(
-              phoneNumber: currentRepoUser.phoneNumber!);
-          if (authViewModel.isAuthenticated) {
-            return true;
-          }
-        }
-
-        await authViewModel.syncUserFromRepository();
-
-        await Future.delayed(pollingInterval);
-        if (!context.mounted) return false;
-      }
-    } catch (e) {
-      // Debug log suppressed: Failed to synchronize AuthViewModel after phone signup: $e
-    }
-
-    return false;
-  }
-
-  String _mapAuthError(AppLocalizations loc, String code) {
-    switch (code) {
-      case 'invalid-phone-number':
-        return loc.translate('authInvalidPhone');
-      case 'too-many-requests':
-        return loc.translate('authTooManyRequests');
-      case 'session-expired':
-        return loc.translate('authSessionExpired');
-      case 'quota-exceeded':
-        return loc.translate('authQuotaExceeded');
-      case 'network-request-failed':
-        return loc.translate('authNetworkFailed');
-      case 'captcha-check-failed':
-        return loc.translate('authCaptchaFailed');
-      case 'invalid-verification-code':
-        return loc.translate('authInvalidOtp');
-      default:
-        return loc.translate('verificationFailed');
     }
   }
 
@@ -685,26 +398,6 @@ class SignUpViewModel extends ChangeNotifier {
 
   Future<void> signUpWithGoogle(BuildContext context) async {
     _showToast('Google sign up coming soon', Colors.orange);
-  }
-
-  void _showErrorDialog(BuildContext context, String title, String message) {
-    if (context.mounted) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
-    }
   }
 
   @override

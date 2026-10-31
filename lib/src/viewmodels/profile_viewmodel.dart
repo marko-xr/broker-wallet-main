@@ -8,12 +8,8 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/logout_confirmation_bottom_sheet.dart';
-import 'package:broker_wallet/src/services/auth_service.dart';
 // import 'package:broker_wallet/src/services/notification_service.dart';
-import 'package:broker_wallet/src/common/utils/phone_utils.dart';
-import 'package:broker_wallet/src/common/utils/email_validator.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 
 class ProfileViewModel extends ChangeNotifier {
   final ThemeViewModel themeVM;
@@ -21,7 +17,6 @@ class ProfileViewModel extends ChangeNotifier {
   final BuildContext context;
   final AuthViewModel authVM;
   final UserRepository _userRepository;
-  final AuthService _authService = AuthService();
 
   bool _notificationsEnabled = false;
   bool _isLoading = true;
@@ -264,206 +259,6 @@ class ProfileViewModel extends ChangeNotifier {
       _userRepository.updateUser(updatedUser);
     } catch (e) {
       // Debug log suppressed: Failed to update user in repository: $e
-    }
-  }
-
-  Future<void> resendEmailVerification() async {
-    if (_disposed) return;
-    final loc = AppLocalizations.of(context);
-
-    try {
-      await _authService.sendEmailVerification();
-      Fluttertoast.showToast(
-        msg: loc.translate('verificationEmailResent'),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.green,
-        textColor: Colors.white,
-      );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: e.toString(),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    }
-  }
-
-  Future<void> linkEmailAccount({
-    required String email,
-    required String password,
-  }) async {
-    if (_disposed) return;
-    final loc = AppLocalizations.of(context);
-    final trimmedEmail = email.trim().toLowerCase();
-
-    if (trimmedEmail.isEmpty) {
-      Fluttertoast.showToast(
-        msg: loc.translate('emailRequired'),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      return;
-    }
-
-    if (!EmailValidator.isValidFormat(trimmedEmail)) {
-      Fluttertoast.showToast(
-        msg: loc.translate('authInvalidEmail'),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      return;
-    }
-
-    if (password.length < 6) {
-      Fluttertoast.showToast(
-        msg: loc.translate('passwordTooShort'),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      return;
-    }
-
-    if (_isLinkingEmail) return;
-    _isLinkingEmail = true;
-    notifyListeners();
-
-    try {
-      final alreadyRegistered =
-          await _authService.isEmailRegistered(trimmedEmail);
-      if (alreadyRegistered) {
-        Fluttertoast.showToast(
-          msg: loc.translate('authEmailExists'),
-          backgroundColor: Colors.orange,
-          textColor: Colors.white,
-        );
-        return;
-      }
-
-      await _authService.linkEmailCredential(
-        email: trimmedEmail,
-        password: password,
-      );
-
-      await authVM.checkEmailVerificationStatus();
-      await authVM.syncUserFromRepository();
-
-      Fluttertoast.showToast(
-        msg: loc.translate('emailLinkSuccess'),
-        backgroundColor: Colors.green,
-        textColor: Colors.white,
-      );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: e.toString(),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      _isLinkingEmail = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> startPhoneLinking(String rawPhone) async {
-    if (_disposed) return;
-    final loc = AppLocalizations.of(context);
-    final trimmedPhone = rawPhone.trim();
-
-    if (!PhoneUtils.isValidUaeMobile(trimmedPhone)) {
-      Fluttertoast.showToast(
-        msg: loc.translate('authInvalidPhone'),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      return;
-    }
-
-    if (_isLinkingPhone) return;
-
-    _isLinkingPhone = true;
-    notifyListeners();
-
-    final phoneE164 = PhoneUtils.toE164Uae(trimmedPhone);
-
-    try {
-      final exists = await _authService.isPhoneRegistered(phoneE164);
-      if (exists) {
-        Fluttertoast.showToast(
-          msg: loc.translate('phoneAlreadyRegistered'),
-          backgroundColor: Colors.orange,
-          textColor: Colors.white,
-        );
-        return;
-      }
-
-      await _authService.sendOtp(
-        e164: phoneE164,
-        onCodeSent: (_) {},
-        onCodeSentWithToken: (verificationId, resendToken) {
-          if (_disposed) return;
-          Fluttertoast.showToast(
-            msg: loc.translate('otpSent'),
-            backgroundColor: Colors.green,
-            textColor: Colors.white,
-          );
-
-          final args = PhoneOtpArgs(
-            phoneNumber: phoneE164,
-            verificationId: verificationId,
-            isSignup: false,
-            displayName:
-                displayName.isNotEmpty ? displayName : authVM.displayName,
-            resendToken: resendToken,
-            isLinkingPhone: true,
-          );
-
-          if (!_disposed && context.mounted) {
-            GoRouter.of(context).push('/phone-otp', extra: args);
-          }
-        },
-        onAutoVerified: (credential) async {
-          try {
-            await _authService.linkPhoneCredential(credential);
-            await authVM.markPhoneVerified(phoneNumber: phoneE164);
-            await authVM.syncUserFromRepository();
-            Fluttertoast.showToast(
-              msg: loc.translate('phoneLinkedSuccessMessage'),
-              backgroundColor: Colors.green,
-              textColor: Colors.white,
-            );
-            if (!_disposed && context.mounted) {
-              GoRouter.of(context).go('/profile');
-            }
-          } catch (e) {
-            Fluttertoast.showToast(
-              msg: e.toString(),
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-            );
-          }
-        },
-        onFailed: (exception) {
-          final message = exception.message ?? exception.code;
-          Fluttertoast.showToast(
-            msg: message,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-          );
-        },
-        onTimeout: (_) {},
-      );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: e.toString(),
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      _isLinkingPhone = false;
-      notifyListeners();
     }
   }
 }

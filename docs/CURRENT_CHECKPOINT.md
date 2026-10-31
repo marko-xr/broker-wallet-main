@@ -16170,3 +16170,56 @@ setUpAll (missing migration file), unchanged from earlier baselines.
 
 NOW: owner reviews the Phase 7B diff. NEXT: on approval, commit; then 7C (Phone
 Auth on Supabase) or the quota project.
+
+## Firebase removal - Phase 7C (Firebase Auth code only), branch `remove-firebase`
+
+Status: CODE_PROVEN (analyzer + targeted tests); not VERIFIED_RUNTIME. Uncommitted,
+on top of Phase 7B commit `c7d10da`. Scope: remove old Firebase Auth code only. No
+screen, route, tab, button, field, message or Supabase path changed.
+
+Kept unchanged (visually and functionally): Phone Sign In and Phone Sign Up tabs
+and forms, their existing 'unavailable' messages (`phoneSignInUnavailable`,
+`phoneSignUpUnavailable`), the Phone OTP screen, `/phone-otp` route and
+`PhoneOtpArgs`, Login/Signup/Profile/Security UI, and every Supabase path
+including the `phone_change` add-phone flow. `phone_otp_view.dart`, `app.dart`
+and `phone_otp_args.dart` are untouched.
+
+Removed (all of it sat behind `phoneSignInSupported` / `phoneSignUpSupported`,
+which are `!useSupabaseAuth` and therefore false, or had no caller):
+
+- `login_viewmodel.dart`: the Firebase send-OTP/sign-in body after the existing
+  guard, `_handlePhoneCredential`, `_mapAuthError`, `_phoneFlowCompleted`, the
+  `AuthService` field and the firebase_auth/auth_service imports.
+  `sendOTP(context)` keeps its guard and message.
+- `signup_viewmodel.dart`: the same for `signUpWithPhone`, plus
+  `_validatePhoneSignup`, `_handlePhoneCredential`, `_waitForAuthReady`,
+  `_mapAuthError`, `_showErrorDialog`, and the debug helpers
+  `debugCheckCollections` / `debugTestPhoneNormalization` (no callers).
+- `profile_viewmodel.dart`: `resendEmailVerification`, `linkEmailAccount`,
+  `startPhoneLinking` (no callers) and the `AuthService` field. The
+  `isLinkingEmail`/`isLinkingPhone` getters stay.
+- `auth_service.dart`: 959 -> ~250 lines; every method no one calls (email and
+  Google sign-in, lookups, reset, verification, delete, update, ...) removed.
+- Deleted `services/professional_email_service.dart` (only `AuthService` used it).
+- `auth_failure.dart`: `AuthFailure.fromFirebase` and the firebase_auth import
+  (only a test called it); doc comment reworded.
+- `test/auth/auth_failure_mapping_test.dart`: the 10-test Firebase mapping group
+  removed with `fromFirebase`; the Supabase mapping group is untouched.
+
+Could NOT be removed (would change behaviour of the retained Phone OTP screen):
+`phone_otp_viewmodel.dart` still calls `AuthService.sendOtp`,
+`signInWithCredential`, `linkPhoneCredential`, `finalizePhoneUser`, so
+`auth_service.dart` (Firebase Auth + Firestore `users`/`phone_lookup`) and the
+`firebase_auth` import in `phone_otp_viewmodel.dart` remain. They go together
+with the future phone-auth decision; no stub was added.
+
+`firebase_auth` imports: `lib` 6 -> 2 (`auth_service.dart`,
+`phone_otp_viewmodel.dart`), `test` 1 -> 0.
+
+Verification: `flutter analyze --no-pub lib` 84 issues, no error/warning;
+`git diff --check` exit 0; targeted tests (auth, profile, app, R4 auth
+responsive, notifications): 425 passed, 7 failed - exactly the known set
+(`email_change_test` 1, `phone_security_hardening_test` 4 missing migration
+files, `session_superseded_dialog_test` 2), identical to the earlier baselines.
+
+NOW: owner reviews the Phase 7C diff. NEXT: on approval, commit; then 7D.

@@ -1,87 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import 'package:broker_wallet/src/repositories/auth_failure.dart';
 
 void main() {
-  group('AuthFailure Firebase Mapping Tests', () {
-    test('maps invalid-credential to invalidCredentials', () {
-      final fbException = FirebaseAuthException(code: 'invalid-credential');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.invalidCredentials);
-      expect(failure.isInvalidCredentials, isTrue);
-    });
-
-    test('maps user-not-found to invalidCredentials', () {
-      final fbException = FirebaseAuthException(code: 'user-not-found');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.invalidCredentials);
-    });
-
-    test('maps wrong-password to invalidCredentials', () {
-      final fbException = FirebaseAuthException(code: 'wrong-password');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.invalidCredentials);
-    });
-
-    test('maps email-already-in-use to emailAlreadyInUse', () {
-      final fbException = FirebaseAuthException(code: 'email-already-in-use');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.emailAlreadyInUse);
-      expect(failure.isEmailAlreadyInUse, isTrue);
-    });
-
-    test('maps weak-password to weakPassword', () {
-      final fbException = FirebaseAuthException(code: 'weak-password');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.weakPassword);
-    });
-
-    test('maps invalid-email to invalidEmail', () {
-      final fbException = FirebaseAuthException(code: 'invalid-email');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.invalidEmail);
-    });
-
-    test('maps too-many-requests to tooManyRequests', () {
-      final fbException = FirebaseAuthException(code: 'too-many-requests');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.tooManyRequests);
-    });
-
-    test('maps network-request-failed to network', () {
-      final fbException = FirebaseAuthException(code: 'network-request-failed');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.network);
-    });
-
-    test('maps operation-not-allowed to operationNotAllowed', () {
-      final fbException = FirebaseAuthException(code: 'operation-not-allowed');
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.operationNotAllowed);
-    });
-
-    test('maps unknown code to unknown', () {
-      final fbException = FirebaseAuthException(
-        code: 'random-unknown-code',
-        message: 'Something unexpected happened',
-      );
-      final failure = AuthFailure.fromFirebase(fbException);
-
-      expect(failure.code, AuthFailureCode.unknown);
-      expect(failure.message, 'Something unexpected happened');
-    });
-  });
-
   group('AuthFailure Supabase Mapping Tests', () {
     test('maps email_not_confirmed to emailNotConfirmed', () {
       final sbException =

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 /// Backend-neutral authentication failure codes.
@@ -54,7 +53,7 @@ enum AuthFailureCode {
 
 /// Unified, backend-neutral authentication failure representation.
 ///
-/// Both the Firebase and [SupabaseAuthRepository] repositories translate their
+/// [SupabaseAuthRepository] translates its
 /// vendor-specific exceptions into [AuthFailure]. ViewModels and UI layers
 /// only handle [AuthFailure] without needing vendor-specific imports.
 class AuthFailure implements Exception {
@@ -67,80 +66,6 @@ class AuthFailure implements Exception {
     required this.message,
     this.originalException,
   });
-
-  /// Map Firebase authentication exceptions to [AuthFailure].
-  factory AuthFailure.fromFirebase(dynamic exception) {
-    if (exception is AuthFailure) return exception;
-
-    if (exception is fb.FirebaseAuthException) {
-      switch (exception.code) {
-        case 'user-not-found':
-        case 'wrong-password':
-        case 'invalid-credential':
-        case 'invalid-login-credentials':
-          return AuthFailure(
-            code: AuthFailureCode.invalidCredentials,
-            message: 'Invalid email or password.',
-            originalException: exception,
-          );
-        case 'email-already-in-use':
-          return AuthFailure(
-            code: AuthFailureCode.emailAlreadyInUse,
-            message: 'An account already exists for this email.',
-            originalException: exception,
-          );
-        case 'weak-password':
-          return AuthFailure(
-            code: AuthFailureCode.weakPassword,
-            message: 'The password provided is too weak.',
-            originalException: exception,
-          );
-        case 'invalid-email':
-          return AuthFailure(
-            code: AuthFailureCode.invalidEmail,
-            message: 'The email address is not valid.',
-            originalException: exception,
-          );
-        case 'user-disabled':
-          return AuthFailure(
-            code: AuthFailureCode.userDisabled,
-            message: 'This user account has been disabled.',
-            originalException: exception,
-          );
-        case 'too-many-requests':
-          return AuthFailure(
-            code: AuthFailureCode.tooManyRequests,
-            message: 'Too many attempts. Please try again later.',
-            originalException: exception,
-          );
-        case 'network-request-failed':
-          return AuthFailure(
-            code: AuthFailureCode.network,
-            message: 'Network error. Please check your internet connection.',
-            originalException: exception,
-          );
-        case 'operation-not-allowed':
-          return AuthFailure(
-            code: AuthFailureCode.operationNotAllowed,
-            message: 'This sign-in method is not enabled.',
-            originalException: exception,
-          );
-        default:
-          return AuthFailure(
-            code: AuthFailureCode.unknown,
-            message: exception.message ??
-                'An unexpected authentication error occurred.',
-            originalException: exception,
-          );
-      }
-    }
-
-    return AuthFailure(
-      code: AuthFailureCode.unknown,
-      message: exception?.toString() ?? 'An unexpected error occurred.',
-      originalException: exception,
-    );
-  }
 
   /// Map Supabase authentication exceptions to [AuthFailure].
   factory AuthFailure.fromSupabase(dynamic exception) {

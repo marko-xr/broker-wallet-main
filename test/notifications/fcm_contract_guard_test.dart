@@ -1,6 +1,6 @@
-// FCM stays as the future push transport (Firebase removal phase 7B, option A).
+// Push device-token contract (Firebase is gone from notifications).
 // These guards pin what is true today: the repository contract that a future
-// push client will use exists, Supabase owns the device table, no Firestore is
+// push client would use exists, Supabase owns the device table, no Firestore is
 // left in the notification layer, and push registration is NOT claimed to work.
 import 'dart:io';
 

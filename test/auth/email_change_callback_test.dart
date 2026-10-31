@@ -388,7 +388,6 @@ void main() {
       const sources = [
         'lib/src/repositories/supabase_auth_repository.dart',
         'lib/src/viewmodels/home_viewmodel.dart',
-        'lib/src/services/notification_service.dart',
         'lib/src/views/Screens/home/favorites/favorites_service.dart',
         'lib/src/viewmodels/Signup-Login/auth_viewmodel.dart',
       ];

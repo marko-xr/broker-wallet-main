@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class UserModel {
   final String uid;
   final String name;
@@ -47,41 +45,6 @@ class UserModel {
       subscription: UserSubscription.fromMap(map['subscription'] ?? {}),
       preferences: Map<String, dynamic>.from(map['preferences'] ?? {}),
     );
-  }
-
-  // ADD: Firestore conversion methods
-  factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return UserModel(
-      uid: doc.id,
-      name: data['name'] ?? '',
-      email: data['email'] ?? '',
-      phoneNumber: data['phoneNumber'],
-      profileImageUrl: data['profileImageUrl'],
-      createdAt: _parseDate(data['createdAt']) ?? DateTime.now(),
-      lastLoginAt: _parseDate(data['lastLoginAt']),
-      isEmailVerified: data['isEmailVerified'] ?? false,
-      isPhoneVerified: data['isPhoneVerified'] ?? false,
-      subscription: UserSubscription.fromMap(data['subscription'] ?? {}),
-      preferences: Map<String, dynamic>.from(data['preferences'] ?? {}),
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'uid': uid,
-      'name': name,
-      'email': email,
-      'phoneNumber': phoneNumber,
-      'profileImageUrl': profileImageUrl,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'lastLoginAt':
-          lastLoginAt != null ? Timestamp.fromDate(lastLoginAt!) : null,
-      'isEmailVerified': isEmailVerified,
-      'isPhoneVerified': isPhoneVerified,
-      'subscription': subscription.toFirestore(),
-      'preferences': preferences,
-    };
   }
 
   Map<String, dynamic> toMap() {
@@ -132,8 +95,15 @@ class UserModel {
   static DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
 
-    if (value is Timestamp) {
-      return value.toDate();
+    // A Firestore-style timestamp that reached a cached map as plain data.
+    if (value is Map) {
+      final seconds = value['seconds'] ?? value['_seconds'];
+      final nanoseconds = value['nanoseconds'] ?? value['_nanoseconds'] ?? 0;
+      if (seconds is int) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          seconds * 1000 + ((nanoseconds is int ? nanoseconds : 0) ~/ 1000000),
+        );
+      }
     }
 
     if (value is DateTime) {
@@ -210,15 +180,6 @@ class UserSubscription {
     return {
       'plan': plan,
       'expiresAt': expiresAt?.millisecondsSinceEpoch,
-      'isActive': isActive,
-      'features': features,
-    };
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'plan': plan,
-      'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
       'isActive': isActive,
       'features': features,
     };

@@ -76,10 +76,8 @@ flutter {
 dependencies {
     // Import the Firebase BoM (Bill of Materials) - Updated for 16KB compliance
     implementation platform('com.google.firebase:firebase-bom:34.4.0')
-    implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.android.gms:play-services-auth:21.2.0'  
-    implementation 'com.google.firebase:firebase-analytics'
 
     // Add multidex support for large apps
     implementation 'androidx.multidex:multidex:2.0.1'

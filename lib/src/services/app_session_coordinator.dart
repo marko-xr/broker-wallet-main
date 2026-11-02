@@ -21,6 +21,10 @@ class AppSessionCoordinator with WidgetsBindingObserver {
   final void Function() onSuperseded;
   final void Function()? onResumeWhileUnverified;
   static AppSessionCoordinator? _active;
+
+  /// The coordinator in use, or null when there is none (no Supabase app
+  /// session). Read-only; for code that must ask [validateNow].
+  static AppSessionCoordinator? get active => _active;
   StreamSubscription<List<Map<String, dynamic>>>? _watch;
   Future<bool>? _pending;
   String? _pendingId;

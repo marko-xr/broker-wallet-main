@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'list_refresh_signals.dart';
+import 'list_session_check.dart';
 
 /// Where each account's cache encryption key lives.
 abstract class AccountCacheKeyStore {
@@ -860,6 +861,27 @@ bool isRetryableListError(Object error) =>
 /// [onStatus], when given, is told what a signed-in account's screen is
 /// showing ([LocalListStatus]) each time that changes; it is internal and
 /// is not shown on screen.
+///
+/// Every answer — a list, empty or not, or a failure — belongs to the
+/// session its read was made under ([sessionOf], by default
+/// [ListSessionCheck.currentSession], taken as the read starts). It counts
+/// only while that is still the signed-in account's session: after a
+/// sign-out and a sign-in, even to the same account, a late answer is
+/// dropped unseen and unsaved and the list stops. A token refresh keeps the
+/// session.
+///
+/// An empty server list for a signed-in account is trusted only once
+/// [confirmEmptyList] (by default [ListSessionCheck.confirmFor], given the
+/// read's session) confirms that session is still the account's current
+/// one: the database answers a
+/// replaced session's reads with no rows, not with an error. Until then the
+/// screen keeps what it shows. Confirmed, the empty list is shown and saved
+/// as usual. Not confirmed, it is neither shown nor saved, the saved list and
+/// its time stay as they are, a [ListSessionNotCurrent] is passed on and the
+/// list stops (the check itself starts the usual sign-out). A check that
+/// fails on the network counts as a network failure. A newer list, a closed
+/// screen or another account makes the answer moot. A list with rows is
+/// never checked: the database let that read through.
 Stream<List<T>> localFirstList<T>({
   required Stream<List<T>> Function() server,
   required EncryptedAccountListCache<T> cache,
@@ -871,6 +893,8 @@ Stream<List<T>> localFirstList<T>({
   DateTime Function() now = DateTime.now,
   bool Function()? isAppActive,
   void Function(LocalListStatus status)? onStatus,
+  Future<bool>? Function(String? session)? confirmEmptyList,
+  String? Function()? sessionOf,
 }) {
   final appIsActive =
       isAppActive ?? () => ListRefreshSignals.instance.appIsActive;
@@ -893,8 +917,19 @@ Stream<List<T>> localFirstList<T>({
   var errorShown = false;
   var showing = LocalListSource.nothing;
   DateTime? shownServerReadAt;
+  var deliveries = 0; // server lists received; the newest one counts
+  var checking = false; // an empty list waits for its session check
+  var closeAfterCheck = false; // the source ended during that check
+  final confirmEmpty = confirmEmptyList ?? ListSessionCheck.confirmFor;
+  final sessionNow = sessionOf ?? ListSessionCheck.currentSession;
+  String? readSession; // the session the current read was made under
 
   bool stillTheAccount() => uid != null && currentUserId() == uid;
+
+  /// The account the list was opened for, under the session the current
+  /// read was made in. A sign-out and a sign-in to the same account is a new
+  /// session; a token refresh is not.
+  bool stillTheReader() => stillTheAccount() && sessionNow() == readSession;
 
   void report() {
     if (uid == null || cancelled || stopped) return;
@@ -927,6 +962,78 @@ Stream<List<T>> localFirstList<T>({
     });
   }
 
+  /// A server list for the signed-in account, trusted: shown and saved.
+  void accept(List<T> items) {
+    failed = false;
+    retries = 0;
+    final at = now();
+    lastSuccess = at;
+    errorShown = false;
+    final shown = cache.fingerprintOf(items);
+    if (shown != lastShown) {
+      lastShown = shown;
+      controller.add(items);
+    }
+    showing = LocalListSource.server;
+    shownServerReadAt = at.toUtc();
+    report();
+    // This list is a successful server read for the signed-in account:
+    // the one case in which an unreadable box may be recovered.
+    unawaited(cache.write(uid!, items,
+        mayRecover: stillTheReader, serverReadAt: at));
+  }
+
+  /// A failed read for the signed-in account: what is shown stays.
+  void fail(Object error, StackTrace stackTrace) {
+    failed = true;
+    report();
+    if (!errorShown) {
+      errorShown = true;
+      controller.addError(error, stackTrace);
+    }
+    if (isRetryableListError(error)) {
+      scheduleRetry();
+    } else {
+      stop();
+    }
+  }
+
+  void closeIfEnded() {
+    if (!closeAfterCheck || checking) return;
+    closeAfterCheck = false;
+    unawaited(controller.close());
+  }
+
+  /// Accepts the empty [items] once [check] confirms the session, unless a
+  /// newer list, a closed screen or another account has made it moot.
+  Future<void> acceptOnceConfirmed(
+    List<T> items,
+    int delivery,
+    Future<bool> check,
+  ) async {
+    Object? failure;
+    StackTrace? trace;
+    try {
+      if (!await check) failure = const ListSessionNotCurrent();
+    } catch (error, stackTrace) {
+      failure = error;
+      trace = stackTrace;
+    }
+    if (delivery != deliveries) return; // a newer list took over
+    checking = false;
+    inFlight = false;
+    if (!cancelled && !stopped) {
+      if (!stillTheReader()) {
+        stop(); // another account or session: the answer is not theirs
+      } else if (failure == null) {
+        accept(items);
+      } else {
+        fail(failure, trace ?? StackTrace.current);
+      }
+    }
+    closeIfEnded();
+  }
+
   void listenToServer() {
     if (cancelled) return;
     if (uid != null && !stillTheAccount()) {
@@ -936,6 +1043,7 @@ Stream<List<T>> localFirstList<T>({
     inFlight = true;
     answered = false;
     lastStart = now();
+    readSession = sessionNow();
     report();
     subscription = server().listen(
       (items) {
@@ -945,27 +1053,22 @@ Stream<List<T>> localFirstList<T>({
           controller.add(items);
           return;
         }
-        if (!stillTheAccount()) {
-          stop(); // a list read for the account that has gone
+        checking = false;
+        final delivery = ++deliveries;
+        if (!stillTheReader()) {
+          // A list read for an account, or a session, that has gone.
+          stop();
           return;
         }
-        failed = false;
-        retries = 0;
-        final at = now();
-        lastSuccess = at;
-        errorShown = false;
-        final shown = cache.fingerprintOf(items);
-        if (shown != lastShown) {
-          lastShown = shown;
-          controller.add(items);
+        final check = items.isEmpty ? confirmEmpty(readSession) : null;
+        if (check == null) {
+          accept(items);
+          return;
         }
-        showing = LocalListSource.server;
-        shownServerReadAt = at.toUtc();
-        report();
-        // This list is a successful server read for the signed-in account:
-        // the one case in which an unreadable box may be recovered.
-        unawaited(cache.write(uid!, items,
-            mayRecover: stillTheAccount, serverReadAt: at));
+        // Still refreshing until the database answers.
+        inFlight = true;
+        checking = true;
+        unawaited(acceptOnceConfirmed(items, delivery, check));
       },
       onError: (Object error, StackTrace stackTrace) {
         inFlight = false;
@@ -973,28 +1076,21 @@ Stream<List<T>> localFirstList<T>({
           controller.addError(error, stackTrace);
           return;
         }
-        if (!stillTheAccount()) {
-          stop();
+        if (!stillTheReader()) {
+          stop(); // a failure of a read for an account or session gone
           return;
         }
-        failed = true;
-        report();
-        if (!errorShown) {
-          errorShown = true;
-          controller.addError(error, stackTrace);
-        }
-        if (isRetryableListError(error)) {
-          scheduleRetry();
-        } else {
-          stop();
-        }
+        fail(error, stackTrace);
       },
       onDone: () {
-        inFlight = false;
+        if (!checking) inFlight = false;
         // As before: with no account, or once the source has answered and
-        // ended, the screen's list ends too. A signed-in list whose read
-        // failed stays open for the next read.
-        if (uid == null || answered) unawaited(controller.close());
+        // ended, the screen's list ends too — after a pending session check.
+        // A signed-in list whose read failed stays open for the next read.
+        if (uid == null || answered) {
+          closeAfterCheck = true;
+          closeIfEnded();
+        }
       },
     );
   }

@@ -21,7 +21,8 @@ class OfficesListViewModel extends ChangeNotifier
   OfficesListViewModel({OfficeService? officeService})
       : _officeService = officeService ?? OfficeService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_officeService.getUserOffices());
+    // This account's saved copy shows first, so the list is there offline.
+    listenToEntities(_officeService.watchUserOfficesLocalFirst());
   }
 
   @override

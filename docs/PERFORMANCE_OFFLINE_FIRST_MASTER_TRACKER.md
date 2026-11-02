@@ -6,7 +6,7 @@
 **الفرع المستهدف:** `perf/phase-1-startup-baseline` — أبلغ Claude بأنه تحقق منه من checkout الحي في 2026-10-31 15:42 +04؛ **دليل مقدم من المالك، ولم نتحقق منه مباشرة من Git هنا**. ZIP لا يحتوي `.git`.  
 **المرحلة النشطة:** `P1 — Startup & Initial Screen Performance`؛ `P1.0` مراجعة مصدر فقط؛ `P1.1-a` **PAUSED BY PROCESS / NOT RUN** بعد تشديد التعليمات، وليس بسبب فشل تقني مثبت. `P1.1-b` **NOT APPROVED**. لا بناء ولا تثبيت ولا benchmark مثبت بهذه النسخة.  
 **حالة المشروع:** PRE-PUBLIC-RELEASE؛ الأداء وOffline-First لا يغلقان بنود إطلاق المتاجر #8–#52.
-**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7P (آخر تحديث 2026-11-02، P2.3).
+**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7Q (آخر تحديث 2026-11-02، P2.4a).
 
 ---
 
@@ -96,7 +96,7 @@
 | ID | المرحلة | حالة 2026-10-31 | شروط الإغلاق المختصرة |
 |---|---|---|---|
 | `P1` | Startup & Initial Screen | `IN PROGRESS — P1.0 source review only; P1.1 not run` | baseline حقيقي؛ أسباب مثبتة؛ تغييرات محدودة؛ before/after؛ regression؛ real-device gate. |
-| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، غير مدمج (§7P) | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
+| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، commit `10f2f15` (§7P)؛ P2.4a (Offices offline، مشفّر) CODE_PROVEN، غير مدمج (§7Q)؛ التالي: P2.4b Brokers ← P2.4c Watchmen ← P2.5 موثوقية/استعادة الكاش | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
 | `P3` | Supabase Queries & N+1 | `NOT STARTED` | عدّ الطلبات/latency؛ إصلاح ناتج عن قياس؛ RLS بلا تغيير؛ فروقات مثبتة. |
 | `P4` | Pagination & Large Lists | `NOT STARTED` | قوائم كبيرة حقيقية، scrolling/memory/data transfer، مع صحة البحث والترتيب. |
 | `P5` | Real-Device Performance Validation | `NOT STARTED` | Android+iOS بما يتيسر، cold/warm/reconnect, animations, memory, التقرير النهائي. |
@@ -959,6 +959,11 @@
 | D-19 | P2.3 | B يفتح Owners بلا شبكة بعد استخدام A للجهاز | لا تظهر Owners الخاصة بـ A أبداً | PENDING |
 | D-20 | P2.3 | بطاقات Owners ووسائطها بلا شبكة | الوسائط فقط من كاش الوسائط على الجهاز إن وُجدت؛ لا روابط R2 جديدة؛ لا تعطّل | PENDING |
 | D-21 | P2.3 | حذف حساب اختبار | يُزال `cached_owners_<uid>` ومفتاحه فقط | PENDING |
+| D-22 | P2.4a (§7Q) | فتح Offices بشبكة، ثم إغلاق الشبكة وإعادة فتح Offices في الجلسة نفسها | قائمة Offices المحفوظة تظهر بدل خطأ التحميل | PENDING |
+| D-23 | P2.4a | B يفتح Offices بلا شبكة بعد استخدام A للجهاز | لا تظهر Offices الخاصة بـ A أبداً | PENDING |
+| D-24 | P2.4a | حذف آخر Office على الخادم ثم إعادة الفتح offline | القائمة فارغة | PENDING |
+| D-25 | P2.4a | حذف حساب اختبار | يُزال `cached_offices_<uid>` ومفتاحه فقط | PENDING |
+| D-26 | P2.1–P2.4a | جلسة واحدة: Requests وOffers وOwners وOffices بشبكة ثم بلا شبكة، ثم إعادة تشغيل التطبيق داخل جلسة معتمدة | كل قائمة تُظهر نسخة حسابها؛ لا تداخل بين القوائم أو الحسابات | PENDING |
 
 ---
 
@@ -1053,6 +1058,40 @@
   3. `test/responsive/r5c_owners_responsive_test.dart` — «Owner list keeps items on failed refresh and shows local deletion presentation».
 - **دليل أن (2) و(3) قائمان قبل P2.3:** بعد وضع نسخ HEAD (`df1c45c`) للملفات الثلاثة المعدّلة (`owner_service.dart`، `list_owners_viewmodel.dart`، `deleted_account_local_data_cleaner.dart`) عبر `git show HEAD:<file> > <file>` — والملفات الجديدة غير مستخدمة من كود HEAD — فشل الاختباران نفسهما (`+50 -2`)؛ ثم أُعيدت نسخ P2.3 وتحقق `cmp` من تطابقها بايت-بايت. وقبل ذلك فشل (2) أيضاً مع إرجاع سطر الـ view model وحده.
 - **نقطة متابعة مركّزة — FU-OWNERS-R5C (OPEN، غير مُشخَّصة):** تشخيص سبب فشل اختبارَي `r5c_owners_responsive_test` (2) و(3) على `df1c45c`، وتحديد هل هو خلل في الواجهة أو في الاختبار، وإصلاحه في نقطة منفصلة بموافقة المالك. لا تُعدّل في P2.3. لم يُحدَّد بعدُ الـ commit الذي بدأ فيه الفشل.
+
+---
+
+## 7Q) P2.4a — قراءة Offices من نسخة محلية مشفّرة — 2026-11-02 (CODE_PROVEN، غير مدمج)
+
+**قرار المالك (استمرارية):** خارطة Performance + Offline-First الأصلية سارية؛ نحن نُكمل P2 (Smart Local Caching)، **ولا يُدّعى أن Offline-First الكامل منجز.** التسلسل: P2.4a Offices ← P2.4b Brokers ← P2.4c Watchmen ← P2.5 موثوقية الكاش واستعادته ← P3/P4 أداء ← فحص جهاز مجمّع ← معمارية كتابة/مزامنة offline كاملة بموافقة منفصلة.
+
+**Git قبل البدء:** `perf/phase-1-startup-baseline` @ `10f2f15` (دفعه المالك)، شجرة نظيفة، مطابق لـ `origin` بعد fetch (0/0)، stashes = 2.
+
+**التدقيق:** `OfficesListViewModel` ← `OfficeService.getUserOffices()` ← `getOffices()` = `_refreshedStream(_fetchOffices)`: استعلام واحد بلا صفحات، `order created_at desc`، يُسلَّم كاملاً أو يفشل. **لا وسائط للـ Offices أصلاً.** الملكية = `owner_id` في `userId` (**nullable** في `OfficeModel`)؛ `createdAt`/`updatedAt` nullable أيضاً. `OfficeService` كان بلا constructor.
+
+**التغيير:**
+- جديد `lib/src/services/offices_local_cache.dart`: غلاف رفيع على `EncryptedAccountListCache` — `cached_offices_<uid>`، مفتاح منفصل `offices_cache_key_v1_<uid>`، `offices_v1`. يحفظ حقول القائمة فقط (اسم المكتب، المدير، رمز الدولة، الهاتف، الموقع، الملاحظات، موقع/إحداثيات/عنوان الاستلام، التواريخ nullable). **سجل بلا حساب (`userId == null`) لا يُحفظ أبداً.**
+- `OfficeService`: constructor بمعاملين اختياريين (`localCache`، `currentUserId`؛ الافتراضي هوية `RepositoryProvider.authRepository.currentUserId`) + `watchUserOfficesLocalFirst()` عبر `localFirstList`. **`getUserOffices()` بلا تغيير** (Home filters/counts).
+- `OfficesListViewModel`: سطر واحد → `watchUserOfficesLocalFirst()`.
+- `DeletedAccountLocalDataCleaner`: خطوة `const OfficesLocalCache().forgetAccount(deletedUid)`.
+- **بلا تغيير:** النواة المشتركة، صيغ/أسماء Requests وOffers وOwners، backend، Auth/Single Active Device، الواجهة.
+
+**الأدلة (شغّلها الوكيل؛ تصريح دائم §7L):**
+- **جديد `test/lists/offices_local_first_test.dart` — 21/21 PASS:** offline يُبقي النسخة ولا يمسحها؛ بلا نسخة → خطأ التحميل كما كان؛ قائمة الخادم تحل محلها، **والفارغة تُحفظ فارغة**؛ فشل بعد قائمة يُبقيها؛ عزل الحسابات؛ **سجلات حساب آخر أو بلا حساب لا تُحفظ** (فُحص النص المخزَّن بعد فك التشفير)؛ لا حفظ بعد تغيّر الحساب؛ لا عرض إن تغيّر الحساب أثناء القراءة؛ بلا حساب لا قراءة/حفظ؛ إغلاق الشاشة أثناء القراءة لا يطلب الخادم؛ قراءة تنتهي بعد إغلاق الشاشة لا تحفظ؛ الحقول تُسترجع حرفياً بعد إعادة التشغيل (lat=null، **تواريخ null**، عربي)؛ نسخة تالفة = لا شيء؛ مشفّر على القرص (لا مدير/هاتف/ملاحظة/موقع/معرّف حساب بنص واضح)، مفتاح 32 بايت في secure storage فقط، لا شيء في SharedPreferences؛ **المفاتيح والصناديق الأربعة منفصلة** وكتابة Offices لا تُنشئ مفاتيح غيره؛ **كاش Owners الموجود لا يتأثر** بكتابة/قراءة Offices (مفتاحه ومحتواه كما هما)؛ مخزن آمن غير متاح/مفتاح مفقود/مفتاح آخر/تلف → fail-closed والملف لم يتغير بايت-بايت؛ حذف الحساب يزيل صندوق ومفتاح Offices له فقط.
+- **فحص الطفرات (2/2 التُقطت؛ أُعيدت الملفات بايت-بايت):** الشاشة على `getUserOffices()` → فشل 3 اختبارات offline؛ حذف حقل من الترميز → فشل 3 اختبارات (الاسترجاع الحرفي وغيره).
+- **مجموعات مرتبطة:** `test/lists/` (تشمل كاشات Requests 27 وOffers 21 وOwners 22 وentity list VMs)، `r5d_offices_responsive`، `r5c_owners_responsive` (للتأكد من FU فقط)، `test/home/`، `delete_account_test`، `canonical_identity_test`، `supabase_secure_storage_test` → **539 PASS، 4 FAIL، كلها قائمة قبل P2.4a:**
+  1. التاريخي: `delete_account_test` — `Deletion job migration and hosted validation script (setUpAll)`.
+  2. و3. FU-OWNERS-R5C: «Owner swipe confirmation stays usable without deleting» و«Owner list keeps items on failed refresh and shows local deletion presentation» — لم تتغير.
+  4. **جديد في السجل:** `r5d_offices_responsive_test` — «Office swipe cancel dialog 280.0x600.0 ar light 2.0x inset=EdgeInsets.zero keyboard=0.0» — `Bad state: No element` (النمط نفسه لفشل Owners swipe). **أُثبت أنه قائم في `10f2f15`:** بوضع نسخ HEAD للملفات الثلاثة المعدّلة (`git show HEAD:<file> > <file>`) فشل الاختبار نفسه (`+40 -1`)؛ ثم أُعيدت نسخ P2.4a وتحقق `cmp` من تطابقها بايت-بايت. يُضاف إلى **FU-OWNERS-R5C** (يُرجَّح سبب مشترك في اختبارات/واجهة السحب Dismissible عند 280×600 عربي 2×؛ غير مُشخَّص).
+- **Analyzer** (5 ملفات) → No issues. **Format** (5 ملفات) → 0 تغييرات. **`git diff --check`** → نظيف. كل الملفات CRLF.
+
+**offline الآن (داخل جلسة اعتمدها الخادم):** قوائم Requests وOffers وOwners وOffices + صور البطاقات المحفوظة في كاش الوسائط. **online فقط:** cold start (Retry)، التفاصيل، روابط الوسائط الجديدة والفيديو، Plan، Home filters والأعداد الحية، البحث، Favorites، Related Items، **Brokers وWatchmen**، كل الكتابات (لا outbox).
+
+**الحدود:** النسخة = آخر قائمة أعادها الخادم وليست بالضرورة كل سجلات الحساب (`max_rows`، §7O). لا مؤشر «نسخة محفوظة». لا إعادة محاولة تلقائية. فقدان المفتاح → معطّل حتى الحذف (P2.5).
+
+**الملفات (غير مدمجة):** جديد `lib/src/services/offices_local_cache.dart`، `test/lists/offices_local_first_test.dart`؛ معدّل `lib/src/services/ScreenServices/office_service.dart`، `lib/src/viewmodels/ListScreens/list_offices_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، وهذا الملف.
+
+**الحالة:** P2.4a = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-22..D-26 **DEFERRED BY OWNER**. **FU-OWNERS-R5C: OPEN** (3 اختبارات swipe: Owners ×2 + Offices ×1). **STOP** — لا commit/push/merge/deploy؛ لا Brokers/Watchmen.
 
 ---
 

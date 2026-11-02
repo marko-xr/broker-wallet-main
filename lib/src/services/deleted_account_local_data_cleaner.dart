@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport, OfflineMediaService;
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/services/offers_local_cache.dart';
+import 'package:broker_wallet/src/services/offices_local_cache.dart';
 import 'package:broker_wallet/src/services/owners_local_cache.dart';
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
@@ -113,6 +114,7 @@ class DeletedAccountLocalDataCleaner {
     await _step(() => const RequestsLocalCache().forgetAccount(deletedUid));
     await _step(() => const OffersLocalCache().forgetAccount(deletedUid));
     await _step(() => const OwnersLocalCache().forgetAccount(deletedUid));
+    await _step(() => const OfficesLocalCache().forgetAccount(deletedUid));
     await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 
     // Queued uploads first, so none keeps sending a deleted account's file.

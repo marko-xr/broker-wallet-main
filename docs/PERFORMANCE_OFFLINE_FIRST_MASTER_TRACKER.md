@@ -6,7 +6,7 @@
 **الفرع المستهدف:** `perf/phase-1-startup-baseline` — أبلغ Claude بأنه تحقق منه من checkout الحي في 2026-10-31 15:42 +04؛ **دليل مقدم من المالك، ولم نتحقق منه مباشرة من Git هنا**. ZIP لا يحتوي `.git`.  
 **المرحلة النشطة:** `P1 — Startup & Initial Screen Performance`؛ `P1.0` مراجعة مصدر فقط؛ `P1.1-a` **PAUSED BY PROCESS / NOT RUN** بعد تشديد التعليمات، وليس بسبب فشل تقني مثبت. `P1.1-b` **NOT APPROVED**. لا بناء ولا تثبيت ولا benchmark مثبت بهذه النسخة.  
 **حالة المشروع:** PRE-PUBLIC-RELEASE؛ الأداء وOffline-First لا يغلقان بنود إطلاق المتاجر #8–#52.
-**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7N (آخر تحديث 2026-11-01، P2.1).
+**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7O (آخر تحديث 2026-11-02، P2.2).
 
 ---
 
@@ -96,7 +96,7 @@
 | ID | المرحلة | حالة 2026-10-31 | شروط الإغلاق المختصرة |
 |---|---|---|---|
 | `P1` | Startup & Initial Screen | `IN PROGRESS — P1.0 source review only; P1.1 not run` | baseline حقيقي؛ أسباب مثبتة؛ تغييرات محدودة؛ before/after؛ regression؛ real-device gate. |
-| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (قراءة Requests offline) CODE_PROVEN، غير مدمج (§7M) | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
+| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، غير مدمج (§7O) | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
 | `P3` | Supabase Queries & N+1 | `NOT STARTED` | عدّ الطلبات/latency؛ إصلاح ناتج عن قياس؛ RLS بلا تغيير؛ فروقات مثبتة. |
 | `P4` | Pagination & Large Lists | `NOT STARTED` | قوائم كبيرة حقيقية، scrolling/memory/data transfer، مع صحة البحث والترتيب. |
 | `P5` | Real-Device Performance Validation | `NOT STARTED` | Android+iOS بما يتيسر، cold/warm/reconnect, animations, memory, التقرير النهائي. |
@@ -950,6 +950,62 @@
 | D-10 | P2.1 | إنشاء/تعديل/حذف Request بشبكة ثم إعادة فتح القائمة offline | تظهر آخر قائمة من الخادم | PENDING |
 | D-11 | P2.1 | حذف حساب اختبار | يُزال صندوق `cached_requests_<uid>` الخاص به ومفتاحه من secure storage | PENDING |
 | D-12 | P2.1 (§7M-1) | إعادة تشغيل الهاتف/التطبيق ثم فتح Requests بلا شبكة داخل جلسة معتمدة | النسخة المشفّرة تُقرأ بالمفتاح المحفوظ (Keystore متاح بعد أول فتح قفل) | PENDING |
+| D-13 | P2.2 (§7O) | فتح Offers بشبكة، ثم إغلاق الشبكة وإعادة فتح Offers في الجلسة نفسها | قائمة Offers المحفوظة تظهر (مع الفلاتر والفرز كما هي) بدل خطأ التحميل | PENDING |
+| D-14 | P2.2 | بطاقات Offers بلا شبكة | الصور تظهر فقط إن كانت محفوظة مسبقاً في كاش الوسائط على الجهاز؛ لا روابط R2 جديدة؛ لا تعطّل | PENDING |
+| D-15 | P2.2 | B يفتح Offers بلا شبكة بعد استخدام A للجهاز | لا تظهر Offers الخاصة بـ A أبداً | PENDING |
+| D-16 | P2.2 | حذف آخر Offer على الخادم ثم إعادة الفتح offline | القائمة فارغة (الخادم قال «لا شيء» فحُفظ فارغاً) | PENDING |
+| D-17 | P2.2 | حذف حساب اختبار | يُزال `cached_offers_<uid>` ومفتاحه، وتبقى نسخ الحسابات الأخرى | PENDING |
+
+---
+
+## 7O) P2.2 — قراءة Offers من نسخة محلية مشفّرة — 2026-11-02 (CODE_PROVEN، غير مدمج)
+
+**تصريح المالك:** «Implement P2.2: Encrypted Offers Offline Reading» — إعادة استخدام تصميم P2.1، بلا حزم، بلا كتابة offline، بلا تغيير وسائط/Plan/Share/backend، وبلا commit قبل موافقة.
+
+**Git قبل البدء:** `perf/phase-1-startup-baseline` @ `0579b5b`، شجرة نظيفة، مطابق لـ `origin` بعد fetch (0/0).
+
+### التدقيق
+
+- **مسار Offers:** `OffersListViewModel` ← `OfferService.getUserOffers()` ← `SupabaseCoreEntitiesService.getOffers()` = `_refreshedStream(_fetchOffers)` — نفس دورة Requests: قراءة كاملة، إعادة قراءة بعد كل تعديل، فشل القراءة الأولى يُغلق الـ stream.
+- **الاكتمال (البند 10):** `_fetchOffers` استعلام واحد بلا `range`/`limit`/صفحات؛ تُسلَّم كل قراءة دفعةً واحدة أو تفشل كلها — لا تسليم جزئي. **حدّ معروف:** حدّ `max_rows` في PostgREST على مستوى المشروع (الافتراضي 1000) يقطع النتيجة بصمت؛ هذا يحدّ القائمة المعروضة نفسها اليوم، والنسخة لا تحفظ إلا ما عرضته الشاشة — لا تراجع عن السلوك الحالي. غير مُتحقَّق من قيمة `max_rows` على المشروع المستضاف (قراءة فقط لاحقاً إن لزم).
+- **الوسائط:** صفوف قائمة Offers لا تحمل وسائط أصلاً (`_offerFromRow`: `mediaUrl: null`، `mediaUrls: []`، `mediaObjectIds` فارغ). البطاقات تصل للوسائط عبر `cachedOfferMedia` (كاش الوسائط على الجهاز) و`resolveOfferMedia` (روابط موقّعة عبر الـ Worker بعد التحقق). إذن النسخة لا تحتاج ولا تحفظ أي وسائط.
+
+### التغيير
+
+- **جديد `lib/src/services/encrypted_account_list_cache.dart`:** نواة P2.1 المُثبتة نُقلت كما هي إلى صنف عام `EncryptedAccountListCache<T>` (صندوق Hive مشفّر AES-256 لكل حساب، مفتاح لكل حساب في `flutter_secure_storage`، fail-closed بالكامل، عمليات متسلسلة لكل صندوق، `guardedOpen` الضيق من §7M-2، `forgetAccount`)، و`AccountCacheKeyStore`/`SecureAccountCacheKeyStore(prefix)`، والدالة `localFirstList<T>()` (منطق `watchUserRequestsLocalFirst` نفسه). **لا حذف أو إعادة توليد تلقائي لصندوق غير قابل للفك** (يبقى لـ P2.5).
+- **`requests_local_cache.dart`:** أصبح غلافاً رفيعاً بالأسماء نفسها تماماً (`cached_requests_<uid>`، `requests_cache_key_v1_<uid>`، `requests_v1`، الصيغة نفسها) — لا ترحيل ولا تغيير بيانات. `RequestsCacheKeyStore` = typedef. `RequestService.watchUserRequestsLocalFirst` يستدعي `localFirstList`.
+- **جديد `lib/src/services/offers_local_cache.dart`:** `cached_offers_<uid>`، مفتاح منفصل `offers_cache_key_v1_<uid>`، `offers_v1`. يحفظ حقول القائمة فقط (منها المناطق بالترتيب، الإحداثيات double/null، العنوان، status عبر `toFirestoreString`، التواريخ UTC ISO). **لا `mediaUrl` ولا `mediaUrls` ولا `mediaObjectIds` ولا روابط موقّعة ولا بايتات وسائط**؛ القراءة تعيدها فارغة كما قراءة الخادم للقائمة.
+- **`OfferService`:** معاملان اختياريان (`localCache`، `currentUserId`؛ الافتراضي هوية `RepositoryProvider.authRepository.currentUserId` القانونية، أو null) + `watchUserOffersLocalFirst()`. **`getUserOffers()` بلا تغيير** (Home filters، Search، Favorites، Related Items تبقى على الخادم مباشرة).
+- **`OffersListViewModel`:** سطر واحد → `watchUserOffersLocalFirst()`. الفرز (ترتيب الخادم `created_at desc` محفوظ كما هو في النسخة) والفلاتر والحذف بلا تغيير.
+- **`DeletedAccountLocalDataCleaner`:** خطوة `const OffersLocalCache().forgetAccount(deletedUid)` (صندوق + مفتاح، للحساب المحذوف فقط).
+- **بلا تغيير:** رفع الوسائط، تشغيل الفيديو، Plan، Share، Supabase/RLS/migrations، Worker/R2، Auth/Single Active Device، الواجهة.
+
+### الأدلة (شغّلها الوكيل؛ تصريح دائم §7L)
+
+- **جديد `test/lists/offers_local_first_test.dart` — 21/21 PASS:** offline مع نسخة تبقى ولا تُمسح؛ بلا نسخة → خطأ التحميل كما كان؛ قائمة الخادم تحل محل النسخة وتُحفظ، **والقائمة الفارغة تُحفظ فارغة**؛ فشل بعد قائمة يُبقيها؛ عزل الحسابات؛ Offers حساب آخر لا تُحفظ (فُحص النص المخزَّن نفسه بعد فك التشفير)؛ لا حفظ بعد تغيّر الحساب؛ لا عرض إن تغيّر الحساب أثناء القراءة؛ بلا حساب لا قراءة/حفظ؛ إغلاق الشاشة أثناء القراءة لا يطلب الخادم؛ كل الحقول تُسترجع حرفياً (lat=null، long سالب صغير، عربي، أسطر)؛ **لا رابط موقّع ولا media id ولا مفاتيح وسائط في النص المخزَّن**؛ مشفّر على القرص (لا هاتف/ملاحظة/عنوان/منطقة/معرّف حساب بنص واضح)، المفتاح 32 بايت في secure storage فقط، لا شيء في SharedPreferences، ويُقرأ بعد إعادة التشغيل؛ مفتاح Offers ≠ مفتاح Requests؛ مخزن آمن غير متاح → لا قراءة/كتابة/صندوق بلا تشفير؛ مفتاح مفقود/مفتاح آخر/صندوق تالف → لا قراءة، الملف لم يتغير بايت-بايت، لا مفتاح جديد؛ كتابتان أوليتان متزامنتان → مفتاح واحد؛ حذف الحساب يزيل صندوق ومفتاح Offers له فقط.
+- **`requests_local_first_test.dart` — 27/27 PASS** بعد نقل النواة (يثبت أن P2.1 لم يتغير سلوكه)؛ اختبار «الصفوف الأجنبية لا تُحفظ» شُدّد ليفحص النص المخزَّن نفسه.
+- **فحص الطفرات (3/3 التُقطت بعد التشديد؛ الملفات أُعيدت بايت-بايت):** (1) الشاشة على `getUserOffers()` → فشل 3 اختبارات offline؛ (2) حفظ `mediaUrl`/`mediaUrls` → فشل «لا وسائط»؛ (3) إزالة فلتر المالك عند الحفظ → **نجا أولاً** (فلتر القراءة أخفاه) → شُدّد الاختباران (Offers وRequests) لفحص النص المخزَّن → فشلا كما يجب.
+- **مجموعات مرتبطة:** `test/lists/`، `test/offers/`، `test/plan_attachment/`، `r5a_requests`، `r5b_offers`، `r2_search_favorites`، `test/home/`، `delete_account_test`، `test/favorites/`، `canonical_identity_test`، `supabase_secure_storage_test` → **1037 PASS، 1 FAIL** — الفشل التاريخي نفسه فقط (`Deletion job migration and hosted validation script (setUpAll)`؛ ملف أُعيدت تسميته في `0d7fb17`)، لم يُصلَح.
+- **Analyzer** (10 ملفات) → No issues. **Format:** الملفات الجديدة/المعدّلة نظيفة؛ في `offer_service.dart` انحراف تنسيق سابق موجود في HEAD (`removeMediaUrls`) لم يُلمس. **`git diff --check`:** نظيف. كل الملفات CRLF.
+
+### ما يعمل offline وما يبقى online فقط
+
+- **offline (داخل جلسة اعتمدها الخادم):** قائمة Requests وقائمة Offers (آخر نسخة من الخادم لهذا الحساب، مع الفلاتر والفرز)، وصور البطاقات المحفوظة مسبقاً في كاش الوسائط.
+- **online فقط:** cold start (Retry بلا شبكة كما هو)، تفاصيل Offer/Request، روابط الوسائط الجديدة والفيديو، Home filters وأعداد Home الحية (الأعداد لها كاش R-02)، البحث، Favorites من الخادم، Related Items، كل الكتابات (لا كتابة offline ولا طابور مزامنة)، Owners/Offices/Brokers/Watchmen.
+
+### الحدود
+
+- **حدّ النتائج والاكتمال (مسجّل بطلب المالك):** النسخة المحلية لـ Requests وOffers = **آخر قائمة أعادها الخادم للشاشة، وليست بالضرورة كل سجلات الحساب.** قراءة القائمة استعلام واحد بلا صفحات، لكن حدّ `max_rows` في PostgREST على مستوى مشروع Supabase (الافتراضي 1000؛ القيمة المستضافة **غير مُتحقَّق منها**) يقطع النتيجة دون إشارة. إن تجاوز حساب هذا الحد فالشاشة اليوم تعرض أول N سجل (الأحدث بـ `created_at desc`)، والنسخة تحفظ الـ N نفسها فقط. لا يُدّعى أن النسخة كاملة؛ لا تراجع عن السلوك الحالي. المعالجة (صفحات أو فحص `count` مقابل طول القائمة قبل الحفظ) خارج P2.2 — مرشّح لـ P3/P4.
+- لا مؤشر «نسخة محفوظة» على الشاشة (تغيير واجهة). لا إعادة محاولة تلقائية عند عودة الشبكة بعد فشل أول قراءة. فقدان المفتاح → نسخة الحساب معطّلة حتى حذفه (§7M-3، P2.5). AES-CBC + CRC كما في Hive، بلا MAC.
+
+### الملفات (غير مدمجة)
+
+- جديد: `lib/src/services/encrypted_account_list_cache.dart`، `lib/src/services/offers_local_cache.dart`، `test/lists/offers_local_first_test.dart`
+- معدّل: `lib/src/services/requests_local_cache.dart`، `lib/src/services/ScreenServices/request_service.dart`، `lib/src/services/ScreenServices/offer_service.dart`، `lib/src/viewmodels/ListScreens/list_offers_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، `test/lists/requests_local_first_test.dart`، وهذا الملف.
+
+**الحالة:** P2.2 = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-13..D-17 **DEFERRED BY OWNER**. **STOP** — لا commit/push/merge/deploy؛ لا P2.3.
+
+**توافق Requests مع `0579b5b` (فُحص قبل الـ commit):** بادئة الصندوق `cached_requests_`، بادئة المفتاح `requests_cache_key_v1_`، مفتاح القائمة `requests_v1`، الحقول الـ 19 وترميزها/فكّها، خيارات secure storage، `HiveAesCipher`، `crashRecovery: false`، ترميز المفتاح base64 وفحص 32 بايت — كلها مطابقة. لا ترحيل بيانات. يُودَع P2.2 في commit واحد بموافقة المالك (`feat(offline): add encrypted account-scoped Offers cache`).
 
 ---
 

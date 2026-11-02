@@ -7,6 +7,7 @@ import 'package:broker_wallet/src/services/offer_media_upload_queue.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport, OfflineMediaService;
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
+import 'package:broker_wallet/src/services/offers_local_cache.dart';
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
@@ -109,6 +110,7 @@ class DeletedAccountLocalDataCleaner {
       () => Hive.deleteBoxFromDisk(FavoriteService.boxNameForUid(deletedUid)),
     );
     await _step(() => const RequestsLocalCache().forgetAccount(deletedUid));
+    await _step(() => const OffersLocalCache().forgetAccount(deletedUid));
     await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 
     // Queued uploads first, so none keeps sending a deleted account's file.

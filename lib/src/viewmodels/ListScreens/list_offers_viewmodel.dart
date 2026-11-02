@@ -54,7 +54,8 @@ class OffersListViewModel extends ChangeNotifier
   OffersListViewModel({OfferService? offerService})
       : _offerService = offerService ?? OfferService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_offerService.getUserOffers());
+    // This account's saved copy shows first, so the list is there offline.
+    listenToEntities(_offerService.watchUserOffersLocalFirst());
   }
 
   @override

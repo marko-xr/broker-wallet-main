@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
+import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport;
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
@@ -249,6 +250,12 @@ void main() {
 
     test('rows owned by another account are never saved', () async {
       await cache.write(_alice, [_request('a1', _alice), _request('b1', _bob)]);
+      // The stored list itself (decrypted; the box is open with its key),
+      // not only what a read lets through.
+      final stored = Hive.box<String>(RequestsLocalCache.boxNameForUid(_alice))
+          .get('requests_v1')!;
+      expect(stored.contains(_bob), isFalse);
+      expect(stored.contains('b1'), isFalse);
       expect(_ids((await cache.read(_alice))!), ['a1']);
     });
 
@@ -524,7 +531,7 @@ void main() {
 
     Future<Object?> failureOf(Future<Object?> Function() open) async {
       try {
-        await RequestsLocalCache.guardedOpen(open);
+        await EncryptedAccountListCache.guardedOpen(open);
         return null;
       } catch (error) {
         return error;
@@ -576,7 +583,7 @@ void main() {
     test('an error after a successful open still reaches the app', () async {
       final later = StateError('later failure');
       final reached = await reachingTheApp(() async {
-        final value = await RequestsLocalCache.guardedOpen(() async {
+        final value = await EncryptedAccountListCache.guardedOpen(() async {
           unawaited(Future<void>.delayed(
               const Duration(milliseconds: 10), () => throw later));
           return 42;

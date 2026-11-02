@@ -6,9 +6,12 @@ import 'package:uuid/uuid.dart';
 
 import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
+import '../../repositories/repository_provider.dart';
+import '../encrypted_account_list_cache.dart';
 import '../offer_media_cache_identity.dart';
 import '../offer_media_policy.dart';
 import '../offer_media_upload_queue.dart';
+import '../offers_local_cache.dart';
 import '../offline_media_service.dart';
 import '../r2_offer_media_upload_service.dart';
 import '../supabase_core_entities_service.dart';
@@ -45,11 +48,30 @@ class OfferService {
     R2OfferMediaUploadService Function()? offerMediaUpload,
     OfferMediaUploadQueue Function()? uploadQueue,
     SupabaseCoreEntitiesService Function()? coreEntities,
+    OffersLocalCache localCache = const OffersLocalCache(),
+    String? Function()? currentUserId,
   })  : _offerMediaUploadFactory =
             offerMediaUpload ?? R2OfferMediaUploadService.new,
         _uploadQueueFactory =
             uploadQueue ?? (() => OfferMediaUploadQueue.instance),
-        _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new;
+        _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new,
+        _localCache = localCache,
+        _currentUserIdOverride = currentUserId;
+
+  final OffersLocalCache _localCache;
+  final String? Function()? _currentUserIdOverride;
+
+  /// The canonical signed-in account, or null when there is none (or no
+  /// auth repository yet).
+  String? _currentUserId() {
+    final override = _currentUserIdOverride;
+    if (override != null) return override();
+    try {
+      return RepositoryProvider.instance.authRepository.currentUserId;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // Created on first use, then reused: the Offer media form and gallery read
   // the signed-in account on every rebuild while an upload reports progress.
@@ -203,6 +225,17 @@ class OfferService {
   Stream<List<OfferModel>> getUserOffers() {
     return _supabase.getOffers();
   }
+
+  /// The Offers list for the Offers screen: this account's encrypted saved
+  /// copy at once (when there is one), then the server's list, which replaces
+  /// it and is saved for next time. A server failure is passed on as before;
+  /// a screen that already shows the saved copy keeps it. Media is not part
+  /// of the copy.
+  Stream<List<OfferModel>> watchUserOffersLocalFirst() => localFirstList(
+        server: getUserOffers,
+        cache: _localCache,
+        currentUserId: _currentUserId,
+      );
 
   Future<void> deleteOffer(String offerId) async {
     await _supabase.deleteOffer(offerId);

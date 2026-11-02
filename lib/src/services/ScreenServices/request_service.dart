@@ -1,7 +1,6 @@
-import 'dart:async';
-
 import '../../data/models/ScreensModel/request_model.dart';
 import '../../repositories/repository_provider.dart';
+import '../encrypted_account_list_cache.dart';
 import '../requests_local_cache.dart';
 import '../supabase_core_entities_service.dart';
 
@@ -48,48 +47,11 @@ class RequestService {
   /// The saved copy is only ever this account's own. A server failure is
   /// passed on as before; a screen that already shows the saved copy keeps
   /// it. Nothing is saved for an account that is no longer signed in.
-  Stream<List<RequestModel>> watchUserRequestsLocalFirst() {
-    late final StreamController<List<RequestModel>> controller;
-    StreamSubscription<List<RequestModel>>? server;
-    var cancelled = false;
-
-    void listenToServer(String? uid) {
-      if (cancelled) return;
-      server = getUserRequests().listen(
-        (requests) {
-          controller.add(requests);
-          if (uid != null && _currentUserId() == uid) {
-            unawaited(_localCache.write(uid, requests));
-          }
-        },
-        onError: controller.addError,
-        onDone: controller.close,
+  Stream<List<RequestModel>> watchUserRequestsLocalFirst() => localFirstList(
+        server: getUserRequests,
+        cache: _localCache,
+        currentUserId: _currentUserId,
       );
-    }
-
-    Future<void> showSavedThenListen(String uid) async {
-      final saved = await _localCache.read(uid);
-      if (cancelled) return;
-      if (saved != null && _currentUserId() == uid) controller.add(saved);
-      listenToServer(uid);
-    }
-
-    controller = StreamController<List<RequestModel>>(
-      onListen: () {
-        final uid = _currentUserId();
-        if (uid == null) {
-          listenToServer(null);
-        } else {
-          unawaited(showSavedThenListen(uid));
-        }
-      },
-      onCancel: () {
-        cancelled = true;
-        return server?.cancel();
-      },
-    );
-    return controller.stream;
-  }
 
   Future<void> deleteRequest(String requestId) async {
     await _supabase.deleteRequest(requestId);

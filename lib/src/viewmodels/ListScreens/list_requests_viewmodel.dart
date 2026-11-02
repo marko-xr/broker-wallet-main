@@ -51,7 +51,8 @@ class RequestedListViewModel extends ChangeNotifier
   RequestedListViewModel({RequestService? requestService})
       : _requestService = requestService ?? RequestService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_requestService.getUserRequests());
+    // This account's saved copy shows first, so the list is there offline.
+    listenToEntities(_requestService.watchUserRequestsLocalFirst());
   }
 
   @override

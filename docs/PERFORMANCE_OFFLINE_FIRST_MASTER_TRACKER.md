@@ -6,7 +6,7 @@
 **الفرع المستهدف:** `perf/phase-1-startup-baseline` — أبلغ Claude بأنه تحقق منه من checkout الحي في 2026-10-31 15:42 +04؛ **دليل مقدم من المالك، ولم نتحقق منه مباشرة من Git هنا**. ZIP لا يحتوي `.git`.  
 **المرحلة النشطة:** `P1 — Startup & Initial Screen Performance`؛ `P1.0` مراجعة مصدر فقط؛ `P1.1-a` **PAUSED BY PROCESS / NOT RUN** بعد تشديد التعليمات، وليس بسبب فشل تقني مثبت. `P1.1-b` **NOT APPROVED**. لا بناء ولا تثبيت ولا benchmark مثبت بهذه النسخة.  
 **حالة المشروع:** PRE-PUBLIC-RELEASE؛ الأداء وOffline-First لا يغلقان بنود إطلاق المتاجر #8–#52.
-**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7K (آخر تحديث 2026-11-01 01:30 +04).
+**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7N (آخر تحديث 2026-11-01، P2.1).
 
 ---
 
@@ -96,7 +96,7 @@
 | ID | المرحلة | حالة 2026-10-31 | شروط الإغلاق المختصرة |
 |---|---|---|---|
 | `P1` | Startup & Initial Screen | `IN PROGRESS — P1.0 source review only; P1.1 not run` | baseline حقيقي؛ أسباب مثبتة؛ تغييرات محدودة؛ before/after؛ regression؛ real-device gate. |
-| `P2` | Smart Local Caching & Background Refresh | `NOT STARTED` | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
+| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (قراءة Requests offline) CODE_PROVEN، غير مدمج (§7M) | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
 | `P3` | Supabase Queries & N+1 | `NOT STARTED` | عدّ الطلبات/latency؛ إصلاح ناتج عن قياس؛ RLS بلا تغيير؛ فروقات مثبتة. |
 | `P4` | Pagination & Large Lists | `NOT STARTED` | قوائم كبيرة حقيقية، scrolling/memory/data transfer، مع صحة البحث والترتيب. |
 | `P5` | Real-Device Performance Validation | `NOT STARTED` | Android+iOS بما يتيسر، cold/warm/reconnect, animations, memory, التقرير النهائي. |
@@ -214,7 +214,7 @@
 | ID | الخطر | الاحتمال/الأثر | ضبطه | الحالة |
 |---|---|---|---|---|
 | R-01 | تأخير فحص Recovery/Delete/Single Session لأجل السرعة | مرتفع الأثر | تتبع الاعتمادات؛ لا تأجيل دون اختبار سلبي | OPEN |
-| R-02 | كاش حساب يظهر لحساب آخر — تقرير P1.0 يشير تحديداً إلى مفاتيح Home CountCache العامة وعدم مسحها عند logout | مرتفع الأثر/خصوصية | Namespace + lifecycle + اختبار حسابين؛ فصل الإصلاح في قرار أمني معتمد، وليس تجاوز خطة P1 | FIXED IN SOURCE — 13 اختباراً تمر، غير مدمج، الجهاز معلّق (§7K). كان: OPEN — SOURCE FINDING, UNTESTED ON DEVICE |
+| R-02 | كاش حساب يظهر لحساب آخر — تقرير P1.0 يشير تحديداً إلى مفاتيح Home CountCache العامة وعدم مسحها عند logout | مرتفع الأثر/خصوصية | Namespace + lifecycle + اختبار حسابين؛ فصل الإصلاح في قرار أمني معتمد، وليس تجاوز خطة P1 | **CODE_PROVEN** — commit `8f1ba82`؛ فحص الجهاز **DEFERRED BY OWNER** (§7L، §7N). كان: FIXED IN SOURCE (§7K)؛ وقبله: OPEN — SOURCE FINDING, UNTESTED ON DEVICE |
 | R-03 | فقدان أو تكرار عملية offline | مرتفع الأثر | durable outbox, idempotency, transactional backend | FUTURE |
 | R-04 | تغييرات التنسيق تولّد diff ضخم | متوسط | ملفات جديدة فقط؛ لا format شامل | OPEN |
 | R-05 | تغييرات Flutter generated registrants | متوسط | سجل واكشف diff قبل/بعد، لا تمسح يدوياً | OPEN |
@@ -807,6 +807,149 @@
 - **الحكم:** **PASS — جاهز لمراجعة المالك والـ commit.** لا commit/push/merge/deploy/تثبيت.
 - **COMMITTED (بموافقة المالك):** `8f1ba82 fix(home): isolate cached counts by account and clean up deleted-account cache` على `perf/phase-1-startup-baseline` — 5 ملفات فقط (الملفات الثلاثة في `lib/` واختباران)؛ `git diff --check` نظيف. (أُنشئ أولاً باسم `e767c7b` برسالة أخرى، ثم أُعيدت صياغة الرسالة فقط محلياً بطلب المالك؛ المحتوى نفسه.) الـ Tracker في commit توثيقي منفصل بعده. **لا push/merge/deploy.** **فحص R-02 على الجهاز الحقيقي ما زال معلّقاً (NOT VERIFIED_REAL_DEVICE).**
 - **مراجعة الـ Tracker قبل إيداعه (2026-11-01):** لا مفاتيح أو tokens أو JWT أو بريد أو أسماء حسابات. العناوين (Supabase host، `media-api.brokerwallet.ae`) موجودة أصلاً في `lib/src/config/`؛ الرقم التسلسلي للهاتف واسم مستخدم Windows موجودان أصلاً في ملفات مودعة (`docs/CURRENT_CHECKPOINT.md`)؛ بصمة الشهادة وقيم SHA-256 للـ APK عامة.
+
+---
+
+## 7L) قرار المالك — تأجيل فحص Samsung وبدء Phase 2 — 2026-11-01
+
+- **لا فحص على Samsung بعد كل إصلاح صغير.** فحص جهاز واحد مجمّع بعد إنجاز نصف أعمال الأداء/Offline-First على الأقل. لا بناء ولا تثبيت ولا إلغاء تثبيت ولا تشغيل على Samsung خلال نقاط التطوير القادمة إلا بطلب صريح من المالك.
+- **الاختبارات الآلية لا تُؤجَّل:** اختبارات Flutter مركّزة (unit/widget/regression) + analyzer محصور + `git diff --check` بعد كل تغيير كود.
+- **R-02:** **CODE_PROVEN** (commit `8f1ba82`، 14 اختباراً + اختبارات الحذف). التحقق على الجهاز **DEFERRED BY OWNER** — **ليس** VERIFIED_REAL_DEVICE ولا «مقبولاً على الجهاز».
+- السيناريوهات المؤجلة تُجمع في §7N بدل طلب الفحص كل مرة.
+- يبقى بلا تغيير: Auth، Single Active Device، Supabase، Cloudflare R2، بقايا Firebase، Billing، Quotas، الواجهة، وكل الوظائف المعتمدة. commits `8f1ba82` و`7fc706a` محفوظان.
+- **ملاحظة تاريخ Git (VERIFIED من reflog):** الـ commit الأصلي `e767c7b` كان قد وصل إلى `origin` قبل إعادة صياغة رسالته محلياً إلى `8f1ba82` (الوكيل لم يتحقق من الـ remote قبل الـ amend — خطأ إجرائي). في 01:52 دمج `git pull` من خارج الجلسة (نمط GitHub Desktop) الخطّين في `546cbc4`، والفرع الآن مطابق لـ `origin` (0/0). **شجرة `546cbc4` مطابقة تماماً لـ `7fc706a`** — لا تغيير محتوى، لكن تغيير R-02 يظهر مرتين في التاريخ (`e767c7b` و`8f1ba82`). لم يُعَد كتابة التاريخ (يتطلب force-push). القاعدة من الآن: لا amend لأي commit قبل إثبات أنه غير موجود على الـ remote.
+
+---
+
+## 7M) P2.1 — قراءة Requests من التخزين المحلي عند انقطاع الشبكة — 2026-11-01 02:00 +04 (CODE_PROVEN، غير مدمج)
+
+### التدقيق (قراءة المصدر)
+
+- **مسار قائمة Requests:** `RequestsListView` ← `RequestedListViewModel` (يُنشأ عند فتح الشاشة فقط) ← `RequestService.getUserRequests()` ← `SupabaseCoreEntitiesService._refreshedStream(_fetchRequests)`: قراءة واحدة ثم إعادة قراءة بعد كل تعديل؛ **فشل القراءة الأولى يُغلق الـ stream بخطأ**. `EntityListState` يُبقي آخر قائمة عند فشل تحديث لاحق، لكن بلا قائمة سابقة يظهر «Unable to load requests». **لا يوجد أي حفظ محلي لـ Requests.**
+- **`OfflineDataService`:** صناديق `saved_items_offline`/`user_data_offline` لا يقرؤها أي كود (فقط `initialize` و`clearUserCache` من منظّف الحذف) — كود ميت عملياً، لم يُستخدم ولم يُعدَّل.
+- **النمط الموجود للعزل:** Favorites — صندوق Hive لكل حساب `cached_favorites_<uid>`، ومنظّف الحذف يحذفه بالاسم عبر `Hive.deleteBoxFromDisk` (يعمل سواء كان الصندوق مفتوحاً أم لا؛ تجنّباً لفخ «المنظّف يتخطى الصناديق غير المفتوحة»).
+- **بوابة الجلسة:** `AppSessionCoordinator._authorize` لا يعتمد الجلسة إلا بعد `is_current_app_session`/`claim_current_app_session` من الخادم؛ فشل الشبكة يرمي خطأً → لا Home عند cold start بلا شبكة (Retry). **إذن أي نسخة محلية لـ Requests لا تُعرض إلا داخل جلسة اعتمدها الخادم في هذه العملية.** الإزاحة (`supersede`) والخروج يبقيان كما هما.
+
+### التغيير (أصغر تغيير آمن)
+
+- **جديد `lib/src/services/requests_local_cache.dart`:** صندوق Hive لكل حساب `cached_requests_<Supabase user id>`، مفتاح واحد `requests_v1` (JSON). القراءة والكتابة تُسقطان أي صف `userId` فيه ≠ الحساب. أي فشل قراءة/تلف → «لا شيء محفوظ» (سجل debug بفئة ثابتة بلا بيانات). صيغة كاملة الحقول وقابلة للاسترجاع حرفياً (status عبر `toFirestoreString`/`fromString`، التواريخ UTC ISO).
+- **`RequestService`:** معامِلان اختياريان (`localCache`، `currentUserId` للاختبار؛ الافتراضي `RepositoryProvider.instance.authRepository.currentUserId` = هوية Supabase القانونية، وعند عدم توفرها null). دالة جديدة `watchUserRequestsLocalFirst()`: تعرض نسخة الحساب المحفوظة أولاً (إن وُجدت وكان الحساب نفسه ما زال مسجّلاً)، ثم قائمة الخادم تحلّ محلها وتُحفظ — **فقط** إن كان الحساب نفسه ما زال مسجّلاً. خطأ الخادم يُمرَّر كما كان؛ الشاشة التي تعرض النسخة المحفوظة تُبقيها. بلا حساب → سلوك الخادم القديم بالضبط. إغلاق الشاشة أثناء قراءة النسخة لا يبدأ طلب خادم. **`getUserRequests()` بلا تغيير** (Home filters والأعداد ما زالت تقرأ من الخادم مباشرة).
+- **`RequestedListViewModel`:** سطر واحد — يستمع إلى `watchUserRequestsLocalFirst()` بدل `getUserRequests()`.
+- **`DeletedAccountLocalDataCleaner`:** خطوة واحدة — `Hive.deleteBoxFromDisk(RequestsLocalCache.boxNameForUid(deletedUid))` بجانب صندوق Favorites (للحساب المحذوف دائماً، مسجّلاً كان أم لا).
+- **بلا:** حزم جديدة، كتابة offline، طابور مزامنة، تغيير واجهة، Supabase/RLS/schema/migrations، Auth/Single Active Device/Recovery، Cloudflare.
+
+### أدلة الاختبار (شغّلها الوكيل؛ تصريح دائم من المالك §7L)
+
+- **جديد `test/lists/requests_local_first_test.dart` — 13/13 PASS** (Hive حقيقي في مجلد مؤقت): offline مع نسخة محفوظة تبقى ظاهرة ولا تُمسح؛ بلا نسخة → خطأ التحميل كما كان؛ قائمة الخادم تحل محل النسخة وتُحفظ (بما فيها القائمة الفارغة)؛ حساب لا يرى نسخة حساب آخر؛ صفوف حساب آخر لا تُكتب ولا تُقرأ؛ لا حفظ بعد تغيّر الحساب؛ لا عرض للنسخة إن تغيّر الحساب أثناء قراءتها؛ بلا حساب لا قراءة ولا حفظ؛ كل الحقول تُسترجع حرفياً (عربي، أسطر، null، status غير افتراضي)؛ نسخة تالفة = لا شيء؛ إغلاق الشاشة أثناء القراءة لا يبدأ طلب خادم؛ حذف الحساب يزيل صندوقه فقط.
+- **فحص الطفرة:** (1) إعادة الشاشة إلى `getUserRequests()` → فشل اختبارَي القراءة offline والحفظ؛ (2) إزالة شرط «الحساب نفسه ما زال مسجّلاً» قبل الحفظ → فشل «لا حفظ بعد تغيّر الحساب». أُعيد الملفان.
+- **مجموعات مرتبطة:** `test/lists/` + `r5a_requests_responsive_test` + `test/home/` + `delete_account_test` + `test/favorites/` + `canonical_identity_test` → **478 PASS، 1 FAIL** — الفشل التاريخي نفسه (`Deletion job migration and hosted validation script (setUpAll)`؛ ملف migration أُعيدت تسميته في `0d7fb17`) — لم يُصلَح.
+- **Analyzer** على 6 ملفات → No issues. **Format:** نظيف (نُسّق ملف الاختبار الجديد؛ سطر المنظّف لُفّ يدوياً). **`git diff --check`:** نظيف. كل الملفات CRLF.
+
+### الملفات
+
+- `?? lib/src/services/requests_local_cache.dart` (111 سطراً)
+- `M lib/src/services/ScreenServices/request_service.dart` (+75)
+- `M lib/src/viewmodels/ListScreens/list_requests_viewmodel.dart` (+2/−1)
+- `M lib/src/services/deleted_account_local_data_cleaner.dart` (+5)
+- `?? test/lists/requests_local_first_test.dart`
+- **غير مدمج.** لا commit/push/merge/deploy/تثبيت.
+
+### المخاطر والحدود
+
+- **لا مؤشر «بيانات محفوظة/غير محدثة» على الشاشة** — إضافته تغيير واجهة يحتاج موافقة المالك (backlog). القائمة المحفوظة تظهر كما هي.
+- بعد فشل القراءة الأولى يُغلق stream الخادم (سلوك موجود)، فلا تحديث تلقائي حتى إعادة فتح الشاشة؛ لا إعادة محاولة عند عودة الشبكة بعد (P2 لاحقاً).
+- ~~النسخة غير مشفّرة في تخزين التطبيق الخاص~~ — **عولج في §7M-1: الصندوق مشفّر AES-256 بمفتاح لكل حساب في secure storage.**
+- تبقى النسخة على الجهاز بعد logout (معزولة، لا تُعرض إلا للحساب نفسه بعد أن يعتمد الخادم جلسته)، كـ Favorites وR-02. تُحذف عند حذف الحساب.
+- فتح Requests لأول مرة لحساب بلا صندوق يُنشئ صندوقاً فارغاً (بضعة ms قرص قبل طلب الخادم).
+- الكيانات الأخرى (Offers، Owners، Offices، Brokers، Watchmen) لم تُلمس.
+
+### الحالة و NOW / NEXT / STOP
+
+- **P2.1:** CODE_PROVEN / READY FOR OWNER REVIEW / DEVICE **DEFERRED BY OWNER** (§7N). (محدَّث في §7M-1 بعد التشفير.)
+- **NOW:** المالك يراجع الـ diff.
+- **NEXT (موافقة منفصلة):** commit لـ P2.1؛ ثم اختيار خطوة P2 التالية (مثلاً إعادة محاولة القراءة عند عودة الشبكة، أو تعميم النمط على كيان آخر).
+- **STOP:** لا كتابة offline/مزامنة؛ لا كيانات أخرى؛ لا تغيير واجهة؛ لا Samsung.
+
+### 7M-1) تقوية أمان P2.1 — تشفير نسخة Requests المحلية — 2026-11-02 (CODE_PROVEN، غير مدمج)
+
+**تصريح المالك:** «P2.1 Final Security Hardening and Commit Readiness» — حماية النسخة المحلية (أرقام هواتف العملاء والملاحظات) دون حزمة جديدة، ودون مفاتيح ثابتة أو في SharedPreferences، مع fail-closed.
+
+**Git قبل البدء:** `perf/phase-1-startup-baseline` @ `546cbc4` (merge محفوظ)، مطابق لـ `origin` (0/0)؛ العمل غير المدمج نفسه فقط. لا rebase/amend/reset/force-push.
+
+**نتائج التدقيق الأمني:**
+- المشروع يحفظ جلسة Supabase أصلاً في `flutter_secure_storage` 10.3.1 (`SupabaseSecureStorage`: `AndroidOptions()`، iOS `first_unlock`). Hive 2.2.3 فيه AES مدمج (`HiveAesCipher`، `Hive.generateSecureKey()`). **لا حاجة لحزمة جديدة.** لا يوجد صندوق Hive مشفّر آخر في المشروع.
+- **عيب في Hive 2.2.3 (مُثبت):** عند فشل فتح صندوق (مفتاح آخر/تلف مع `crashRecovery: false`) يرمي `_openBox` الخطأ للمستدعي **ويُكمل completer داخلياً بالخطأ نفسه دون مستمع** → خطأ async غير معالج في التطبيق (في الاختبارات علّق التشغيل حتى المهلة)، ويغلق الصندوق دون انتظار (قفل ملف مؤقت على Windows). عولج داخل الكاش بفتح الصندوق في `runZonedGuarded` خاص.
+- **بوابة الجلسة:** لا يوجد في `AppSessionCoordinator` استعلام عام «هل الجلسة معتمدة»، وإضافته تعديل لكود Single Active Device (خارج النطاق). الضمان يبقى كما تحقق في §7M: شاشة Requests لا تُفتح إلا داخل جلسة اعتمدها الخادم في هذه العملية؛ cold start بلا شبكة يبقى Retry.
+
+**التغيير:**
+- `lib/src/services/requests_local_cache.dart` (أُعيدت كتابته):
+  - `RequestsCacheKeyStore` (واجهة) + `SecureRequestsCacheKeyStore`: مفتاح 256-bit عشوائي **لكل حساب** في `flutter_secure_storage` تحت `requests_cache_key_v1_<uid>` (base64)، بخيارات جلسة Supabase نفسها. مفتاح طوله ≠ 32 بايت = غير متاح.
+  - الصندوق `cached_requests_<uid>` يُفتح بـ `HiveAesCipher(key)` و`crashRecovery: false` (صندوق لا يُفكّ لا «يُصلَح» بالقصّ).
+  - **القراءة لا تُنشئ مفتاحاً أبداً.** بلا مفتاح → «لا شيء محفوظ».
+  - **الكتابة:** مفتاح موجود → كتابة مشفّرة. بلا مفتاح وبلا صندوق → مفتاح جديد يُكتب ثم يُقرأ للتحقق قبل أي كتابة. **بلا مفتاح والصندوق موجود → لا كتابة ولا مفتاح جديد** (لا استبدال صامت). أي فشل في المخزن الآمن → لا قراءة ولا كتابة. **لا كتابة بلا تشفير في أي مسار.**
+  - عمليات كل حساب تُنفَّذ واحدة تلو الأخرى (لا مفتاحان لصندوق واحد عند كتابتين أوليتين متزامنتين).
+  - `forgetAccount(uid)`: يحذف الصندوق من القرص **و**المفتاح من المخزن الآمن (كلٌّ مستقل؛ حذف المفتاح وحده يجعل البيانات غير قابلة للقراءة).
+  - السجلات: `[RequestsCache] <فعل> (<نوع الخطأ>)` فقط — بلا معرّفات أو بيانات.
+- `DeletedAccountLocalDataCleaner`: خطوة Requests أصبحت `const RequestsLocalCache().forgetAccount(deletedUid)` (صندوق + مفتاح، للحساب المحذوف دائماً).
+- `RequestService` و`RequestedListViewModel`: بلا تغيير عن §7M (سلوك الواجهة نفسه؛ لا عناصر جديدة).
+- **Logout:** الصندوق والمفتاح يبقيان (مشفّران، معزولان، لا يُعرضان إلا للحساب نفسه بعد اعتماد الخادم). **حذف الحساب:** يُزالان.
+
+**التحقق (شغّله الوكيل؛ تصريح دائم §7L):**
+- `test/lists/requests_local_first_test.dart` — **21/21 PASS** (13 سابقة، اختبار «damaged» عُدّل ليفسد صندوقاً مشفّراً، و8 جديدة): الملف على القرص لا يحوي رقم الهاتف أو الملاحظة أو المنطقة أو معرّف الحساب بنص واضح؛ لا شيء في SharedPreferences؛ المفتاح 32 بايت في المخزن الآمن؛ إعادة التشغيل (إغلاق الصندوق) تقرأ بالمفتاح المحفوظ؛ مفتاح لكل حساب؛ مخزن آمن غير متاح → لا قراءة ولا كتابة ولا صندوق بلا تشفير، والشاشة تعرض خطأ التحميل كما قبل؛ مفتاح مفقود لصندوق موجود → لا قراءة، والملف لم يتغير بايت-بايت، ولا مفتاح جديد؛ مفتاح آخر → لا قراءة، الملف والمفتاح لم يتغيرا؛ صندوق تالف → لا شيء، الملف لم يتغير؛ كتابتان أوليتان متزامنتان → مفتاح واحد وقابل للقراءة بعد إعادة التشغيل؛ logout → لا عرض، عودة الحساب نفسه → عرض؛ حذف الحساب يزيل الصندوق والمفتاح فقط. + اختبارات §7M السابقة (offline يُبقي القائمة المحفوظة بدل الخطأ، العزل، النتائج المتأخرة). مستقر في 3 تشغيلات متتالية.
+- **فحص الطفرات (4/4 التُقطت؛ الملف أُعيد بايت-بايت):** (1) السماح بالكتابة لصندوق بلا مفتاح → فشل «مفتاح مفقود»؛ (2) إزالة التشفير → فشل «مشفّر على القرص» و«مفتاح آخر»؛ (3) إزالة `runZonedGuarded` → خطأ Hive غير معالج علّق التشغيل وفشل الاختبارات اللاحقة؛ (4) إزالة التسلسل → فشل «كتابتان متزامنتان».
+- **مجموعات مرتبطة:** `test/lists/` + `r5a_requests_responsive_test` + `test/home/` + `delete_account_test` + `test/favorites/` + `canonical_identity_test` + `supabase_secure_storage_test` → **490 PASS، 1 FAIL** — الفشل التاريخي نفسه (`Deletion job migration and hosted validation script (setUpAll)`، ملف أُعيدت تسميته في `0d7fb17`)، لم يُصلَح.
+- **Analyzer** على 5 ملفات → No issues. **Format** → 0 تغييرات. **`git diff --check`** → نظيف. كل الملفات CRLF.
+
+**الحدود المتبقية:**
+- **فقدان المفتاح** (مثلاً استعادة نسخة احتياطية لملفات التطبيق دون Keystore، أو مسح بيانات Keystore) يجعل نسخة ذلك الحساب معطّلة (لا قراءة/لا كتابة) إلى أن يُحذف الحساب — بقرار المالك «لا استبدال صامت». خيار لاحق يحتاج موافقة: حذف صريح للصندوق غير القابل للفك ثم بدء نسخة جديدة.
+- AES-CBC بمفتاح لكل حساب كما في Hive (CRC للإطارات، بلا MAC تشفيري). الحماية ضد قراءة الملف خارج التطبيق؛ لا تحمي من جهاز مخترق أثناء تشغيل التطبيق.
+- لا مؤشر «نسخة محفوظة» على الشاشة (تغيير واجهة يحتاج موافقة)؛ لا إعادة محاولة تلقائية عند عودة الشبكة.
+- `OfflineDataService` (ميت) وصناديق Hive الأخرى غير المشفّرة لم تُلمس (خارج النطاق).
+- Samsung: D-7..D-11 في §7N + D-12 أدناه — **DEFERRED BY OWNER**.
+
+**الملفات الجاهزة للـ commit:**
+- `lib/src/services/requests_local_cache.dart` (جديد)
+- `lib/src/services/ScreenServices/request_service.dart`
+- `lib/src/viewmodels/ListScreens/list_requests_viewmodel.dart`
+- `lib/src/services/deleted_account_local_data_cleaner.dart`
+- `test/lists/requests_local_first_test.dart` (جديد)
+- `docs/PERFORMANCE_OFFLINE_FIRST_MASTER_TRACKER.md`
+
+**الحالة:** P2.1 = CODE_PROVEN (مع التشفير) / READY FOR OWNER REVIEW / DEVICE DEFERRED BY OWNER. **STOP** — لا commit/push/merge/deploy؛ لا P2.2.
+
+### 7M-2) تصحيح نطاق معالج أخطاء Hive قبل الـ commit — 2026-11-02
+
+- **الخلل (وُجد في مراجعة ما قبل الـ commit؛ أُوقف الـ commit بطلب المالك):** معالج `runZonedGuarded` في §7M-1 كان يُكمل الفتح بأي خطأ غير معالج يصل أثناء الفتح، ويُسقط بصمت **كل** خطأ غير معالج يصل بعد اكتمال الفتح (نجاحاً أو فشلاً) — أوسع من «نسخة Hive المكررة من خطأ الفتح نفسه». لا تسريب بيانات ولا كتابة بلا تشفير، لكنه قد يخفي أعطال Hive حقيقية.
+- **التصحيح (`RequestsLocalCache.guardedOpen`، `@visibleForTesting`):** يُسقَط فقط كائن الخطأ **المطابق تماماً** (`identical`) للخطأ الذي رماه الفتح، ومرة واحدة فقط، أياً كان ترتيب وصولهما (الأخطاء التي تسبق النتيجة تُحتجز حتى تُعرف النتيجة). كل خطأ آخر — أثناء الفتح أو بعده، بعد نجاح أو فشل — يُمرَّر دون تغيير إلى الـ zone المستدعي (`handleUncaughtError`)، أي إلى معالجة الأخطاء العادية في التطبيق.
+- **اختبارات جديدة (6):** النسخة المكررة بعد الفشل تُسقَط؛ قبل الفشل تُسقَط؛ خطأ غير مرتبط أثناء فتح فاشل يصل للتطبيق؛ خطأ بعد فتح ناجح يصل للتطبيق؛ تُسقَط نسخة مكررة واحدة فقط؛ فتح حقيقي بمفتاح خاطئ يفشل مغلقاً ولا يصل أي خطأ للتطبيق. ولا تعليق (مهلة 30s لكل اختبار).
+- **فحص الطفرات (3/3 التُقطت؛ أُعيد الملف بايت-بايت):** (a) السلوك القديم الواسع → فشل «خطأ بعد فتح ناجح» و«نسخة واحدة فقط»؛ (b) عدم إسقاط النسخة المكررة أبداً → فشل 5 اختبارات؛ (c) إسقاط كل ما يسبق النتيجة → فشل «خطأ غير مرتبط أثناء الفتح».
+- **النتائج:** `requests_local_first_test.dart` **27/27 PASS** (3 تشغيلات متتالية). المجموعات المرتبطة (`test/lists/`، `r5a_requests_responsive_test`، `test/home/`، `delete_account_test`، `test/favorites/`، `canonical_identity_test`، `supabase_secure_storage_test`) → **496 PASS، 1 FAIL** — الفشل التاريخي نفسه فقط (`Deletion job migration and hosted validation script (setUpAll)`)، لا فشل جديد. Analyzer (5 ملفات) → No issues. Format → 0 تغييرات. `git diff --check` → نظيف. البيانات المشفّرة محفوظة (اختبارات الملف على القرص والمفتاح الخاطئ والتلف تمر).
+
+### 7M-3) لنقطة أمان Offline-First التالية (مسجّل، غير منفّذ)
+
+- **استعادة المفتاح المفقود / النسخ الاحتياطي:** إن فُقد مفتاح حساب (استعادة نسخة احتياطية لملفات التطبيق دون Keystore، مسح Keystore، تغيير قفل الشاشة على بعض الأجهزة) تبقى نسخة Requests لذلك الحساب معطّلة (لا قراءة/لا كتابة) حتى حذف الحساب. يحتاج قرار المالك: (1) حذف صريح للصندوق غير القابل للفك وبدء نسخة جديدة، و/أو (2) استبعاد صناديق `cached_requests_*` من Android Auto Backup (`android:fullBackupContent`/`dataExtractionRules`)، و(3) سياسة موحّدة لبقية صناديق Hive غير المشفّرة.
+- **P2.1 commit:** يُسجَّل في الرد بعد إنشائه (لا تعديل لاحق على commits).
+
+---
+
+## 7N) قائمة فحص Samsung المجمّعة — DEFERRED BY OWNER (تُحدَّث مع كل نقطة)
+
+تُنفَّذ في جلسة جهاز واحدة يطلبها المالك، بنسخة تحوي كل الـ commits المعنية. كل بند `PENDING` حتى نتيجة المالك.
+
+| # | المصدر | السيناريو | النتيجة المتوقعة | الحالة |
+|---|---|---|---|---|
+| D-1 | R-02 (`8f1ba82`) | أول تشغيل بعد التحديث بالحساب A | الأعداد 0 مرة واحدة ثم أعداد A بعد أول قراءة ناجحة | PENDING |
+| D-2 | R-02 | logout | Home يعرض 0 (ثم Welcome) | PENDING |
+| D-3 | R-02 | دخول حساب اختبار B | أعداد B فقط، لا أعداد A أبداً | PENDING |
+| D-4 | R-02 | عودة A | أعداد A فوراً من كاشه | PENDING |
+| D-5 | R-02 | A بلا شبكة بعد جلسة معتمدة | أعداد A المحفوظة | PENDING |
+| D-6 | R-02 (اختياري) | حذف حساب اختبار | تُحذف أعداده فقط | PENDING |
+| D-7 | P2.1 | فتح Requests بشبكة، ثم إغلاق الشبكة وإعادة فتح Requests في الجلسة نفسها | قائمة Requests المحفوظة تظهر بدل «Unable to load requests» | PENDING |
+| D-8 | P2.1 | B يفتح Requests بلا شبكة بعد استخدام A للجهاز | لا تظهر Requests الخاصة بـ A أبداً | PENDING |
+| D-9 | P2.1 | cold start بلا شبكة | Retry كما هو (لا Home ولا Requests محفوظة قبل اعتماد الخادم) | PENDING |
+| D-10 | P2.1 | إنشاء/تعديل/حذف Request بشبكة ثم إعادة فتح القائمة offline | تظهر آخر قائمة من الخادم | PENDING |
+| D-11 | P2.1 | حذف حساب اختبار | يُزال صندوق `cached_requests_<uid>` الخاص به ومفتاحه من secure storage | PENDING |
+| D-12 | P2.1 (§7M-1) | إعادة تشغيل الهاتف/التطبيق ثم فتح Requests بلا شبكة داخل جلسة معتمدة | النسخة المشفّرة تُقرأ بالمفتاح المحفوظ (Keystore متاح بعد أول فتح قفل) | PENDING |
 
 ---
 

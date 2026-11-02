@@ -1,8 +1,33 @@
+import 'dart:async';
+
 import '../../data/models/ScreensModel/request_model.dart';
+import '../../repositories/repository_provider.dart';
+import '../requests_local_cache.dart';
 import '../supabase_core_entities_service.dart';
 
 class RequestService {
+  RequestService({
+    RequestsLocalCache localCache = const RequestsLocalCache(),
+    String? Function()? currentUserId,
+  })  : _localCache = localCache,
+        _currentUserIdOverride = currentUserId;
+
+  final RequestsLocalCache _localCache;
+  final String? Function()? _currentUserIdOverride;
+
   SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+
+  /// The canonical signed-in account, or null when there is none (or no
+  /// auth repository yet).
+  String? _currentUserId() {
+    final override = _currentUserIdOverride;
+    if (override != null) return override();
+    try {
+      return RepositoryProvider.instance.authRepository.currentUserId;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<String?> saveRequest(RequestModel request) async {
     return _supabase.saveRequest(request);
@@ -14,6 +39,56 @@ class RequestService {
 
   Stream<List<RequestModel>> getUserRequests() {
     return _supabase.getRequests();
+  }
+
+  /// The Requests list for the Requests screen: this account's saved copy at
+  /// once (when there is one), then the server's list, which replaces it and
+  /// is saved for next time.
+  ///
+  /// The saved copy is only ever this account's own. A server failure is
+  /// passed on as before; a screen that already shows the saved copy keeps
+  /// it. Nothing is saved for an account that is no longer signed in.
+  Stream<List<RequestModel>> watchUserRequestsLocalFirst() {
+    late final StreamController<List<RequestModel>> controller;
+    StreamSubscription<List<RequestModel>>? server;
+    var cancelled = false;
+
+    void listenToServer(String? uid) {
+      if (cancelled) return;
+      server = getUserRequests().listen(
+        (requests) {
+          controller.add(requests);
+          if (uid != null && _currentUserId() == uid) {
+            unawaited(_localCache.write(uid, requests));
+          }
+        },
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+    }
+
+    Future<void> showSavedThenListen(String uid) async {
+      final saved = await _localCache.read(uid);
+      if (cancelled) return;
+      if (saved != null && _currentUserId() == uid) controller.add(saved);
+      listenToServer(uid);
+    }
+
+    controller = StreamController<List<RequestModel>>(
+      onListen: () {
+        final uid = _currentUserId();
+        if (uid == null) {
+          listenToServer(null);
+        } else {
+          unawaited(showSavedThenListen(uid));
+        }
+      },
+      onCancel: () {
+        cancelled = true;
+        return server?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   Future<void> deleteRequest(String requestId) async {

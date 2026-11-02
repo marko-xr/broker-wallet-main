@@ -57,6 +57,91 @@ class SecureAccountCacheKeyStore implements AccountCacheKeyStore {
   Future<void> delete(String uid) => _storage.delete(key: keyNameFor(uid));
 }
 
+/// Whether a list holds every record the account has on the server.
+///
+/// The six list reads ask for all of an account's rows with no count and no
+/// paging, and the server may cap how many rows one read returns, so a list
+/// is never known to be complete. A later version that can prove it would
+/// add a value here; until then every list is [unknown].
+enum ListCompleteness { unknown }
+
+/// What is known about a saved list. Local, indicative information only:
+/// it never grants access, and nothing decides what an account may see
+/// from it.
+@immutable
+class SavedListInfo {
+  const SavedListInfo({required this.authenticated, this.serverReadAt});
+
+  /// True for an authenticated (v2) list; false for an earlier untagged (v1)
+  /// list, which is shown only until the first server list replaces it.
+  final bool authenticated;
+
+  /// When the server last returned this exact list for this account, by this
+  /// device's clock (UTC). Null when that is not known: an earlier list, a
+  /// list saved before this was recorded, or a record that does not match
+  /// the list or fails its check.
+  final DateTime? serverReadAt;
+
+  ListCompleteness get completeness => ListCompleteness.unknown;
+
+  /// How long ago [serverReadAt] was at [now]; null when it is not known or
+  /// lies after [now] (the clock was set back), so no age is made up.
+  Duration? ageAt(DateTime now) {
+    final at = serverReadAt;
+    if (at == null) return null;
+    final age = now.toUtc().difference(at);
+    return age.isNegative ? null : age;
+  }
+}
+
+/// A saved list and what is known about it.
+@immutable
+class SavedList<T> {
+  const SavedList(this.items, this.info);
+  final List<T> items;
+  final SavedListInfo info;
+}
+
+/// What a signed-in account's list screen is showing.
+enum LocalListSource {
+  /// No list yet: no saved copy, and no server list so far.
+  nothing,
+
+  /// The copy saved on this device; the server has not answered since.
+  savedCopy,
+
+  /// A list the server returned during this screen's life. An empty one is
+  /// the server's authoritative answer, not a missing copy.
+  server,
+}
+
+/// Internal status of a signed-in account's list (see `localFirstList`).
+/// Not shown on screen; nothing decides access from it.
+@immutable
+class LocalListStatus {
+  const LocalListStatus({
+    required this.showing,
+    required this.refreshing,
+    required this.lastReadFailed,
+    this.lastServerReadAt,
+  });
+
+  final LocalListSource showing;
+
+  /// A server read is in flight.
+  final bool refreshing;
+
+  /// The last server read failed; whatever is shown stays as it was.
+  final bool lastReadFailed;
+
+  /// When the list shown came from the server, by this device's clock (UTC):
+  /// this screen's own last successful read, or the saved copy's
+  /// [SavedListInfo.serverReadAt]. Null when not known.
+  final DateTime? lastServerReadAt;
+
+  ListCompleteness get completeness => ListCompleteness.unknown;
+}
+
 /// The last list of one kind of record the server returned for an account,
 /// kept on this device so its screen can show it when the network is
 /// unavailable.
@@ -284,9 +369,79 @@ class EncryptedAccountListCache<T> {
   // from a server list reads back as authentic.
   // ---------------------------------------------------------------------
 
-  String get _v2Key => listKey.endsWith('_v1')
-      ? '${listKey.substring(0, listKey.length - 3)}_v2'
-      : '${listKey}_v2';
+  String get _baseKey => listKey.endsWith('_v1')
+      ? listKey.substring(0, listKey.length - 3)
+      : listKey;
+
+  String get _v2Key => '${_baseKey}_v2';
+
+  // ---------------------------------------------------------------------
+  // When the server last returned the saved list (sync record, v1)
+  //
+  // Stored beside the v2 list, in the same encrypted box, under [_syncKey]
+  // as {"v":1,"p":<record JSON>,"t":<HMAC-SHA256 tag>}. The tag uses the
+  // list's tag key with its own label, so a record and a list can never be
+  // taken for each other. The record names the tag of the exact v2 list it
+  // describes: once the list changes, an old record no longer matches it and
+  // the time is unknown, never carried over. Earlier versions ignore the
+  // key; a missing or invalid record only makes the time unknown and never
+  // affects whether the list is read.
+  // ---------------------------------------------------------------------
+
+  String get _syncKey => '${_baseKey}_sync_v1';
+
+  static const String _syncLabel = 'bw-offline-list-sync';
+
+  List<int> _syncTag(String uid, List<int> boxKey, String record) {
+    final input =
+        _tagged(uid, utf8.encode(record), label: _syncLabel, version: '1');
+    return Hmac(sha256, _macKey(boxKey)).convert(input).bytes;
+  }
+
+  String _sealSync(
+    String uid,
+    List<int> boxKey,
+    String listTag,
+    DateTime serverReadAt,
+  ) {
+    final record = json.encode({
+      'serverReadAt': serverReadAt.toUtc().toIso8601String(),
+      // Written for later versions; this one always reads it as unknown.
+      'completeness': 'unknown',
+      'list': listTag,
+    });
+    return json.encode({
+      'v': 1,
+      'p': record,
+      't': base64Url.encode(_syncTag(uid, boxKey, record)),
+    });
+  }
+
+  /// The time in [sealed] once its tag has matched and it names [listTag];
+  /// null otherwise.
+  DateTime? _syncedAt(
+      String uid, List<int> boxKey, Object? sealed, String listTag) {
+    if (sealed is! String) return null;
+    try {
+      final decoded = json.decode(sealed);
+      if (decoded is! Map || decoded.length != 3 || decoded['v'] != 1) {
+        return null;
+      }
+      final record = decoded['p'];
+      final tag = decoded['t'];
+      if (record is! String || tag is! String) return null;
+      if (!_sameTag(base64Url.decode(tag), _syncTag(uid, boxKey, record))) {
+        return null;
+      }
+      final fields = json.decode(record);
+      if (fields is! Map || fields['list'] != listTag) return null;
+      final at = fields['serverReadAt'];
+      final parsed = at is String ? DateTime.tryParse(at) : null;
+      return parsed != null && parsed.isUtc ? parsed : null;
+    } on FormatException {
+      return null;
+    }
+  }
 
   static final List<int> _macLabel =
       utf8.encode('broker_wallet/offline_lists/v2/mac');
@@ -298,7 +453,12 @@ class EncryptedAccountListCache<T> {
 
   /// Exactly what the tag covers. Every part is length-prefixed, so no two
   /// different inputs encode the same bytes.
-  List<int> _tagged(String uid, List<int> payload) {
+  List<int> _tagged(
+    String uid,
+    List<int> payload, {
+    String label = 'bw-offline-list',
+    String version = '2',
+  }) {
     final out = BytesBuilder(copy: false);
     void part(List<int> bytes) {
       out
@@ -306,8 +466,8 @@ class EncryptedAccountListCache<T> {
         ..add(bytes);
     }
 
-    part(utf8.encode('bw-offline-list'));
-    part(utf8.encode('2'));
+    part(utf8.encode(label));
+    part(utf8.encode(version));
     part(utf8.encode(listKey));
     part(utf8.encode(uid));
     part(payload);
@@ -327,7 +487,12 @@ class EncryptedAccountListCache<T> {
 
   /// The payload of [sealed] once its whole tag has matched, or null when it
   /// is missing, malformed, or does not match this account and list.
-  String? _verify(String uid, List<int> boxKey, Object? sealed) {
+  String? _verify(String uid, List<int> boxKey, Object? sealed) =>
+      _verified(uid, boxKey, sealed)?.payload;
+
+  /// As [_verify], with the matched tag in its canonical encoding.
+  ({String payload, String tag})? _verified(
+      String uid, List<int> boxKey, Object? sealed) {
     if (sealed is! String) return null;
     try {
       final decoded = json.decode(sealed);
@@ -337,8 +502,9 @@ class EncryptedAccountListCache<T> {
       final payload = decoded['p'];
       final tag = decoded['t'];
       if (payload is! String || tag is! String) return null;
-      return _sameTag(base64Url.decode(tag), _tag(uid, boxKey, payload))
-          ? payload
+      final expected = _tag(uid, boxKey, payload);
+      return _sameTag(base64Url.decode(tag), expected)
+          ? (payload: payload, tag: base64Url.encode(expected))
           : null;
     } on FormatException {
       return null;
@@ -374,15 +540,21 @@ class EncryptedAccountListCache<T> {
   }
 
   /// Saves [payload] as [uid]'s authenticated list and, only once it reads
-  /// back as authentic, removes the earlier untagged list from the box.
+  /// back as authentic, records [serverReadAt] for it (when given) and
+  /// removes the earlier untagged list from the box.
   Future<bool> _store(
     Box<String> box,
     String uid,
     List<int> boxKey,
     String payload,
+    DateTime? serverReadAt,
   ) async {
     await box.put(_v2Key, _seal(uid, boxKey, payload));
-    if (_verify(uid, boxKey, box.get(_v2Key)) != payload) return false;
+    final stored = _verified(uid, boxKey, box.get(_v2Key));
+    if (stored == null || stored.payload != payload) return false;
+    if (serverReadAt != null) {
+      await box.put(_syncKey, _sealSync(uid, boxKey, stored.tag, serverReadAt));
+    }
     if (box.containsKey(listKey)) {
       await box.delete(listKey);
       await box.compact();
@@ -396,7 +568,12 @@ class EncryptedAccountListCache<T> {
   /// An authenticated (v2) list is returned only after its tag matched; one
   /// that does not match reads as nothing — never as the earlier list. The
   /// earlier untagged list is read only while no v2 list exists.
-  Future<List<T>?> read(String uid) async {
+  Future<List<T>?> read(String uid) async => (await readSaved(uid))?.items;
+
+  /// As [read], with what is known about the list (see [SavedListInfo]).
+  /// Null means there is no saved list, or none that can be read safely —
+  /// never the same as a saved empty list.
+  Future<SavedList<T>?> readSaved(String uid) async {
     if (uid.isEmpty) return null;
     return _oneAtATime(boxNameOf(uid), () async {
       try {
@@ -407,15 +584,26 @@ class EncryptedAccountListCache<T> {
         final box = await _open(uid, key, dir);
         final sealed = box.get(_v2Key);
         if (sealed != null) {
-          final payload = _verify(uid, key, sealed);
-          if (payload == null) {
+          final stored = _verified(uid, key, sealed);
+          if (stored == null) {
             _log('integrity check failed', StateError('list not authentic'));
             return null;
           }
-          return _items(uid, payload);
+          final items = _items(uid, stored.payload);
+          if (items == null) return null;
+          final record = box.get(_syncKey);
+          final at = _syncedAt(uid, key, record, stored.tag);
+          if (record != null && at == null) {
+            _log('read time unknown', StateError('sync record not used'));
+          }
+          return SavedList(
+              items, SavedListInfo(authenticated: true, serverReadAt: at));
         }
         final earlier = box.get(listKey);
-        return earlier == null ? null : _items(uid, earlier);
+        final items = earlier == null ? null : _items(uid, earlier);
+        return items == null
+            ? null
+            : SavedList(items, const SavedListInfo(authenticated: false));
       } catch (error) {
         _log('read failed', error);
         return null;
@@ -432,10 +620,16 @@ class EncryptedAccountListCache<T> {
   /// signed-in account. Only then is the verified recovery run (see
   /// [_recover]). A key store or file error is never taken for an unreadable
   /// box.
+  ///
+  /// [serverReadAt] is given only for a list the server just returned for
+  /// [uid]; it is recorded with that exact list (see [SavedListInfo]). A
+  /// write without it leaves the list's time unknown unless the list is
+  /// unchanged.
   Future<void> write(
     String uid,
     List<T> items, {
     bool Function()? mayRecover,
+    DateTime? serverReadAt,
   }) async {
     if (uid.isEmpty) return;
     await _oneAtATime(boxNameOf(uid), () async {
@@ -448,7 +642,7 @@ class EncryptedAccountListCache<T> {
         var key = await _keys.read(uid);
         if (key == null) {
           if (await Hive.boxExists(boxNameOf(uid), path: dir)) {
-            await _recover(uid, dir, value, mayRecover, null);
+            await _recover(uid, dir, value, mayRecover, null, serverReadAt);
             return;
           }
           final created = Hive.generateSecureKey();
@@ -464,7 +658,7 @@ class EncryptedAccountListCache<T> {
         try {
           box = await _open(uid, key, dir);
         } on HiveError {
-          await _recover(uid, dir, value, mayRecover, key);
+          await _recover(uid, dir, value, mayRecover, key, serverReadAt);
           return;
         }
         // A list that fails its check is an integrity failure: it is
@@ -476,7 +670,7 @@ class EncryptedAccountListCache<T> {
           _log('write skipped', StateError('list not authentic'));
           return;
         }
-        if (!await _store(box, uid, key, value)) {
+        if (!await _store(box, uid, key, value, serverReadAt)) {
           _log('write not verified', StateError('list not authentic'));
         }
       } catch (error) {
@@ -502,6 +696,7 @@ class EncryptedAccountListCache<T> {
     String value,
     bool Function()? mayRecover,
     List<int>? observedKey,
+    DateTime? serverReadAt,
   ) async {
     if (mayRecover == null || !mayRecover()) {
       _log('write skipped', StateError('unreadable box, no verified list'));
@@ -517,7 +712,8 @@ class EncryptedAccountListCache<T> {
     if (keyNow != null) {
       try {
         // Readable after all: a passing problem, not an unreadable box.
-        await _store(await _open(uid, keyNow, dir), uid, keyNow, value);
+        await _store(
+            await _open(uid, keyNow, dir), uid, keyNow, value, serverReadAt);
         return;
       } on HiveError {
         // Confirmed: still does not decrypt.
@@ -540,6 +736,10 @@ class EncryptedAccountListCache<T> {
     final fresh = Hive.generateSecureKey();
     final built = await _open(uid, fresh, spare);
     await built.put(_v2Key, _seal(uid, fresh, value));
+    if (serverReadAt != null) {
+      final listTag = base64Url.encode(_tag(uid, fresh, value));
+      await built.put(_syncKey, _sealSync(uid, fresh, listTag, serverReadAt));
+    }
     await built.close();
     final check = await _open(uid, fresh, spare);
     final builtOk = _verify(uid, fresh, check.get(_v2Key)) == value;
@@ -633,8 +833,9 @@ bool isRetryableListError(Object error) =>
 /// The saved copy is only ever this account's own. A server failure is passed
 /// on as before; a screen that already shows the saved copy keeps it. Nothing
 /// is saved for an account that is no longer signed in, and a screen closed
-/// while the copy is read never asks the server. Each server list is one
-/// complete read, so an empty list is saved as empty.
+/// while the copy is read never asks the server. Each server list replaces
+/// the saved one whole, so an empty list is saved as empty. Whether a server
+/// list holds every record is not known ([ListCompleteness]).
 ///
 /// For a signed-in account the list also reads again by itself, through the
 /// same server read and the same encrypted save:
@@ -652,6 +853,13 @@ bool isRetryableListError(Object error) =>
 /// account is no longer the one the list was opened for, and a read that ends
 /// after that is dropped. A list identical to the one last shown is not shown
 /// again, and a repeated failure is passed on once.
+///
+/// Each server list is saved with the time it arrived ([now], recorded with
+/// that exact list; see [SavedListInfo]). That time is indicative: the
+/// device clock can be wrong, and it never stands in for the server.
+/// [onStatus], when given, is told what a signed-in account's screen is
+/// showing ([LocalListStatus]) each time that changes; it is internal and
+/// is not shown on screen.
 Stream<List<T>> localFirstList<T>({
   required Stream<List<T>> Function() server,
   required EncryptedAccountListCache<T> cache,
@@ -662,6 +870,7 @@ Stream<List<T>> localFirstList<T>({
   Duration minHintGap = const Duration(seconds: 2),
   DateTime Function() now = DateTime.now,
   bool Function()? isAppActive,
+  void Function(LocalListStatus status)? onStatus,
 }) {
   final appIsActive =
       isAppActive ?? () => ListRefreshSignals.instance.appIsActive;
@@ -682,8 +891,20 @@ Stream<List<T>> localFirstList<T>({
   DateTime? lastStart;
   String? lastShown;
   var errorShown = false;
+  var showing = LocalListSource.nothing;
+  DateTime? shownServerReadAt;
 
   bool stillTheAccount() => uid != null && currentUserId() == uid;
+
+  void report() {
+    if (uid == null || cancelled || stopped) return;
+    onStatus?.call(LocalListStatus(
+      showing: showing,
+      refreshing: inFlight,
+      lastReadFailed: failed,
+      lastServerReadAt: shownServerReadAt,
+    ));
+  }
 
   void stop() {
     stopped = true;
@@ -715,6 +936,7 @@ Stream<List<T>> localFirstList<T>({
     inFlight = true;
     answered = false;
     lastStart = now();
+    report();
     subscription = server().listen(
       (items) {
         inFlight = false;
@@ -729,16 +951,21 @@ Stream<List<T>> localFirstList<T>({
         }
         failed = false;
         retries = 0;
-        lastSuccess = now();
+        final at = now();
+        lastSuccess = at;
         errorShown = false;
         final shown = cache.fingerprintOf(items);
         if (shown != lastShown) {
           lastShown = shown;
           controller.add(items);
         }
+        showing = LocalListSource.server;
+        shownServerReadAt = at.toUtc();
+        report();
         // This list is a successful server read for the signed-in account:
         // the one case in which an unreadable box may be recovered.
-        unawaited(cache.write(uid!, items, mayRecover: stillTheAccount));
+        unawaited(cache.write(uid!, items,
+            mayRecover: stillTheAccount, serverReadAt: at));
       },
       onError: (Object error, StackTrace stackTrace) {
         inFlight = false;
@@ -751,6 +978,7 @@ Stream<List<T>> localFirstList<T>({
           return;
         }
         failed = true;
+        report();
         if (!errorShown) {
           errorShown = true;
           controller.addError(error, stackTrace);
@@ -804,11 +1032,13 @@ Stream<List<T>> localFirstList<T>({
   }
 
   Future<void> showSavedThenListen() async {
-    final saved = await cache.read(uid!);
+    final saved = await cache.readSaved(uid!);
     if (cancelled) return;
     if (saved != null && stillTheAccount()) {
-      lastShown = cache.fingerprintOf(saved);
-      controller.add(saved);
+      lastShown = cache.fingerprintOf(saved.items);
+      showing = LocalListSource.savedCopy;
+      shownServerReadAt = saved.info.serverReadAt;
+      controller.add(saved.items);
     }
     hints =
         (refreshSignals ?? ListRefreshSignals.instance.hints).listen(onHint);

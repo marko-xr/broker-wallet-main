@@ -21,6 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// The list JSON inside a stored authenticated (v2) list.
+extension on String {
+  String get payload => (json.decode(this) as Map)['p'] as String;
+}
+
 const _alice = '11111111-1111-4111-8111-111111111111';
 const _bob = '22222222-2222-4222-8222-222222222222';
 
@@ -257,7 +262,8 @@ void main() {
       // The stored list itself (decrypted; the box is open with its key),
       // not only what a read lets through.
       final stored = Hive.box<String>(RequestsLocalCache.boxNameForUid(_alice))
-          .get('requests_v1')!;
+          .get('requests_v2')!
+          .payload;
       expect(stored.contains(_bob), isFalse);
       expect(stored.contains('b1'), isFalse);
       expect(_ids((await cache.read(_alice))!), ['a1']);
@@ -265,17 +271,18 @@ void main() {
 
     test('rows owned by another account are never read back', () async {
       // Rows written by the cache itself: Alice's, then Bob's planted in
-      // Alice's box as if the stored list had been mixed up.
+      // Alice's box as an earlier (untagged, v1) list that had been mixed up —
+      // the one list a read takes without a tag, until a v2 list exists.
       await cache.write(_alice, [_request('a1', _alice)]);
       await cache.write(_bob, [_request('b1', _bob)]);
       final aliceBox =
-          await Hive.openBox<String>(RequestsLocalCache.boxNameForUid(_alice));
-      final bobBox =
-          await Hive.openBox<String>(RequestsLocalCache.boxNameForUid(_bob));
+          Hive.box<String>(RequestsLocalCache.boxNameForUid(_alice));
+      final bobBox = Hive.box<String>(RequestsLocalCache.boxNameForUid(_bob));
       final mixed = [
-        ...json.decode(aliceBox.get('requests_v1')!) as List,
-        ...json.decode(bobBox.get('requests_v1')!) as List,
+        ...json.decode(aliceBox.get('requests_v2')!.payload) as List,
+        ...json.decode(bobBox.get('requests_v2')!.payload) as List,
       ];
+      await aliceBox.delete('requests_v2');
       await aliceBox.put('requests_v1', json.encode(mixed));
       expect(_ids((await cache.read(_alice))!), ['a1']);
     });
@@ -340,7 +347,7 @@ void main() {
       await cache.write(_alice, [_request('a0', _alice)]);
       // The box is open and encrypted; store a list that does not decode.
       await Hive.box<String>(RequestsLocalCache.boxNameForUid(_alice))
-          .put('requests_v1', '{not json');
+          .put('requests_v2', '{not json');
       expect(await cache.read(_alice), isNull);
 
       final requests = service();

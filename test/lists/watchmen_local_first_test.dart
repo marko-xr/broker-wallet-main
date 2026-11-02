@@ -27,6 +27,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// The list JSON inside a stored authenticated (v2) list.
+extension on String {
+  String get payload => (json.decode(this) as Map)['p'] as String;
+}
+
 const _alice = '11111111-1111-4111-8111-111111111111';
 const _bob = '22222222-2222-4222-8222-222222222222';
 
@@ -167,7 +172,8 @@ void main() {
 
   String storedList(String uid) =>
       Hive.box<String>(WatchmenLocalCache.boxNameForUid(uid))
-          .get('watchmen_v1')!;
+          .get('watchmen_v2')!
+          .payload;
 
   Future<String?> secureKey(String uid) => const FlutterSecureStorage()
       .read(key: SecureWatchmenCacheKeyStore.storageKeyFor(uid));
@@ -382,7 +388,7 @@ void main() {
     test('a damaged entry counts as nothing saved', () async {
       await cache.write(_alice, [_watchman('f0', _alice)]);
       await Hive.box<String>(WatchmenLocalCache.boxNameForUid(_alice))
-          .put('watchmen_v1', '{not json');
+          .put('watchmen_v2', '{not json');
       expect(await cache.read(_alice), isNull);
     });
   });

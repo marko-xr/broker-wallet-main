@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
@@ -261,27 +263,152 @@ class EncryptedAccountListCache<T> {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Authenticated lists (v2)
+  //
+  // A list is stored as {"v":2,"p":<list JSON>,"t":<HMAC-SHA256 tag>} under
+  // [_v2Key], inside the encrypted box. The tag covers, each part
+  // length-prefixed, a fixed label, the format version, this list's name
+  // ([listKey]), the account and the exact payload bytes; its key is derived
+  // from the account's box key, never the box key itself. This authenticates
+  // the list inside the encrypted box. It is not AES-GCM and not an
+  // encrypt-then-MAC of the whole file (Hive's AES-CBC frames stay as they
+  // are), and it cannot tell an older, once-valid copy of the same list from
+  // the current one.
+  //
+  // The earlier, untagged list under [listKey] (v1) is read only while no
+  // v2 list exists, is never re-tagged, and is removed once a v2 list written
+  // from a server list reads back as authentic.
+  // ---------------------------------------------------------------------
+
+  String get _v2Key => listKey.endsWith('_v1')
+      ? '${listKey.substring(0, listKey.length - 3)}_v2'
+      : '${listKey}_v2';
+
+  static final List<int> _macLabel =
+      utf8.encode('broker_wallet/offline_lists/v2/mac');
+
+  /// The tag key: HMAC-SHA256 of a fixed label under the box key (a one-block
+  /// PRF key derivation), so the box key is never used as the MAC key.
+  static List<int> _macKey(List<int> boxKey) =>
+      Hmac(sha256, boxKey).convert(_macLabel).bytes;
+
+  /// Exactly what the tag covers. Every part is length-prefixed, so no two
+  /// different inputs encode the same bytes.
+  List<int> _tagged(String uid, List<int> payload) {
+    final out = BytesBuilder(copy: false);
+    void part(List<int> bytes) {
+      out
+        ..add((ByteData(4)..setUint32(0, bytes.length)).buffer.asUint8List())
+        ..add(bytes);
+    }
+
+    part(utf8.encode('bw-offline-list'));
+    part(utf8.encode('2'));
+    part(utf8.encode(listKey));
+    part(utf8.encode(uid));
+    part(payload);
+    return out.takeBytes();
+  }
+
+  List<int> _tag(String uid, List<int> boxKey, String payload) =>
+      Hmac(sha256, _macKey(boxKey))
+          .convert(_tagged(uid, utf8.encode(payload)))
+          .bytes;
+
+  String _seal(String uid, List<int> boxKey, String payload) => json.encode({
+        'v': 2,
+        'p': payload,
+        't': base64Url.encode(_tag(uid, boxKey, payload)),
+      });
+
+  /// The payload of [sealed] once its whole tag has matched, or null when it
+  /// is missing, malformed, or does not match this account and list.
+  String? _verify(String uid, List<int> boxKey, Object? sealed) {
+    if (sealed is! String) return null;
+    try {
+      final decoded = json.decode(sealed);
+      if (decoded is! Map || decoded.length != 3 || decoded['v'] != 2) {
+        return null;
+      }
+      final payload = decoded['p'];
+      final tag = decoded['t'];
+      if (payload is! String || tag is! String) return null;
+      return _sameTag(base64Url.decode(tag), _tag(uid, boxKey, payload))
+          ? payload
+          : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Compares every byte whatever the first difference, so the time taken
+  /// does not tell how much of a tag was right.
+  static bool _sameTag(List<int> given, List<int> expected) {
+    if (given.length != expected.length) return false;
+    var difference = 0;
+    for (var i = 0; i < expected.length; i++) {
+      difference |= given[i] ^ expected[i];
+    }
+    return difference == 0;
+  }
+
+  /// [uid]'s records in [payload]; anyone else's are dropped.
+  List<T>? _items(String uid, String payload) {
+    final decoded = json.decode(payload);
+    if (decoded is! List) return null;
+    final items = <T>[];
+    for (final row in decoded) {
+      if (row is! Map) continue;
+      final item = _decode(Map<String, dynamic>.from(row));
+      if (_ownerOf(item) == uid) items.add(item);
+    }
+    return items;
+  }
+
+  /// Saves [payload] as [uid]'s authenticated list and, only once it reads
+  /// back as authentic, removes the earlier untagged list from the box.
+  Future<bool> _store(
+    Box<String> box,
+    String uid,
+    List<int> boxKey,
+    String payload,
+  ) async {
+    await box.put(_v2Key, _seal(uid, boxKey, payload));
+    if (_verify(uid, boxKey, box.get(_v2Key)) != payload) return false;
+    if (box.containsKey(listKey)) {
+      await box.delete(listKey);
+      await box.compact();
+    }
+    return true;
+  }
+
   /// The list last saved for [uid], or null when there is none or it cannot
   /// be read safely.
+  ///
+  /// An authenticated (v2) list is returned only after its tag matched; one
+  /// that does not match reads as nothing — never as the earlier list. The
+  /// earlier untagged list is read only while no v2 list exists.
   Future<List<T>?> read(String uid) async {
     if (uid.isEmpty) return null;
     return _oneAtATime(boxNameOf(uid), () async {
       try {
         final dir = await _prepare(uid);
-        // Reading never creates a key and never recovers anything.
+        // Reading never creates a key, never tags and never recovers.
         final key = await _keys.read(uid);
         if (key == null) return null;
-        final raw = (await _open(uid, key, dir)).get(listKey);
-        if (raw == null) return null;
-        final decoded = json.decode(raw);
-        if (decoded is! List) return null;
-        final items = <T>[];
-        for (final row in decoded) {
-          if (row is! Map) continue;
-          final item = _decode(Map<String, dynamic>.from(row));
-          if (_ownerOf(item) == uid) items.add(item);
+        final box = await _open(uid, key, dir);
+        final sealed = box.get(_v2Key);
+        if (sealed != null) {
+          final payload = _verify(uid, key, sealed);
+          if (payload == null) {
+            _log('integrity check failed', StateError('list not authentic'));
+            return null;
+          }
+          return _items(uid, payload);
         }
-        return items;
+        final earlier = box.get(listKey);
+        return earlier == null ? null : _items(uid, earlier);
       } catch (error) {
         _log('read failed', error);
         return null;
@@ -333,7 +460,18 @@ class EncryptedAccountListCache<T> {
           await _recover(uid, dir, value, mayRecover, key);
           return;
         }
-        await box.put(listKey, value);
+        // A list that fails its check is an integrity failure: it is
+        // replaced only by a list the server just returned for this account.
+        final existing = box.get(_v2Key);
+        if (existing != null &&
+            _verify(uid, key, existing) == null &&
+            !(mayRecover?.call() ?? false)) {
+          _log('write skipped', StateError('list not authentic'));
+          return;
+        }
+        if (!await _store(box, uid, key, value)) {
+          _log('write not verified', StateError('list not authentic'));
+        }
       } catch (error) {
         _log('write failed', error);
       }
@@ -372,7 +510,7 @@ class EncryptedAccountListCache<T> {
     if (keyNow != null) {
       try {
         // Readable after all: a passing problem, not an unreadable box.
-        await (await _open(uid, keyNow, dir)).put(listKey, value);
+        await _store(await _open(uid, keyNow, dir), uid, keyNow, value);
         return;
       } on HiveError {
         // Confirmed: still does not decrypt.
@@ -394,10 +532,10 @@ class EncryptedAccountListCache<T> {
 
     final fresh = Hive.generateSecureKey();
     final built = await _open(uid, fresh, spare);
-    await built.put(listKey, value);
+    await built.put(_v2Key, _seal(uid, fresh, value));
     await built.close();
     final check = await _open(uid, fresh, spare);
-    final builtOk = check.get(listKey) == value;
+    final builtOk = _verify(uid, fresh, check.get(_v2Key)) == value;
     await check.close();
     if (!builtOk) {
       await _deleteIfExists(spareFile);
@@ -422,7 +560,7 @@ class EncryptedAccountListCache<T> {
       rethrow;
     }
     final box = await _open(uid, fresh, dir);
-    if (box.get(listKey) != value) {
+    if (_verify(uid, fresh, box.get(_v2Key)) != value) {
       _log('recovery stopped', StateError('swap not verified'));
       return;
     }

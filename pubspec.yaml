@@ -80,6 +80,9 @@ dependencies:
   fluttertoast: ^8.2.12
   shared_preferences: ^2.5.3
   flutter_secure_storage: ^10.3.1
+  # HMAC-SHA256 for the offline lists' authentication tag (D-3); the same
+  # version Hive already brings in.
+  crypto: ^3.0.7
   google_maps_flutter: ^2.12.3
   google_maps_flutter_android: ^2.18.1
   google_maps_flutter_platform_interface: ^2.13.0

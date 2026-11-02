@@ -21,7 +21,8 @@ class OwnersListViewModel extends ChangeNotifier
   OwnersListViewModel({OwnerService? ownerService})
       : _ownerService = ownerService ?? OwnerService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_ownerService.getUserOwners());
+    // This account's saved copy shows first, so the list is there offline.
+    listenToEntities(_ownerService.watchUserOwnersLocalFirst());
   }
 
   @override

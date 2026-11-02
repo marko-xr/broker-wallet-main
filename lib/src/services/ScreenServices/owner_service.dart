@@ -6,11 +6,14 @@ import 'package:uuid/uuid.dart';
 
 import '../../config/supabase_config.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
+import '../../repositories/repository_provider.dart';
+import '../encrypted_account_list_cache.dart';
 import '../media_parent.dart';
 import '../offer_media_cache_identity.dart';
 import '../offer_media_policy.dart';
 import '../offer_media_upload_queue.dart';
 import '../offline_media_service.dart';
+import '../owners_local_cache.dart';
 import '../private_media_store.dart';
 import '../r2_offer_media_upload_service.dart';
 import '../supabase_core_entities_service.dart';
@@ -50,11 +53,30 @@ class OwnerService implements PrivateMediaStore {
     R2OfferMediaUploadService Function()? ownerMediaUpload,
     OfferMediaUploadQueue Function()? uploadQueue,
     SupabaseCoreEntitiesService Function()? coreEntities,
+    OwnersLocalCache localCache = const OwnersLocalCache(),
+    String? Function()? currentUserId,
   })  : _ownerMediaUploadFactory = ownerMediaUpload ??
             (() => R2OfferMediaUploadService(parent: MediaParent.owner)),
         _uploadQueueFactory =
             uploadQueue ?? (() => OfferMediaUploadQueue.instance),
-        _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new;
+        _coreEntitiesFactory = coreEntities ?? SupabaseCoreEntitiesService.new,
+        _localCache = localCache,
+        _currentUserIdOverride = currentUserId;
+
+  final OwnersLocalCache _localCache;
+  final String? Function()? _currentUserIdOverride;
+
+  /// The canonical signed-in account, or null when there is none (or no
+  /// auth repository yet).
+  String? _currentUserId() {
+    final override = _currentUserIdOverride;
+    if (override != null) return override();
+    try {
+      return RepositoryProvider.instance.authRepository.currentUserId;
+    } catch (_) {
+      return null;
+    }
+  }
 
   final R2OfferMediaUploadService Function() _ownerMediaUploadFactory;
   final OfferMediaUploadQueue Function() _uploadQueueFactory;
@@ -190,6 +212,17 @@ class OwnerService implements PrivateMediaStore {
   Stream<List<OwnerModel>> getUserOwners() {
     return _supabase.getOwners();
   }
+
+  /// The Owners list for the Owners screen: this account's encrypted saved
+  /// copy at once (when there is one), then the server's list, which replaces
+  /// it and is saved for next time. A server failure is passed on as before;
+  /// a screen that already shows the saved copy keeps it. Media is not part
+  /// of the copy.
+  Stream<List<OwnerModel>> watchUserOwnersLocalFirst() => localFirstList(
+        server: getUserOwners,
+        cache: _localCache,
+        currentUserId: _currentUserId,
+      );
 
   Future<void> deleteOwner(String ownerId) async {
     await _supabase.deleteOwner(ownerId);

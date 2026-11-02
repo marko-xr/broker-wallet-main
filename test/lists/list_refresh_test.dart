@@ -28,6 +28,7 @@ import 'package:broker_wallet/src/viewmodels/ListScreens/list_offices_viewmodel.
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_owners_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_requests_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_watchmen_viewmodel.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -438,12 +439,13 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
-  group('the six list screens, with the app resume signal', () {
+  group('the six list screens, with the shared refresh signal', () {
     Future<void> check<T>({
       required String name,
       required ChangeNotifier Function(String? Function() signedIn) open,
       required _Server<T> server,
       required T item,
+      required Future<void> Function() hint,
     }) async {
       final vm = open(() => _alice);
       final list = vm as EntityListState<T>;
@@ -453,20 +455,20 @@ void main() {
       await _settle();
       expect(list.hasLoadError, isTrue, reason: '$name: nothing saved yet');
 
-      // Resume hints within 2 s of a read count once; wait past that.
+      // Hints within 2 s of a read count once; wait past that.
       await Future<void>.delayed(const Duration(milliseconds: 2100));
-      ListRefreshSignals.instance.debugResume();
-      await _until(() => server.count == 2, '$name read on resume');
+      await hint();
+      await _until(() => server.count == 2, '$name read on the hint');
       server.last.add([item]);
       await _settle();
       expect(list.hasLoadError, isFalse, reason: name);
       expect(list.entities, hasLength(1), reason: name);
     }
 
-    test('each list recovers from a failed first read when the app resumes',
-        () async {
+    Future<void> six(Future<void> Function() hint) async {
       final requests = _Server<RequestModel>();
       await check(
+        hint: hint,
         name: 'Requests',
         server: requests,
         item: _request('r1'),
@@ -475,6 +477,7 @@ void main() {
       );
       final offers = _Server<OfferModel>();
       await check(
+        hint: hint,
         name: 'Offers',
         server: offers,
         item: OfferModel(
@@ -506,6 +509,7 @@ void main() {
       );
       final owners = _Server<OwnerModel>();
       await check(
+        hint: hint,
         name: 'Owners',
         server: owners,
         item: OwnerModel(
@@ -530,6 +534,7 @@ void main() {
       );
       final offices = _Server<OfficeModel>();
       await check(
+        hint: hint,
         name: 'Offices',
         server: offices,
         item: OfficeModel(
@@ -549,6 +554,7 @@ void main() {
       );
       final brokers = _Server<BrokerModel>();
       await check(
+        hint: hint,
         name: 'Brokers',
         server: brokers,
         item: BrokerModel(
@@ -565,6 +571,7 @@ void main() {
       );
       final watchmen = _Server<WatchmenModel>();
       await check(
+        hint: hint,
         name: 'Watchmen',
         server: watchmen,
         item: WatchmenModel(
@@ -582,6 +589,26 @@ void main() {
         open: (who) => WatchmenListViewModel(
             watchmenService: _WatchmenService(watchmen, who)),
       );
+    }
+
+    test('each list recovers from a failed first read when the app resumes',
+        () => six(() async => ListRefreshSignals.instance.debugResume()));
+
+    test(
+        'each list recovers when the network comes back, through the one '
+        'shared connectivity listener', () async {
+      final network = StreamController<List<ConnectivityResult>>.broadcast();
+      addTearDown(network.close);
+      var subscriptions = 0;
+      ListRefreshSignals.instance.useConnectivity(() {
+        subscriptions++;
+        return network.stream;
+      });
+      await six(() async {
+        network.add(const [ConnectivityResult.none]);
+        network.add(const [ConnectivityResult.wifi]);
+      });
+      expect(subscriptions, 1, reason: 'one listener for the six lists');
     });
   });
 }

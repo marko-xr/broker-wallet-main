@@ -640,13 +640,13 @@ bool isRetryableListError(Object error) =>
 /// same server read and the same encrypted save:
 /// - after a network failure, at most once per entry of [retryDelays]; a
 ///   failed first read no longer ends the screen's list;
-/// - on a [refreshSignals] hint (the app resuming), when the last read
-///   failed or is older than [minRefreshInterval]; hints closer together
-///   than [minHintGap] count once.
-/// A retry that falls due while the app is not in the foreground
+/// - on a [refreshSignals] hint (the app resuming, or the network coming
+///   back), when the last read failed or is older than [minRefreshInterval];
+///   hints closer together than [minHintGap] count once.
+/// A retry or hint that comes while the app is not in the foreground
 /// ([isAppActive]) reads nothing; the next resume reads instead. Once the
-/// retries are used up, nothing reads again until a hint: the app has no
-/// "network is back" signal.
+/// retries are used up, nothing reads again until a hint; the Internet coming
+/// back without a visible network change sends none.
 /// Only one read is ever in flight. Any error that is not a network failure
 /// stops these extra reads. They also stop for good once the signed-in
 /// account is no longer the one the list was opened for, and a read that ends
@@ -785,6 +785,9 @@ Stream<List<T>> localFirstList<T>({
 
   void onHint(void _) {
     if (cancelled || stopped || inFlight) return;
+    // A hint in the background (the network returning) reads nothing; the
+    // resume that follows reads instead.
+    if (!appIsActive()) return;
     final at = now();
     final started = lastStart;
     if (started != null && at.difference(started) < minHintGap) return;

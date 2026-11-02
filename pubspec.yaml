@@ -83,6 +83,9 @@ dependencies:
   # HMAC-SHA256 for the offline lists' authentication tag (D-3); the same
   # version Hive already brings in.
   crypto: ^3.0.7
+  # "Network is back" hint for the offline lists (P2.5b-2). Pinned: 7.x needs
+  # AGP >= 8.12.1 (the app uses 8.11.1); 6.1.5 needs AGP 8.3.
+  connectivity_plus: 6.1.5
   google_maps_flutter: ^2.12.3
   google_maps_flutter_android: ^2.18.1
   google_maps_flutter_platform_interface: ^2.13.0

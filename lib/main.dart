@@ -2,6 +2,7 @@ import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/image_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
 import 'package:broker_wallet/src/services/count_cache_service.dart';
+import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
@@ -52,6 +53,10 @@ Future<void> initializeAppServices() async {
 
   // Initialize offline image error handling
   OfflineImageService.initialize();
+
+  // The offline lists also read again when the network comes back. Nothing
+  // listens until a list is open.
+  ListRefreshSignals.instance.useConnectivity();
 
   // CRITICAL: Preload languages in background - DON'T block app startup
   _preloadLanguagesAsync();

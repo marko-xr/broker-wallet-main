@@ -979,10 +979,13 @@
 | D-39 | D-3 (§7U-1) | ترقية فوق قوائم v1 موجودة: فتح القوائم offline ثم أول تحديث بشبكة | v1 يظهر offline حتى أول تحديث، ثم تُخزَّن القوائم v2 ويُزال v1 | PENDING |
 | D-40 | D-3 | قائمة كبيرة offline (مئات السجلات) قبل التحديث وبعده | لا تأخر ملحوظ في ظهور القائمة بصيغة v2 مقارنة بـ v1 | PENDING |
 | D-41 | P2.5b (§7V) | فتح قائمة بلا شبكة (نسخة محفوظة أو بلا نسخة)، ثم إعادة الشبكة خلال ~3 دقائق والتطبيق في المقدمة | القائمة تتحدّث وحدها عند إحدى المحاولات (5/15/45/120 ث)؛ النسخة المحفوظة لا تختفي أثناء الفشل | PENDING |
-| D-42 | P2.5b | الشبكة تعود بعد أكثر من ~3 دقائق والتطبيق ما زال في المقدمة | **حدّ معروف:** لا تحديث تلقائي؛ تبقى النسخة المحفوظة (أو شاشة الخطأ إن لم تكن نسخة) حتى الخروج من التطبيق والعودة إليه أو إعادة فتح الشاشة | PENDING |
+| D-42 | P2.5b + P2.5b-2 (§7W) | الشبكة تعود بعد أكثر من ~3 دقائق والتطبيق ما زال في المقدمة | **مع تغيّر حالة الاتصال** (Wi-Fi/بيانات عادت): قراءة واحدة خلال ~1 ث والقائمة تتحدّث. **دون تغيّر مرئي** (الراوتر يستعيد خطه): لا تحديث حتى العودة إلى المقدمة أو إعادة فتح الشاشة | PENDING |
 | D-43 | P2.5b | الخروج من التطبيق والعودة إليه وقائمة مفتوحة (بعد أكثر من 30 ث من آخر قراءة ناجحة، ثم خلال أقل من 30 ث) | قراءة واحدة في الحالة الأولى ولا قراءة في الثانية؛ لا وميض إن لم تتغير القائمة | PENDING |
 | D-44 | P2.5b | تبديل الحساب أو تسجيل الخروج وقائمة في حالة فشل/محاولة | لا قراءة ولا حفظ لحساب السابق؛ لا تظهر بياناته | PENDING |
 | D-45 | P2.5b | جلسة مُبطلة (Single Active Device من جهاز آخر) وقائمة مفتوحة بلا شبكة ثم بشبكة | لا حلقة محاولات؛ مسار الخروج القائم يعمل كما قبل | PENDING |
+| D-46 | P2.5b-2 | وضع الطيران أو إيقاف Wi-Fi والبيانات ثم إعادتهما بعد استنفاد المحاولات، والقوائم مفتوحة | كل قائمة مفتوحة تُقرأ مرة واحدة؛ النسخة المحفوظة لا تختفي؛ لا طلبات متكررة عند تقلب Wi-Fi ↔ بيانات | PENDING |
+| D-47 | P2.5b-2 | عودة الشبكة والتطبيق في الخلفية، ثم فتحه | لا قراءة في الخلفية؛ قراءة واحدة عند العودة إلى المقدمة | PENDING |
+| D-48 | P2.5b-2 | بناء Android (ثم iOS) بعد إضافة `connectivity_plus 6.1.5` | البناء ينجح بـ AGP 8.11.1 بلا ترقية؛ لا إذن جديد في المتجر | PENDING (UNVERIFIED) |
 
 ---
 
@@ -1402,6 +1405,54 @@
 **الحالة:** P2.5b retry/resume = **CODE_PROVEN** (محاولات محدودة بعد فشل الشبكة + العودة إلى المقدمة + التحديثات القائمة) — commit `feat(offline): add bounded retries and app-resume list refresh` (2026-11-02، بموافقة المالك). **FU-P2.5B-CONNECTIVITY — OPEN:** مشغّل «عادت الشبكة» غير منفّذ (لا حزمة connectivity؛ الفحص الدوري ممنوع)؛ يحتاج قرار المالك بإضافة حزمة. FU-OWNERS-R5C: **RESOLVED** (الاختبارات الخمسة PASS على `d51a499` ومع P2.5b). التاريخي (Delete Account migration-file): **OPEN**. Samsung D-41..D-45: **DEFERRED BY OWNER**.
 - **NEXT:** P2.5c (بموافقة منفصلة؛ لم يبدأ). FU-P2.5B-CONNECTIVITY ينتظر قرار المالك.
 - **STOP:** لا commit/push/merge/deploy؛ لا APK ولا Samsung؛ لا P2.5c.
+
+---
+
+## 7W) P2.5b-2 — إشارة «عادت الشبكة» (FU-P2.5B-CONNECTIVITY) — 2026-11-02 (CODE_PROVEN بالاختبارات الآلية فقط؛ البناء الأصلي UNVERIFIED؛ COMMITTED)
+
+**Git عند البدء:** `perf/phase-1-startup-baseline` @ `42f31a3` (P2.5b، دفعه المالك)، مطابق لـ `origin` (0/0 بعد `git fetch`)، stashes = 2؛ الشجرة فيها تعديل واحد غير مدمج: تقييم §7W السابق في هذا الملف (يُستبدل هنا).
+
+**الأدوات (من المستودع لا من الملاحظات):** `android/settings.gradle:21` → **AGP 8.11.1**؛ Kotlin 2.2.20؛ Gradle 8.14.5؛ compileSdk 36، targetSdk 35، Java 17؛ iOS 15.0؛ Flutter 3.47.2 / Dart 3.13.2.
+
+### لماذا رُفض 7.3.1
+- توثيق `connectivity_plus` 7.x الرسمي يشترط **AGP ≥ 8.12.1** (ملف الحزمة يذكر `com.android.tools.build:gradle:8.12.1`) والتطبيق على 8.11.1 — قرار المالك: لا ترقية لـ AGP، فلا 7.x. (7.3.2 كان أصلاً غير قابل للحل: `nm ^0.6.0` → `dbus ^0.8.0` يتعارض مع `flutter_local_notifications ^19.5.0`.)
+
+### الإصدار المختار: `connectivity_plus: 6.1.5` (مثبّت تماماً، بموافقة المالك)
+- **dry-run** (`flutter pub add connectivity_plus:6.1.5 --dry-run`؛ `pubspec.yaml`/`pubspec.lock` مطابقان بعده): +3 حزم فقط — `connectivity_plus 6.1.5` (direct main)، `connectivity_plus_platform_interface 2.1.0`، `nm 0.5.0` (transitive)؛ `dbus 0.7.15` قائم بلا تغيير؛ **لا تغيير في أي إصدار آخر** (`flutter_local_notifications` كما هو). ثم `flutter pub get --offline` → «Changed 3 dependencies»، والفرق في `pubspec.lock` = هذه الإدخالات الثلاثة فقط.
+- **متطلبات 6.1.5:** Dart ≥3.2، Flutter ≥3.7؛ Android: `classpath gradle:8.3.1` (مثل `share_plus`/`device_info_plus`/`package_info_plus`/`wakelock_plus` المستعملة حالياً)، compileSdk 34 للمكتبة، minSdk 19، Java 17، كود Java فقط؛ iOS 12.0 (podspec وSPM). **لا ترقية Flutter/Gradle/AGP/Kotlin/Xcode.**
+- **إذن Android:** `ACCESS_NETWORK_STATE` مُعلن أصلاً في manifest التطبيق.
+- **ملفات plugin registrant المتتبَّعة (تغيير محتوى فعلي، مطلوب للحزمة — ليس أثر CRLF):** `macos/Flutter/GeneratedPluginRegistrant.swift` (+2: `import connectivity_plus`، تسجيل `ConnectivityPlusPlugin`)؛ `windows/flutter/generated_plugin_registrant.cc` (+3: include وتسجيل `ConnectivityPlusWindowsPlugin`)؛ `windows/flutter/generated_plugins.cmake` (+1: `connectivity_plus`). `linux/` بلا تغيير (الحزمة Dart فقط على Linux). Android/iOS registrants غير متتبَّعة. **قرار تضمينها في الـ commit للمالك** (بدونها لا تُسجَّل الحزمة على macOS/Windows).
+
+### التنفيذ
+- **`lib/src/services/list_refresh_signals.dart` (الآلية المشتركة نفسها):**
+  - **اشتراك connectivity واحد** يُربط مع أول قائمة تستمع ويُلغى مع آخر قائمة (مع مراقب دورة الحياة نفسه) — لا ستة اشتراكات.
+  - **تلميح فقط عند «لا شبكة → شبكة ما»:** أول حدث بعد الاشتراك = الحالة الحالية (Android يرسلها فور الاشتراك) فلا يُعدّ تغييراً؛ Wi-Fi ↔ mobile ليس عودة؛ **debounce 1 ث** — انقطاع وعودة متتاليان داخلها = تلميح واحد، وانقطاع قبل انتهائها يلغيها؛ بعد آخر إلغاء تُنسى الحالة ولا يصل تلميح متأخر لمستمع جديد.
+  - **التفعيل صريح:** `ListRefreshSignals.instance.useConnectivity()` في `initializeAppServices` (`lib/main.dart`، سطر واحد + import) — لا اشتراك قبل فتح قائمة؛ الاختبارات التي لا تستدعيه لا تلمس قناة الحزمة (وإلا فشلت اختبارات الواجهة بـ MissingPlugin عبر `FlutterError.reportError`).
+  - خطأ من مصدر connectivity يُتجاهل (لا تلميحات منه فقط؛ إشارة العودة تبقى).
+  - **ليس دليلاً:** الاتصال لا يثبت الإنترنت ولا الخادم ولا صلاحية الجلسة.
+- **`localFirstList`:** تلميح يصل والتطبيق ليس في المقدمة **لا يقرأ** (سطر واحد في `onHint`؛ العودة بعده تقرأ). كل الحواجز الباقية كما هي: قراءة واحدة، فجوة 2 ث، تخطّي القائمة الأحدث من 30 ث، تصفير المحاولات (المحدودة) عند التلميح، التوقف عند تبديل الحساب/الخروج/خطأ غير شبكي، الإلغاء عند الإغلاق، الحفظ v2 HMAC نفسه.
+- **بلا تغيير:** الواجهة (`lib/src/views`، `lib/src/viewmodels` = 0 سطر عن `d51a499`)، الأغلفة الست، صيغ الكاش ومفاتيحه، D-1a/D-2/D-3، Auth، Single Active Device.
+
+### الأدلة (شغّلها الوكيل؛ تصريح دائم §7L)
+- **جديد `test/lists/list_connectivity_test.dart` — 18/18 PASS:** الإشارة: الحالة عند الاشتراك ليست تلميحاً و«لا شبكة → شبكة» تلميح واحد؛ التنقل بين الشبكات ليس عودة؛ تقلبات سريعة = تلميح واحد؛ عودة تنقطع قبل الـ debounce = لا شيء؛ **اشتراك واحد لكل المستمعين** يُلغى مع الأخير ويبدأ الجديد من حالة مجهولة؛ لا تلميح متأخر لمستمع جديد؛ مصدر فاشل لا يوقف إشارة العودة؛ بلا `useConnectivity` لا اشتراك، وتفعيله المتأخر يبدأ فوراً. القائمة: **بعد استنفاد المحاولات → العودة تقرأ مرة واحدة، والقائمة تُعرض وتُحفظ v2**؛ لا قراءة إضافية عند فتح القائمة؛ قائمة حديثة لا تُقرأ؛ تقلبات سريعة = قراءة واحدة ولا قراءتان معاً؛ **قائمتان مفتوحتان تتشاركان الاشتراك نفسه وكلٌّ تقرأ مرة**؛ في الخلفية لا قراءة والعودة إلى المقدمة تقرأ؛ تبديل الحساب والخروج → لا قراءة ولا عرض؛ فشل القراءة بعد العودة (اتصال بلا إنترنت) يُبقي النسخة المحفوظة ولا يُمرَّر الفشل ثانية؛ جلسة مرفوضة توقف القائمة نهائياً؛ إغلاق الشاشة → لا قراءة ويُلغى اشتراك connectivity.
+- **`test/lists/list_refresh_test.dart` — 17/17 PASS:** أُضيف: **الشاشات الست** (ViewModels الحقيقية على `ListRefreshSignals.instance`) تتعافى من فشل القراءة الأولى عند عودة الشبكة **عبر اشتراك connectivity واحد**؛ واختبار العودة إلى المقدمة للشاشات الست بلا تغيير في جوهره (أُعيد تنظيمه ليشترك في الدالة نفسها).
+- **فحص الطفرات — 10/10 التُقطت** (كلٌّ بفشل اختبار محدد، لا مهلة؛ الملفان أُعيدا من نسخة احتياطية و`cmp` مطابق؛ لا `git restore/reset`): أول حدث يُعدّ تغييراً؛ التنقل بين الشبكات يُعدّ؛ بلا debounce؛ الانقطاع لا يلغي عودة معلّقة؛ إبقاء الاشتراك بعد آخر قائمة؛ إبقاء الحالة القديمة بعد إعادة الربط؛ القراءة في الخلفية؛ تلميح متأخر بعد آخر قائمة (**نجا أولاً** — الاختبار لم يكن يوصل حدث العودة قبل الإلغاء؛ شُدّد ثم التُقط)؛ عدم بدء `useConnectivity` المتأخر؛ عدم معالجة خطأ المصدر.
+- **مجموعات مرتبطة:** `test/lists/`، `test/home/`، `test/favorites/`، `map_sdk_warmup_test` (يقرأ `main.dart`)، `delete_account_test`، `canonical_identity_test`، `supabase_secure_storage_test`، الشاشات الست → **907 PASS، 1 FAIL — التاريخي فقط** (Delete Account migration-file، OPEN ومنفصل). **FU-OWNERS-R5C الخمسة PASS.** لا خطأ من قناة connectivity؛ ضجيج `MissingPluginException` (حذف الكاش في الاختبارات) = 120 سطراً قبل التغيير وبعده.
+- **Analyzer** (`main.dart`، الملفان، `test/lists/`) → No issues. **Format** (5 ملفات Dart) → 0 تغييرات (لا format عارٍ على ملفات متتبَّعة). **`git diff --check`** → نظيف. CRLF في ملفات Dart و`pubspec.yaml`.
+
+### حدود استعادة الشبكة المتبقية
+1. **عودة الإنترنت دون تغيّر مرئي في حالة الاتصال** (الراوتر يستعيد خطه والهاتف ما زال على Wi-Fi نفسه، captive portal، DNS/الخادم يعود): لا حدث → لا تلميح؛ تغطيه المحاولات المحدودة (~3 د) ثم العودة إلى المقدمة أو إعادة فتح الشاشة فقط.
+2. «متصل» قد لا يعني إنترنت: القراءة تفشل كفشل شبكة عادي (النسخة تبقى، محاولات محدودة جديدة)؛ كل عودة حقيقية جديدة قد تبدأ دورة محاولات محدودة أخرى.
+3. عودة الشبكة في الخلفية لا تقرأ؛ القراءة عند العودة إلى المقدمة.
+4. خطأ الخادم (5xx) والجلسة المرفوضة لا يُعادان (كما في §7V).
+
+### تحقق مؤجَّل (لم يُشغَّل)
+- **البناء الأصلي: UNVERIFIED** — لا بناء Android/iOS/macOS/Windows دون موافقة منفصلة (AGP 8.11.1 مع classpath 8.3.1 للحزمة، تسجيل iOS/Windows/macOS).
+- **Samsung/الجهاز: DEFERRED BY OWNER** — D-46..D-48 في §7N (وD-42 حُدِّث).
+
+**الملفات (غير مدمجة):** `pubspec.yaml`؛ `pubspec.lock`؛ `lib/main.dart`؛ `lib/src/services/list_refresh_signals.dart`؛ `lib/src/services/encrypted_account_list_cache.dart`؛ جديد `test/lists/list_connectivity_test.dart`؛ `test/lists/list_refresh_test.dart`؛ registrants: `macos/Flutter/GeneratedPluginRegistrant.swift`، `windows/flutter/generated_plugin_registrant.cc`، `windows/flutter/generated_plugins.cmake`؛ وهذا الملف.
+
+**الحالة:** FU-P2.5B-CONNECTIVITY = **CODE_PROVEN بالاختبارات الآلية فقط** — commit `feat(offline): refresh cached lists when connectivity returns` (2026-11-02، بموافقة المالك، مع ملفات registrant الثلاثة). توافق البناء الأصلي (Android/iOS/macOS/Windows) **UNVERIFIED** حتى بناء فعلي. **الحدّ قائم:** عودة الإنترنت دون تغيّر في حالة الاتصال لا تُطلق تحديثاً. **FU-OWNERS-R5C: RESOLVED** — الاختبارات الخمسة PASS في انحدار P2.5b-2 (907 PASS). التاريخي (Delete Account migration-file) **OPEN**. Samsung D-41..D-48 **DEFERRED BY OWNER**. **STOP** — لا push/merge/deploy؛ لا APK ولا Samsung؛ لا P2.5c.
 
 ---
 

@@ -6,7 +6,7 @@
 **الفرع المستهدف:** `perf/phase-1-startup-baseline` — أبلغ Claude بأنه تحقق منه من checkout الحي في 2026-10-31 15:42 +04؛ **دليل مقدم من المالك، ولم نتحقق منه مباشرة من Git هنا**. ZIP لا يحتوي `.git`.  
 **المرحلة النشطة:** `P1 — Startup & Initial Screen Performance`؛ `P1.0` مراجعة مصدر فقط؛ `P1.1-a` **PAUSED BY PROCESS / NOT RUN** بعد تشديد التعليمات، وليس بسبب فشل تقني مثبت. `P1.1-b` **NOT APPROVED**. لا بناء ولا تثبيت ولا benchmark مثبت بهذه النسخة.  
 **حالة المشروع:** PRE-PUBLIC-RELEASE؛ الأداء وOffline-First لا يغلقان بنود إطلاق المتاجر #8–#52.
-**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7R (آخر تحديث 2026-11-02، P2.4b).
+**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7S (آخر تحديث 2026-11-02، P2.4c).
 
 ---
 
@@ -96,7 +96,7 @@
 | ID | المرحلة | حالة 2026-10-31 | شروط الإغلاق المختصرة |
 |---|---|---|---|
 | `P1` | Startup & Initial Screen | `IN PROGRESS — P1.0 source review only; P1.1 not run` | baseline حقيقي؛ أسباب مثبتة؛ تغييرات محدودة؛ before/after؛ regression؛ real-device gate. |
-| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، commit `10f2f15` (§7P)؛ P2.4a (Offices offline، مشفّر) CODE_PROVEN، commit `1abba8c` (§7Q)؛ P2.4b (Brokers offline، مشفّر) CODE_PROVEN، غير مدمج (§7R)؛ التالي: P2.4c Watchmen ← P2.5 موثوقية/استعادة الكاش | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
+| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، commit `10f2f15` (§7P)؛ P2.4a (Offices offline، مشفّر) CODE_PROVEN، commit `1abba8c` (§7Q)؛ P2.4b (Brokers offline، مشفّر) CODE_PROVEN، commit `978b2b9` (§7R)؛ P2.4c (Watchmen offline، مشفّر) CODE_PROVEN، غير مدمج (§7S) — آخر قوائم الكيانات؛ التالي: P2.5 موثوقية/استعادة الكاش (§7S) | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
 | `P3` | Supabase Queries & N+1 | `NOT STARTED` | عدّ الطلبات/latency؛ إصلاح ناتج عن قياس؛ RLS بلا تغيير؛ فروقات مثبتة. |
 | `P4` | Pagination & Large Lists | `NOT STARTED` | قوائم كبيرة حقيقية، scrolling/memory/data transfer، مع صحة البحث والترتيب. |
 | `P5` | Real-Device Performance Validation | `NOT STARTED` | Android+iOS بما يتيسر، cold/warm/reconnect, animations, memory, التقرير النهائي. |
@@ -968,6 +968,11 @@
 | D-28 | P2.4b | B يفتح Brokers بلا شبكة بعد استخدام A للجهاز | لا تظهر Brokers الخاصة بـ A أبداً | PENDING |
 | D-29 | P2.4b | حذف آخر Broker على الخادم ثم إعادة الفتح offline | القائمة فارغة | PENDING |
 | D-30 | P2.4b | حذف حساب اختبار | يُزال `cached_brokers_<uid>` ومفتاحه فقط | PENDING |
+| D-31 | P2.4c (§7S) | فتح Watchmen بشبكة، ثم إغلاق الشبكة وإعادة فتح Watchmen في الجلسة نفسها | قائمة Watchmen المحفوظة تظهر بدل خطأ التحميل | PENDING |
+| D-32 | P2.4c | B يفتح Watchmen بلا شبكة بعد استخدام A للجهاز | لا تظهر Watchmen الخاصة بـ A أبداً | PENDING |
+| D-33 | P2.4c | حذف آخر Watchman على الخادم ثم إعادة الفتح offline | القائمة فارغة | PENDING |
+| D-34 | P2.4c | حذف حساب اختبار | يُزال `cached_watchmen_<uid>` ومفتاحه فقط، وتُزال صناديق ومفاتيح القوائم الست لذلك الحساب فقط | PENDING |
+| D-35 | P2.1–P2.4c | جلسة واحدة: القوائم الست بشبكة ثم بلا شبكة، ثم إعادة تشغيل التطبيق داخل جلسة معتمدة، ثم تبديل الحساب | كل قائمة تُظهر نسخة حسابها فقط؛ لا تداخل؛ cold start بلا شبكة يبقى Retry | PENDING |
 
 ---
 
@@ -1128,6 +1133,46 @@
 **الملفات (غير مدمجة):** جديد `lib/src/services/brokers_local_cache.dart`، `test/lists/brokers_local_first_test.dart`؛ معدّل `lib/src/services/ScreenServices/broker_service.dart`، `lib/src/viewmodels/ListScreens/list_brokers_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، وهذا الملف.
 
 **الحالة:** P2.4b = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-27..D-30 **DEFERRED BY OWNER**. **FU-OWNERS-R5C: OPEN** (4 اختبارات swipe). التاريخي (Delete Account migration-file): OPEN. **STOP** — لا commit/push/merge/deploy؛ لا Watchmen ولا P2.5.
+
+---
+
+## 7S) P2.4c — قراءة Watchmen من نسخة محلية مشفّرة — 2026-11-02 (CODE_PROVEN، غير مدمج) — آخر قوائم الكيانات
+
+**Git قبل البدء:** `perf/phase-1-startup-baseline` @ `978b2b9` (دفعه المالك)، شجرة نظيفة، مطابق لـ `origin` بعد fetch (0/0)، stashes = 2.
+
+**التدقيق:** `WatchmenListViewModel` ← `WatchmenService.getUserWatchmen()` ← `getWatchmen()` = `_refreshedStream(_fetchWatchmen)`: استعلام واحد بلا صفحات، `order created_at desc`، يُسلَّم كاملاً أو يفشل. **لا وسائط للـ Watchmen.** الملكية = `owner_id` في `userId` (**nullable**)؛ `createdAt`/`updatedAt` والإحداثيات nullable. لا تحويل عرض في الـ view model. `WatchmenService` كان بلا constructor.
+
+**التغيير:**
+- جديد `lib/src/services/watchmen_local_cache.dart`: غلاف رفيع على `EncryptedAccountListCache` — `cached_watchmen_<uid>`، مفتاح منفصل `watchmen_cache_key_v1_<uid>`، عقد قائمة مُرقَّم `watchmen_v1`. يحفظ حقول القائمة فقط **كما أعادها الخادم** (الاسم، رمز الدولة، الهاتف، اسم المبنى، الملاحظات، موقع المبنى، موقع/إحداثيات/عنوان الاستلام، التواريخ nullable) — **لا قيم بديلة دائمة**. سجل بلا حساب لا يُحفظ.
+- `WatchmenService`: constructor بمعاملين اختياريين (`localCache`، `currentUserId`؛ الافتراضي هوية `RepositoryProvider.authRepository.currentUserId`) + `watchUserWatchmenLocalFirst()` عبر `localFirstList`. **`getUserWatchmen()` بلا تغيير** (Home filters/counts).
+- `WatchmenListViewModel`: سطر واحد → `watchUserWatchmenLocalFirst()`.
+- `DeletedAccountLocalDataCleaner`: خطوة `const WatchmenLocalCache().forgetAccount(deletedUid)`.
+- **بلا تغيير:** النواة المشتركة، صيغ/أسماء/مفاتيح Requests وOffers وOwners وOffices وBrokers، backend، Auth/Single Active Device، الواجهة. لا حذف لبيانات قديمة.
+
+**الأدلة (شغّلها الوكيل؛ تصريح دائم §7L):**
+- **جديد `test/lists/watchmen_local_first_test.dart` — 21/21 PASS** (مبني على بنية اختبار Offices المُثبتة): offline يُبقي النسخة ولا يمسحها؛ بلا نسخة → خطأ التحميل كما كان؛ قائمة الخادم تحل محلها، **والفارغة تُحفظ فارغة**؛ فشل بعد قائمة يُبقيها؛ عزل الحسابات؛ سجلات حساب آخر أو بلا حساب لا تُحفظ (فُحص النص المخزَّن)؛ لا حفظ بعد تغيّر الحساب؛ لا عرض إن تغيّر الحساب أثناء القراءة؛ بلا حساب (sign-out) لا قراءة/حفظ؛ إغلاق الشاشة أثناء القراءة لا يطلب الخادم؛ قراءة تنتهي بعد إغلاق الشاشة لا تحفظ؛ الحقول تُسترجع حرفياً بعد إعادة التشغيل (عربي، lat=null، **تواريخ null تُخزَّن `null` لا بديلاً**)؛ نسخة تالفة = لا شيء؛ مشفّر على القرص (لا اسم/هاتف/ملاحظة/موقع/معرّف حساب بنص واضح)، مفتاح 32 بايت في secure storage فقط، لا شيء في SharedPreferences؛ **المفاتيح والصناديق الستة منفصلة** وكتابة Watchmen لا تُنشئ مفاتيح غيره؛ كاش Owners الموجود لا يتأثر؛ مخزن آمن غير متاح/مفتاح مفقود/مفتاح آخر/تلف → fail-closed والملف لم يتغير بايت-بايت؛ حذف الحساب يزيل صندوق ومفتاح Watchmen له فقط.
+- **فحص الطفرات (2/2 التُقطت؛ أُعيدت الملفات بايت-بايت):** الشاشة على `getUserWatchmen()` → فشل 3 اختبارات offline؛ حفظ تاريخ بديل (`createdAt ?? now`) → فشل «الاسترجاع الحرفي».
+- **مجموعات مرتبطة:** `test/lists/` (الكاشات الست وentity list VMs)، `r5d_watchmen_responsive`، و`r5d_brokers`/`r5d_offices`/`r5c_owners` (للتأكد من FU)، `test/home/`، `delete_account_test`، `canonical_identity_test`، `supabase_secure_storage_test` → **662 PASS، 6 FAIL، كلها قائمة قبل P2.4c:**
+  1. التاريخي: `delete_account_test` — `Deletion job migration and hosted validation script (setUpAll)`.
+  2.–5. FU-OWNERS-R5C (بلا تغيير): Owner swipe confirmation، Owner list keeps items on failed refresh، Office swipe cancel dialog، Broker swipe cancel dialog (280×600 ar 2.0x).
+  6. **جديد في السجل:** `r5d_watchmen_responsive_test` — «Watchmen swipe cancel dialog 280.0x600.0 ar light 2.0x inset=EdgeInsets.zero keyboard=0.0» — `Bad state: No element`. **أُثبت أنه قائم في `978b2b9`:** بوضع نسخ HEAD للملفات الثلاثة المعدّلة فشل الاختبار نفسه (`+40 -1`، `Bad state: No element`)؛ ثم أُعيدت نسخ P2.4c وتحقق `cmp` من تطابقها. **أُضيف إلى FU-OWNERS-R5C** (الآن **5** اختبارات swipe: Owners ×2، Offices، Brokers، Watchmen — نمط واحد عند 280×600 عربي 2×؛ غير مُشخَّص؛ لم تُعدَّل توقعات أي اختبار).
+- **Analyzer** (5 ملفات) → No issues. **Format** (5 ملفات) → 0 تغييرات. **`git diff --check`** → نظيف. كل الملفات CRLF.
+
+**offline الآن (داخل جلسة اعتمدها الخادم):** قوائم الكيانات الست — Requests وOffers وOwners وOffices وBrokers وWatchmen — + صور البطاقات المحفوظة في كاش الوسائط. **online فقط:** cold start (Retry)، شاشات التفاصيل، روابط الوسائط الجديدة والفيديو، Plan، Home filters والأعداد الحية (للأعداد كاش R-02)، البحث، Favorites، Related Items، Toolkit cloud، كل الكتابات (لا outbox ولا مزامنة). **Offline-First الكامل غير منجز.**
+
+**حدود الكاش (معروفة):**
+- **الاكتمال:** النسخة = آخر قائمة أعادها الخادم، ليست بالضرورة كل سجلات الحساب (`max_rows`، §7O).
+- **الحداثة:** لا مؤشر «نسخة محفوظة»؛ لا إعادة محاولة عند عودة الشبكة بعد فشل أول قراءة؛ لا عمر/TTL للنسخة.
+- **الأمان:** AES-CBC + CRC (Hive) بلا MAC؛ يحمي الملف خارج التطبيق لا جهازاً مخترقاً أثناء التشغيل. النسخ تبقى بعد logout (معزولة) وتُزال عند حذف الحساب.
+- **فقدان المفتاح:** صندوق موجود بلا مفتاح/بمفتاح آخر/تالف → معطّل (لا قراءة/لا كتابة) حتى حذف الحساب؛ لا حذف أو إعادة توليد تلقائي.
+
+**الملفات (غير مدمجة):** جديد `lib/src/services/watchmen_local_cache.dart`، `test/lists/watchmen_local_first_test.dart`؛ معدّل `lib/src/services/ScreenServices/watchmen_service.dart`، `lib/src/viewmodels/ListScreens/list_watchmen_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، وهذا الملف.
+
+**الحالة:** P2.4c = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-31..D-35 **DEFERRED BY OWNER**. **FU-OWNERS-R5C: OPEN** (5 اختبارات swipe). التاريخي (Delete Account migration-file): OPEN. **STOP** — لا commit/push/merge/deploy؛ لا P2.5 تلقائياً.
+
+### النقطة التالية (بموافقة منفصلة): P2.5 — موثوقية الكاش واستعادته
+
+النطاق المقترح (من حدود §7M-3، §7O، §7S): (1) **استعادة فقدان المفتاح** — قرار صريح من المالك بين حذف الصندوق غير القابل للفك وبدء نسخة جديدة أو إبقائه معطّلاً، بلا استبدال صامت؛ (2) **سياسة النسخ الاحتياطي** — استبعاد صناديق `cached_*` (وقواعد `dataExtractionRules`/`fullBackupContent`) من Android Auto Backup كي لا تُستعاد بلا مفتاحها؛ (3) **البيانات القديمة** — عمر النسخة/TTL ووسم «محفوظة» (أي عنصر واجهة يحتاج موافقة المالك)؛ (4) **التحديث عند عودة الشبكة** — إعادة قراءة بعد فشل أول قراءة دون تكرار الطلبات؛ (5) **الاكتمال** — فحص `count` مقابل طول القائمة أو صفحات قبل اعتبار النسخة كاملة؛ (6) **مراجعة موثوقية مركّزة للنواة المشتركة** (`encrypted_account_list_cache.dart`). لا تبدأ دون موافقة.
 
 ---
 

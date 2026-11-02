@@ -21,7 +21,8 @@ class WatchmenListViewModel extends ChangeNotifier
   WatchmenListViewModel({WatchmenService? watchmenService})
       : _watchmenService = watchmenService ?? WatchmenService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_watchmenService.getUserWatchmen());
+    // This account's saved copy shows first, so the list is there offline.
+    listenToEntities(_watchmenService.watchUserWatchmenLocalFirst());
   }
 
   @override

@@ -94,6 +94,7 @@ Future<_Screen<T>> _open<T>(
   _Server<T> server, {
   String? Function()? user,
   DateTime Function()? now,
+  List<Duration> retryDelays = const [],
 }) async {
   final screen = _Screen<T>();
   final before = server.reads.length;
@@ -102,7 +103,7 @@ Future<_Screen<T>> _open<T>(
     cache: cache,
     currentUserId: user ?? () => _alice,
     refreshSignals: const Stream<void>.empty(),
-    retryDelays: const [],
+    retryDelays: retryDelays,
     now: now ?? () => _t0,
     isAppActive: () => true,
     onStatus: screen.statuses.add,
@@ -547,6 +548,76 @@ void main() {
       final saved = await cache.readSaved(_alice);
       expect(_ids(saved!.items), ['s1']);
       expect(saved.info.serverReadAt, _t1);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // P2.5e: what the saved copy holds after a successful add, edit or delete
+  // whose re-read fails. These record current behaviour (a known, bounded
+  // gap), not a fix: the copy is never changed locally, so it stays the
+  // last server list, with that list's time.
+  group('after a successful change whose re-read fails (known limit)', () {
+    test(
+        'a deleted record stays in the saved copy, with the time from before '
+        'the delete, and a later screen offline shows it', () async {
+      var clock = _t0;
+      final server = _Server<RequestModel>();
+      final screen = await _open(cache, server, now: () => clock);
+      server.reads.last.add([_request('a1'), _request('a2')]);
+      await _saved(cache);
+
+      // The delete of a2 is accepted; the re-read that follows it fails.
+      clock = _t1;
+      server.reads.last.addError(const SocketException('offline'));
+      final saved = await _saved(cache);
+      expect(_ids(saved!.items), ['a1', 'a2']);
+      expect(saved.info.serverReadAt, _t0, reason: 'from before the delete');
+      expect(screen.status.lastReadFailed, isTrue);
+      await screen.subscription.cancel();
+
+      final offline = _Server<RequestModel>();
+      final later = await _open(cache, offline, now: () => _t1);
+      expect(_ids(later.lists.single), ['a1', 'a2']);
+      expect(later.status.showing, LocalListSource.savedCopy);
+      expect(later.status.lastServerReadAt, _t0);
+      await later.subscription.cancel();
+    });
+
+    test(
+        'the next successful read on the same screen (a retry) removes it '
+        'and advances the time', () async {
+      var clock = _t0;
+      final server = _Server<RequestModel>();
+      final screen = await _open(cache, server,
+          now: () => clock, retryDelays: const [Duration(milliseconds: 10)]);
+      server.reads.last.add([_request('a1'), _request('a2')]);
+      await _saved(cache);
+
+      clock = _t1;
+      server.reads.last.addError(const SocketException('offline'));
+      await _until(() => server.reads.length == 2); // the retry
+      server.reads.last.add([_request('a1')]);
+      final saved = await _saved(cache);
+      expect(_ids(saved!.items), ['a1']);
+      expect(saved.info.serverReadAt, _t1);
+      expect(screen.status.showing, LocalListSource.server);
+      expect(screen.status.lastReadFailed, isFalse);
+      await screen.subscription.cancel();
+    });
+
+    test(
+        'an added record is missing and an edited one is unchanged until the '
+        'next successful read: the copy shows less, never invented data',
+        () async {
+      final server = _Server<RequestModel>();
+      final screen = await _open(cache, server);
+      server.reads.last.add([_request('a1')]);
+      await _saved(cache);
+      server.reads.last.addError(const SocketException('offline'));
+      final saved = await _saved(cache);
+      expect(_ids(saved!.items), ['a1']);
+      expect(saved.items.single.notes, 'note a1');
+      await screen.subscription.cancel();
     });
   });
 

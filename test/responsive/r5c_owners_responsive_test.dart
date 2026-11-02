@@ -260,6 +260,7 @@ void main() {
       final vm = OwnersListViewModel(ownerService: service);
       await pumpResponsive(tester, listScenario,
           home: OwnersListView(createViewModel: () => vm));
+      await expectDateSeparatorCentered(tester);
       expect(find.byType(OwnersListView), findsOneWidget);
       await _visible(tester, find.byType(FloatingActionButton), listScenario);
       await tester.drag(

@@ -436,6 +436,7 @@ class _OfficesListViewState extends State<OfficesListView> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Left line
           Expanded(
@@ -447,8 +448,8 @@ class _OfficesListViewState extends State<OfficesListView> {
                     Colors.transparent,
                     accentColor.withValues(alpha: 0.3),
                   ],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
                 ),
               ),
             ),
@@ -456,17 +457,25 @@ class _OfficesListViewState extends State<OfficesListView> {
 
           // Date text
           Flexible(
-              child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              displayText,
-              style: texts.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: accentColor,
-                letterSpacing: 0.5,
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  displayText,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: texts.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: accentColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
             ),
-          )),
+          ),
 
           // Right line
           Expanded(
@@ -478,8 +487,8 @@ class _OfficesListViewState extends State<OfficesListView> {
                     accentColor.withValues(alpha: 0.3),
                     Colors.transparent,
                   ],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
                 ),
               ),
             ),

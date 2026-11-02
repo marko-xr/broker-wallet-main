@@ -439,6 +439,7 @@ class _OwnersListViewState extends State<OwnersListView> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Left line
           Expanded(
@@ -459,17 +460,25 @@ class _OwnersListViewState extends State<OwnersListView> {
 
           // Date text
           Flexible(
-              child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              displayText,
-              style: texts.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: accentColor,
-                letterSpacing: 0.5,
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  displayText,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: texts.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: accentColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
             ),
-          )),
+          ),
 
           // Right line
           Expanded(

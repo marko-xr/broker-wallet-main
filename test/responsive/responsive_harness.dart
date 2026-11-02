@@ -102,3 +102,26 @@ Future<void> pumpResponsive(
 void expectNoLayoutException(WidgetTester tester, ResponsiveCase scenario) {
   expect(tester.takeException(), isNull, reason: scenario.toString());
 }
+
+/// Check the painted label's position, including its FittedBox transform.
+Future<void> expectDateSeparatorCentered(WidgetTester tester) async {
+  final fitted = find.byWidgetPredicate((widget) =>
+      widget is FittedBox &&
+      widget.child is Text &&
+      (widget.child as Text).maxLines == 1 &&
+      (widget.child as Text).softWrap == false);
+  await tester.scrollUntilVisible(fitted, 100,
+      scrollable: find.byType(Scrollable).first);
+  expect(fitted, findsWidgets);
+  for (final element in fitted.evaluate()) {
+    final text = find.descendant(
+      of: find.byWidget(element.widget),
+      matching: find.byType(Text),
+    );
+    expect(text, findsOneWidget);
+    final row = find.ancestor(of: text, matching: find.byType(Row)).first;
+    expect(tester.getCenter(text).dx,
+        closeTo(tester.getCenter(row).dx, 0.01),
+        reason: 'Date label must be centered in the full separator row.');
+  }
+}

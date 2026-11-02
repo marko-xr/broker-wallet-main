@@ -16369,3 +16369,103 @@ Verification: `flutter analyze --no-pub lib` 84 issues, no error or warning; `gi
 offers, plan_attachment, R5a-d responsive, canonical_identity): 1888 passed, 2 failed - the
 known `combine_source_guards_test` honesty case and the `scanner_cloud_test` `Harness` name
 clash, both unrelated to this change.
+
+## List date divider alignment (2026-11-02)
+
+Owner-requested scope: offer, request, watchmen, broker and office list date
+separators only; the owner list is the reference and remains unchanged.
+
+- Offers/requests: use the owner's default Flexible proportion for the date,
+  restoring the same space for the left/right divider lines.
+- Watchmen/brokers/offices: use the owner's AlignmentDirectional gradient
+  endpoints so both lines follow the current English/Arabic text direction.
+- Existing labels, typography, colors, spacing, list items and behavior retained.
+
+Verification: git diff --check PASS. Targeted analyzer reported No issues found,
+but exited 1 after a telemetry file permission error; isolated-config retry
+also reported No issues found but was interrupted without a normal completion.
+Existing responsive list tests did not complete: the isolated APPDATA retry
+reached setup/first test before interruption, with zero completed test results.
+No test PASS or VERIFIED_RUNTIME claimed. No commit or deployment.
+
+NOW: on a real device, compare the five list date separators against Owners in
+English and Arabic, including older date/day labels and large text.
+NEXT: if the visual comparison passes, record the real-device result; otherwise
+adjust only these date separators based on the observed difference.
+### Follow-up: one-line date/day labels across all six lists (2026-11-02)
+
+Owner expanded the separator scope to include Owners and requested consistent
+text sizing, one-line full date/day labels, and shorter left/right dividers.
+All six separator render blocks now match: titleSmall with the owner's existing
+weight/letter spacing, date Flexible flex 6 between the two flex 1 lines,
+horizontal label padding 8, maxLines 1, softWrap false, and a scaleDown FittedBox
+for labels that exceed the available width. No ellipsis or date content removal.
+Watchmen now uses the same titleSmall style as the other five lists.
+Only separator presentation changed; grouping, localization, colors, cards,
+actions and all other screen content remain unchanged.
+
+Verification: targeted dart analyze for ViewLists PASS (No issues found, exit 0).
+Existing responsive list tests for all six screens: 59/59 PASS, exit 0
+(build/divider-single-line-tests.log). git diff --check PASS.
+Not VERIFIED_RUNTIME; no commit/deploy.
+
+NOW: compare all six lists on a real device in EN/AR, checking this/last week and
+long date/day labels at normal and large text sizes.
+NEXT: record runtime verification after the one-line layout and equal sizing
+are accepted, or adjust only the separators if a device issue remains.
+### Follow-up: center all six date separator rows (2026-11-02)
+
+Owner screenshots showed the prior one-line change shifted date groups toward
+RTL start. Cause: a loose Flexible date consumes less than its maximum share,
+leaving free space that the Row's default start alignment puts on one side.
+All six separator Rows now explicitly use MainAxisAlignment.center. Equal
+left/right lines, one-line full labels, theme typography, scaleDown overflow
+protection and localization are retained. No other production UI changed.
+
+Added a rendered horizontal-center assertion to existing populated-list cases
+for Requests/Offers/Owners and shared Watchmen/Brokers/Offices cases. It scrolls
+the lazy date header into view and compares the transformed Text center against
+the full separator Row center. Initial assertion attempts failed due to test
+finder setup (unbuilt lazy headers and unrelated framework FittedBoxes), not
+proof of the product bug; the final finder targets the one-line date label.
+A temporary Requests rollback during regression setup was restored immediately
+after the owner reported it; all six source Rows include the centering fix.
+
+Verification: 59/59 responsive list tests PASS, exit 0, including rendered
+date center assertions across all six lists (build/divider-centering-final.log).
+git diff --check PASS. Analyzer attempt crashed in its cache writer; escalated
+retry stalled and was interrupted without a result; no new analyzer PASS.
+Not VERIFIED_RUNTIME.
+NOW: hot reload the running app and reopen Requests, then compare the date
+positions on all six lists in Arabic and English.
+NEXT: record real-device acceptance if centered; investigate only the separator
+if a visible issue remains. No commit/deployment.
+
+### Divider width adjustment (2026-11-02)
+
+Owner requested slightly longer date divider lines on the six list screens.
+Changed only the date Flexible share from 6 to 4 in each existing separator
+Row. Each divider remains Expanded(flex: 1), so at a 360 dp screen width with
+16 dp margins each divider changes from (360-32)/8 = 41 dp to
+(360-32)/6 = 54.67 dp. The centered Row, one-line date label and scaleDown
+behavior remain in place. Existing six-list layout regression result:
+59/59 PASS, exit 0 (build/divider-longer-tests.log). git diff --check PASS.
+No device verification yet.
+
+NOW: hot reload and inspect all six separators in Arabic and English.
+NEXT: record the device result after confirming length and centering.
+
+### Final date divider width and handoff (2026-11-02)
+
+Owner changed the date Flexible share to 2 on all six lists and reports this
+length is better. Each line keeps Expanded flex 1; at a 360 dp screen width
+with 16 dp side margins, each line is (360-32)/4 = 82 dp. The centered row,
+one-line scaleDown date label, theme typography and RTL gradients remain.
+Final six-list responsive checks with flex 2: 59/59 PASS, exit 0
+(build/divider-flex2-tests.log); git diff --check PASS. This is CODE_PROVEN.
+The owner's visual preference is recorded; a full real-device matrix is not
+claimed. Commit requested for these six list files, related position assertions
+and this checkpoint note only.
+
+NOW: commit the scoped divider changes. NEXT: on device, verify the final
+flex 2 date separators in all six lists in Arabic and English.

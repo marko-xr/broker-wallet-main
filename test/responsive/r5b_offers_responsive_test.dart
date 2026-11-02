@@ -212,6 +212,7 @@ void main() {
       final vm = OffersListViewModel(offerService: service);
       await pumpResponsive(tester, listScenario,
           home: OffersListView(viewModel: vm));
+      await expectDateSeparatorCentered(tester);
       expect(find.byType(OffersListView), findsOneWidget);
       await _visible(tester, find.byType(FloatingActionButton), listScenario);
       await tester.drag(

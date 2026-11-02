@@ -134,6 +134,7 @@ void main() {
           requestService: _StreamRequestService(Stream.value([_request()])));
       await pumpResponsive(tester, listScenario,
           home: RequestedListView(viewModel: vm));
+      await expectDateSeparatorCentered(tester);
       expect(find.byType(RequestedListView), findsOneWidget);
       await _reachable(tester, find.byType(FloatingActionButton), listScenario);
       await tester.drag(

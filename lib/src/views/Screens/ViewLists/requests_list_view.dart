@@ -273,6 +273,7 @@ class _RequestedListViewState extends State<RequestedListView> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Left line
           Expanded(
@@ -293,16 +294,21 @@ class _RequestedListViewState extends State<RequestedListView> {
 
           // Date text
           Flexible(
-            flex: 3,
+            flex: 2,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                displayText,
-                textAlign: TextAlign.center,
-                style: texts.titleSmall?.copyWith(
-                  color: accentColor,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  displayText,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: texts.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: accentColor,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ),

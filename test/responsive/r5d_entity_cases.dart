@@ -172,6 +172,7 @@ void entityCases<T, V extends ChangeNotifier>({
       await pumpResponsive(tester, window,
           home: list(Stream.value(List.generate(8, (i) => record(i, false))),
               () => reads++));
+      await expectDateSeparatorCentered(tester);
       expect(find.byType(FloatingActionButton).hitTestable(), findsOneWidget);
       for (final i in [0, 3, 7]) {
         final tile = find.byWidgetPredicate(

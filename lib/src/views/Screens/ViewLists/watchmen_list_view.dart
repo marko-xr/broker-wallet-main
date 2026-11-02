@@ -445,6 +445,7 @@ class _WatchmenListViewState extends State<WatchmenListView> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Left line
           Expanded(
@@ -456,6 +457,8 @@ class _WatchmenListViewState extends State<WatchmenListView> {
                     Colors.transparent,
                     accentColor.withValues(alpha: 0.3),
                   ],
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
                 ),
               ),
             ),
@@ -463,16 +466,25 @@ class _WatchmenListViewState extends State<WatchmenListView> {
 
           // Date text
           Flexible(
-              child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              displayText,
-              style: texts.labelLarge?.copyWith(
-                color: accentColor,
-                fontWeight: FontWeight.w600,
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  displayText,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: texts.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: accentColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
             ),
-          )),
+          ),
 
           // Right line
           Expanded(
@@ -484,6 +496,8 @@ class _WatchmenListViewState extends State<WatchmenListView> {
                     accentColor.withValues(alpha: 0.3),
                     Colors.transparent,
                   ],
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
                 ),
               ),
             ),

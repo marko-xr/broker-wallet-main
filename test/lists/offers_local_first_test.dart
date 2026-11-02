@@ -323,7 +323,10 @@ void main() {
       var calls = 0;
       final offers = _Offers(currentUserId: () => calls++ == 0 ? _alice : _bob);
       final vm = openOffers(offers);
-      await untilServerRead(offers);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(offers.reads, isEmpty);
       expect(vm.offers, isEmpty);
     });
 

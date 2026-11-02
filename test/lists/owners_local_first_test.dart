@@ -317,7 +317,10 @@ void main() {
       var calls = 0;
       final owners = _Owners(currentUserId: () => calls++ == 0 ? _alice : _bob);
       final vm = openOwners(owners);
-      await untilServerRead(owners);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(owners.reads, isEmpty);
       expect(vm.owners, isEmpty);
     });
 

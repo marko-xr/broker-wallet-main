@@ -7,8 +7,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+import 'list_refresh_signals.dart';
 
 /// Where each account's cache encryption key lives.
 abstract class AccountCacheKeyStore {
@@ -353,6 +356,10 @@ class EncryptedAccountListCache<T> {
     return difference == 0;
   }
 
+  /// The stored form of [items], to tell whether two lists differ.
+  String fingerprintOf(List<T> items) =>
+      json.encode([for (final item in items) _encode(item)]);
+
   /// [uid]'s records in [payload]; anyone else's are dropped.
   List<T>? _items(String uid, String payload) {
     final decoded = json.decode(payload);
@@ -601,6 +608,25 @@ class EncryptedAccountListCache<T> {
   }
 }
 
+/// After a network failure: wait this long before each further read, then
+/// stop until the next refresh hint (the app resuming).
+const List<Duration> defaultListRetryDelays = [
+  Duration(seconds: 5),
+  Duration(seconds: 15),
+  Duration(seconds: 45),
+  Duration(minutes: 2),
+];
+
+/// Whether [error] is a network failure worth reading again for. Anything
+/// else — no session, a refused or superseded session, a server error — is
+/// not retried: the server decides about sessions, not the client.
+bool isRetryableListError(Object error) =>
+    error is SocketException ||
+    error is TimeoutException ||
+    error is HandshakeException ||
+    error is HttpException ||
+    error is http.ClientException;
+
 /// A screen's list: the signed-in account's saved copy at once (when there is
 /// one), then the server's list, which replaces it and is saved for next time.
 ///
@@ -609,51 +635,202 @@ class EncryptedAccountListCache<T> {
 /// is saved for an account that is no longer signed in, and a screen closed
 /// while the copy is read never asks the server. Each server list is one
 /// complete read, so an empty list is saved as empty.
+///
+/// For a signed-in account the list also reads again by itself, through the
+/// same server read and the same encrypted save:
+/// - after a network failure, at most once per entry of [retryDelays]; a
+///   failed first read no longer ends the screen's list;
+/// - on a [refreshSignals] hint (the app resuming), when the last read
+///   failed or is older than [minRefreshInterval]; hints closer together
+///   than [minHintGap] count once.
+/// A retry that falls due while the app is not in the foreground
+/// ([isAppActive]) reads nothing; the next resume reads instead. Once the
+/// retries are used up, nothing reads again until a hint: the app has no
+/// "network is back" signal.
+/// Only one read is ever in flight. Any error that is not a network failure
+/// stops these extra reads. They also stop for good once the signed-in
+/// account is no longer the one the list was opened for, and a read that ends
+/// after that is dropped. A list identical to the one last shown is not shown
+/// again, and a repeated failure is passed on once.
 Stream<List<T>> localFirstList<T>({
   required Stream<List<T>> Function() server,
   required EncryptedAccountListCache<T> cache,
   required String? Function() currentUserId,
+  Stream<void>? refreshSignals,
+  List<Duration> retryDelays = defaultListRetryDelays,
+  Duration minRefreshInterval = const Duration(seconds: 30),
+  Duration minHintGap = const Duration(seconds: 2),
+  DateTime Function() now = DateTime.now,
+  bool Function()? isAppActive,
 }) {
+  final appIsActive =
+      isAppActive ?? () => ListRefreshSignals.instance.appIsActive;
   late final StreamController<List<T>> controller;
   StreamSubscription<List<T>>? subscription;
+  StreamSubscription<void>? hints;
+  Timer? retryTimer;
   var cancelled = false;
+  String? uid;
 
-  void listenToServer(String? uid) {
+  // Only for a signed-in account.
+  var stopped = false; // the account changed, or a non-network failure
+  var inFlight = false; // a read has started and not yet answered
+  var answered = false; // the current read delivered a list
+  var failed = false; // the last read failed
+  var retries = 0;
+  DateTime? lastSuccess;
+  DateTime? lastStart;
+  String? lastShown;
+  var errorShown = false;
+
+  bool stillTheAccount() => uid != null && currentUserId() == uid;
+
+  void stop() {
+    stopped = true;
+    retryTimer?.cancel();
+    retryTimer = null;
+    unawaited(hints?.cancel());
+    hints = null;
+  }
+
+  late void Function() readAgain;
+
+  void scheduleRetry() {
+    if (cancelled || stopped || retryTimer != null) return;
+    if (retries >= retryDelays.length) return;
+    retryTimer = Timer(retryDelays[retries++], () {
+      retryTimer = null;
+      // In the background no read is made; the resume hint reads instead.
+      if (!appIsActive()) return;
+      readAgain();
+    });
+  }
+
+  void listenToServer() {
     if (cancelled) return;
+    if (uid != null && !stillTheAccount()) {
+      stop();
+      return;
+    }
+    inFlight = true;
+    answered = false;
+    lastStart = now();
     subscription = server().listen(
       (items) {
-        controller.add(items);
-        if (uid != null && currentUserId() == uid) {
-          // This list is a successful server read for the signed-in account:
-          // the one case in which an unreadable box may be recovered.
-          unawaited(cache.write(uid, items,
-              mayRecover: () => currentUserId() == uid));
+        inFlight = false;
+        answered = true;
+        if (uid == null) {
+          controller.add(items);
+          return;
+        }
+        if (!stillTheAccount()) {
+          stop(); // a list read for the account that has gone
+          return;
+        }
+        failed = false;
+        retries = 0;
+        lastSuccess = now();
+        errorShown = false;
+        final shown = cache.fingerprintOf(items);
+        if (shown != lastShown) {
+          lastShown = shown;
+          controller.add(items);
+        }
+        // This list is a successful server read for the signed-in account:
+        // the one case in which an unreadable box may be recovered.
+        unawaited(cache.write(uid!, items, mayRecover: stillTheAccount));
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        inFlight = false;
+        if (uid == null) {
+          controller.addError(error, stackTrace);
+          return;
+        }
+        if (!stillTheAccount()) {
+          stop();
+          return;
+        }
+        failed = true;
+        if (!errorShown) {
+          errorShown = true;
+          controller.addError(error, stackTrace);
+        }
+        if (isRetryableListError(error)) {
+          scheduleRetry();
+        } else {
+          stop();
         }
       },
-      onError: controller.addError,
-      onDone: controller.close,
+      onDone: () {
+        inFlight = false;
+        // As before: with no account, or once the source has answered and
+        // ended, the screen's list ends too. A signed-in list whose read
+        // failed stays open for the next read.
+        if (uid == null || answered) unawaited(controller.close());
+      },
     );
   }
 
-  Future<void> showSavedThenListen(String uid) async {
-    final saved = await cache.read(uid);
+  readAgain = () {
+    if (cancelled || stopped || inFlight) return;
+    if (!stillTheAccount()) {
+      stop();
+      return;
+    }
+    final previous = subscription;
+    subscription = null;
+    unawaited(previous?.cancel());
+    listenToServer();
+  };
+
+  void onHint(void _) {
+    if (cancelled || stopped || inFlight) return;
+    final at = now();
+    final started = lastStart;
+    if (started != null && at.difference(started) < minHintGap) return;
+    final succeeded = lastSuccess;
+    if (!failed &&
+        succeeded != null &&
+        at.difference(succeeded) < minRefreshInterval) {
+      return;
+    }
+    retryTimer?.cancel();
+    retryTimer = null;
+    retries = 0;
+    readAgain();
+  }
+
+  Future<void> showSavedThenListen() async {
+    final saved = await cache.read(uid!);
     if (cancelled) return;
-    if (saved != null && currentUserId() == uid) controller.add(saved);
-    listenToServer(uid);
+    if (saved != null && stillTheAccount()) {
+      lastShown = cache.fingerprintOf(saved);
+      controller.add(saved);
+    }
+    hints =
+        (refreshSignals ?? ListRefreshSignals.instance.hints).listen(onHint);
+    listenToServer();
   }
 
   controller = StreamController<List<T>>(
     onListen: () {
-      final uid = currentUserId();
+      uid = currentUserId();
       if (uid == null) {
-        listenToServer(null);
+        listenToServer();
       } else {
-        unawaited(showSavedThenListen(uid));
+        unawaited(showSavedThenListen());
       }
     },
     onCancel: () {
       cancelled = true;
-      return subscription?.cancel();
+      retryTimer?.cancel();
+      retryTimer = null;
+      final pending = [hints?.cancel(), subscription?.cancel()];
+      hints = null;
+      return Future.wait([
+        for (final p in pending)
+          if (p != null) p
+      ]);
     },
   );
   return controller.stream;

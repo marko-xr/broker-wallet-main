@@ -314,7 +314,10 @@ void main() {
       final watchmen =
           _Watchmen(currentUserId: () => calls++ == 0 ? _alice : _bob);
       final vm = openWatchmen(watchmen);
-      await untilServerRead(watchmen);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(watchmen.reads, isEmpty);
       expect(vm.watchmen, isEmpty);
     });
 

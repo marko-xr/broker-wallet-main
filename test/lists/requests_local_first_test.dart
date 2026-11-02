@@ -308,7 +308,10 @@ void main() {
         currentUserId: () => calls++ == 0 ? _alice : _bob,
       );
       final vm = openRequests(requests);
-      await untilServerRead(requests);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(requests.reads, isEmpty);
       expect(vm.requests, isEmpty);
       expect(vm.isInitialLoading, isTrue);
     });

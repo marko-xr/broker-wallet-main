@@ -300,7 +300,10 @@ void main() {
       final brokers =
           _Brokers(currentUserId: () => calls++ == 0 ? _alice : _bob);
       final vm = openBrokers(brokers);
-      await untilServerRead(brokers);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(brokers.reads, isEmpty);
       expect(vm.brokers, isEmpty);
     });
 

@@ -309,7 +309,10 @@ void main() {
       final offices =
           _Offices(currentUserId: () => calls++ == 0 ? _alice : _bob);
       final vm = openOffices(offices);
-      await untilServerRead(offices);
+      // The list was opened for an account that has gone: it shows nothing
+      // and asks the server nothing for it.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(offices.reads, isEmpty);
       expect(vm.offices, isEmpty);
     });
 

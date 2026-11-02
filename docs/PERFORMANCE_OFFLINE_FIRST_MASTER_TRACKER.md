@@ -1585,6 +1585,80 @@
 - **FU-OWNERS-R5C:** الخمسة **RESOLVED** (177/177 في §7Y). **التاريخي** (Delete Account migration-file): **OPEN**.
 - **الحالة:** P2.5e = **CLOSED مع FU-P2.5E-CRUD-STALE OPEN**؛ P2 = CODE_PROVEN، ليس REAL_DEVICE_VERIFIED؛ Samsung D-7..D-50 والبناء الأصلي **DEFERRED / UNVERIFIED**.
 - **NEXT (غير مصرّح به بعد):** **P3.0 — Supabase Query and CRUD Contract Audit.** **STOP:** لا P3 تلقائياً.
+- **أُودع** بموافقة المالك: `722b59a` `test(offline): document CRUD cache consistency limitation`، ودفعه المالك (`origin` = `722b59a`، §7Z).
+
+---
+
+## 7Z) P3.0 — تدقيق استعلامات Supabase وعقد الحذف المشترك — 2026-11-02 (AUDIT؛ لا تغيير كود إنتاجي)
+
+**Git (بعد `git fetch`):** `perf/phase-1-startup-baseline` @ `722b59a` = `origin` (0/0)، الشجرة نظيفة، stashes = 2. **الأدوات المثبّتة:** `supabase_flutter 2.17.2`، `postgrest 2.9.1`، `gotrue 2.27.2`.
+
+**تصنيف الأدلة:** **SQL-EXECUTED** = نُفّذ على PostgreSQL 17.5 محلي (PGlite) بسلسلة الـ migrations الحقيقية (19/19 طُبّقت، 0 فشل؛ 24 فحصاً — انظر «الأدلة المنفّذة») وبدور `authenticated` مع JWT claims كما يفعل PostgREST — **ليس Supabase ولا PostgREST ولا الخادم المستضاف**؛ **TESTED** = اختبار Dart؛ **CODE** = من المصدر (بما فيه مصدر الحزم المثبّتة)؛ **MEASURED** = لا شيء في هذه النقطة (لا أعداد طلبات فعلية مقاسة).
+
+### A) عقد `_softDelete` المشترك
+- **التنفيذ:** `SupabaseCoreEntitiesService._softDelete(table, id)` = `update({'deleted_at': now}).eq('id', id)` ثم `notify()` عبر `_softDeleteAndNotify`؛ تستعمله **الكيانات الست** (`deleteRequest/Offer/Owner/Office/Broker/Watchman`). بلا `.select()`، بلا count، بلا فلتر `deleted_at`، بلا فلتر مالك (RLS وحده)، والخطأ يُرمى كما هو. **TESTED** (`core_entity_query_contract_test`: PATCH بـ `id=eq.<id>` فقط، Prefer بلا `return=representation`/`count`، و**204 بلا صف = نجاح** ويُبلَّغ كل القوائم).
+- **RLS (من الـ migrations):** سياسات SELECT/UPDATE للجداول الست = `owner_id = (select auth.uid())` — **لا تذكر `deleted_at`**؛ لا سياسة DELETE؛ فوقها `app_session_gate` **restrictive** على كل الجداول = `is_current_app_session()`، والدالة **تُرجع false ولا ترمي خطأ**. trigger `bump_sync_version` يزيد `version` ويضبط `updated_at` عند كل UPDATE.
+- **SQL-EXECUTED (الحذف بالشكل الحالي، بلا RETURNING):** صف حي للمالك ⇒ 1 صف؛ **صف حساب آخر ⇒ 0 صف بلا خطأ**؛ **معرّف غير موجود ⇒ 0 بلا خطأ**؛ **صف محذوف مسبقاً ⇒ 1 صف: يُعاد ختم `deleted_at` ويزيد `version`** (2→3→4)؛ **جلسة مُزاحة (Single Active Device) ⇒ 0 بلا خطأ والصف يبقى حياً**؛ الإدراج من جلسة مُزاحة ⇒ خطأ RLS صريح. ⇒ **استجابة ناجحة يمكن أن تمثّل صفر صفوف — مُثبت.** PostgREST يُرجع 204 لـ PATCH بلا تمثيل في الحالتين (CODE/وثائق؛ لم يُشغَّل PostgREST).
+- **SQL-EXECUTED (مع `RETURNING id` = ما يرسله `.select('id')`):** صف حي للمالك ⇒ **يُرجَع الصف رغم ضبط `deleted_at`** (سياسة SELECT لا تُخفي المحذوف)؛ مع `and deleted_at is null`: حي ⇒ 1، محذوف مسبقاً ⇒ 0؛ حساب آخر ⇒ 0؛ غير موجود ⇒ 0؛ جلسة مُزاحة ⇒ 0؛ Brokers (منحة أعمدة تشمل `deleted_at`) ⇒ 1. ⇒ **سؤال «هل تُخفي SELECT الصف بعد الحذف المرن؟» = لا، تحت السياسات الحالية.**
+- **التمييز:** صف واحد مُرجَع = **حذف حقيقي مؤكَّد**؛ صفر صفوف = {محذوف مسبقاً، ليس للحساب/غير موجود، جلسة غير حالية} — لا يُفرَّق بينها إلا بطلب متابعة (`select id, deleted_at where id`: صف بـ `deleted_at` ⇒ محذوف مسبقاً للحساب نفسه؛ لا صف ⇒ ليس له أو جلسة غير حالية — و`is_current_app_session` يفرّق الأخيرة)؛ انقطاع الشبكة = استثناء نقل كما اليوم.
+- **API المثبّت (CODE، `postgrest 2.9.1`):** `update(...).eq(...).select('id')` يضيف `Prefer: return=representation` ويُرجع `List`؛ و`.count(CountOption.exact)` متاح على transform builder (Content-Range) — **لا حزمة جديدة**.
+- **أصغر حل مدعوم بالدليل (للموافقة، لم يُنفَّذ) — P3.1a:** داخل `_softDelete` فقط: `.eq('id', id).isFilter('deleted_at', null).select('id')`؛ صف واحد ⇒ مؤكَّد؛ صفر ⇒ طلب متابعة واحد: محذوف مسبقاً للحساب ⇒ مؤكَّد **بلا إعادة ختم**؛ غير ذلك ⇒ خطأ نوعي («لم يُحذف») بدل نجاح صامت، مع `validateNow()` لكشف الإزاحة. الأثر: الكيانات الست، وواجهة الحذف تُظهر الفشل الحقيقي بدل «حُذف» (تغيير سلوك مرئي — قرار مالك). **لا تغيير RLS/SQL.** **ما يبقى غير مُتحقَّق:** طبقة PostgREST نفسها ⇒ تحقق على staging بحساب `authenticated` عادي (بلا service role) قبل الاعتماد.
+- **FU-P2.5E-CRUD-STALE: يبقى OPEN.** بعد P3.1a يصير «حذف مؤكَّد بصف» دليلاً خادمياً؛ إزالة ذلك المعرّف من نسخة v2 تبقى **قراراً منفصلاً** (استثناء D-3). **لا تعديل لنسخة v2 بناءً على حذف غير مؤكَّد.**
+
+### A2) اكتشاف جديد — قائمة فارغة «مرجعية» من جلسة مُزاحة (F-SAD-EMPTY) — خطر صحة، OPEN
+- **SQL-EXECUTED:** جلسة A الأولى بعد أن ادّعى جهاز A الثاني الجلسة: قراءة القائمة ⇒ **0 صف بلا خطأ** (الحساب يملك صفين حيين)؛ الجهاز الحالي ⇒ 2؛ بلا `session_id` ⇒ 0.
+- **CODE:** `SupabaseCoreEntitiesService` (القوائم، الأعداد، الحذف) لا يفحص `isAuthorized` ولا يمرّر الأخطاء لـ `AppSessionCoordinator`؛ الكشف = Realtime على `user_active_sessions` (قد يكون منقطعاً/في الخلفية) + فحص العودة إلى المقدمة. **قبل الكشف**، `localFirstList` يستقبل `[]` والحساب ما زال حالياً ⇒ **يعرضها ويحفظها v2 فارغة بوقت P2.5c فوق النسخة الجيدة**؛ وأعداد Home ⇒ أصفار تُحفظ في كاش الأعداد. **بعد الكشف** الهوية تصير null فيُسقط الجواب (P2.5b). سباق واقعي: العودة إلى المقدمة تطلق قراءة القائمة (P2.5b) وفحص الجلسة معاً.
+- **الأثر:** لا تسريب بيانات (يُعرض أقل)؛ لكنه **ينقض دلالة «القائمة الفارغة المرجعية»** ويمسح نسخة offline جيدة حتى أول قراءة ناجحة بعد إعادة الدخول. **قاعدة صالحة:** قائمة **غير فارغة** دليل على أن البوابة سمحت وقت الاستعلام (البوابة كلّ-أو-لاشيء لكل طلب)؛ **الفارغة وحدها غامضة**.
+- **حل مقترح (P3.1b، للموافقة):** قبل حفظ قائمة خادم **فارغة** (أو أعداد صفرية) تأكيد `is_current_app_session` (RPC واحد فقط عند الفراغ؛ نادر)؛ false ⇒ لا حفظ ولا عرض كمرجعية + `supersede()`. عميل فقط؛ لا تغيير RLS/Auth؛ يمسّ تفاعل SAD ⇒ قرار مالك.
+
+### B) جرد الاستعلامات (CODE ما لم يُذكر خلافه؛ **لا أعداد مقاسة**)
+| # | المسار (ملف) | المُطلِق | الطلبات | الحكم | الأثر المتوقع | التحسين الآمن |
+|---|---|---|---|---|---|---|
+| Q1 | `HomeViewModel._initializeSupabaseCountsWhenReady` + `_loadSupabaseCounts` (`home_viewmodel.dart`) | بدء Home | **1 + R دفعات × 7**: تحميل مباشر، ثم `onAuthStateChange` = **`ReplaySubject` غير محدود في gotrue 2.27.2** يعيد لكل مستمع جديد **كل** أحداث المصادقة السابقة (initialSession، signedIn، كل tokenRefreshed) وكل حدث بجلسة يطلق تحميلاً؛ لا دمج للطلبات الجارية | **تكرار مُثبت من المصدر** (لا مقاس) | 7–21+ طلباً عند البدء بدل 7 | دمج in-flight + تجاهل الأحداث المعادة/`tokenRefreshed` لنفس الحساب |
+| Q2 | `SupabaseHomeCountsService._countActiveRows` | كل تحميل أعداد | 7 GET `select=id` + `count=exact` — **تُرجع صفوف المعرّفات أيضاً** (TESTED) | ضروري، **حمولة زائدة** | حتى 7×(حد الصفوف) معرّفاً بلا داعٍ | `from(t).count(CountOption.exact).isFilter('deleted_at', null)` = HEAD (CODE: postgrest 2.9.1) |
+| Q3 | `app_routes.dart` → `refreshCounts()` | كل عودة إلى تبويب Home + السحب | 7 (+ قراءة الفلتر عند السحب) | محتمل التكرار | 7 لكل تنقل | حدّ أدنى للفاصل/الاعتماد على إشعار التعديل |
+| Q4 | `CoreEntityMutationNotifier` (عام) | **أي** إضافة/تعديل/حذف | 7 أعداد + إعادة قراءة **كل** قائمة مفتوحة لكل الكيانات + الصلة + Search (6) إن حُمّل + فلتر Home | **انتشار مُثبت** | عملية Broker تعيد قراءة Requests/Offers إن كانت مفتوحة | إشعار بنوع الكيان (لاحقاً؛ يمسّ العقد) |
+| Q5 | `favorites_service.dart` (`for type … await`) + `favorites_viewmodel._load*WithMetadata` | فتح المفضلة | **6 متسلسلة + N متسلسلة** (`getX(id)` لكل مفضل) + حلّ وسائط لكل Offer (`getOffer` → `resolveOfferMediaFor`) ولكل Owner | **N+1 مُثبت من المصدر** (لا مقاس) | خطّي في عدد المفضلات | `inFilter('id', ids)` لكل نوع + المسح الستة بالتوازي؛ الوسائط كسولة |
+| Q6 | `getRelatedItemsCount` | تفاصيل سجل (العناصر المرتبطة) | 2 count **متسلسلان** بـ `select=id` | ضروري، متسلسل | زمن مضاعف | `Future.wait` + HEAD |
+| Q7 | `DefaultSearchDataSource.load` | فتح Search/بعد تعديل | 6 قراءات **كاملة** للقوائم (كل الأعمدة + المناطق) ثم فلترة محلية | ضروري حالياً، ثقيل | حمولة كل البيانات | P4 (بحث خادمي/ترقيم) — لا تغيير الآن |
+| Q8 | القوائم الست `_fetchX` عبر `_refreshedStream` | فتح القائمة/إشعار تعديل/P2.5b | 1 لكل قائمة، القائمة كاملة | ضروري؛ لا N+1 (الوسائط ليست في قائمة Offers/Owners) | — | P4 |
+| Q9 | `HomeViewModel._createCombinedStream` | **فقط** حين `USE_SUPABASE_AUTH=false` | polling كل 2 ث لست قوائم كاملة | **مسار قديم ميت في الإنتاج** (الافتراضي true) | 0 حالياً | إزالته لاحقاً بقرار منفصل |
+
+**الأعداد: فعلية = غير مقاسة؛ المستنتجة من المصدر أعلاه.** القياس (عدّاد طلبات مؤقت محلي أو Supabase API logs) يحتاج موافقة؛ لا تسجيل واسع أُضيف.
+
+### C) اكتمال النتائج
+- **TESTED:** القراءات الست `select … owner_id=eq.<uid>&deleted_at=is.null&order=created_at.desc.nullslast` — **بلا `limit`/`offset`/Range/count**، **ومفتاح ترتيب واحد** (صفوف بنفس `created_at` بلا ترتيب ثابت).
+- **الحد:** PostgREST يقصّ عند `max_rows` بصمت (200 مع الصفوف الأولى = **الأحدث** حسب الترتيب)؛ `supabase/config.toml` المحلي = 1000 (وهو افتراضي Supabase الموثّق)؛ **القيمة المستضافة غير مُتحقَّق منها** (قراءتها read-only عبر Dashboard → API settings أو Management API `GET /v1/projects/{ref}/postgrest` بحساب المالك — إجراء المالك). ⇒ **أي قائمة/بحث/مفضلات (لكل نوع) فوق الحد قد تكون ناقصة بصمت**؛ أعداد Home (`count=exact`) **لا تتأثر** بالحد. النسخة المحفوظة تبقى `completeness = unknown`.
+- **خيارات آمنة (P4، لم تُنفَّذ):** (1) `count=exact` مع الصفحة الأولى ⇒ كشف النقص (`length < count`) — كلفة count على الخادم؛ (2) ترقيم keyset بـ `(created_at desc, id desc)` مع مفتاح ترتيب ثانٍ؛ (3) `range()` بأحجام ≤ الحد. كلها تحافظ على فلتر `owner_id` وRLS/البوابة كمرجع. لا خطر صحة يفرض تقديمها قبل P4 **ما لم** يتجاوز حساب حقيقي ~1000 سجل في نوع واحد (غير معروف).
+
+### الأدلة المنفّذة
+- **SQL-EXECUTED (PGlite — PostgreSQL 17.5 محلي، ليس Supabase/PostgREST/الخادم المستضاف):** سكربت مؤقت في scratchpad (لم يُضف للمستودع): bootstrap لأدوار/مخطط auth، 19/19 migration، و**24 فحصاً**: 5 فحوص إعداد/حالة جلسة (ادعاء جلسات A/B ثم A على جهاز ثانٍ، و`is_current_app_session` قبل الإزاحة وبعدها) + **19 سيناريو حذف/قراءة** (S1–S4 بما فيها S1b/S1c، R1–R6، X1–X7) + فحص إعادة ختم `deleted_at` عند الحذف المكرر. (تصحيح: ذكر تقرير سابق «22 سيناريو» خطأً.) لا SQL على أي قاعدة مستضافة؛ لا service role لمحاكاة المستخدم.
+- **جديد `test/lists/core_entity_query_contract_test.dart` — 3/3 PASS** (characterization، لا تغيير سلوك): الحذف الستة PATCH بلا تأكيد و204 = نجاح + 6 إشعارات؛ القراءات الست بلا limit/range/count و`[]` = قائمة فارغة؛ أعداد Home = 7 GET بـ `select=id` + `count=exact`. مع `core_entity_refresh_stream_test` ⇒ 6/6. Analyzer → No issues. Format → 0 تغييرات.
+- **لم يُعَد الانحدار الواسع:** لا تغيير في `lib/`.
+
+### توصيات P3.1 مرتّبة (كلها تنتظر الموافقة)
+1. **P3.1a — تأكيد الحذف المرن** (صحة؛ الأعلى): كما في A أعلاه + تحقق staging بحساب عادي. **نقطة البدء الموصى بها.**
+2. **P3.1b — F-SAD-EMPTY** (صحة): تأكيد الجلسة قبل حفظ قائمة/أعداد فارغة.
+3. **P3.1c — أعداد Home بـ HEAD** (أداء، خطر منخفض، بلا تغيير دلالي).
+4. **P3.1d — دمج تحميلات أعداد Home** (أداء؛ إزالة تكرار الإعادة من `ReplaySubject`).
+5. **P3.1e — المفضلات بدفعات** (أداء؛ N+1).
+6. **P3.1f — `getRelatedItemsCount` متوازٍ + HEAD** (أداء صغير).
+7. لاحقاً: إشعار تعديل بنوع الكيان (Q4)؛ إزالة مسار polling الميت (Q9)؛ **P4** للترقيم/الاكتمال/مفتاح الترتيب الثاني.
+
+### قرارات تحتاج المالك
+- اعتماد P3.1a (يغيّر عقد CRUD المشترك ويُظهر فشل الحذف الحقيقي للمستخدم) + تحقق staging.
+- اعتماد P3.1b (تفاعل مع Single Active Device على العميل فقط).
+- بعد P3.1a: هل تُزال المعرّفات المؤكَّد حذفها من نسخة v2 (استثناء D-3) لإغلاق FU-P2.5E-CRUD-STALE.
+- قراءة `max_rows` المستضاف (read-only، بحساب المالك).
+- قياس أعداد الطلبات الفعلية (أداة مؤقتة محلية أو سجلات Supabase).
+
+### الحالة و NOW / NEXT / STOP
+- **نتائج مفتوحة (OPEN، غير محلولة):** (1) **F-SAD-EMPTY** — جلسة مُزاحة قد تُرجع قائمة فارغة مضلِّلة تُحفظ فوق نسخة صالحة؛ (2) **FU-P2.5E-CRUD-STALE** — الحذف المرن قد يُرجع نجاحاً دون تعديل أي صف (والنسخة المحفوظة قد تُبقي محذوفاً)؛ (3) **تكرار محتمل لاستعلامات أعداد Home** (Q1، مُثبت من المصدر، غير مقاس)؛ (4) **N+1 في المفضلات** (Q5)؛ (5) **`max_rows` المستضاف غير مُتحقَّق منه واكتمال القوائم unknown**.
+- **P3.0 = AUDIT COMPLETE** (SQL-EXECUTED محلياً + TESTED + CODE؛ لا MEASURED؛ لا REAL_DEVICE). **FU-P2.5E-CRUD-STALE OPEN**؛ **F-SAD-EMPTY OPEN** (جديد). البناء الأصلي لـ `connectivity_plus` **UNVERIFIED**؛ Samsung D-7..D-50 **DEFERRED BY OWNER**. FU-OWNERS-R5C **RESOLVED**؛ التاريخي (Delete Account migration-file) **OPEN**.
+- **الملفات (غير مدمجة):** جديد `test/lists/core_entity_query_contract_test.dart`؛ وهذا الملف.
+- **NOW:** مراجعة المالك؛ موافقة منفصلة على commit لهذين الملفين.
+- **NEXT:** قرار P3.1a (الموصى به أولاً) أو غيره من القائمة.
+- **STOP:** لا تغيير لسلوك CRUD أو الاستعلامات الإنتاجي؛ لا P3.1/P4 تلقائياً؛ لا commit/push.
 
 ---
 

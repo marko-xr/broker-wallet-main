@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 
+import 'package:broker_wallet/src/services/brokers_local_cache.dart';
 import 'package:broker_wallet/src/services/count_cache_service.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
@@ -115,6 +116,7 @@ class DeletedAccountLocalDataCleaner {
     await _step(() => const OffersLocalCache().forgetAccount(deletedUid));
     await _step(() => const OwnersLocalCache().forgetAccount(deletedUid));
     await _step(() => const OfficesLocalCache().forgetAccount(deletedUid));
+    await _step(() => const BrokersLocalCache().forgetAccount(deletedUid));
     await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 
     // Queued uploads first, so none keeps sending a deleted account's file.

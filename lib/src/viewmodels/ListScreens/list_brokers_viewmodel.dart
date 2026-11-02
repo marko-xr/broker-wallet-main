@@ -19,7 +19,9 @@ class BrokersListViewModel extends ChangeNotifier
   BrokersListViewModel({BrokerService? brokerService})
       : _brokerService = brokerService ?? BrokerService() {
     // Subscribed once: the source re-reads after every mutation by itself.
-    listenToEntities(_brokerService.getUserBrokers().map((brokers) {
+    // This account's saved copy shows first, so the list is there offline.
+    // The copy keeps the server's dates; the stand-in below is display only.
+    listenToEntities(_brokerService.watchUserBrokersLocalFirst().map((brokers) {
       return brokers.map((broker) {
         if (broker.createdAt == null) {
           return broker.copyWith(createdAt: DateTime.now());

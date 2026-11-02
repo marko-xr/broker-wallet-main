@@ -6,7 +6,7 @@
 **الفرع المستهدف:** `perf/phase-1-startup-baseline` — أبلغ Claude بأنه تحقق منه من checkout الحي في 2026-10-31 15:42 +04؛ **دليل مقدم من المالك، ولم نتحقق منه مباشرة من Git هنا**. ZIP لا يحتوي `.git`.  
 **المرحلة النشطة:** `P1 — Startup & Initial Screen Performance`؛ `P1.0` مراجعة مصدر فقط؛ `P1.1-a` **PAUSED BY PROCESS / NOT RUN** بعد تشديد التعليمات، وليس بسبب فشل تقني مثبت. `P1.1-b` **NOT APPROVED**. لا بناء ولا تثبيت ولا benchmark مثبت بهذه النسخة.  
 **حالة المشروع:** PRE-PUBLIC-RELEASE؛ الأداء وOffline-First لا يغلقان بنود إطلاق المتاجر #8–#52.
-**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7Q (آخر تحديث 2026-11-02، P2.4a).
+**نسخة المستودع:** أُنشئ هذا الملف في المستودع بتاريخ 2026-10-31 19:06 +04 من النسخة المحمولة 1.3 دون تغيير محتواها السابق؛ أحدث حالة مُتحقَّق منها مباشرة من Git والجهاز في §7D–§7R (آخر تحديث 2026-11-02، P2.4b).
 
 ---
 
@@ -96,7 +96,7 @@
 | ID | المرحلة | حالة 2026-10-31 | شروط الإغلاق المختصرة |
 |---|---|---|---|
 | `P1` | Startup & Initial Screen | `IN PROGRESS — P1.0 source review only; P1.1 not run` | baseline حقيقي؛ أسباب مثبتة؛ تغييرات محدودة؛ before/after؛ regression؛ real-device gate. |
-| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، commit `10f2f15` (§7P)؛ P2.4a (Offices offline، مشفّر) CODE_PROVEN، غير مدمج (§7Q)؛ التالي: P2.4b Brokers ← P2.4c Watchmen ← P2.5 موثوقية/استعادة الكاش | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
+| `P2` | Smart Local Caching & Background Refresh | `IN PROGRESS` — P2.1 (Requests offline، مشفّر) CODE_PROVEN، commit `0579b5b` (§7M)؛ P2.2 (Offers offline، مشفّر) CODE_PROVEN، commit `df1c45c` (§7O)؛ P2.3 (Owners offline، مشفّر) CODE_PROVEN، commit `10f2f15` (§7P)؛ P2.4a (Offices offline، مشفّر) CODE_PROVEN، commit `1abba8c` (§7Q)؛ P2.4b (Brokers offline، مشفّر) CODE_PROVEN، غير مدمج (§7R)؛ التالي: P2.4c Watchmen ← P2.5 موثوقية/استعادة الكاش | عرض آمن للكاش، تحديث صريح، عزل الحسابات، offline/refresh/empty/error tests. |
 | `P3` | Supabase Queries & N+1 | `NOT STARTED` | عدّ الطلبات/latency؛ إصلاح ناتج عن قياس؛ RLS بلا تغيير؛ فروقات مثبتة. |
 | `P4` | Pagination & Large Lists | `NOT STARTED` | قوائم كبيرة حقيقية، scrolling/memory/data transfer، مع صحة البحث والترتيب. |
 | `P5` | Real-Device Performance Validation | `NOT STARTED` | Android+iOS بما يتيسر، cold/warm/reconnect, animations, memory, التقرير النهائي. |
@@ -964,6 +964,10 @@
 | D-24 | P2.4a | حذف آخر Office على الخادم ثم إعادة الفتح offline | القائمة فارغة | PENDING |
 | D-25 | P2.4a | حذف حساب اختبار | يُزال `cached_offices_<uid>` ومفتاحه فقط | PENDING |
 | D-26 | P2.1–P2.4a | جلسة واحدة: Requests وOffers وOwners وOffices بشبكة ثم بلا شبكة، ثم إعادة تشغيل التطبيق داخل جلسة معتمدة | كل قائمة تُظهر نسخة حسابها؛ لا تداخل بين القوائم أو الحسابات | PENDING |
+| D-27 | P2.4b (§7R) | فتح Brokers بشبكة، ثم إغلاق الشبكة وإعادة فتح Brokers في الجلسة نفسها | قائمة Brokers المحفوظة تظهر بدل خطأ التحميل، بالترتيب نفسه | PENDING |
+| D-28 | P2.4b | B يفتح Brokers بلا شبكة بعد استخدام A للجهاز | لا تظهر Brokers الخاصة بـ A أبداً | PENDING |
+| D-29 | P2.4b | حذف آخر Broker على الخادم ثم إعادة الفتح offline | القائمة فارغة | PENDING |
+| D-30 | P2.4b | حذف حساب اختبار | يُزال `cached_brokers_<uid>` ومفتاحه فقط | PENDING |
 
 ---
 
@@ -1092,6 +1096,38 @@
 **الملفات (غير مدمجة):** جديد `lib/src/services/offices_local_cache.dart`، `test/lists/offices_local_first_test.dart`؛ معدّل `lib/src/services/ScreenServices/office_service.dart`، `lib/src/viewmodels/ListScreens/list_offices_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، وهذا الملف.
 
 **الحالة:** P2.4a = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-22..D-26 **DEFERRED BY OWNER**. **FU-OWNERS-R5C: OPEN** (3 اختبارات swipe: Owners ×2 + Offices ×1). **STOP** — لا commit/push/merge/deploy؛ لا Brokers/Watchmen.
+
+---
+
+## 7R) P2.4b — قراءة Brokers من نسخة محلية مشفّرة — 2026-11-02 (CODE_PROVEN، غير مدمج)
+
+**Git قبل البدء:** `perf/phase-1-startup-baseline` @ `1abba8c` (دفعه المالك)، شجرة نظيفة، مطابق لـ `origin` بعد fetch (0/0)، stashes = 2.
+
+**التدقيق:** `BrokersListViewModel` ← `BrokerService.getUserBrokers()` ← `getBrokers()` = `_refreshedStream(_fetchBrokers)`: استعلام واحد بلا صفحات، `order created_at desc`، يُسلَّم كاملاً أو يفشل. **لا وسائط للـ Brokers.** الملكية = `owner_id` في `userId` (**nullable**)؛ `createdAt`/`updatedAt` nullable. **خاص بالـ Brokers:** الـ view model يستبدل `createdAt == null` بـ `DateTime.now()` للعرض فقط (`.map` على الـ stream). `BrokerService` كان بلا constructor.
+
+**التغيير:**
+- جديد `lib/src/services/brokers_local_cache.dart`: غلاف رفيع على `EncryptedAccountListCache` — `cached_brokers_<uid>`، مفتاح منفصل `brokers_cache_key_v1_<uid>`، `brokers_v1`. يحفظ حقول القائمة فقط (الاسم، رمز الدولة، الهاتف، الملاحظات، التواريخ nullable) **كما أعادها الخادم**. سجل بلا حساب لا يُحفظ.
+- `BrokerService`: constructor بمعاملين اختياريين (`localCache`، `currentUserId`؛ الافتراضي هوية `RepositoryProvider.authRepository.currentUserId`) + `watchUserBrokersLocalFirst()` عبر `localFirstList`. **`getUserBrokers()` بلا تغيير** (Home filters/counts).
+- `BrokersListViewModel`: يستمع إلى `watchUserBrokersLocalFirst()` مع **الإبقاء على تحويل العرض نفسه** (`createdAt == null` → now) فوقه — فالبديل يبقى للعرض ولا يُحفظ أبداً كبيانات.
+- `DeletedAccountLocalDataCleaner`: خطوة `const BrokersLocalCache().forgetAccount(deletedUid)`.
+- **بلا تغيير:** النواة المشتركة، صيغ/أسماء Requests وOffers وOwners وOffices، backend، Auth/Single Active Device، الواجهة.
+
+**الأدلة (شغّلها الوكيل؛ تصريح دائم §7L):**
+- **جديد `test/lists/brokers_local_first_test.dart` — 22/22 PASS** (مبني على بنية اختبار Offices المُثبتة): offline يُبقي النسخة ولا يمسحها؛ بلا نسخة → خطأ التحميل كما كان؛ قائمة الخادم تحل محلها، **والفارغة تُحفظ فارغة**؛ فشل بعد قائمة يُبقيها؛ عزل الحسابات؛ سجلات حساب آخر أو بلا حساب لا تُحفظ (فُحص النص المخزَّن)؛ لا حفظ بعد تغيّر الحساب؛ لا عرض إن تغيّر الحساب أثناء القراءة؛ بلا حساب لا قراءة/حفظ؛ إغلاق الشاشة أثناء القراءة لا يطلب الخادم؛ قراءة تنتهي بعد إغلاق الشاشة لا تحفظ؛ الحقول تُسترجع حرفياً بعد إعادة التشغيل (عربي، تواريخ null)؛ **التاريخ المفقود من الخادم يبقى null في النسخة (`"createdAt":null` في النص المخزَّن) بينما تعرض الشاشة البديل**؛ نسخة تالفة = لا شيء؛ مشفّر على القرص (لا اسم/هاتف/ملاحظة/معرّف حساب بنص واضح)، مفتاح 32 بايت في secure storage فقط، لا شيء في SharedPreferences؛ **المفاتيح والصناديق الخمسة منفصلة** وكتابة Brokers لا تُنشئ مفاتيح غيره؛ كاش Owners الموجود لا يتأثر؛ مخزن آمن غير متاح/مفتاح مفقود/مفتاح آخر/تلف → fail-closed والملف لم يتغير بايت-بايت؛ حذف الحساب يزيل صندوق ومفتاح Brokers له فقط.
+- **فحص الطفرات (2/2 التُقطت؛ أُعيدت الملفات بايت-بايت):** الشاشة على `getUserBrokers()` → فشل 4 اختبارات؛ حفظ تاريخ بديل (`createdAt ?? now`) → فشل «الاسترجاع الحرفي» و«التاريخ المفقود يبقى مفقوداً».
+- **مجموعات مرتبطة:** `test/lists/` (تشمل كاشات Requests وOffers وOwners وOffices وentity list VMs)، `r5d_brokers_responsive`، `r5d_offices_responsive` و`r5c_owners_responsive` (للتأكد من FU فقط)، `test/home/`، `delete_account_test`، `canonical_identity_test`، `supabase_secure_storage_test` → **601 PASS، 5 FAIL، كلها قائمة قبل P2.4b:**
+  1. التاريخي: `delete_account_test` — `Deletion job migration and hosted validation script (setUpAll)`.
+  2.–4. FU-OWNERS-R5C (بلا تغيير): Owners swipe confirmation، Owner list keeps items on failed refresh، Office swipe cancel dialog 280×600 ar 2.0x.
+  5. **جديد في السجل:** `r5d_brokers_responsive_test` — «Broker swipe cancel dialog 280.0x600.0 ar light 2.0x inset=EdgeInsets.zero keyboard=0.0» — `Bad state: No element`. **أُثبت أنه قائم في `1abba8c`:** بوضع نسخ HEAD للملفات الثلاثة المعدّلة فشل الاختبار نفسه (`+40 -1`، `Bad state: No element`)؛ ثم أُعيدت نسخ P2.4b وتحقق `cmp` من تطابقها بايت-بايت. **أُضيف إلى FU-OWNERS-R5C** (الآن 4 اختبارات swipe: Owners ×2، Offices ×1، Brokers ×1 — يُرجَّح سبب مشترك في سحب Dismissible عند 280×600 عربي 2×؛ غير مُشخَّص).
+- **Analyzer** (5 ملفات) → No issues. **Format** (5 ملفات) → 0 تغييرات. **`git diff --check`** → نظيف. كل الملفات CRLF.
+
+**offline الآن (داخل جلسة اعتمدها الخادم):** قوائم Requests وOffers وOwners وOffices وBrokers + صور البطاقات المحفوظة في كاش الوسائط. **online فقط:** cold start (Retry)، التفاصيل، روابط الوسائط الجديدة والفيديو، Plan، Home filters والأعداد الحية، البحث، Favorites، Related Items، **Watchmen**، كل الكتابات (لا outbox).
+
+**الحدود:** النسخة = آخر قائمة أعادها الخادم وليست بالضرورة كل سجلات الحساب (`max_rows`، §7O). لا مؤشر «نسخة محفوظة». لا إعادة محاولة تلقائية. فقدان المفتاح → معطّل حتى الحذف (P2.5).
+
+**الملفات (غير مدمجة):** جديد `lib/src/services/brokers_local_cache.dart`، `test/lists/brokers_local_first_test.dart`؛ معدّل `lib/src/services/ScreenServices/broker_service.dart`، `lib/src/viewmodels/ListScreens/list_brokers_viewmodel.dart`، `lib/src/services/deleted_account_local_data_cleaner.dart`، وهذا الملف.
+
+**الحالة:** P2.4b = **CODE_PROVEN / READY FOR COMMIT REVIEW** / Samsung D-27..D-30 **DEFERRED BY OWNER**. **FU-OWNERS-R5C: OPEN** (4 اختبارات swipe). التاريخي (Delete Account migration-file): OPEN. **STOP** — لا commit/push/merge/deploy؛ لا Watchmen ولا P2.5.
 
 ---
 

@@ -40,4 +40,9 @@
          its files carry no owner and what happens to them is the owner's
          decision. -->
     <exclude domain="root" path="app_flutter/signature_pdfs" />
+    <!-- Offline lists: each account's encrypted copy of its server lists.
+         Their keys live in the Android Keystore, which a restore or a new
+         phone does not receive, so a copy restored here could never be read.
+         They refill from the server after sign-in. -->
+    <exclude domain="root" path="app_flutter/offline_lists" />
 </full-backup-content>

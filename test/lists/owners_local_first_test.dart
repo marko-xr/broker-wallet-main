@@ -110,12 +110,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
+  String listsDir() => '${tempDir.path}${Platform.pathSeparator}'
+      '${EncryptedAccountListCache.directoryName}';
   const cache = OwnersLocalCache();
   String? signedIn;
 
   setUpAll(() {
     tempDir = Directory.systemTemp.createTempSync('owners_local_first_test');
     Hive.init(tempDir.path);
+    EncryptedAccountListCache.debugStorageRoot = tempDir.path;
   });
 
   tearDownAll(() async {
@@ -142,7 +145,7 @@ void main() {
       // Windows its file stays locked for a moment.
       for (var attempt = 0;; attempt++) {
         try {
-          await Hive.deleteBoxFromDisk(name);
+          await Hive.deleteBoxFromDisk(name, path: listsDir());
           break;
         } on FileSystemException {
           if (attempt == 20) rethrow;
@@ -152,7 +155,7 @@ void main() {
     }
   });
 
-  File boxFile(String uid) => File('${tempDir.path}${Platform.pathSeparator}'
+  File boxFile(String uid) => File('${listsDir()}${Platform.pathSeparator}'
       '${OwnersLocalCache.boxNameForUid(uid)}.hive');
 
   Future<void> closeBox(String uid) async {
@@ -282,7 +285,9 @@ void main() {
       await cache.write(_alice, [_owner(_bob, _alice)]);
       expect(_ids((await cache.read(_alice))!), [_bob]);
       expect(
-          await Hive.boxExists(OwnersLocalCache.boxNameForUid(_bob)), isFalse);
+          await Hive.boxExists(OwnersLocalCache.boxNameForUid(_bob),
+              path: listsDir()),
+          isFalse);
       expect(await secureKey(_bob), isNull);
     });
 
@@ -451,7 +456,9 @@ void main() {
         'nothing is stored unencrypted', () async {
       final broken = OwnersLocalCache(keyStore: _UnavailableKeys());
       await broken.write(_alice, [_owner('w1', _alice)]);
-      expect(await Hive.boxExists(OwnersLocalCache.boxNameForUid(_alice)),
+      expect(
+          await Hive.boxExists(OwnersLocalCache.boxNameForUid(_alice),
+              path: listsDir()),
           isFalse);
       expect(await broken.read(_alice), isNull);
 
@@ -528,7 +535,9 @@ void main() {
         purgeOfferMediaUploads: (_) async => 0,
       ).clear(deletedUid: _alice, wasSignedInAccount: false);
 
-      expect(await Hive.boxExists(OwnersLocalCache.boxNameForUid(_alice)),
+      expect(
+          await Hive.boxExists(OwnersLocalCache.boxNameForUid(_alice),
+              path: listsDir()),
           isFalse);
       expect(await secureKey(_alice), isNull);
       expect(await secureKey(_bob), isNotNull);

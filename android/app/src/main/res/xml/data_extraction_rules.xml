@@ -16,6 +16,12 @@
   name files in app_flutter/offer_media; without those files a restored
   queue could only report every item as missing.
 -->
+<!--
+  app_flutter/offline_lists: each account's encrypted offline lists. Their
+  keys stay in the Android Keystore, which neither a cloud restore nor a
+  device transfer carries, so a copied box could never be read; they refill
+  from the server after sign-in.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -25,6 +31,7 @@
         <exclude domain="root" path="app_flutter/combine_pdfs" />
         <exclude domain="root" path="app_flutter/image_to_pdf" />
         <exclude domain="root" path="app_flutter/signature_pdfs" />
+        <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
     </cloud-backup>
     <device-transfer>
@@ -35,6 +42,7 @@
         <exclude domain="root" path="app_flutter/combine_pdfs" />
         <exclude domain="root" path="app_flutter/image_to_pdf" />
         <exclude domain="root" path="app_flutter/signature_pdfs" />
+        <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
     </device-transfer>
 </data-extraction-rules>

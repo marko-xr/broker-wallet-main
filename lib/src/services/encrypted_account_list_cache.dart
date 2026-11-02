@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 /// Where each account's cache encryption key lives.
 abstract class AccountCacheKeyStore {
@@ -60,11 +63,18 @@ class SecureAccountCacheKeyStore implements AccountCacheKeyStore {
 /// copy is a convenience, never an authority — the server list always
 /// replaces it, and nothing here decides what an account may see.
 ///
+/// The boxes live in their own directory, [directoryName], under the app's
+/// documents directory, which Android backup and device transfer exclude: a
+/// box restored without its key could never be read. A box an earlier version
+/// kept directly in the documents directory is moved there on first use.
+///
 /// Everything fails closed: when the key cannot be read, is missing for a box
 /// that already exists, or does not open the box, or the box is damaged,
 /// nothing is read and nothing is written. A key is created only for a box
-/// that does not exist yet, is never replaced, and nothing is ever stored
-/// unencrypted. An unreadable box is never deleted or regenerated here.
+/// that does not exist yet, and nothing is ever stored unencrypted. An
+/// unreadable box is replaced only by the verified recovery in [write], never
+/// on a read, never because storage was briefly unavailable, and never for
+/// another account.
 class EncryptedAccountListCache<T> {
   const EncryptedAccountListCache({
     required this.boxPrefix,
@@ -92,6 +102,85 @@ class EncryptedAccountListCache<T> {
 
   String boxNameOf(String uid) => '$boxPrefix$uid';
 
+  /// The directory, under the app's documents directory, that holds every
+  /// offline list. Android backup and device transfer exclude it.
+  static const String directoryName = 'offline_lists';
+
+  /// Inside [directoryName]: where a replacement is built during recovery.
+  static const String recoveryDirectoryName = '.recovery';
+
+  /// The app's documents directory; tests point it at a temporary one.
+  @visibleForTesting
+  static String? debugStorageRoot;
+
+  static Future<String> _root() async =>
+      debugStorageRoot ?? (await getApplicationDocumentsDirectory()).path;
+
+  // Hive keeps box files under the lower-cased box name.
+  String _fileName(String uid) => '${boxNameOf(uid).toLowerCase()}.hive';
+  String _lockName(String uid) => '${boxNameOf(uid).toLowerCase()}.lock';
+
+  static Future<bool> _sameBytes(File a, File b) async =>
+      listEquals(await a.readAsBytes(), await b.readAsBytes());
+
+  static Future<void> _deleteIfExists(File file) async {
+    if (await file.exists()) await file.delete();
+  }
+
+  /// Renames [file]. Hive closes a box whose open failed without waiting, so
+  /// on some platforms its file stays locked for a moment: a few short
+  /// retries, then the error.
+  static Future<File> _rename(File file, String to) async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        return await file.rename(to);
+      } on FileSystemException {
+        if (attempt >= 20) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+  }
+
+  /// The lists directory, ready for [uid]'s box, which is moved there from
+  /// where an earlier version kept it if it is still there.
+  Future<String> _prepare(String uid) async {
+    final root = await _root();
+    final dir = p.join(root, directoryName);
+    await Directory(dir).create(recursive: true);
+    await _moveEarlierBox(uid, root, dir);
+    return dir;
+  }
+
+  /// Moves [uid]'s box from the documents directory into [dir], untouched:
+  /// same name, same key, same bytes. An open box is never moved. The old
+  /// file is removed only once an identical copy is in place; a copy that is
+  /// not identical is discarded and the old file stays where it is. An
+  /// interrupted move is finished, or started again, on the next use.
+  Future<void> _moveEarlierBox(String uid, String root, String dir) async {
+    final earlier = File(p.join(root, _fileName(uid)));
+    if (!await earlier.exists()) return;
+    if (Hive.isBoxOpen(boxNameOf(uid))) return;
+    final moved = File(p.join(dir, _fileName(uid)));
+    if (!await moved.exists()) {
+      final copying = File('${moved.path}.moving');
+      await earlier.copy(copying.path);
+      if (!await _sameBytes(earlier, copying)) {
+        await copying.delete();
+        _log('move skipped', StateError('copy differs'));
+        return;
+      }
+      await _rename(copying, moved.path);
+    }
+    if (await _sameBytes(earlier, moved)) {
+      await earlier.delete();
+      await _deleteIfExists(File(p.join(root, _lockName(uid))));
+    } else {
+      // Only after an interrupted move and a later write: the moved box is
+      // the current one, and the earlier copy is left untouched.
+      _log('earlier copy kept', StateError('differs from moved box'));
+    }
+  }
+
   // One operation at a time per box, so two first writes can never create
   // two keys for one box.
   static final Map<String, Future<void>> _queues = {};
@@ -107,14 +196,15 @@ class EncryptedAccountListCache<T> {
     return run;
   }
 
-  /// Opens [uid]'s box with its key. A box that does not decrypt (another
-  /// key, damage) fails here and is left exactly as it is, never "repaired"
-  /// by truncation.
-  Future<Box<String>> _open(String uid, List<int> key) =>
+  /// Opens [uid]'s box in [dir] with its key. A box that does not decrypt
+  /// (another key, damage) fails here with a [HiveError] and is left exactly
+  /// as it is, never "repaired" by truncation.
+  Future<Box<String>> _open(String uid, List<int> key, String dir) =>
       guardedOpen(() => Hive.openBox<String>(
             boxNameOf(uid),
             encryptionCipher: HiveAesCipher(key),
             crashRecovery: false,
+            path: dir,
           ));
 
   /// Runs [open] and returns its result or its error.
@@ -177,10 +267,11 @@ class EncryptedAccountListCache<T> {
     if (uid.isEmpty) return null;
     return _oneAtATime(boxNameOf(uid), () async {
       try {
-        // Reading never creates a key.
+        final dir = await _prepare(uid);
+        // Reading never creates a key and never recovers anything.
         final key = await _keys.read(uid);
         if (key == null) return null;
-        final raw = (await _open(uid, key)).get(listKey);
+        final raw = (await _open(uid, key, dir)).get(listKey);
         if (raw == null) return null;
         final decoded = json.decode(raw);
         if (decoded is! List) return null;
@@ -200,15 +291,30 @@ class EncryptedAccountListCache<T> {
 
   /// Saves [items] as [uid]'s list, encrypted. Records owned by another
   /// account are never saved.
-  Future<void> write(String uid, List<T> items) async {
+  ///
+  /// When [uid]'s box exists but cannot be read — its key is missing, or the
+  /// box does not decrypt — nothing is written unless [mayRecover] says the
+  /// list just came from a successful server read for [uid], still the
+  /// signed-in account. Only then is the verified recovery run (see
+  /// [_recover]). A key store or file error is never taken for an unreadable
+  /// box.
+  Future<void> write(
+    String uid,
+    List<T> items, {
+    bool Function()? mayRecover,
+  }) async {
     if (uid.isEmpty) return;
     await _oneAtATime(boxNameOf(uid), () async {
       try {
+        final dir = await _prepare(uid);
+        final value = json.encode([
+          for (final item in items)
+            if (_ownerOf(item) == uid) _encode(item),
+        ]);
         var key = await _keys.read(uid);
         if (key == null) {
-          if (await Hive.boxExists(boxNameOf(uid))) {
-            // Its key is gone: the box stays as it is and nothing is written.
-            _log('write skipped', StateError('box without key'));
+          if (await Hive.boxExists(boxNameOf(uid), path: dir)) {
+            await _recover(uid, dir, value, mayRecover, null);
             return;
           }
           final created = Hive.generateSecureKey();
@@ -220,24 +326,131 @@ class EncryptedAccountListCache<T> {
           }
           key = created;
         }
-        final rows = [
-          for (final item in items)
-            if (_ownerOf(item) == uid) _encode(item),
-        ];
-        await (await _open(uid, key)).put(listKey, json.encode(rows));
+        final Box<String> box;
+        try {
+          box = await _open(uid, key, dir);
+        } on HiveError {
+          await _recover(uid, dir, value, mayRecover, key);
+          return;
+        }
+        await box.put(listKey, value);
       } catch (error) {
         _log('write failed', error);
       }
     });
   }
 
+  /// Replaces [uid]'s unreadable box with [value] under a new key — only for
+  /// a list the server just returned for [uid], still signed in.
+  ///
+  /// The unreadable state is confirmed a second time first: the key store
+  /// gives the same answer ([observedKey]: still missing, or the same key)
+  /// and, with a key, the box still fails to decrypt. The replacement is
+  /// built and read back in [recoveryDirectoryName] before anything else
+  /// changes; the new key is stored and read back; the unreadable file is
+  /// set aside, not deleted, while the replacement moves in; and it is
+  /// deleted only once the box opens with the new key and holds [value]. Any
+  /// failure stops the recovery with the data still encrypted.
+  Future<void> _recover(
+    String uid,
+    String dir,
+    String value,
+    bool Function()? mayRecover,
+    List<int>? observedKey,
+  ) async {
+    if (mayRecover == null || !mayRecover()) {
+      _log('write skipped', StateError('unreadable box, no verified list'));
+      return;
+    }
+    final name = boxNameOf(uid);
+    final keyNow = await _keys.read(uid);
+    if (!listEquals(keyNow, observedKey) ||
+        !await Hive.boxExists(name, path: dir)) {
+      _log('recovery skipped', StateError('state changed'));
+      return;
+    }
+    if (keyNow != null) {
+      try {
+        // Readable after all: a passing problem, not an unreadable box.
+        await (await _open(uid, keyNow, dir)).put(listKey, value);
+        return;
+      } on HiveError {
+        // Confirmed: still does not decrypt.
+      }
+    }
+
+    // The box may still be open in this process (its key vanished after it
+    // was opened). Hive hands back an open box by name whatever the path or
+    // key, so it is closed first — only this account's box of this list,
+    // under this box's operation queue, which every read and write of it
+    // goes through — and the replacement really is built beside it.
+    if (Hive.isBoxOpen(name)) await Hive.box<String>(name).close();
+
+    final spare = p.join(dir, recoveryDirectoryName);
+    await Directory(spare).create(recursive: true);
+    final spareFile = File(p.join(spare, _fileName(uid)));
+    await _deleteIfExists(spareFile); // a replacement left by a cut-off run
+    await _deleteIfExists(File(p.join(spare, _lockName(uid))));
+
+    final fresh = Hive.generateSecureKey();
+    final built = await _open(uid, fresh, spare);
+    await built.put(listKey, value);
+    await built.close();
+    final check = await _open(uid, fresh, spare);
+    final builtOk = check.get(listKey) == value;
+    await check.close();
+    if (!builtOk) {
+      await _deleteIfExists(spareFile);
+      _log('recovery stopped', StateError('replacement not verified'));
+      return;
+    }
+
+    await _keys.write(uid, fresh);
+    if (!listEquals(await _keys.read(uid), fresh)) {
+      await _deleteIfExists(spareFile);
+      _log('recovery stopped', StateError('key not stored'));
+      return;
+    }
+
+    final current = File(p.join(dir, _fileName(uid)));
+    final setAside = File('${spareFile.path}.unreadable');
+    await _rename(current, setAside.path);
+    try {
+      await _rename(spareFile, current.path);
+    } catch (_) {
+      await _rename(setAside, current.path);
+      rethrow;
+    }
+    final box = await _open(uid, fresh, dir);
+    if (box.get(listKey) != value) {
+      _log('recovery stopped', StateError('swap not verified'));
+      return;
+    }
+    await setAside.delete();
+    _log('recovered', StateError('unreadable box replaced'));
+  }
+
   /// Removes [uid]'s saved list and its key. Used when that account is
-  /// deleted.
+  /// deleted. Covers the lists directory, where an earlier version kept the
+  /// box, and anything a recovery left; nothing else is touched.
   Future<void> forgetAccount(String uid) async {
     if (uid.isEmpty) return;
     await _oneAtATime(boxNameOf(uid), () async {
       try {
-        await Hive.deleteBoxFromDisk(boxNameOf(uid));
+        final root = await _root();
+        final dir = p.join(root, directoryName);
+        final spare = p.join(dir, recoveryDirectoryName);
+        await Hive.deleteBoxFromDisk(boxNameOf(uid), path: dir);
+        for (final file in [
+          File(p.join(root, _fileName(uid))),
+          File(p.join(root, _lockName(uid))),
+          File(p.join(dir, '${_fileName(uid)}.moving')),
+          File(p.join(spare, _fileName(uid))),
+          File(p.join(spare, _lockName(uid))),
+          File(p.join(spare, '${_fileName(uid)}.unreadable')),
+        ]) {
+          await _deleteIfExists(file);
+        }
       } catch (error) {
         _log('box removal failed', error);
       }
@@ -273,7 +486,10 @@ Stream<List<T>> localFirstList<T>({
       (items) {
         controller.add(items);
         if (uid != null && currentUserId() == uid) {
-          unawaited(cache.write(uid, items));
+          // This list is a successful server read for the signed-in account:
+          // the one case in which an unreadable box may be recovered.
+          unawaited(cache.write(uid, items,
+              mayRecover: () => currentUserId() == uid));
         }
       },
       onError: controller.addError,

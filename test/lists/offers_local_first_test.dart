@@ -131,12 +131,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
+  String listsDir() => '${tempDir.path}${Platform.pathSeparator}'
+      '${EncryptedAccountListCache.directoryName}';
   const cache = OffersLocalCache();
   String? signedIn;
 
   setUpAll(() {
     tempDir = Directory.systemTemp.createTempSync('offers_local_first_test');
     Hive.init(tempDir.path);
+    EncryptedAccountListCache.debugStorageRoot = tempDir.path;
   });
 
   tearDownAll(() async {
@@ -162,7 +165,7 @@ void main() {
       // Windows its file stays locked for a moment.
       for (var attempt = 0;; attempt++) {
         try {
-          await Hive.deleteBoxFromDisk(name);
+          await Hive.deleteBoxFromDisk(name, path: listsDir());
           break;
         } on FileSystemException {
           if (attempt == 20) rethrow;
@@ -172,7 +175,7 @@ void main() {
     }
   });
 
-  File boxFile(String uid) => File('${tempDir.path}${Platform.pathSeparator}'
+  File boxFile(String uid) => File('${listsDir()}${Platform.pathSeparator}'
       '${OffersLocalCache.boxNameForUid(uid)}.hive');
 
   Future<void> closeBox(String uid) async {
@@ -458,7 +461,9 @@ void main() {
         'nothing is stored unencrypted', () async {
       final broken = OffersLocalCache(keyStore: _UnavailableKeys());
       await broken.write(_alice, [_offer('o1', _alice)]);
-      expect(await Hive.boxExists(OffersLocalCache.boxNameForUid(_alice)),
+      expect(
+          await Hive.boxExists(OffersLocalCache.boxNameForUid(_alice),
+              path: listsDir()),
           isFalse);
       expect(await broken.read(_alice), isNull);
 
@@ -544,7 +549,9 @@ void main() {
         purgeOfferMediaUploads: (_) async => 0,
       ).clear(deletedUid: _alice, wasSignedInAccount: false);
 
-      expect(await Hive.boxExists(OffersLocalCache.boxNameForUid(_alice)),
+      expect(
+          await Hive.boxExists(OffersLocalCache.boxNameForUid(_alice),
+              path: listsDir()),
           isFalse);
       expect(await secureKey(_alice), isNull);
       expect(await secureKey(_bob), isNotNull);

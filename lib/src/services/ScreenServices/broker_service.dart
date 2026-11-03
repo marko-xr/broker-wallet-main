@@ -66,4 +66,9 @@ class BrokerService {
   Future<BrokerModel?> getBroker(String brokerId) async {
     return _supabase.getBroker(brokerId);
   }
+
+  /// The Brokers with these ids this account may see, in a few requests
+  /// rather than one per id. Missing and deleted ones are left out.
+  Future<List<BrokerModel>> getBrokersByIds(List<String> brokerIds) =>
+      _supabase.getBrokersByIds(brokerIds);
 }

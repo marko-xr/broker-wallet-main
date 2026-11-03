@@ -2012,6 +2012,62 @@
 - **P3.3 = CODE_PROVEN** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED. FU-AUTH-BASELINE-7 وDelete Account التاريخي وFU-ACCOUNT-UI-BASELINE-1 **OPEN**؛ P3.1a staging **PENDING**.
 - **الملفات (غير مدمجة):** `lib/src/services/supabase_home_counts_service.dart`؛ جديد `test/home/home_count_payload_test.dart`؛ `test/home/home_count_requests_test.dart` (أداة العدّ)؛ `test/lists/core_entity_query_contract_test.dart` (العقد الجديد)؛ وهذا الملف.
 - **NOW:** موافقة المالك على commit. **NEXT:** **P3.4 — Favorites N+1** (بموافقة منفصلة). **STOP:** لا P3.4 تلقائياً؛ لا commit/push.
+- **أُودع** بموافقة المالك: `9d43a7c` `perf(home): eliminate row payload from count queries` (5 ملفات)، ودفعه المالك (`origin` = `9d43a7c`، §7AH).
+
+---
+
+## 7AH) P3.4 — إزالة N+1 في المفضلات (Favorites) — 2026-11-03 (CODE_PROVEN؛ غير مدمج)
+
+**Git عند البدء (بعد `git fetch`):** `perf/phase-1-startup-baseline` @ `9d43a7c` = `origin` (0/0)، نظيف، stashes = 2.
+
+### النمط قبل التغيير (مُثبت من المصدر ومقيس)
+- **المرحلة 1 — أي العناصر مفضّلة:** `FavoriteService._getServerFavoritesWithMetadata` = 6 طلبات (`favorite_<type>`: `select=target_id,added_at` + `owner_id` + `order=added_at.desc`) **واحداً بعد الآخر** (`for … await`).
+- **المرحلة 2 — بطاقة لكل مفضل:** `FavoritesViewModel._load<Type>WithMetadata` = **طلب لكل مفضل** (`getX(id)` بـ `id=eq.` + `owner_id` + `deleted_at is null` + `limit=1`)، **متسلسلة داخل النوع** (الأنواع الستة بالتوازي). Offer: لكل عنصر قراءة الصف ثم **استدعاء Worker للوسائط** (`resolveOfferMediaFor`) قبل العنصر التالي. Owner: قراءات متسلسلة ثم وسائط **كلها دفعة واحدة بلا حد**.
+
+### التصميم بعد التغيير
+- **`SupabaseCoreEntitiesService._rowsByIds`:** لكل نوع `select(<أعمدة القراءة المفردة نفسها>)` + `eq('owner_id', الحساب)` + `inFilter('id', …)` + `isFilter('deleted_at', null)` — **الفلاتر نفسها** (RLS + البوابة كما هما). **100 معرّف لكل طلب** (المعرّف مفتاح أساسي ⇒ الصفوف ≤ المعرّفات، أقل بكثير من حد الصفوف؛ سطر الطلب بضعة KB)؛ القطع متسلسلة. بعد كل قراءة: إن تغيّر الحساب المسجَّل ⇒ `StateError` (كما `getOfferMetadata`). دوال جديدة: `get{Requests,Offers,Owners,Offices,Brokers,Watchmen}ByIds` (+ مغلّفات في الخدمات الست).
+- **Offers:** دفعة الصفوف ثم الوسائط **كما في `getOffer` تماماً** (`_withDisplayMedia` المستخرجة منها: best effort؛ فشل الوسائط ⇒ العرض دون وسائط؛ تغيّر الحساب ⇒ يُسقَط) — **استدعاء Worker لكل Offer باقٍ** (لا endpoint مجمّع؛ إضافته تغيير خادم)، لكن **4 في آن** (`mediaReadsAtOnce`) بدل واحد. Owners: الوسائط **4 في آن** بدل بلا حد. **الحد لكل نوع:** عند تحميل Offers وOwners معاً يصل المجموع إلى **8** استدعاءات Worker في آن (مقيس 5–8؛ لا حد مشترك). `stop` ⇒ بعد إغلاق الشاشة لا تبدأ قراءة وسائط جديدة (الجارية تكتمل وتُهمل نتيجتها).
+- **`FavoritesViewModel`:** البطاقات تُبنى **بترتيب المفضلات** (لا ترتيب رد الخادم) بتاريخ الإضافة نفسه؛ المفقود/المحذوف/لحساب آخر ⇒ بلا بطاقة. **فشل قراءة نوع ⇒ تبقى البطاقات المعروضة له التي ما زالت مفضّلة** (فشل ≠ فراغ؛ كانت كل بطاقة تفشل قراءتها تُسقط ثم يُكتب الكاش ناقصاً)؛ الأنواع الأخرى لا تتأثر. حراس الحساب (`_isCurrentForAccount`/الجيل) والتخلّص والمطابقة مع الإضافات/الإزالات المتفائلة **بلا تغيير**. حقن اختياري للخدمات الأربع الأخرى (الافتراضي كما هو).
+- **`FavoriteService`:** الطلبات الستة **معاً** (`Future.wait`)، الفلتر والترتيب نفسهما، أي فشل ⇒ `{}` كما كان؛ مدخل اختبار (`client`, `currentUserId`) — الإنتاج بلا تغيير.
+- لا SQL/RLS/Auth، لا تغيير في الواجهة أو الكاش/التشفير/العلامات، لا حزم جديدة. ملف جديد صغير: `lib/src/services/bounded_tasks.dart` (`mapWithLimit`).
+
+### القياس (MEASURED — اختبار حتمي: الخدمات الحقيقية + خدمة الوسائط على بديل HTTP مسجِّل؛ لا شبكة مستضافة)
+| الحالة | طلبات قاعدة البيانات قبل → بعد | أقصى توازٍ | Worker قبل → بعد (أقصى توازٍ) |
+|---|---|---|---|
+| لا مفضلات | 0 → 0 | — | 0 → 0 |
+| Offer واحد | 1 → 1 | 1 → 1 | 1 → 1 |
+| 10 Requests | **10 → 1** | 1 → 1 | 0 |
+| 10 Offers بوسائط | **10 → 1** | 1 → 1 | 10 → 10 (**1 → 4**) |
+| 10 Owners بوسائط | **10 → 1** | 1 → 1 | 10 → 10 (**10 → 4**) |
+| 2 من كل نوع (12) | **12 → 6** | 6 → 6 | 4 → 4 |
+| 5 Offers: 2 حيّان + محذوف + لحساب آخر + مفقود | **5 → 1** | 1 → 1 | 2 → 2 |
+| 250 Broker | (250) → **3** (100/100/50) | — | 0 |
+| قائمة المفضلات (المرحلة 1) | 6 → 6 | **1 → 6** | — |
+- خط الأساس قيس على كود HEAD (`9d43a7c`) بالأداة نفسها قبل أي تغيير؛ المرحلة 1 قيست بطفرة تعيد الحلقة المتسلسلة (P10 أدناه). **زمن الشبكة الفعلي غير مقيس**: المتوقع أن سلسلة N رحلة تصبح رحلة واحدة لكل نوع، لكنه استنتاج لا قياس.
+
+### الأدلة (شغّلها الوكيل)
+- **جديد `test/favorites/favorites_request_count_test.dart` — 14/14** (12 + 2 من المراجعة النهائية: Offers وOwners معاً ≤ 4 لكل نوع/8 إجمالاً؛ إغلاق الشاشة أثناء قراءة الوسائط لا يبدأ قراءة أخرى لـ Offers ولا لـ Owners): شكل الطلب (طلب لكل نوع، `owner_id`/`deleted_at`/`id=in.(…)` بالضبط، **الأعمدة مطابقة للقراءة المفردة**، لا limit/order)؛ الأعداد أعلاه؛ الوسائط لكل بطاقة Offer/Owner وحد 4؛ فشل الوسائط ⇒ البطاقة بلا وسائط؛ **الترتيب** (بما فيه التعادل، والخادم يرد بترتيب معكوس)؛ المفقود/المحذوف/حساب آخر؛ 250 بلا نقص؛ فشل نوع عند التحديث يُبقي بطاقاته ويحدّث الأخرى؛ فشل نوع في التحميل الأول يتركه وحده؛ **تغيّر الحساب أثناء القراءة ⇒ لا نشر ولا إشعار**؛ رد بعد تغيّر الحساب المسجَّل ⇒ مرفوض؛ إغلاق الشاشة أثناء القراءة ⇒ لا قراءة وسائط.
+- **جديد `test/favorites/favorites_metadata_requests_test.dart` — 2/2:** الطلبات الستة معاً بالفلتر والترتيب نفسهما والتعيين؛ فشل قائمة واحدة ⇒ `{}` كما كان.
+- **المراجعة النهائية — استبدال الجلسة للحساب نفسه:** الحماية القائمة (بلا تغيير) = كل نهاية جلسة تصل `AuthViewModel._handleSessionIdentity` كهوية null ⇒ `FavoriteService.invalidateForAccountChange()` ⇒ كل شاشة مفضلات أقدم تصبح قديمة (لا نشر، لا كاش) حتى لو عاد **الحساب نفسه**؛ وفحص الحساب داخل `_rowsByIds` بالـ uid فقط (لا يميّز جلستين لحساب واحد — الحماية من الجيل). **جديد `test/favorites/favorites_same_account_session_test.dart` — 1/1** بـ `AuthViewModel` الحقيقي: قراءة معلّقة ← خروج ← دخول الحساب نفسه ← الرد ⇒ لا بطاقات ولا كتابة كاش ولا إشعار؛ شاشة جديدة تحمّل طبيعياً. طفرة حذف الزيادة عند الخروج ⇒ **التُقطت**. **فخ:** يجب استيراد Favorites بـ `src/Views/…` كالتطبيق؛ تهجئة `views` تنشئ نسخة ثانية من المكتبة بعدّاد جيل مستقل (في الإنتاج المسار واحد: `app.dart` ← `Views`).
+- **طفرات المراجعة:** تجاهل `stop` لوسائط Owners ⇒ **التُقطت**؛ لوسائط Offers ⇒ **التُقطت**. بعد المراجعة `test/favorites` ⇒ **95/95**.
+- **حُدِّث عمداً:** بدائل `getOffer`/`getOwner` في `favorites_viewmodel_initial_load_test` و`favorites_list_reconciliation_test` و`r2_search_favorites_responsive_test` تجيب الآن أيضاً عن `getOffersByIds`/`getOwnersByIds` من بياناتها نفسها (بلا تغيير توقعات).
+- **فحص الطفرات — 10/10 التُقطت** (الملفات أُعيدت، `Get-FileHash` مطابق): إسقاط فلتر المالك؛ إسقاط فلتر الحذف؛ بلا تقطيع؛ إزالة فحص تغيّر الحساب؛ تجاهل `stop`؛ وسائط بلا حد (نجت أول مرة لأن الاختبار قارن بالثابت نفسه ⇒ ثُبّت الحد 4 حرفياً ثم التُقطت)؛ وسائط واحدة واحدة؛ ترتيب الخادم بدل المفضلات؛ فشل يُسقط البطاقات المعروضة؛ قائمة المفضلات متسلسلة (شكل HEAD).
+- **انحدار:** `test/favorites` + `test/lists` + `test/offers` + `test/owners` + `r2_search_favorites_responsive_test` ⇒ **839/839**؛ map/plan_attachment/related_items/r5a–r5d responsive/email_change_callback ⇒ **320/320**؛ بعد تصحيح التنسيق `test/favorites` ⇒ **92/92**.
+- **Analyzer** → No issues. **Format (language 3.5):** الملفات الجديدة مطابقة؛ في المعدّلة لا انحراف جديد (انحرافات `offer_service`/`owner_service`/`favorites_viewmodel`/`favorites_list_reconciliation_test` موجودة في HEAD بالعدد نفسه، لم تُلمس). **`git diff --check`** → نظيف.
+
+### الحدود المتبقية
+- **Worker لكل Offer/Owner ذي وسائط** (N استدعاء، 4 في آن لكل نوع، حتى 8 إجمالاً) — دفعة حقيقية تحتاج endpoint مجمّع في الـ Worker (تغيير خادم + موافقة).
+- **جلسة مُزاحة (Single Active Device) قبل اكتشافها:** قراءات Favorites (القائمة والسجلات) تعود فارغة بصمت من بوابة الجلسة كما في F-SAD-EMPTY ⇒ قد تُعرض/تُكتب بطاقات ناقصة حتى تصل هوية null — **قائم قبل P3.4 بالدرجة نفسها** (قراءة لكل عنصر كانت تعود null أيضاً)؛ غير محلول هنا.
+- **فشل قراءة قائمة المفضلات (المرحلة 1) ما زال يُرجع `{}` ⇒ تُعرض «لا مفضلات»** (قائم منذ قبل؛ لا يُكتب الكاش في ذلك الفرع) — **FU-FAV-META-EMPTY، OPEN**، يحتاج قراراً منفصلاً.
+- قوائم المفضلات بلا ترقيم: حد `max_rows` المستضاف قد يقطع أكثر من 1000 مفضل لنوع واحد بصمت (P4)؛ حد `max_rows` المستضاف وطول سطر الطلب عبر البروكسي **غير مُتحقَّق منهما** (100 معرّف ≈ 4 KB).
+- فشل نوع في **التحميل الأول** (لا بطاقات سابقة) ما زال يُترك فارغاً ويُكتب الكاش بدونه (كما كان لكل عنصر يفشل).
+- التحديث الدوري/المتفائل يعيد القراءة كاملة (6 + ≤6 + الوسائط) — لا تغيير هنا.
+- **staging/PostgREST المستضاف وSamsung والبناء الأصلي DEFERRED/UNVERIFIED.**
+
+### الحالة و NOW / NEXT / STOP
+- **P3.4 = CODE_PROVEN** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED. FU-AUTH-BASELINE-7 وDelete Account التاريخي وFU-ACCOUNT-UI-BASELINE-1 **OPEN**؛ P3.1a staging **PENDING**؛ FU-FAV-META-EMPTY **OPEN**.
+- **الملفات (غير مدمجة):** `lib/src/services/supabase_core_entities_service.dart`؛ الخدمات الست `lib/src/services/ScreenServices/{request,offer,owner,office,broker,watchmen}_service.dart`؛ جديد `lib/src/services/bounded_tasks.dart`؛ `lib/src/views/Screens/home/favorites/{favorites_viewmodel,favorites_service}.dart`؛ جديدة `test/favorites/favorites_request_count_test.dart` و`test/favorites/favorites_metadata_requests_test.dart` و`test/favorites/favorites_same_account_session_test.dart` (من المراجعة النهائية)؛ البدائل في `test/favorites/favorites_viewmodel_initial_load_test.dart` و`test/favorites/favorites_list_reconciliation_test.dart` و`test/responsive/r2_search_favorites_responsive_test.dart`؛ وهذا الملف.
+- **NOW:** موافقة المالك على commit. **NEXT:** **P4 — Pagination & Complete Lists** (الترقيم، `max_rows`، الاكتمال الحقيقي، مفتاح ترتيب ثانٍ) بموافقة منفصلة؛ وبقية P3 (Q3/Q4/Q6/Q7) حسب قرار المالك. **STOP:** لا P4 تلقائياً؛ لا commit/push.
 
 ---
 

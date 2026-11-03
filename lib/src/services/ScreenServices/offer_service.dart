@@ -259,6 +259,16 @@ class OfferService {
     return _supabase.getOffer(offerId);
   }
 
+  /// The Offers with these ids this account may see, each with its media as
+  /// [getOffer] gives it, in a few requests rather than one per id. Missing
+  /// and deleted ones are left out. Once [stop] returns true no further media
+  /// read starts.
+  Future<List<OfferModel>> getOffersByIds(
+    List<String> offerIds, {
+    bool Function()? stop,
+  }) =>
+      _supabase.getOffersByIds(offerIds, stop: stop);
+
   /// Reads the authoritative Offer fields without waiting for private-media
   /// URL signing. Firebase's legacy document already carries its stable media
   /// URLs, so its existing single read remains unchanged.

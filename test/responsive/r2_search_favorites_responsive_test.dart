@@ -92,6 +92,17 @@ class _OfferService extends OfferService {
 
   @override
   Future<OfferModel?> getOffer(String offerId) async => items[offerId];
+
+  // Favorites reads its Offers together (P3.4).
+  @override
+  Future<List<OfferModel>> getOffersByIds(
+    List<String> offerIds, {
+    bool Function()? stop,
+  }) async =>
+      [
+        for (final id in offerIds)
+          if (items[id] case final OfferModel offer) offer,
+      ];
 }
 
 OfferModel _longOffer(String id) => fixtures.offer(

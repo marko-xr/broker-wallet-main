@@ -69,4 +69,9 @@ class RequestService {
   Future<RequestModel?> getRequest(String requestId) async {
     return _supabase.getRequest(requestId);
   }
+
+  /// The Requests with these ids this account may see, in a few requests
+  /// rather than one per id. Missing and deleted ones are left out.
+  Future<List<RequestModel>> getRequestsByIds(List<String> requestIds) =>
+      _supabase.getRequestsByIds(requestIds);
 }

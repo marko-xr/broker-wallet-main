@@ -21,9 +21,24 @@ class FavoriteMetadata {
 }
 
 class FavoriteService {
+  /// [client] and [currentUserId] are for tests only; production uses the
+  /// app's Supabase client and the canonical signed-in account.
+  FavoriteService({
+    @visibleForTesting sb.SupabaseClient? client,
+    @visibleForTesting String? Function()? currentUserId,
+  })  : _clientOverride = client,
+        _currentUserIdOverride = currentUserId;
+
+  final sb.SupabaseClient? _clientOverride;
+  final String? Function()? _currentUserIdOverride;
+
+  sb.SupabaseClient get _client =>
+      _clientOverride ?? sb.Supabase.instance.client;
+
   // Get current user ID
-  String? get _activeUserId =>
-      RepositoryProvider.instance.authRepository.currentUserId;
+  String? get _activeUserId => _currentUserIdOverride != null
+      ? _currentUserIdOverride()
+      : RepositoryProvider.instance.authRepository.currentUserId;
 
   String _supabaseTable(String type) {
     const tables = {
@@ -444,9 +459,8 @@ class FavoriteService {
     }
 
     try {
-      final Map<String, List<FavoriteMetadata>> favorites = {};
-
-      final types = [
+      final ownerId = _activeUserId!;
+      const types = [
         _offersType,
         _requestsType,
         _ownersType,
@@ -455,26 +469,32 @@ class FavoriteService {
         _watchmenType,
       ];
 
-      for (final type in types) {
-        final rows = await sb.Supabase.instance.client
-            .from(_supabaseTable(type))
-            .select('target_id, added_at')
-            .eq('owner_id', _activeUserId!)
-            .order('added_at', ascending: false);
-        favorites[type] = rows
-            .map((row) => FavoriteMetadata(
-                  itemId: row['target_id']?.toString() ?? '',
-                  type: type,
-                  addedAt: DateTime.tryParse(
-                        row['added_at']?.toString() ?? '',
-                      ) ??
-                      DateTime.now(),
-                ))
-            .where((item) => item.itemId.isNotEmpty)
-            .toList(growable: false);
-      }
+      // The six lists are independent, so they are asked for together: one
+      // round trip instead of six in a row. Any failure still fails the
+      // whole read, as before.
+      final lists = await Future.wait([
+        for (final type in types)
+          _client
+              .from(_supabaseTable(type))
+              .select('target_id, added_at')
+              .eq('owner_id', ownerId)
+              .order('added_at', ascending: false),
+      ]);
 
-      return favorites;
+      return {
+        for (var i = 0; i < types.length; i++)
+          types[i]: lists[i]
+              .map((row) => FavoriteMetadata(
+                    itemId: row['target_id']?.toString() ?? '',
+                    type: types[i],
+                    addedAt: DateTime.tryParse(
+                          row['added_at']?.toString() ?? '',
+                        ) ??
+                        DateTime.now(),
+                  ))
+              .where((item) => item.itemId.isNotEmpty)
+              .toList(growable: false),
+      };
     } catch (e) {
       // Debug log suppressed: Error getting server favorites with metadata: $e
       return {};

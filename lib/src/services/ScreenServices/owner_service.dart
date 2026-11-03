@@ -246,6 +246,12 @@ class OwnerService implements PrivateMediaStore {
     return _supabase.getOwner(ownerId);
   }
 
+  /// The Owner records with these ids this account may see, in a few
+  /// requests rather than one per id. Missing and deleted ones are left out.
+  /// Their media is resolved apart ([resolveMedia]).
+  Future<List<OwnerModel>> getOwnersByIds(List<String> ownerIds) =>
+      _supabase.getOwnersByIds(ownerIds);
+
   // ---------------------------------------------------------------------------
   // Owner private media (Supabase mode), addressed by identity, never by URL.
   // ---------------------------------------------------------------------------

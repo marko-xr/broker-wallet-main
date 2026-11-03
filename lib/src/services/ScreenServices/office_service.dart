@@ -66,4 +66,9 @@ class OfficeService {
   Future<OfficeModel?> getOffice(String officeId) async {
     return _supabase.getOffice(officeId);
   }
+
+  /// The Offices with these ids this account may see, in a few requests
+  /// rather than one per id. Missing and deleted ones are left out.
+  Future<List<OfficeModel>> getOfficesByIds(List<String> officeIds) =>
+      _supabase.getOfficesByIds(officeIds);
 }

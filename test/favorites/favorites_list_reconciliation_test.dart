@@ -111,6 +111,17 @@ class FakeOfferService extends OfferService {
 
   @override
   Future<OfferModel?> getOffer(String offerId) async => offers[offerId];
+
+  // Favorites reads its Offers together (P3.4).
+  @override
+  Future<List<OfferModel>> getOffersByIds(
+    List<String> offerIds, {
+    bool Function()? stop,
+  }) async =>
+      [
+        for (final id in offerIds)
+          if (offers[id] case final OfferModel offer) offer,
+      ];
 }
 
 FavoriteItem cachedItem({

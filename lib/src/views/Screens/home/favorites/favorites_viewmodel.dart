@@ -15,6 +15,7 @@ import '../../../../services/ScreenServices/owner_service.dart';
 import '../../../../services/ScreenServices/office_service.dart';
 import '../../../../services/ScreenServices/broker_service.dart';
 import '../../../../services/ScreenServices/watchmen_service.dart';
+import '../../../../services/bounded_tasks.dart';
 import '../../../../services/optimistic_favorites_service.dart';
 import '../../../../common/localization/localization_delegate.dart';
 import 'dart:async';
@@ -23,11 +24,11 @@ class FavoritesViewModel extends ChangeNotifier {
   final OptimisticFavoritesService? _optimisticFavoritesService;
   final FavoriteService _favoriteService;
   final OfferService _offerService;
-  final RequestService _requestService = RequestService();
+  final RequestService _requestService;
   final OwnerService _ownerService;
-  final OfficeService _officeService = OfficeService();
-  final BrokerService _brokerService = BrokerService();
-  final WatchmenService _watchmenService = WatchmenService();
+  final OfficeService _officeService;
+  final BrokerService _brokerService;
+  final WatchmenService _watchmenService;
   AppLocalizations? _localization;
 
   // Add throttling for rapid updates
@@ -92,10 +93,18 @@ class FavoritesViewModel extends ChangeNotifier {
     FavoriteService? favoriteService,
     OfferService? offerService,
     OwnerService? ownerService,
+    RequestService? requestService,
+    OfficeService? officeService,
+    BrokerService? brokerService,
+    WatchmenService? watchmenService,
   })  : _optimisticFavoritesService = optimisticFavoritesService,
         _favoriteService = favoriteService ?? FavoriteService(),
         _offerService = offerService ?? OfferService(),
-        _ownerService = ownerService ?? OwnerService() {
+        _ownerService = ownerService ?? OwnerService(),
+        _requestService = requestService ?? RequestService(),
+        _officeService = officeService ?? OfficeService(),
+        _brokerService = brokerService ?? BrokerService(),
+        _watchmenService = watchmenService ?? WatchmenService() {
     _initializeAndLoadFavorites();
 
     // Listen to changes in the optimistic favorites service
@@ -960,79 +969,118 @@ class FavoritesViewModel extends ChangeNotifier {
     }
   }
 
-  // New methods that use metadata to preserve timestamps
+  // The cards of one type: its records are read together (a few requests,
+  // not one per favorite), then each card is built in the favorites' own
+  // order, with the time each was added. A favorite whose record is missing
+  // or deleted has no card. When the records cannot be read, the cards
+  // already shown for those favorites stay (a failed read is not an empty
+  // one); the others of this read are not affected.
+
+  /// The records of [metadata], by id, or null when they could not be read
+  /// (the shown cards of [type] that are still favorites have then been added
+  /// to [favorites] instead).
+  Future<Map<String, T>?> _recordsOf<T>(
+    String type,
+    List<FavoriteMetadata> metadata,
+    List<FavoriteItem> favorites,
+    Future<List<T>> Function(List<String> ids) read,
+    String? Function(T record) idOf,
+  ) async {
+    try {
+      final records = await read([for (final m in metadata) m.itemId]);
+      return {
+        for (final record in records)
+          if (idOf(record) case final String id) id: record,
+      };
+    } catch (e) {
+      // Debug log suppressed: Error loading favorite $type records: $e
+      if (_disposed) return null;
+      final stillFavorites = {for (final m in metadata) m.itemId};
+      favorites.addAll(_allFavorites.where(
+          (item) => item.type == type && stillFavorites.contains(item.id)));
+      return null;
+    }
+  }
+
   Future<void> _loadOffersWithMetadata(List<FavoriteMetadata> offerMetadata,
       List<FavoriteItem> favorites) async {
+    final offers = await _recordsOf(
+      'offers',
+      offerMetadata,
+      favorites,
+      (ids) => _offerService.getOffersByIds(ids, stop: () => _disposed),
+      (OfferModel offer) => offer.id,
+    );
+    if (offers == null || _disposed) return;
     for (final metadata in offerMetadata) {
-      if (_disposed) return;
-
-      try {
-        final offer = await _offerService.getOffer(metadata.itemId);
-        if (offer != null && !_disposed) {
-          // Private media is picked by kind (the first photo, else a video's
-          // still frame); an Offer with plain URLs keeps its first URL.
-          final media = FavoriteCardMedia.fromOffer(offer);
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'offers',
-            title: _getOfferTitle(offer),
-            subtitle: _getOfferSubtitle(offer),
-            imageUrl: media == null && offer.mediaUrls.isNotEmpty
-                ? offer.mediaUrls.first
-                : null,
-            media: media,
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: offer,
-          ));
-        }
-      } catch (e) {
-        // Debug log suppressed: Error loading offer ${metadata.itemId}: $e
-      }
+      final offer = offers[metadata.itemId];
+      if (offer == null) continue;
+      // Private media is picked by kind (the first photo, else a video's
+      // still frame); an Offer with plain URLs keeps its first URL.
+      final media = FavoriteCardMedia.fromOffer(offer);
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'offers',
+        title: _getOfferTitle(offer),
+        subtitle: _getOfferSubtitle(offer),
+        imageUrl: media == null && offer.mediaUrls.isNotEmpty
+            ? offer.mediaUrls.first
+            : null,
+        media: media,
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: offer,
+      ));
     }
   }
 
   Future<void> _loadRequestsWithMetadata(List<FavoriteMetadata> requestMetadata,
       List<FavoriteItem> favorites) async {
+    final requests = await _recordsOf(
+      'requests',
+      requestMetadata,
+      favorites,
+      _requestService.getRequestsByIds,
+      (RequestModel request) => request.id,
+    );
+    if (requests == null || _disposed) return;
     for (final metadata in requestMetadata) {
-      if (_disposed) return;
-
-      try {
-        final request = await _requestService.getRequest(metadata.itemId);
-        if (request != null && !_disposed) {
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'requests',
-            title: _getRequestTitle(request),
-            subtitle: _getRequestSubtitle(request),
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: request,
-          ));
-        }
-      } catch (e) {
-        // Debug log suppressed: Error loading request ${metadata.itemId}: $e
-      }
+      final request = requests[metadata.itemId];
+      if (request == null) continue;
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'requests',
+        title: _getRequestTitle(request),
+        subtitle: _getRequestSubtitle(request),
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: request,
+      ));
     }
   }
 
   Future<void> _loadOwnersWithMetadata(List<FavoriteMetadata> ownerMetadata,
       List<FavoriteItem> favorites) async {
-    final loaded = <(FavoriteMetadata, OwnerModel)>[];
-    for (final metadata in ownerMetadata) {
-      if (_disposed) return;
-
-      try {
-        final owner = await _ownerService.getOwner(metadata.itemId);
-        if (owner != null && !_disposed) loaded.add((metadata, owner));
-      } catch (e) {
-        // Debug log suppressed: Error loading owner ${metadata.itemId}: $e
-      }
-    }
+    final owners = await _recordsOf(
+      'owners',
+      ownerMetadata,
+      favorites,
+      _ownerService.getOwnersByIds,
+      (OwnerModel owner) => owner.id,
+    );
+    if (owners == null || _disposed) return;
+    final loaded = <(FavoriteMetadata, OwnerModel)>[
+      for (final metadata in ownerMetadata)
+        if (owners[metadata.itemId] case final OwnerModel owner)
+          (metadata, owner),
+    ];
 
     // An Owner's row carries no media links; its photos and videos are
-    // private and are resolved apart, for every Owner at once.
-    final media = await Future.wait([
-      for (final (_, owner) in loaded) _ownerCardMedia(owner),
-    ]);
+    // private and are resolved apart, a few Owners at a time.
+    final media = await mapWithLimit(
+      loaded,
+      mediaReadsAtOnce,
+      (entry) => _ownerCardMedia(entry.$2),
+      stop: () => _disposed,
+    );
     if (_disposed) return;
 
     for (var i = 0; i < loaded.length; i++) {
@@ -1082,88 +1130,90 @@ class FavoritesViewModel extends ChangeNotifier {
 
   Future<void> _loadOfficesWithMetadata(List<FavoriteMetadata> officeMetadata,
       List<FavoriteItem> favorites) async {
+    final offices = await _recordsOf(
+      'offices',
+      officeMetadata,
+      favorites,
+      _officeService.getOfficesByIds,
+      (OfficeModel office) => office.id,
+    );
+    if (offices == null || _disposed) return;
     for (final metadata in officeMetadata) {
-      if (_disposed) return;
-
-      try {
-        final office = await _officeService.getOffice(metadata.itemId);
-        if (office != null && !_disposed) {
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'offices',
-            title: office.officeName.isNotEmpty
-                ? office.officeName
-                : _localization?.translate('office') ?? 'Office',
-            subtitle: office.managerName.isNotEmpty
-                ? (_localization?.translate('favoritesManagerLabel') ??
-                        'Manager: {name}')
-                    .replaceAll('{name}', office.managerName)
-                : _localization?.translate('officeLocation') ??
-                    'Office Location',
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: office,
-          ));
-        }
-      } catch (e) {
-        // Debug log suppressed: Error loading office ${metadata.itemId}: $e
-      }
+      final office = offices[metadata.itemId];
+      if (office == null) continue;
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'offices',
+        title: office.officeName.isNotEmpty
+            ? office.officeName
+            : _localization?.translate('office') ?? 'Office',
+        subtitle: office.managerName.isNotEmpty
+            ? (_localization?.translate('favoritesManagerLabel') ??
+                    'Manager: {name}')
+                .replaceAll('{name}', office.managerName)
+            : _localization?.translate('officeLocation') ?? 'Office Location',
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: office,
+      ));
     }
   }
 
   Future<void> _loadBrokersWithMetadata(List<FavoriteMetadata> brokerMetadata,
       List<FavoriteItem> favorites) async {
+    final brokers = await _recordsOf(
+      'brokers',
+      brokerMetadata,
+      favorites,
+      _brokerService.getBrokersByIds,
+      (BrokerModel broker) => broker.id,
+    );
+    if (brokers == null || _disposed) return;
     for (final metadata in brokerMetadata) {
-      if (_disposed) return;
-
-      try {
-        final broker = await _brokerService.getBroker(metadata.itemId);
-        if (broker != null && !_disposed) {
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'brokers',
-            title: broker.name.isNotEmpty
-                ? broker.name
-                : _localization?.translate('brokers') ?? 'Broker',
-            subtitle: _localization?.translate('favoritesBrokerSubtitle') ??
-                'Real Estate Broker',
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: broker,
-          ));
-        }
-      } catch (e) {
-        // Debug log suppressed: Error loading broker ${metadata.itemId}: $e
-      }
+      final broker = brokers[metadata.itemId];
+      if (broker == null) continue;
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'brokers',
+        title: broker.name.isNotEmpty
+            ? broker.name
+            : _localization?.translate('brokers') ?? 'Broker',
+        subtitle: _localization?.translate('favoritesBrokerSubtitle') ??
+            'Real Estate Broker',
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: broker,
+      ));
     }
   }
 
   Future<void> _loadWatchmenWithMetadata(
       List<FavoriteMetadata> watchmenMetadata,
       List<FavoriteItem> favorites) async {
+    final watchmen = await _recordsOf(
+      'watchmen',
+      watchmenMetadata,
+      favorites,
+      _watchmenService.getWatchmenByIds,
+      (WatchmenModel watchman) => watchman.id,
+    );
+    if (watchmen == null || _disposed) return;
     for (final metadata in watchmenMetadata) {
-      if (_disposed) return;
-
-      try {
-        final watchmen = await _watchmenService.getWatchmen(metadata.itemId);
-        if (watchmen != null && !_disposed) {
-          favorites.add(FavoriteItem(
-            id: metadata.itemId,
-            type: 'watchmen',
-            title: watchmen.name.isNotEmpty
-                ? watchmen.name
-                : _localization?.translate('watchmen') ?? 'Watchmen',
-            subtitle: watchmen.buildingName.isNotEmpty
-                ? (_localization?.translate('favoritesBuildingLabel') ??
-                        'Building: {name}')
-                    .replaceAll('{name}', watchmen.buildingName)
-                : _localization?.translate('favoritesSecuritySubtitle') ??
-                    'Security Guard',
-            addedAt: metadata.addedAt, // Use actual timestamp!
-            originalData: watchmen,
-          ));
-        }
-      } catch (e) {
-        // Debug log suppressed: Error loading watchman ${metadata.itemId}: $e
-      }
+      final watchman = watchmen[metadata.itemId];
+      if (watchman == null) continue;
+      favorites.add(FavoriteItem(
+        id: metadata.itemId,
+        type: 'watchmen',
+        title: watchman.name.isNotEmpty
+            ? watchman.name
+            : _localization?.translate('watchmen') ?? 'Watchmen',
+        subtitle: watchman.buildingName.isNotEmpty
+            ? (_localization?.translate('favoritesBuildingLabel') ??
+                    'Building: {name}')
+                .replaceAll('{name}', watchman.buildingName)
+            : _localization?.translate('favoritesSecuritySubtitle') ??
+                'Security Guard',
+        addedAt: metadata.addedAt, // Use actual timestamp!
+        originalData: watchman,
+      ));
     }
   }
 

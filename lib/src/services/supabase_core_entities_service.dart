@@ -12,6 +12,7 @@ import '../data/models/ScreensModel/owners_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
+import 'bounded_tasks.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
 import 'list_session_check.dart';
@@ -707,14 +708,19 @@ class SupabaseCoreEntitiesService {
   Future<OfferModel?> getOffer(String id) async {
     final offer = await getOfferMetadata(id);
     if (offer == null) return null;
+    return _withDisplayMedia(offer);
+  }
 
-    // Single-offer reads (detail/edit screens, Favorites cards, search
-    // results) populate real signed media URLs; the bulk list fetch below
-    // deliberately does not, to avoid an unbounded fan-out of per-offer
-    // Worker calls for a whole list at once. Existing callers retain the
-    // historical best-effort contract: metadata still returns if media
-    // resolution fails. Offer Details uses the strict split methods above so
-    // it can present a localized, recoverable media error instead.
+  /// [offer] with its signed media, best effort.
+  ///
+  /// Single-offer reads (detail/edit screens, search results) and Favorites
+  /// cards populate real signed media URLs; the bulk list fetch below
+  /// deliberately does not, to avoid an unbounded fan-out of per-offer
+  /// Worker calls for a whole list at once. Existing callers retain the
+  /// historical best-effort contract: metadata still returns if media
+  /// resolution fails. Offer Details uses the strict split methods above so
+  /// it can present a localized, recoverable media error instead.
+  Future<OfferModel?> _withDisplayMedia(OfferModel offer) async {
     try {
       return await resolveOfferMediaFor(offer);
     } catch (_) {
@@ -1033,6 +1039,106 @@ class SupabaseCoreEntitiesService {
 
   Future<void> deleteWatchman(String id) =>
       _softDeleteAndNotify('watchmen', id);
+
+  // -------------------------------------------------------------------------
+  // Reads of several records by id (Favorites)
+  // -------------------------------------------------------------------------
+
+  /// Ids per request. Each id names at most one row, so a read never asks
+  /// for more rows than this — well under the server's row cap — and the
+  /// request line stays a few kilobytes.
+  static const int _idsPerRead = 100;
+
+  /// The same columns as [getRequest].
+  static const String _requestColumns = '''
+          id, owner_id, request_type, selected_city, location_text,
+          phone_number, country_code, min_price, max_price, square_footage,
+          notes, property_type, specific_property_type, rooms, bathrooms,
+          status, created_at, updated_at, request_areas(area, ordinal)
+        ''';
+
+  /// The same columns as [getOfferMetadata].
+  static const String _offerColumns = '''
+          id, owner_id, offer_type, selected_city, location_text,
+          phone_number, country_code, min_price, max_price, square_footage,
+          notes, property_type, specific_property_type, rooms, bathrooms,
+          pickup_location_text, pickup_latitude, pickup_longitude,
+          pickup_address, legacy_uploaded_file_name, status, created_at,
+          updated_at, offer_areas(area, ordinal)
+        ''';
+
+  /// The rows of [table] with these [ids] that this account owns and has not
+  /// deleted — the same filters as the single-record reads — in
+  /// [_idsPerRead] ids per request, one after another. A missing, deleted or
+  /// other account's id is simply not returned. Rows come back in no
+  /// particular order. Throws when the signed-in account changed during the
+  /// read, as [getOfferMetadata] does.
+  Future<List<T>> _rowsByIds<T>(
+    String table,
+    String columns,
+    Iterable<String> ids,
+    T Function(Map<String, dynamic> row) fromRow,
+  ) async {
+    final ownerId = _requireUserId();
+    final unique = <String>{
+      for (final id in ids)
+        if (id.isNotEmpty) id,
+    }.toList(growable: false);
+    final found = <T>[];
+    for (var start = 0; start < unique.length; start += _idsPerRead) {
+      final end = start + _idsPerRead < unique.length
+          ? start + _idsPerRead
+          : unique.length;
+      final rows = await _client
+          .from(table)
+          .select(columns)
+          .eq('owner_id', ownerId)
+          .inFilter('id', unique.sublist(start, end))
+          .isFilter('deleted_at', null);
+      if (_client.auth.currentUser?.id != ownerId) {
+        throw StateError('The authenticated account changed during the read.');
+      }
+      found.addAll(rows.map(fromRow));
+    }
+    return found;
+  }
+
+  Future<List<RequestModel>> getRequestsByIds(Iterable<String> ids) =>
+      _rowsByIds('requests', _requestColumns, ids, _requestFromRow);
+
+  /// The Offers with these ids, each with its signed media as [getOffer]
+  /// gives it: one Worker call per Offer, [mediaReadsAtOnce] at a time. Once
+  /// [stop] returns true no further media read starts and the Offers not yet
+  /// read are left out (the caller no longer wants the answer).
+  Future<List<OfferModel>> getOffersByIds(
+    Iterable<String> ids, {
+    bool Function()? stop,
+  }) async {
+    final offers =
+        await _rowsByIds('offers', _offerColumns, ids, _offerFromRow);
+    final withMedia = await mapWithLimit(
+      offers,
+      mediaReadsAtOnce,
+      _withDisplayMedia,
+      stop: stop,
+    );
+    return [
+      for (final offer in withMedia)
+        if (offer != null) offer,
+    ];
+  }
+
+  Future<List<OwnerModel>> getOwnersByIds(Iterable<String> ids) =>
+      _rowsByIds('owners', '*', ids, _ownerFromRow);
+
+  Future<List<OfficeModel>> getOfficesByIds(Iterable<String> ids) =>
+      _rowsByIds('offices', '*', ids, _officeFromRow);
+
+  Future<List<BrokerModel>> getBrokersByIds(Iterable<String> ids) =>
+      _rowsByIds('brokers', '*', ids, _brokerFromRow);
+
+  Future<List<WatchmenModel>> getWatchmenByIds(Iterable<String> ids) =>
+      _rowsByIds('watchmen', '*', ids, _watchmanFromRow);
 
   Future<void> _replaceAreas(
     String table,

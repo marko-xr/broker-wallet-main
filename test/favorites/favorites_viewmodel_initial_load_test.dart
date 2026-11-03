@@ -114,6 +114,13 @@ class FakeOwnerService extends OwnerService {
   @override
   Future<OwnerModel?> getOwner(String ownerId) async => owners[ownerId];
 
+  // Favorites reads its Owners together (P3.4).
+  @override
+  Future<List<OwnerModel>> getOwnersByIds(List<String> ownerIds) async => [
+        for (final id in ownerIds)
+          if (owners[id] case final OwnerModel owner) owner,
+      ];
+
   @override
   String? get currentOwnerId => accountId;
 
@@ -180,6 +187,17 @@ class FakeOfferService extends OfferService {
 
   @override
   Future<OfferModel?> getOffer(String offerId) async => offers[offerId];
+
+  // Favorites reads its Offers together (P3.4).
+  @override
+  Future<List<OfferModel>> getOffersByIds(
+    List<String> offerIds, {
+    bool Function()? stop,
+  }) async =>
+      [
+        for (final id in offerIds)
+          if (offers[id] case final OfferModel offer) offer,
+      ];
 }
 
 FavoriteItem cachedItem({

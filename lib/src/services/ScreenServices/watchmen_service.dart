@@ -66,4 +66,9 @@ class WatchmenService {
   Future<WatchmenModel?> getWatchmen(String watchmenId) async {
     return _supabase.getWatchman(watchmenId);
   }
+
+  /// The Watchmen with these ids this account may see, in a few requests
+  /// rather than one per id. Missing and deleted ones are left out.
+  Future<List<WatchmenModel>> getWatchmenByIds(List<String> watchmenIds) =>
+      _supabase.getWatchmenByIds(watchmenIds);
 }

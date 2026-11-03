@@ -1926,6 +1926,11 @@
 - **الحالة:** P3.1d بالسياسة الصارمة = **CODE_PROVEN — جاهز لموافقة الـ commit النهائية**. **STOP:** لا commit/push؛ لا P3.2.
 - **أُودع** بموافقة المالك: `552bf5b` `fix(offline): prevent deleted records resurfacing with authenticated tombstones` (15 ملفاً)، ودفعه المالك (`origin` = `552bf5b`، §7AF).
 
+### الحالة و NOW / NEXT / STOP
+- **FU-P2.5E-CRUD-STALE = CODE_PROVEN (P3.1d)، مع سياسة العلامات التالفة الصارمة المعتمدة (§7AE-1)** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED؛ **التقاعد مؤجَّل (P4 أو قرار البديل)**. P3.1a staging **PENDING**. FU-AUTH-BASELINE-7 وDelete Account التاريخي و**FU-ACCOUNT-UI-BASELINE-1** **OPEN**. Samsung (D-54 أدناه) والبناء الأصلي **DEFERRED/UNVERIFIED**.
+- **الملفات (غير مدمجة):** `lib/src/services/encrypted_account_list_cache.dart`؛ الأغلفة الست `lib/src/services/{requests,offers,owners,offices,brokers,watchmen}_local_cache.dart`؛ الخدمات الست `lib/src/services/ScreenServices/{request,offer,owner,office,broker,watchmen}_service.dart`؛ جديد `test/lists/confirmed_deletion_test.dart`؛ وهذا الملف.
+- **NOW:** مراجعة المالك وموافقة على commit. **NEXT:** قرار بديل التقاعد، أو تحقق staging، أو P3.2 بموافقة منفصلة. **STOP:** لا commit/push؛ لا P3.2 تلقائياً.
+
 ---
 
 ## 7AF) P3.2 — إزالة تكرار استعلامات أعداد Home — 2026-11-03 (CODE_PROVEN؛ غير مدمج)
@@ -1968,11 +1973,45 @@
 - **P3.2 = CODE_PROVEN** — ليس REAL_DEVICE_VERIFIED. FU-AUTH-BASELINE-7 وDelete Account التاريخي وFU-ACCOUNT-UI-BASELINE-1 **OPEN**؛ P3.1a staging **PENDING**.
 - **الملفات (غير مدمجة):** `lib/src/viewmodels/home_viewmodel.dart`؛ جديد `test/home/home_count_requests_test.dart`؛ وهذا الملف.
 - **NOW:** موافقة المالك على commit. **NEXT:** **P3.3 — Count Payload Optimization** (بموافقة منفصلة). **STOP:** لا P3.3 تلقائياً؛ لا commit/push.
+- **أُودع** بموافقة المالك: `b288bf4` `perf(home): deduplicate concurrent count requests` (3 ملفات)، ودفعه المالك (`origin` = `b288bf4`، §7AG).
+
+---
+
+## 7AG) P3.3 — تحسين حمولة طلبات أعداد Home — 2026-11-03 (CODE_PROVEN؛ غير مدمج)
+
+**Git عند البدء (بعد `git fetch`):** `perf/phase-1-startup-baseline` @ `b288bf4` = `origin` (0/0)، نظيف، stashes = 2.
+
+### شكل الاستعلام قبل/بعد (`SupabaseHomeCountsService._countActiveRows`، الجداول السبعة)
+- **قبل:** `from(t).select('id').isFilter('deleted_at', null).count(CountOption.exact)` ⇒ **GET** `?select=id&deleted_at=is.null` + `Prefer: count=exact` ⇒ الخادم يرسل **صفوف المعرّفات كلها** (حتى `max_rows`) والعدد في `Content-Range`.
+- **بعد:** `from(t).count(CountOption.exact).isFilter('deleted_at', null)` ⇒ **HEAD** `?deleted_at=is.null` + `Prefer: count=exact` ⇒ **لا جسم**؛ العدد من `Content-Range`. **الفلتر نفسه** (`deleted_at is null`؛ لا فلتر مالك صريح قبل ولا بعد — RLS + بوابة الجلسة كما هما)، **`CountOption.exact` نفسه**.
+- **API مُتحقَّق من المصدر المثبّت (`postgrest 2.9.1`):** `PostgrestQueryBuilder.count([CountOption])` ⇒ `HttpMethod.head` ⇒ `PostgrestFilterBuilder<int>`. التحليل: `Content-Range` مفقود أو `*/*` ⇒ العدد null ⇒ **cast إلى int يرمي**؛ مشوّه ⇒ `FormatException`؛ حالة ≠ 2xx ⇒ `PostgrestException` — **لا يصير أيٌّ منها صفراً**؛ كلها تصل إلى `catch` القائم في `getCounts` ⇒ **القيمة المعروضة تبقى** (السلوك القديم نفسه). فرع `count: 0` في المكتبة خاص بـ `maybeSingle` فقط.
+
+### القياس (MEASURED في اختبار حتمي — بديل PostgREST؛ أعداد الصفوف محاكاة لا بيانات مستضافة)
+| صفوف لكل جدول | جسم الاستجابة لكل قراءة أعداد (7 طلبات) — قبل | بعد |
+|---|---|---|
+| 0 | 14 بايت (`[]`×7) | **0** |
+| 3 | 973 بايت | **0** |
+| 250 | 80,507 بايت | **0** |
+| 1000 (= `max_rows` المحلي) | 322,007 بايت | **0** |
+**عدد الطلبات بلا تغيير:** 7 لكل قراءة؛ قياسات P3.2 كلها كما هي (بدء بارد 7، مُطلِقات متزامنة 14، 0 بعد الإغلاق…). الحمولة لكل معرّف ≈ 46 بايت (`{"id":"<uuid>"}`). خط الأساس قيس على كود HEAD (`b288bf4`) قبل التغيير بالاختبار نفسه.
+
+### الأدلة (شغّلها الوكيل)
+- **جديد `test/home/home_count_payload_test.dart` — 12/12 PASS** (على الكود القديم: الشكل والحمولة وتكامل Home فشلت، والدقة/الفشل الآمن نجحت — أي أن السلوك محفوظ): 7 طلبات HEAD بجدول لكلٍّ ومعاملات الاستعلام **بالضبط** `{deleted_at: is.null}` و`count=exact`؛ **0 بايت** لـ 3/250/1000 صف؛ الأعداد السبعة دقيقة (1..7 لكل مفتاح بما فيه `requested`/`quotation`)؛ صفر شرعي = 0؛ `Content-Range` مفقود/`*/*`/مشوّه ⇒ **المعروض يبقى، لا صفر**؛ 401/403/500 ⇒ المعروض يبقى؛ **تكامل Home:** جلسة مُزاحة (البوابة ترشّح كل صف ⇒ أصفار) لا تستبدل الأعداد المعروضة ولا كاش R-02.
+- **حُدِّث عمداً:** `core_entity_query_contract_test` (P3.0) كان يثبّت «7 GET بـ `select=id`» ⇒ يثبّت الآن «7 HEAD بالفلتر نفسه»؛ بديل `home_count_requests_test` (P3.2) يعدّ GET **و**HEAD (أداة قياس، بلا تغيير توقعات) ⇒ قياساته كما هي.
+- **فحص الطفرات — 4/4 التُقطت** (الملف أُعيد، `Get-FileHash` مطابق): إسقاط فلتر «غير محذوف»؛ `estimated` بدل `exact`؛ عدد غير صالح يُقرأ صفراً؛ العودة إلى GET `select=id`.
+- **انحدار:** `test/home/` كاملاً (R-02، P3.1c، P3.2، P3.3، الفلاتر) + `r2_home_responsive_test` + `core_entity_query_contract_test` + `core_entity_refresh_stream_test` ⇒ **318/318 PASS**. `test/auth/` لم يُعَد (لا يستورد الخدمة؛ FU-AUTH-BASELINE-7 كما هو).
+- **Analyzer** → No issues. **Format:** الملفات الأربعة مطابقة للمنسِّق (صُحّح تخطيط سطر واحد في الخدمة ثم أُعيدت الاختبارات المركّزة 26/26). **`git diff --check`** → نظيف.
+- **ملاحظة تشغيل:** أول تشغيل بدا معلّقاً لأن تشغيلاً سابقاً نُقل إلى الخلفية وبقي يعمل؛ بعد إيقافه نجحت الاختبارات في ثوانٍ — لا تعليق في الاختبارات.
+
+### الحدود المتبقية
+- **عدّ `exact` على الخادم** ما زال يكلّف مسحاً للصفوف المطابقة (لا يُقاس هنا؛ `planned`/`estimated` غير دقيقة فلم تُعتمد).
+- 7 طلبات لكل قراءة (لا RPC مجمّع — يحتاج تغيير خادم وموافقة)؛ token refresh كل ساعة يقرأ الأعداد؛ عودة تبويب Home (Q3)؛ انتشار إشعار التعديل (Q4)؛ `getRelatedItemsCount` متسلسل بـ `select=id` (Q6)؛ Search (Q7)؛ الترقيم/الاكتمال (P4).
+- القياس اختباري؛ **staging/PostgREST المستضاف وSamsung والبناء الأصلي DEFERRED/UNVERIFIED** (HEAD عبر الشبكة الحقيقية/البروكسي غير مُتحقَّق منه).
 
 ### الحالة و NOW / NEXT / STOP
-- **FU-P2.5E-CRUD-STALE = CODE_PROVEN (P3.1d)، مع سياسة العلامات التالفة الصارمة المعتمدة (§7AE-1)** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED؛ **التقاعد مؤجَّل (P4 أو قرار البديل)**. P3.1a staging **PENDING**. FU-AUTH-BASELINE-7 وDelete Account التاريخي و**FU-ACCOUNT-UI-BASELINE-1** **OPEN**. Samsung (D-54 أدناه) والبناء الأصلي **DEFERRED/UNVERIFIED**.
-- **الملفات (غير مدمجة):** `lib/src/services/encrypted_account_list_cache.dart`؛ الأغلفة الست `lib/src/services/{requests,offers,owners,offices,brokers,watchmen}_local_cache.dart`؛ الخدمات الست `lib/src/services/ScreenServices/{request,offer,owner,office,broker,watchmen}_service.dart`؛ جديد `test/lists/confirmed_deletion_test.dart`؛ وهذا الملف.
-- **NOW:** مراجعة المالك وموافقة على commit. **NEXT:** قرار بديل التقاعد، أو تحقق staging، أو P3.2 بموافقة منفصلة. **STOP:** لا commit/push؛ لا P3.2 تلقائياً.
+- **P3.3 = CODE_PROVEN** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED. FU-AUTH-BASELINE-7 وDelete Account التاريخي وFU-ACCOUNT-UI-BASELINE-1 **OPEN**؛ P3.1a staging **PENDING**.
+- **الملفات (غير مدمجة):** `lib/src/services/supabase_home_counts_service.dart`؛ جديد `test/home/home_count_payload_test.dart`؛ `test/home/home_count_requests_test.dart` (أداة العدّ)؛ `test/lists/core_entity_query_contract_test.dart` (العقد الجديد)؛ وهذا الملف.
+- **NOW:** موافقة المالك على commit. **NEXT:** **P3.4 — Favorites N+1** (بموافقة منفصلة). **STOP:** لا P3.4 تلقائياً؛ لا commit/push.
 
 ---
 

@@ -67,7 +67,8 @@ class _Backend {
         return http.Response(jsonEncode(_sessionMap(_uid!, _session!)), 200,
             headers: {'content-type': 'application/json'}, request: request);
       }
-      final counting = request.method == 'GET' &&
+      // GET before P3.3, count-only HEAD since.
+      final counting = (request.method == 'GET' || request.method == 'HEAD') &&
           request.url.path.startsWith('/rest/v1/') &&
           (request.headers['Prefer'] ?? '').contains('count=exact');
       if (!counting) return http.Response('[]', 200, request: request);

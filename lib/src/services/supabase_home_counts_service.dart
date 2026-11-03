@@ -43,13 +43,11 @@ class SupabaseHomeCountsService {
     return Map<String, int>.fromEntries(entries);
   }
 
-  Future<int> _countActiveRows(String table) async {
-    final response = await _client
-        .from(table)
-        .select('id')
-        .isFilter('deleted_at', null)
-        .count(CountOption.exact);
-
-    return response.count;
-  }
+  /// The exact number of [table]'s rows this session may see that are not
+  /// deleted, from a count-only (HEAD) request: the server sends the count
+  /// in its Content-Range header and no rows. A response without a usable
+  /// count throws (it is never read as 0), so [getCounts] keeps what is
+  /// shown, as for any other failure.
+  Future<int> _countActiveRows(String table) =>
+      _client.from(table).count(CountOption.exact).isFilter('deleted_at', null);
 }

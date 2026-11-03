@@ -9,7 +9,9 @@
 // - The six list reads ask for every row (no limit, no range, no count), so
 //   a server row cap can shorten a list silently, and an empty answer looks
 //   the same whatever its cause.
-// - Home counts send seven GET requests that also return the id rows.
+// - Home counts sent seven GET requests that also returned the id rows;
+//   since P3.3 (§7AG) they are seven count-only HEAD requests with the same
+//   filter, pinned by the Home counts test below.
 import 'dart:convert';
 
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
@@ -168,8 +170,8 @@ void main() {
   });
 
   test(
-      'Home counts send seven GET requests that also return the id rows '
-      '(select=id with an exact count), not seven HEAD counts', () async {
+      'Home counts send seven count-only HEAD requests with an exact count '
+      'and the same not-deleted filter; no rows are selected', () async {
     backend.requests.clear();
     await SupabaseHomeCountsService(client: backend.client).getCounts();
     expect(backend.requests, hasLength(7));
@@ -183,9 +185,9 @@ void main() {
       'quotations',
     });
     for (final r in backend.requests) {
-      expect(r.method, 'GET', reason: table(r));
-      expect(r.url.queryParameters['select'], 'id', reason: table(r));
-      expect(r.url.queryParameters['deleted_at'], 'is.null', reason: table(r));
+      expect(r.method, 'HEAD', reason: table(r));
+      expect(r.url.queryParameters, {'deleted_at': 'is.null'},
+          reason: table(r));
       expect(prefer(r), contains('count=exact'), reason: table(r));
     }
   });

@@ -29,6 +29,7 @@ class BrokersLocalCache extends EncryptedAccountListCache<BrokerModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _accountOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_brokers_';
@@ -38,6 +39,8 @@ class BrokersLocalCache extends EncryptedAccountListCache<BrokerModel> {
 
   /// The account a record belongs to (not the Broker record's own id). A
   /// record with no account matches none.
+  static String? _idOf(BrokerModel item) => item.id;
+
   static String _accountOf(BrokerModel b) => b.userId ?? '';
 
   static String? _date(DateTime? value) => value?.toUtc().toIso8601String();

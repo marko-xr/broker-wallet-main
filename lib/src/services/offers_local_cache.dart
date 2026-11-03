@@ -30,12 +30,15 @@ class OffersLocalCache extends EncryptedAccountListCache<OfferModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _ownerOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_offers_';
 
   /// The account's box name; also used by tests.
   static String boxNameForUid(String uid) => '$_boxPrefix$uid';
+
+  static String? _idOf(OfferModel item) => item.id;
 
   static String _ownerOf(OfferModel o) => o.userId;
 

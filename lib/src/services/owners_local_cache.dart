@@ -31,6 +31,7 @@ class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _accountOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_owners_';
@@ -39,6 +40,8 @@ class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
   static String boxNameForUid(String uid) => '$_boxPrefix$uid';
 
   /// The account a record belongs to (not the Owner record's own id).
+  static String? _idOf(OwnerModel item) => item.id;
+
   static String _accountOf(OwnerModel o) => o.userId;
 
   static Map<String, Object?> _encode(OwnerModel o) => {

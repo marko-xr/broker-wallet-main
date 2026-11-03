@@ -8,13 +8,17 @@ class OfficeService {
   OfficeService({
     OfficesLocalCache localCache = const OfficesLocalCache(),
     String? Function()? currentUserId,
+    SupabaseCoreEntitiesService Function()? coreEntities,
   })  : _localCache = localCache,
-        _currentUserIdOverride = currentUserId;
+        _currentUserIdOverride = currentUserId,
+        _coreEntities = coreEntities;
 
   final OfficesLocalCache _localCache;
   final String? Function()? _currentUserIdOverride;
+  final SupabaseCoreEntitiesService Function()? _coreEntities;
 
-  SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+  SupabaseCoreEntitiesService get _supabase =>
+      _coreEntities?.call() ?? SupabaseCoreEntitiesService();
 
   /// The canonical signed-in account, or null when there is none (or no
   /// auth repository yet).
@@ -50,9 +54,14 @@ class OfficeService {
         currentUserId: _currentUserId,
       );
 
-  Future<void> deleteOffice(String officeId) async {
-    await _supabase.deleteOffice(officeId);
-  }
+  /// Deletes on the server and, once the server has confirmed it,
+  /// remembers the deletion so the offline list never shows it again.
+  Future<void> deleteOffice(String officeId) => deleteThenRemember(
+        cache: _localCache,
+        id: officeId,
+        currentUserId: _currentUserId,
+        delete: () => _supabase.deleteOffice(officeId),
+      );
 
   Future<OfficeModel?> getOffice(String officeId) async {
     return _supabase.getOffice(officeId);

@@ -71,7 +71,15 @@ enum ListCompleteness { unknown }
 /// from it.
 @immutable
 class SavedListInfo {
-  const SavedListInfo({required this.authenticated, this.serverReadAt});
+  const SavedListInfo({
+    required this.authenticated,
+    this.serverReadAt,
+    this.hidesConfirmedDeletions = false,
+  });
+
+  /// Records the server confirmed deleted were left out of the list. The
+  /// list's time is still that of the server list it came from.
+  final bool hidesConfirmedDeletions;
 
   /// True for an authenticated (v2) list; false for an earlier untagged (v1)
   /// list, which is shown only until the first server list replaces it.
@@ -175,10 +183,12 @@ class EncryptedAccountListCache<T> {
     required Map<String, Object?> Function(T) encode,
     required T Function(Map<String, dynamic>) decode,
     required String Function(T) ownerOf,
+    required String? Function(T) idOf,
   })  : _keys = keyStore,
         _encode = encode,
         _decode = decode,
-        _ownerOf = ownerOf;
+        _ownerOf = ownerOf,
+        _idOf = idOf;
 
   final String boxPrefix;
   final String listKey;
@@ -190,8 +200,69 @@ class EncryptedAccountListCache<T> {
   final Map<String, Object?> Function(T) _encode;
   final T Function(Map<String, dynamic>) _decode;
   final String Function(T) _ownerOf;
+  final String? Function(T) _idOf;
 
   String boxNameOf(String uid) => '$boxPrefix$uid';
+
+  /// How many confirmed deletions are remembered per list and account.
+  static const int defaultMaxConfirmedDeletions = 1000;
+
+  /// [defaultMaxConfirmedDeletions]; tests lower it.
+  @visibleForTesting
+  static int maxConfirmedDeletions = defaultMaxConfirmedDeletions;
+
+  /// Forgets everything this process keeps in memory, as a restart does.
+  @visibleForTesting
+  static void debugForgetProcessState() {
+    _thisRun.clear();
+    _stored.clear();
+    _blocked.clear();
+  }
+
+  /// Remembers that the server confirmed deleting [id] from [uid]'s list
+  /// (call only after that confirmation; see [deleteThenRemember]).
+  ///
+  /// The deletion counts at once for this run — a save of a server list that
+  /// still holds it is refused, and it is left out of what is shown — and is
+  /// stored as an authenticated marker in [uid]'s box when there is a box to
+  /// store it in (with no saved list there is nothing to hide later).
+  ///
+  /// No marker is ever dropped. When [maxConfirmedDeletions] are stored, a
+  /// saved list that holds [id] is removed instead, so it is never shown;
+  /// this run will not save it back, and the next server list replaces it.
+  /// Markers that cannot be read are left exactly as they are and the list
+  /// is blocked ([isIntegrityBlocked]).
+  Future<void> rememberConfirmedDeletion(String uid, String id) async {
+    if (uid.isEmpty || id.isEmpty) return;
+    final name = boxNameOf(uid);
+    (_thisRun[name] ??= <String>{}).add(id);
+    await _oneAtATime(name, () async {
+      try {
+        final dir = await _prepare(uid);
+        final key = await _keys.read(uid);
+        if (key == null || !await Hive.boxExists(name, path: dir)) return;
+        final box = await _open(uid, key, dir);
+        final stored = _deletedIds(uid, key, box.get(_deletedKey));
+        if (stored == null) {
+          _block(uid); // never replaced: this run keeps the deletion in memory
+          return;
+        }
+        if (stored.contains(id)) return;
+        if (stored.length >= maxConfirmedDeletions) {
+          if (_savedCopyHolds(box, uid, key, id)) {
+            await _dropSavedCopy(box);
+            _log('saved list removed', StateError('marker limit reached'));
+          } else {
+            _log('deletion not stored', StateError('marker limit reached'));
+          }
+          return;
+        }
+        await _putMarkers(box, uid, key, {...stored, id});
+      } catch (error) {
+        _log('marking failed', error);
+      }
+    });
+  }
 
   /// The directory, under the app's documents directory, that holds every
   /// offline list. Android backup and device transfer exclude it.
@@ -583,6 +654,9 @@ class EncryptedAccountListCache<T> {
         final key = await _keys.read(uid);
         if (key == null) return null;
         final box = await _open(uid, key, dir);
+        final List<T>? items;
+        final bool authenticated;
+        DateTime? at;
         final sealed = box.get(_v2Key);
         if (sealed != null) {
           final stored = _verified(uid, key, sealed);
@@ -590,21 +664,37 @@ class EncryptedAccountListCache<T> {
             _log('integrity check failed', StateError('list not authentic'));
             return null;
           }
-          final items = _items(uid, stored.payload);
-          if (items == null) return null;
+          items = _items(uid, stored.payload);
+          authenticated = true;
           final record = box.get(_syncKey);
-          final at = _syncedAt(uid, key, record, stored.tag);
+          at = _syncedAt(uid, key, record, stored.tag);
           if (record != null && at == null) {
             _log('read time unknown', StateError('sync record not used'));
           }
-          return SavedList(
-              items, SavedListInfo(authenticated: true, serverReadAt: at));
+        } else {
+          final earlier = box.get(listKey);
+          items = earlier == null ? null : _items(uid, earlier);
+          authenticated = false;
         }
-        final earlier = box.get(listKey);
-        final items = earlier == null ? null : _items(uid, earlier);
-        return items == null
-            ? null
-            : SavedList(items, const SavedListInfo(authenticated: false));
+        // Records the server confirmed deleted are never shown again. When
+        // the markers cannot be trusted, the list might hold such a record:
+        // it is blocked (see [isIntegrityBlocked]), with or without a copy.
+        final marks = _deletedIds(uid, key, box.get(_deletedKey));
+        if (marks == null) {
+          _block(uid);
+          return null;
+        }
+        _stored[boxNameOf(uid)] = marks;
+        if (items == null) return null;
+        final visible = withoutConfirmedDeletions(uid, items);
+        return SavedList(
+          visible,
+          SavedListInfo(
+            authenticated: authenticated,
+            serverReadAt: at,
+            hidesConfirmedDeletions: visible.length != items.length,
+          ),
+        );
       } catch (error) {
         _log('read failed', error);
         return null;
@@ -636,6 +726,19 @@ class EncryptedAccountListCache<T> {
     await _oneAtATime(boxNameOf(uid), () async {
       try {
         final dir = await _prepare(uid);
+        // A list holding a record whose deletion the server confirmed during
+        // this run started before that delete: it is stale, and saving it
+        // would bring the record back. (Checked here, in the box's queue, so
+        // a save waiting behind the confirmation sees it.)
+        if (_holdsDeletedThisRun(uid, items)) {
+          _log(
+              'write skipped', StateError('stale: holds a confirmed deletion'));
+          return;
+        }
+        if (isIntegrityBlocked(uid)) {
+          _log('write skipped', StateError('list blocked'));
+          return;
+        }
         final value = json.encode([
           for (final item in items)
             if (_ownerOf(item) == uid) _encode(item),
@@ -671,6 +774,12 @@ class EncryptedAccountListCache<T> {
           _log('write skipped', StateError('list not authentic'));
           return;
         }
+        // Markers that cannot be read block the list: nothing is saved over
+        // them, and they are left exactly as they are.
+        if (_deletedIds(uid, key, box.get(_deletedKey)) == null) {
+          _block(uid);
+          return;
+        }
         if (!await _store(box, uid, key, value, serverReadAt)) {
           _log('write not verified', StateError('list not authentic'));
         }
@@ -678,6 +787,155 @@ class EncryptedAccountListCache<T> {
         _log('write failed', error);
       }
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Confirmed deletions (markers, v1)
+  //
+  // Stored beside the list, in the same encrypted box, under [_deletedKey]
+  // as {"v":1,"p":"{\"ids\":[...]}","t":<HMAC-SHA256 tag>}. The tag uses
+  // the list's tag key with its own label, covering the version, this
+  // list's name, the account and the exact record, so markers can never be
+  // taken for a list, a time record, another list or another account. A
+  // marker only hides a record the server confirmed deleted for this
+  // account (P3.1a): it grants nothing and decides no access. The saved
+  // list itself stays exactly what the server returned (D-3).
+  //
+  // Markers are not retired: the list reads return no count, so a server
+  // list may be cut short by the row cap and a record's absence proves
+  // nothing. A soft delete is final (nothing clears deleted_at), so a
+  // marker is never wrong, only kept. At most [maxConfirmedDeletions] are
+  // stored per list and account; none is ever dropped to make room (see
+  // [rememberConfirmedDeletion]).
+  // ---------------------------------------------------------------------
+
+  String get _deletedKey => '${_baseKey}_deleted_v1';
+
+  /// Whether [uid]'s list is blocked because its markers cannot be read.
+  ///
+  /// Strict policy (owner decision): unreadable markers might have recorded
+  /// a deletion that any server list — a lagging read among them — could
+  /// still hold, so for that account and list nothing is shown, saved or
+  /// marked, and the markers are never replaced, reset or removed
+  /// automatically. Only Delete Account (or a separately approved recovery)
+  /// clears it. Other lists and accounts are not affected.
+  bool isIntegrityBlocked(String uid) => _blocked.contains(boxNameOf(uid));
+
+  /// Boxes whose markers were found unreadable (kept for this run; the
+  /// damaged record itself stays in storage, so a restart finds it again).
+  static final Set<String> _blocked = {};
+
+  void _block(String uid) {
+    _blocked.add(boxNameOf(uid));
+    _log('list blocked', StateError('deletion markers invalid'));
+  }
+
+  static const String _deletedLabel = 'bw-offline-list-deleted';
+
+  /// Per box: deletions confirmed during this run, whose late answers may
+  /// still arrive, and the markers last read from storage.
+  static final Map<String, Set<String>> _thisRun = {};
+  static final Map<String, Set<String>> _stored = {};
+
+  List<int> _deletedTag(String uid, List<int> boxKey, String record) {
+    final input =
+        _tagged(uid, utf8.encode(record), label: _deletedLabel, version: '1');
+    return Hmac(sha256, _macKey(boxKey)).convert(input).bytes;
+  }
+
+  String _sealDeleted(String uid, List<int> boxKey, Set<String> ids) {
+    final record = json.encode({'ids': ids.toList()..sort()});
+    return json.encode({
+      'v': 1,
+      'p': record,
+      't': base64Url.encode(_deletedTag(uid, boxKey, record)),
+    });
+  }
+
+  /// The ids marked in [sealed]: none when there is no record, null when
+  /// there is one that is malformed or fails its check.
+  Set<String>? _deletedIds(String uid, List<int> boxKey, Object? sealed) {
+    if (sealed == null) return <String>{};
+    if (sealed is! String) return null;
+    try {
+      final decoded = json.decode(sealed);
+      if (decoded is! Map || decoded.length != 3 || decoded['v'] != 1) {
+        return null;
+      }
+      final record = decoded['p'];
+      final tag = decoded['t'];
+      if (record is! String || tag is! String) return null;
+      if (!_sameTag(base64Url.decode(tag), _deletedTag(uid, boxKey, record))) {
+        return null;
+      }
+      final fields = json.decode(record);
+      if (fields is! Map || fields.length != 1) return null;
+      final ids = fields['ids'];
+      if (ids is! List || ids.any((id) => id is! String || id.isEmpty)) {
+        return null;
+      }
+      return ids.cast<String>().toSet();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// [items] without the records whose deletion the server confirmed for
+  /// [uid] (stored, or confirmed during this run).
+  List<T> withoutConfirmedDeletions(String uid, List<T> items) {
+    final name = boxNameOf(uid);
+    final hidden = {...?_stored[name], ...?_thisRun[name]};
+    if (hidden.isEmpty) return items;
+    return [
+      for (final item in items)
+        if (!hidden.contains(_idOf(item))) item,
+    ];
+  }
+
+  bool _holdsDeletedThisRun(String uid, List<T> items) {
+    final run = _thisRun[boxNameOf(uid)];
+    if (run == null || run.isEmpty) return false;
+    return items.any((item) => run.contains(_idOf(item)));
+  }
+
+  Future<void> _putMarkers(
+      Box<String> box, String uid, List<int> key, Set<String> ids) async {
+    if (ids.isEmpty) {
+      await box.delete(_deletedKey);
+    } else {
+      await box.put(_deletedKey, _sealDeleted(uid, key, ids));
+    }
+    final back = _deletedIds(uid, key, box.get(_deletedKey));
+    if (back == null || back.length != ids.length) {
+      _log('markers not verified', StateError('read back differs'));
+    }
+    _stored[boxNameOf(uid)] = back ?? <String>{};
+  }
+
+  /// Removes the saved list (both formats and its time), keeping its
+  /// markers: nothing is shown until the next server list.
+  Future<void> _dropSavedCopy(Box<String> box) async {
+    for (final key in [_v2Key, listKey, _syncKey]) {
+      if (box.containsKey(key)) await box.delete(key);
+    }
+    await box.compact();
+  }
+
+  /// Whether the saved list may show [id]. A list that cannot be read is
+  /// taken as holding it.
+  bool _savedCopyHolds(Box<String> box, String uid, List<int> key, String id) {
+    final sealed = box.get(_v2Key);
+    final String? payload;
+    if (sealed != null) {
+      final stored = _verified(uid, key, sealed);
+      if (stored == null) return true;
+      payload = stored.payload;
+    } else {
+      payload = box.get(listKey);
+    }
+    if (payload == null) return false;
+    final items = _items(uid, payload);
+    return items == null || items.any((item) => _idOf(item) == id);
   }
 
   /// Replaces [uid]'s unreadable box with [value] under a new key — only for
@@ -781,6 +1039,9 @@ class EncryptedAccountListCache<T> {
   /// box, and anything a recovery left; nothing else is touched.
   Future<void> forgetAccount(String uid) async {
     if (uid.isEmpty) return;
+    _thisRun.remove(boxNameOf(uid));
+    _stored.remove(boxNameOf(uid));
+    _blocked.remove(boxNameOf(uid)); // the damaged record goes with the box
     await _oneAtATime(boxNameOf(uid), () async {
       try {
         final root = await _root();
@@ -806,6 +1067,42 @@ class EncryptedAccountListCache<T> {
         _log('key removal failed', error);
       }
     });
+  }
+}
+
+/// A list that cannot be shown: its deletion markers cannot be read, so it
+/// might hold a record the server confirmed deleted (see
+/// [EncryptedAccountListCache.isIntegrityBlocked]).
+class ListIntegrityBlocked implements Exception {
+  const ListIntegrityBlocked();
+
+  @override
+  String toString() => 'ListIntegrityBlocked';
+}
+
+/// Deletes record [id] through [delete] and, once the server has confirmed
+/// it (P3.1a: [delete] returns only then, and throws otherwise), remembers
+/// the deletion for the account's saved list — only for the account and
+/// session the delete was made under.
+Future<void> deleteThenRemember<T>({
+  required EncryptedAccountListCache<T> cache,
+  required String id,
+  required String? Function() currentUserId,
+  required Future<void> Function() delete,
+  String? Function()? sessionOf,
+}) async {
+  final sessionNow = sessionOf ?? ListSessionCheck.currentSession;
+  final uid = currentUserId();
+  final session = sessionNow();
+  await delete(); // throws unless the server confirmed it: nothing marked
+  if (uid == null || currentUserId() != uid || sessionNow() != session) {
+    return; // another account or session now: not theirs to mark
+  }
+  try {
+    await cache.rememberConfirmedDeletion(uid, id);
+  } catch (_) {
+    // The delete itself succeeded; a marker that could not be kept is the
+    // behaviour before markers existed.
   }
 }
 
@@ -964,23 +1261,39 @@ Stream<List<T>> localFirstList<T>({
 
   /// A server list for the signed-in account, trusted: shown and saved.
   void accept(List<T> items) {
+    // A list whose deletion markers cannot be read shows nothing (it might
+    // show a record the server confirmed deleted): one error, then stop.
+    if (cache.isIntegrityBlocked(uid!)) {
+      failed = true;
+      report();
+      if (!errorShown) {
+        errorShown = true;
+        controller.addError(const ListIntegrityBlocked(), StackTrace.current);
+      }
+      stop();
+      return;
+    }
     failed = false;
     retries = 0;
     final at = now();
     lastSuccess = at;
     errorShown = false;
-    final shown = cache.fingerprintOf(items);
+    // Records the server confirmed deleted are not shown, even from a late
+    // answer that started before the delete; the list is saved as the server
+    // sent it (a stale one is not saved at all).
+    final visible = cache.withoutConfirmedDeletions(uid!, items);
+    final shown = cache.fingerprintOf(visible);
     if (shown != lastShown) {
       lastShown = shown;
-      controller.add(items);
+      controller.add(visible);
     }
     showing = LocalListSource.server;
     shownServerReadAt = at.toUtc();
     report();
     // This list is a successful server read for the signed-in account:
     // the one case in which an unreadable box may be recovered.
-    unawaited(cache.write(uid!, items,
-        mayRecover: stillTheReader, serverReadAt: at));
+    unawaited(
+        cache.write(uid!, items, mayRecover: stillTheReader, serverReadAt: at));
   }
 
   /// A failed read for the signed-in account: what is shown stays.
@@ -1130,6 +1443,14 @@ Stream<List<T>> localFirstList<T>({
   Future<void> showSavedThenListen() async {
     final saved = await cache.readSaved(uid!);
     if (cancelled) return;
+    if (cache.isIntegrityBlocked(uid!) && stillTheAccount()) {
+      // Nothing to show it in: no server read, no retries, no endless
+      // loading — the screen's existing load-error state.
+      failed = true;
+      controller.addError(const ListIntegrityBlocked(), StackTrace.current);
+      stop();
+      return;
+    }
     if (saved != null && stillTheAccount()) {
       lastShown = cache.fingerprintOf(saved.items);
       showing = LocalListSource.savedCopy;

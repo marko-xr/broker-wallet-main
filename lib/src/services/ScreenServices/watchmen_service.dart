@@ -8,13 +8,17 @@ class WatchmenService {
   WatchmenService({
     WatchmenLocalCache localCache = const WatchmenLocalCache(),
     String? Function()? currentUserId,
+    SupabaseCoreEntitiesService Function()? coreEntities,
   })  : _localCache = localCache,
-        _currentUserIdOverride = currentUserId;
+        _currentUserIdOverride = currentUserId,
+        _coreEntities = coreEntities;
 
   final WatchmenLocalCache _localCache;
   final String? Function()? _currentUserIdOverride;
+  final SupabaseCoreEntitiesService Function()? _coreEntities;
 
-  SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+  SupabaseCoreEntitiesService get _supabase =>
+      _coreEntities?.call() ?? SupabaseCoreEntitiesService();
 
   /// The canonical signed-in account, or null when there is none (or no
   /// auth repository yet).
@@ -50,9 +54,14 @@ class WatchmenService {
         currentUserId: _currentUserId,
       );
 
-  Future<void> deleteWatchmen(String watchmenId) async {
-    await _supabase.deleteWatchman(watchmenId);
-  }
+  /// Deletes on the server and, once the server has confirmed it,
+  /// remembers the deletion so the offline list never shows it again.
+  Future<void> deleteWatchmen(String watchmenId) => deleteThenRemember(
+        cache: _localCache,
+        id: watchmenId,
+        currentUserId: _currentUserId,
+        delete: () => _supabase.deleteWatchman(watchmenId),
+      );
 
   Future<WatchmenModel?> getWatchmen(String watchmenId) async {
     return _supabase.getWatchman(watchmenId);

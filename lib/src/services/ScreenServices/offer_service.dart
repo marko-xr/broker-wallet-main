@@ -238,7 +238,14 @@ class OfferService {
       );
 
   Future<void> deleteOffer(String offerId) async {
-    await _supabase.deleteOffer(offerId);
+    // Once the server has confirmed it, the offline list never shows it
+    // again.
+    await deleteThenRemember(
+      cache: _localCache,
+      id: offerId,
+      currentUserId: _currentUserId,
+      delete: () => _supabase.deleteOffer(offerId),
+    );
     // Nothing queued for a deleted Offer may upload, and nothing this
     // device holds for it is shown again. The server removes its stored
     // media itself once the retention period has passed.

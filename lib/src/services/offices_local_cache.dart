@@ -29,6 +29,7 @@ class OfficesLocalCache extends EncryptedAccountListCache<OfficeModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _accountOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_offices_';
@@ -38,6 +39,8 @@ class OfficesLocalCache extends EncryptedAccountListCache<OfficeModel> {
 
   /// The account a record belongs to (not the Office record's own id). A
   /// record with no account matches none.
+  static String? _idOf(OfficeModel item) => item.id;
+
   static String _accountOf(OfficeModel o) => o.userId ?? '';
 
   static String? _date(DateTime? value) => value?.toUtc().toIso8601String();

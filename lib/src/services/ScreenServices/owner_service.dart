@@ -225,7 +225,14 @@ class OwnerService implements PrivateMediaStore {
       );
 
   Future<void> deleteOwner(String ownerId) async {
-    await _supabase.deleteOwner(ownerId);
+    // Once the server has confirmed it, the offline list never shows it
+    // again.
+    await deleteThenRemember(
+      cache: _localCache,
+      id: ownerId,
+      currentUserId: _currentUserId,
+      delete: () => _supabase.deleteOwner(ownerId),
+    );
     // Nothing queued for a deleted Owner may upload, and nothing this
     // device holds for it is shown again. The server removes its stored
     // media itself once the retention period has passed.

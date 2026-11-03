@@ -8,13 +8,17 @@ class BrokerService {
   BrokerService({
     BrokersLocalCache localCache = const BrokersLocalCache(),
     String? Function()? currentUserId,
+    SupabaseCoreEntitiesService Function()? coreEntities,
   })  : _localCache = localCache,
-        _currentUserIdOverride = currentUserId;
+        _currentUserIdOverride = currentUserId,
+        _coreEntities = coreEntities;
 
   final BrokersLocalCache _localCache;
   final String? Function()? _currentUserIdOverride;
+  final SupabaseCoreEntitiesService Function()? _coreEntities;
 
-  SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+  SupabaseCoreEntitiesService get _supabase =>
+      _coreEntities?.call() ?? SupabaseCoreEntitiesService();
 
   /// The canonical signed-in account, or null when there is none (or no
   /// auth repository yet).
@@ -50,9 +54,14 @@ class BrokerService {
         currentUserId: _currentUserId,
       );
 
-  Future<void> deleteBroker(String brokerId) async {
-    await _supabase.deleteBroker(brokerId);
-  }
+  /// Deletes on the server and, once the server has confirmed it,
+  /// remembers the deletion so the offline list never shows it again.
+  Future<void> deleteBroker(String brokerId) => deleteThenRemember(
+        cache: _localCache,
+        id: brokerId,
+        currentUserId: _currentUserId,
+        delete: () => _supabase.deleteBroker(brokerId),
+      );
 
   Future<BrokerModel?> getBroker(String brokerId) async {
     return _supabase.getBroker(brokerId);

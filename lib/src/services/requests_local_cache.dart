@@ -28,12 +28,15 @@ class RequestsLocalCache extends EncryptedAccountListCache<RequestModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _ownerOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_requests_';
 
   /// The account's box name; also used by tests.
   static String boxNameForUid(String uid) => '$_boxPrefix$uid';
+
+  static String? _idOf(RequestModel item) => item.id;
 
   static String _ownerOf(RequestModel r) => r.userId;
 

@@ -29,6 +29,7 @@ class WatchmenLocalCache extends EncryptedAccountListCache<WatchmenModel> {
           encode: _encode,
           decode: _decode,
           ownerOf: _accountOf,
+          idOf: _idOf,
         );
 
   static const String _boxPrefix = 'cached_watchmen_';
@@ -38,6 +39,8 @@ class WatchmenLocalCache extends EncryptedAccountListCache<WatchmenModel> {
 
   /// The account a record belongs to (not the Watchman record's own id). A
   /// record with no account matches none.
+  static String? _idOf(WatchmenModel item) => item.id;
+
   static String _accountOf(WatchmenModel w) => w.userId ?? '';
 
   static String? _date(DateTime? value) => value?.toUtc().toIso8601String();

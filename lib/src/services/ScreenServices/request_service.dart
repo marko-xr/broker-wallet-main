@@ -8,13 +8,17 @@ class RequestService {
   RequestService({
     RequestsLocalCache localCache = const RequestsLocalCache(),
     String? Function()? currentUserId,
+    SupabaseCoreEntitiesService Function()? coreEntities,
   })  : _localCache = localCache,
-        _currentUserIdOverride = currentUserId;
+        _currentUserIdOverride = currentUserId,
+        _coreEntities = coreEntities;
 
   final RequestsLocalCache _localCache;
   final String? Function()? _currentUserIdOverride;
+  final SupabaseCoreEntitiesService Function()? _coreEntities;
 
-  SupabaseCoreEntitiesService get _supabase => SupabaseCoreEntitiesService();
+  SupabaseCoreEntitiesService get _supabase =>
+      _coreEntities?.call() ?? SupabaseCoreEntitiesService();
 
   /// The canonical signed-in account, or null when there is none (or no
   /// auth repository yet).
@@ -53,9 +57,14 @@ class RequestService {
         currentUserId: _currentUserId,
       );
 
-  Future<void> deleteRequest(String requestId) async {
-    await _supabase.deleteRequest(requestId);
-  }
+  /// Deletes on the server and, once the server has confirmed it,
+  /// remembers the deletion so the offline list never shows it again.
+  Future<void> deleteRequest(String requestId) => deleteThenRemember(
+        cache: _localCache,
+        id: requestId,
+        currentUserId: _currentUserId,
+        delete: () => _supabase.deleteRequest(requestId),
+      );
 
   Future<RequestModel?> getRequest(String requestId) async {
     return _supabase.getRequest(requestId);

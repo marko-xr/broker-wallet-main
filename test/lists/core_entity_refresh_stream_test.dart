@@ -30,11 +30,15 @@ String _fakeJwt() {
       '${part({'sub': _uid, 'exp': exp.millisecondsSinceEpoch ~/ 1000})}.sig';
 }
 
+/// Rows are listed in the order they are added, which is newest first by
+/// `created_at` (o1 is newer than o2), as the paged list read checks
+/// (P4.2, §7AK).
 Map<String, dynamic> _ownerRow(String id) => {
       'id': id,
       'owner_id': _uid,
       'name': 'Owner $id',
-      'created_at': '2026-09-01T10:00:00Z',
+      'created_at': '2026-09-01T10:00:'
+          '${(59 - int.parse(id.substring(1))).toString().padLeft(2, '0')}Z',
       'updated_at': '2026-09-01T10:00:00Z',
     };
 
@@ -72,8 +76,16 @@ class _Backend {
             request: request,
           );
         }
+        // With the exact count the list read asks for (P4.2, §7AK), as
+        // PostgREST sends it.
         return http.Response(jsonEncode(answer), 200,
-            headers: {'content-type': 'application/json'}, request: request);
+            headers: {
+              'content-type': 'application/json',
+              'content-range': answer.isEmpty
+                  ? '*/0'
+                  : '0-${answer.length - 1}/${answer.length}',
+            },
+            request: request);
       }
       return http.Response('[]', 200,
           headers: {'content-type': 'application/json'}, request: request);

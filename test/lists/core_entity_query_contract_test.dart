@@ -8,8 +8,8 @@
 //   pins that contract (verified_soft_delete_test covers every case).
 // - The six list reads asked for every row (no limit, no range, no count), so
 //   a server row cap could shorten a list silently, and an empty answer looks
-//   the same whatever its cause. Since P4.1 (§7AJ) Requests are read in
-//   pages that must add up to an exact count; the other five are unchanged.
+//   the same whatever its cause. Since P4.1/P4.2 (§7AJ/§7AK) all six are
+//   read in pages that must add up to an exact count.
 // - Home counts sent seven GET requests that also returned the id rows;
 //   since P3.3 (§7AG) they are seven count-only HEAD requests with the same
 //   filter, pinned by the Home counts test below.
@@ -141,28 +141,12 @@ void main() {
   });
 
   test(
-      'Requests are read in pages (P4.1, §7AJ): own, not deleted, newest '
-      'first with the id as tie breaker, 500 at a time, with an exact count',
-      () async {
-    backend.requests.clear();
-    expect(await service.getRequests().first, isEmpty);
-    final r = backend.requests.single;
-    expect(r.method, 'GET');
-    expect(table(r), 'requests');
-    final q = r.url.queryParameters;
-    expect(q['owner_id'], 'eq.$_uid');
-    expect(q['deleted_at'], 'is.null');
-    expect(q['order'], 'created_at.desc.nullslast,id.desc.nullslast');
-    expect(q['limit'], '500');
-    expect(q.containsKey('offset'), isFalse);
-    expect(prefer(r) ?? '', contains('count=exact'));
-  });
-
-  test(
-      'each of the other five list reads asks for every row: own, not '
-      'deleted, newest first, with no limit, range or count; an empty answer '
-      'is delivered as an empty list', () async {
+      'each of the six lists is read in pages (Requests since P4.1, the '
+      'other five since P4.2, §7AJ/§7AK): own, not deleted, newest first '
+      'with the id as tie breaker, 500 at a time, with an exact count; an '
+      'empty answer is delivered as an empty list', () async {
     final reads = <String, Future<List<Object?>> Function()>{
+      'requests': () => service.getRequests().first,
       'offers': () => service.getOffers().first,
       'owners': () => service.getOwners().first,
       'offices': () => service.getOffices().first,
@@ -178,12 +162,11 @@ void main() {
       final q = r.url.queryParameters;
       expect(q['owner_id'], 'eq.$_uid', reason: read.key);
       expect(q['deleted_at'], 'is.null', reason: read.key);
-      // One sort key: rows created at the same instant have no fixed order.
-      expect(q['order'], 'created_at.desc.nullslast', reason: read.key);
-      expect(q.containsKey('limit'), isFalse, reason: read.key);
+      expect(q['order'], 'created_at.desc.nullslast,id.desc.nullslast',
+          reason: read.key);
+      expect(q['limit'], '500', reason: read.key);
       expect(q.containsKey('offset'), isFalse, reason: read.key);
-      expect(r.headers.containsKey('Range'), isFalse, reason: read.key);
-      expect(prefer(r) ?? '', isNot(contains('count=')), reason: read.key);
+      expect(prefer(r) ?? '', contains('count=exact'), reason: read.key);
     }
   });
 

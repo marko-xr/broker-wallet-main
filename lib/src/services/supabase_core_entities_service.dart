@@ -329,8 +329,7 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OfferModel>> getOffers() =>
-      _refreshedStream((_) => _fetchOffers());
+  Stream<List<OfferModel>> getOffers() => _refreshedStream(_fetchOffers);
 
   /// Related Items shares the Offers list's mapping and refresh lifecycle.
   Stream<List<OfferModel>> getRelatedOffers(String phoneNumber) =>
@@ -371,21 +370,10 @@ class SupabaseCoreEntitiesService {
     return (await count('offers')) + (await count('requests'));
   }
 
-  Future<List<OfferModel>> _fetchOffers() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('offers')
-        .select('''
-          id, owner_id, offer_type, selected_city, location_text,
-          phone_number, country_code, min_price, max_price, square_footage,
-          notes, property_type, specific_property_type, rooms, bathrooms,
-          pickup_location_text, pickup_latitude, pickup_longitude,
-          pickup_address, legacy_uploaded_file_name, status, created_at,
-          updated_at, offer_areas(area, ordinal)
-        ''')
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Offers list, read in pages (see [_wholeList]). Rows only:
+  /// media is resolved per Offer where it is shown, never for the list.
+  Future<List<OfferModel>> _fetchOffers(bool Function() stillWanted) async {
+    final rows = await _wholeList('offers', _offerColumns, stillWanted);
     return rows.map(_offerFromRow).toList(growable: false);
   }
 
@@ -783,17 +771,11 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OwnerModel>> getOwners() =>
-      _refreshedStream((_) => _fetchOwners());
+  Stream<List<OwnerModel>> getOwners() => _refreshedStream(_fetchOwners);
 
-  Future<List<OwnerModel>> _fetchOwners() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('owners')
-        .select()
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Owners list, read in pages (see [_wholeList]); rows only.
+  Future<List<OwnerModel>> _fetchOwners(bool Function() stillWanted) async {
+    final rows = await _wholeList('owners', '*', stillWanted);
     return rows.map(_ownerFromRow).toList(growable: false);
   }
 
@@ -857,17 +839,11 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OfficeModel>> getOffices() =>
-      _refreshedStream((_) => _fetchOffices());
+  Stream<List<OfficeModel>> getOffices() => _refreshedStream(_fetchOffices);
 
-  Future<List<OfficeModel>> _fetchOffices() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('offices')
-        .select()
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Offices list, read in pages (see [_wholeList]).
+  Future<List<OfficeModel>> _fetchOffices(bool Function() stillWanted) async {
+    final rows = await _wholeList('offices', '*', stillWanted);
     return rows.map(_officeFromRow).toList(growable: false);
   }
 
@@ -928,17 +904,11 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<BrokerModel>> getBrokers() =>
-      _refreshedStream((_) => _fetchBrokers());
+  Stream<List<BrokerModel>> getBrokers() => _refreshedStream(_fetchBrokers);
 
-  Future<List<BrokerModel>> _fetchBrokers() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('brokers')
-        .select()
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Brokers list, read in pages (see [_wholeList]).
+  Future<List<BrokerModel>> _fetchBrokers(bool Function() stillWanted) async {
+    final rows = await _wholeList('brokers', '*', stillWanted);
     return rows.map(_brokerFromRow).toList(growable: false);
   }
 
@@ -993,17 +963,12 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<WatchmenModel>> getWatchmen() =>
-      _refreshedStream((_) => _fetchWatchmen());
+  Stream<List<WatchmenModel>> getWatchmen() => _refreshedStream(_fetchWatchmen);
 
-  Future<List<WatchmenModel>> _fetchWatchmen() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('watchmen')
-        .select()
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Watchmen list, read in pages (see [_wholeList]).
+  Future<List<WatchmenModel>> _fetchWatchmen(
+      bool Function() stillWanted) async {
+    final rows = await _wholeList('watchmen', '*', stillWanted);
     return rows.map(_watchmanFromRow).toList(growable: false);
   }
 
@@ -1140,7 +1105,7 @@ class SupabaseCoreEntitiesService {
       _rowsByIds('watchmen', '*', ids, _watchmanFromRow);
 
   // -------------------------------------------------------------------------
-  // Whole lists, read in pages (P4.1: Requests)
+  // Whole lists, read in pages (P4.1: Requests; P4.2: the other five)
   // -------------------------------------------------------------------------
 
   /// Rows asked for per page. The server may answer fewer (its own row cap);

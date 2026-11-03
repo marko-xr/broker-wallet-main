@@ -12,6 +12,7 @@ import '../data/models/ScreensModel/owners_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
+import 'app_session_coordinator.dart';
 import 'bounded_tasks.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
@@ -110,7 +111,10 @@ class SupabaseCoreEntitiesService {
   /// read still in flight is discarded. (An `async*` generator could do
   /// neither: it subscribed only after the first list was delivered, and a
   /// cancel could not stop it while it awaited the next mutation.)
-  Stream<List<T>> _refreshedStream<T>(Future<List<T>> Function() fetch) {
+  /// [fetch] is told whether its read is still wanted, so a read made of
+  /// several requests can stop between them once the stream is cancelled.
+  Stream<List<T>> _refreshedStream<T>(
+      Future<List<T>> Function(bool Function() stillWanted) fetch) {
     late final StreamController<List<T>> controller;
     StreamSubscription<void>? mutations;
     var reading = false;
@@ -132,7 +136,7 @@ class SupabaseCoreEntitiesService {
       do {
         readAgain = false;
         try {
-          final rows = await fetch();
+          final rows = await fetch(() => controller.hasListener);
           if (!controller.hasListener) return;
           delivered = true;
           controller.add(rows);
@@ -214,7 +218,7 @@ class SupabaseCoreEntitiesService {
   /// narrowed to the phone stored on the row. Related Items uses the legacy
   /// exact-match contract after cleaning the detail record's phone.
   Stream<List<RequestModel>> getRelatedRequests(String phoneNumber) =>
-      _refreshedStream(() async {
+      _refreshedStream((_) async {
         final ownerId = _requireUserId();
         final rows = await _client
             .from('requests')
@@ -232,19 +236,9 @@ class SupabaseCoreEntitiesService {
         return rows.map(_requestFromRow).toList(growable: false);
       });
 
-  Future<List<RequestModel>> _fetchRequests() async {
-    final ownerId = _requireUserId();
-    final rows = await _client
-        .from('requests')
-        .select('''
-          id, owner_id, request_type, selected_city, location_text,
-          phone_number, country_code, min_price, max_price, square_footage,
-          notes, property_type, specific_property_type, rooms, bathrooms,
-          status, created_at, updated_at, request_areas(area, ordinal)
-        ''')
-        .eq('owner_id', ownerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// The whole Requests list, read in pages (see [_wholeList]).
+  Future<List<RequestModel>> _fetchRequests(bool Function() stillWanted) async {
+    final rows = await _wholeList('requests', _requestColumns, stillWanted);
     return rows.map(_requestFromRow).toList(growable: false);
   }
 
@@ -335,11 +329,12 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OfferModel>> getOffers() => _refreshedStream(_fetchOffers);
+  Stream<List<OfferModel>> getOffers() =>
+      _refreshedStream((_) => _fetchOffers());
 
   /// Related Items shares the Offers list's mapping and refresh lifecycle.
   Stream<List<OfferModel>> getRelatedOffers(String phoneNumber) =>
-      _refreshedStream(() async {
+      _refreshedStream((_) async {
         final ownerId = _requireUserId();
         final rows = await _client
             .from('offers')
@@ -788,7 +783,8 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OwnerModel>> getOwners() => _refreshedStream(_fetchOwners);
+  Stream<List<OwnerModel>> getOwners() =>
+      _refreshedStream((_) => _fetchOwners());
 
   Future<List<OwnerModel>> _fetchOwners() async {
     final ownerId = _requireUserId();
@@ -861,7 +857,8 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<OfficeModel>> getOffices() => _refreshedStream(_fetchOffices);
+  Stream<List<OfficeModel>> getOffices() =>
+      _refreshedStream((_) => _fetchOffices());
 
   Future<List<OfficeModel>> _fetchOffices() async {
     final ownerId = _requireUserId();
@@ -931,7 +928,8 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<BrokerModel>> getBrokers() => _refreshedStream(_fetchBrokers);
+  Stream<List<BrokerModel>> getBrokers() =>
+      _refreshedStream((_) => _fetchBrokers());
 
   Future<List<BrokerModel>> _fetchBrokers() async {
     final ownerId = _requireUserId();
@@ -995,7 +993,8 @@ class SupabaseCoreEntitiesService {
     CoreEntityMutationNotifier.notify();
   }
 
-  Stream<List<WatchmenModel>> getWatchmen() => _refreshedStream(_fetchWatchmen);
+  Stream<List<WatchmenModel>> getWatchmen() =>
+      _refreshedStream((_) => _fetchWatchmen());
 
   Future<List<WatchmenModel>> _fetchWatchmen() async {
     final ownerId = _requireUserId();
@@ -1139,6 +1138,179 @@ class SupabaseCoreEntitiesService {
 
   Future<List<WatchmenModel>> getWatchmenByIds(Iterable<String> ids) =>
       _rowsByIds('watchmen', '*', ids, _watchmanFromRow);
+
+  // -------------------------------------------------------------------------
+  // Whole lists, read in pages (P4.1: Requests)
+  // -------------------------------------------------------------------------
+
+  /// Rows asked for per page. The server may answer fewer (its own row cap);
+  /// a short page is never taken to mean the list has ended.
+  static const int _pageSize = 500;
+
+  /// The most pages one read may take, and the most rows one list may hold.
+  /// Beyond either, the read fails ([CoreEntityListProblem.tooLarge]); it
+  /// never returns the first rows only.
+  static const int _maxPages = 40;
+  static const int _maxListRows = 20000;
+
+  /// [_pagedRows], read once more from the start when the rows changed while
+  /// the pages were read and did not add up. Once only: a list that changes
+  /// on every read fails ([CoreEntityListProblem.changedDuringRead]).
+  Future<List<Map<String, dynamic>>> _wholeList(
+    String table,
+    String columns,
+    bool Function() stillWanted,
+  ) async {
+    try {
+      return await _pagedRows(table, columns, stillWanted);
+    } on CoreEntityListIncomplete catch (error) {
+      if (error.problem != CoreEntityListProblem.changedDuringRead) rethrow;
+      _debugLog('$table.list', 'rows changed while paging; read once more');
+      return _pagedRows(table, columns, stillWanted);
+    }
+  }
+
+  /// Every row of [table] this account owns and has not deleted — the same
+  /// filters as before — newest first, by `created_at` and then `id`.
+  ///
+  /// The rows come in pages of [_pageSize]; each page starts after the last
+  /// row of the page before (a keyset: an add or a delete between two pages
+  /// cannot shift what comes next, as it would shift an offset). The first
+  /// page also brings the exact number of rows, and the rows are returned
+  /// only once the pages add up to it: nothing is returned in part.
+  ///
+  /// Separate requests are not one database snapshot. A Request added at the
+  /// top while the pages are read is not in this list (the next read has
+  /// it); one deleted after its page arrived is (until the next read). When
+  /// the pages and the first count disagree, the session is confirmed (a
+  /// replaced session's pages come back empty: [ListSessionNotCurrent]) and
+  /// the rows are counted again; if that count is not what the pages hold,
+  /// the read fails with [CoreEntityListProblem.changedDuringRead].
+  ///
+  /// Between two requests the read stops when [stillWanted] says no, and
+  /// fails with [ListSessionNotCurrent] once the signed-in account or its
+  /// session is not the one it started under — a sign-out and a sign-in to
+  /// the same account included (a token refresh keeps the session).
+  Future<List<Map<String, dynamic>>> _pagedRows(
+    String table,
+    String columns,
+    bool Function() stillWanted,
+  ) async {
+    final ownerId = _requireUserId();
+    final session =
+        AppSessionCoordinator.sessionId(_client.auth.currentSession);
+
+    void stillOurs() {
+      if (!stillWanted()) throw const _ListReadNotWanted();
+      if (_client.auth.currentUser?.id != ownerId ||
+          AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+              session) {
+        throw const ListSessionNotCurrent();
+      }
+    }
+
+    PostgrestTransformBuilder<PostgrestList> page(_ListCursor? after) {
+      var rows = _client
+          .from(table)
+          .select(columns)
+          .eq('owner_id', ownerId)
+          .isFilter('deleted_at', null);
+      if (after != null) {
+        rows = rows.or('created_at.lt.${after.at},'
+            'and(created_at.eq.${after.at},id.lt.${after.id})');
+      }
+      return rows
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(_pageSize);
+    }
+
+    final collected = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    _ListCursor? cursor;
+
+    // Every row comes strictly after the one before it, and only once: a
+    // page that repeats, reorders or does not move on is refused.
+    void take(PostgrestList rows) {
+      if (rows.length > _pageSize) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+      }
+      for (final row in rows) {
+        final key = _ListCursor.of(row);
+        final previous = cursor;
+        if (!seen.add(key.id) ||
+            (previous != null && !key.comesAfter(previous))) {
+          throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+        }
+        cursor = key;
+        collected.add(row);
+      }
+    }
+
+    stillOurs();
+    final PostgrestResponse<PostgrestList> first;
+    try {
+      first = await page(null).count(CountOption.exact);
+    } on TypeError {
+      // No count in the answer ("*" or none): the client's own cast fails.
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    } on FormatException {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    stillOurs();
+    final total = first.count;
+    if (total < 0) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    if (first.data.length > total) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+    }
+    if (total > _maxListRows) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+    }
+    take(first.data);
+
+    var pages = 1;
+    var lastPage = first.data.length;
+    while (collected.length < total && lastPage > 0) {
+      if (pages == _maxPages) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+      }
+      stillOurs();
+      final rows = await page(cursor);
+      stillOurs();
+      take(rows);
+      pages++;
+      lastPage = rows.length;
+      if (collected.length > _maxListRows) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+      }
+    }
+    if (collected.length == total) return collected;
+
+    // The pages and the first count disagree: rows were added or deleted
+    // between requests — or the session was replaced, whose pages the
+    // database answers empty. The database decides which.
+    final check = ListSessionCheck.confirmFor(session);
+    if (check != null && !await check) throw const ListSessionNotCurrent();
+    stillOurs();
+    final int now;
+    try {
+      now = await _client
+          .from(table)
+          .count(CountOption.exact)
+          .eq('owner_id', ownerId)
+          .isFilter('deleted_at', null);
+    } on TypeError {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    } on FormatException {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    stillOurs();
+    if (now == collected.length) return collected;
+    throw const CoreEntityListIncomplete(
+        CoreEntityListProblem.changedDuringRead);
+  }
 
   Future<void> _replaceAreas(
     String table,
@@ -1290,6 +1462,66 @@ class SupabaseCoreEntitiesService {
     await _softDelete(table, id);
     CoreEntityMutationNotifier.notify();
   }
+}
+
+/// Where a page ends: the last row's `created_at` exactly as the server sent
+/// it (microseconds and offset kept, so equality holds) and its id.
+class _ListCursor {
+  const _ListCursor(this.at, this.time, this.id);
+
+  /// [row]'s position, or a [CoreEntityListProblem.badPage] when it has none.
+  factory _ListCursor.of(Map<String, dynamic> row) {
+    final at = row['created_at'];
+    final id = row['id'];
+    final time = at is String ? DateTime.tryParse(at) : null;
+    if (time == null || id is! String || id.isEmpty) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+    }
+    return _ListCursor(at as String, time, id);
+  }
+
+  final String at;
+  final DateTime time;
+  final String id;
+
+  /// Whether this row comes after [other], newest first: an older time, or
+  /// the same time and a smaller id (the database's uuid order).
+  bool comesAfter(_ListCursor other) {
+    final byTime = time.compareTo(other.time);
+    return byTime < 0 || (byTime == 0 && id.compareTo(other.id) < 0);
+  }
+}
+
+/// A paged read stopped because its stream was cancelled; nobody sees it.
+class _ListReadNotWanted implements Exception {
+  const _ListReadNotWanted();
+}
+
+/// Why a list could not be read whole.
+enum CoreEntityListProblem {
+  /// The server gave no usable exact number of rows.
+  missingCount,
+
+  /// More rows than one list may hold, or more pages than one read may take.
+  tooLarge,
+
+  /// A page broke the order, repeated a row or did not move on.
+  badPage,
+
+  /// The rows changed while the pages were read and did not add up, even
+  /// read again once.
+  changedDuringRead,
+}
+
+/// A list that could not be read whole. It is never delivered in part, and
+/// it is not a network failure: reading again at once would not help.
+class CoreEntityListIncomplete implements Exception {
+  const CoreEntityListIncomplete(this.problem);
+
+  final CoreEntityListProblem problem;
+
+  @override
+  String toString() => 'CoreEntityListIncomplete(${problem.name})';
 }
 
 /// A soft delete the server did not confirm: no row this session may change

@@ -17,6 +17,7 @@ import '../services/count_cache_service.dart';
 import '../config/supabase_config.dart';
 import '../services/supabase_home_counts_service.dart';
 import '../services/core_entity_mutation_notifier.dart';
+import '../services/list_session_check.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_filter_controller.dart';
 import 'home_filter_data_source.dart';
@@ -39,6 +40,10 @@ class HomeViewModel extends ChangeNotifier {
   final Future<Map<String, int>> Function(Map<String, int> fallback)?
       _readCountsOverride;
   final Stream<AuthState>? _authStateChangesOverride;
+  // The existing session authority, for zeros that may come from a session
+  // the database has replaced (its gate filters rows, it does not fail).
+  final Future<bool>? Function(String? session) _confirmSession;
+  final String? Function() _sessionNow;
 
   // Track if streams have been initialized
   bool _streamsInitialized = false;
@@ -149,11 +154,15 @@ class HomeViewModel extends ChangeNotifier {
     @visibleForTesting
     Future<Map<String, int>> Function(Map<String, int> fallback)? readCounts,
     @visibleForTesting Stream<AuthState>? authStateChanges,
+    @visibleForTesting Future<bool>? Function(String? session)? confirmSession,
+    @visibleForTesting String? Function()? sessionOf,
   })  : _authRepository =
             authRepository ?? RepositoryProvider.instance.authRepository,
         _countCache = countCache ?? CountCacheService.instance,
         _readCountsOverride = readCounts,
-        _authStateChangesOverride = authStateChanges {
+        _authStateChangesOverride = authStateChanges,
+        _confirmSession = confirmSession ?? ListSessionCheck.confirmFor,
+        _sessionNow = sessionOf ?? ListSessionCheck.currentSession {
     _filters.addListener(notifyListeners);
     _countsAccountId = _authRepository.currentUserId;
     _loadCachedCountsInstantly();
@@ -282,14 +291,32 @@ class HomeViewModel extends ChangeNotifier {
     if (accountId == null) return;
     _useAccount(accountId);
     final epoch = _countsEpoch;
+    // The session the read is made under: its answer counts only while that
+    // is still the signed-in session (a sign-out and a sign-in, even to the
+    // same account, is a new one; a token refresh is not).
+    final session = _sessionNow();
+    bool stillTheReader() =>
+        _isCurrentCounts(accountId, epoch) && _sessionNow() == session;
     try {
       // The fallback is what is shown now, which is this account's own.
       final fallback = _shownCounts;
       final counts = await (_readCountsOverride?.call(fallback) ??
           _supabaseHomeCountsService.getCounts(fallback: fallback));
-      // Counts read for an account that is no longer shown are dropped.
-      if (!_isCurrentCounts(accountId, epoch)) return;
-      _handleCombinedUpdate(counts, accountId: accountId, epoch: epoch);
+      // Counts read for an account or session that is no longer shown are
+      // dropped.
+      if (!stillTheReader()) return;
+      // A session the database has replaced counts 0 everywhere, with no
+      // error. A 0 that would replace a count shown now is taken only once
+      // the database confirms this read's session (which also starts the
+      // usual sign-out when it has been replaced). Counts above 0 prove the
+      // read was let through and need no check.
+      if (_zeroesAShownCount(counts)) {
+        final check = _confirmSession(session);
+        if (check != null && !await check) return;
+        if (!stillTheReader()) return;
+      }
+      _handleCombinedUpdate(counts,
+          accountId: accountId, epoch: epoch, stillTheReader: stillTheReader);
     } catch (error, stackTrace) {
       debugPrint('Supabase Home count refresh failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -393,17 +420,26 @@ class HomeViewModel extends ChangeNotifier {
     });
   }
 
+  /// Whether [counts] would turn a count shown now into 0.
+  bool _zeroesAShownCount(Map<String, int> counts) {
+    final shown = _shownCounts;
+    return counts.entries
+        .any((entry) => entry.value == 0 && (shown[entry.key] ?? 0) > 0);
+  }
+
   /// Handle combined stream updates with debouncing
   void _handleCombinedUpdate(
     Map<String, int> newCounts, {
     required String accountId,
     required int epoch,
+    bool Function()? stillTheReader,
   }) {
     // Cancel previous timer to debounce rapid updates
     _updateTimer?.cancel();
 
     _updateTimer = Timer(const Duration(milliseconds: 100), () {
       if (!_isCurrentCounts(accountId, epoch)) return;
+      if (stillTheReader != null && !stillTheReader()) return;
       bool hasChanges = false;
 
       // Check if any counts actually changed

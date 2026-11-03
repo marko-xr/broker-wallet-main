@@ -2,8 +2,10 @@
 // they are (characterization, not a fix). Each finding behind them is in the
 // performance tracker, section 7Z.
 //
-// - A soft delete is a PATCH by id with no row confirmation: PostgREST
-//   answers 204 whether or not a row changed, and that counts as success.
+// - A soft delete was a PATCH by id with no row confirmation, and a 204 that
+//   changed no row counted as success. Since P3.1a (§7AB) it asks for the
+//   changed id and fails when no row was changed; the delete test below now
+//   pins that contract (verified_soft_delete_test covers every case).
 // - The six list reads ask for every row (no limit, no range, no count), so
 //   a server row cap can shorten a list silently, and an empty answer looks
 //   the same whatever its cause.
@@ -32,8 +34,8 @@ String _fakeJwt() {
 
 /// A signed-in client that records every request. Reads answer `[]`, as
 /// PostgREST does for an account with no rows and equally for a session the
-/// database's session gate filters out; writes answer 204 with no body, as
-/// PostgREST does whether or not a row was changed.
+/// database's session gate filters out; writes answer success with no
+/// changed row, as PostgREST does when the update matched nothing.
 class _Backend {
   final List<http.Request> requests = [];
 
@@ -43,7 +45,8 @@ class _Backend {
     httpClient: MockClient((request) async {
       if (request.url.path.startsWith('/rest/v1/')) requests.add(request);
       if (request.method == 'PATCH') {
-        return http.Response('', 204, request: request);
+        return http.Response('[]', 200,
+            headers: {'content-type': 'application/json'}, request: request);
       }
       return http.Response('[]', 200,
           headers: {
@@ -95,8 +98,9 @@ void main() {
   String? prefer(http.Request r) => r.headers['Prefer'];
 
   test(
-      'each of the six deletes is a PATCH by id with no row confirmation, '
-      'and a 204 with no row counts as success', () async {
+      'each of the six deletes asks for the changed id of a not-yet-deleted '
+      'row; a success that changed no row is no longer taken as deleted',
+      () async {
     final deletes = <String, Future<void> Function()>{
       'requests': () => service.deleteRequest(_id),
       'offers': () => service.deleteOffer(_id),
@@ -113,20 +117,24 @@ void main() {
 
     for (final delete in deletes.entries) {
       backend.requests.clear();
-      await delete.value(); // completes: a 204 is taken as "deleted"
-      final r = backend.requests.single;
+      await expectLater(delete.value(), throwsA(isA<CoreEntityNotDeleted>()),
+          reason: '${delete.key}: no changed row is not a delete');
+      final r = backend.requests.first;
       expect(r.method, 'PATCH', reason: delete.key);
       expect(table(r), delete.key);
-      expect(r.url.queryParameters, {'id': 'eq.$_id'},
-          reason: '${delete.key}: no deleted_at, owner or select filter');
-      expect(prefer(r) ?? '', isNot(contains('return=representation')),
+      expect(r.url.queryParameters,
+          {'id': 'eq.$_id', 'deleted_at': 'is.null', 'select': 'id'},
+          reason: delete.key);
+      expect(prefer(r) ?? '', contains('return=representation'),
           reason: delete.key);
       expect(prefer(r) ?? '', isNot(contains('count=')), reason: delete.key);
       expect((json.decode(r.body) as Map).keys, ['deleted_at'],
           reason: delete.key);
+      expect(backend.requests.map((r) => r.method), ['PATCH', 'GET'],
+          reason: '${delete.key}: one read to tell "already deleted"');
     }
     await pumpEventQueue();
-    expect(notified, 6, reason: 'every delete notifies every open list');
+    expect(notified, 0, reason: 'an unconfirmed delete notifies nothing');
   });
 
   test(

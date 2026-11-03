@@ -14,6 +14,7 @@ import '../data/models/ScreensModel/watchmen_model.dart';
 import '../data/models/property_status.dart';
 import 'core_entity_mutation_notifier.dart';
 import 'core_entity_payload_builder.dart';
+import 'list_session_check.dart';
 import 'media_parent.dart';
 import 'offer_media_cache_identity.dart';
 import 'offer_media_url_cache.dart';
@@ -1142,14 +1143,56 @@ class SupabaseCoreEntitiesService {
     debugPrintStack(stackTrace: stackTrace);
   }
 
+  /// Soft-deletes the row [id] of [table], and returns only once the server
+  /// has confirmed it.
+  ///
+  /// PostgREST answers an update that changed no row with success — for
+  /// another account's row, a missing id or a session the database no longer
+  /// accepts alike — so success alone proves nothing. The update applies
+  /// only to a row not yet deleted and returns the id it changed: a returned
+  /// id is the confirmation, and a deleted row is never stamped again (its
+  /// `deleted_at` and `version` stay). When nothing came back, one read tells
+  /// this account's row already deleted (done) from anything else, which
+  /// fails with [CoreEntityNotDeleted] — saying nothing about the row — and
+  /// asks the existing session check, so a replaced session is signed out
+  /// as usual. Network and authorization failures are passed on as they are.
   Future<void> _softDelete(String table, String id) async {
     _requireUserId();
-    await _client.from(table).update(
-        {'deleted_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
+    final changed = await _client
+        .from(table)
+        .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', id)
+        .isFilter('deleted_at', null)
+        .select('id');
+    if (changed.isNotEmpty) return;
+    final deleted = await _client
+        .from(table)
+        .select('id')
+        .eq('id', id)
+        .not('deleted_at', 'is', null);
+    if (deleted.isNotEmpty) return;
+    _debugLog('entity.delete', 'not confirmed by the server');
+    final check =
+        ListSessionCheck.confirmFor(ListSessionCheck.currentSession());
+    if (check != null) {
+      unawaited(check.then<void>((_) {}, onError: (Object _) {}));
+    }
+    throw const CoreEntityNotDeleted();
   }
 
   Future<void> _softDeleteAndNotify(String table, String id) async {
     await _softDelete(table, id);
     CoreEntityMutationNotifier.notify();
   }
+}
+
+/// A soft delete the server did not confirm: no row this session may change
+/// was changed, and this account has no such row already deleted. The record
+/// may not exist, may belong to another account, or the session may no
+/// longer be the account's current one; which is deliberately not said.
+class CoreEntityNotDeleted implements Exception {
+  const CoreEntityNotDeleted();
+
+  @override
+  String toString() => 'CoreEntityNotDeleted';
 }

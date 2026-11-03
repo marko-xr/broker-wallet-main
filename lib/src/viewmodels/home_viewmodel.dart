@@ -44,6 +44,8 @@ class HomeViewModel extends ChangeNotifier {
   // the database has replaced (its gate filters rows, it does not fail).
   final Future<bool>? Function(String? session) _confirmSession;
   final String? Function() _sessionNow;
+  // The count read under way, if any (see _loadSupabaseCounts).
+  _CountsLoad? _countsLoad;
 
   // Track if streams have been initialized
   bool _streamsInitialized = false;
@@ -267,7 +269,10 @@ class HomeViewModel extends ChangeNotifier {
         final accountId = data.session?.user.id;
         if (accountId != null) {
           _useAccount(accountId);
-          unawaited(_loadSupabaseCounts());
+          // An auth event changes no record: a read already under way for
+          // this account and session covers it. (gotrue hands every new
+          // listener all earlier events, so this matters at start.)
+          unawaited(_loadCounts(dataMayHaveChanged: false));
         } else {
           _resetCountsForSignedOutUser();
         }
@@ -286,7 +291,47 @@ class HomeViewModel extends ChangeNotifier {
     });
   }
 
-  Future<void> _loadSupabaseCounts() async {
+  /// Reads the counts after something may have changed them (a record
+  /// changed, a pull, the Home tab again); see [_loadCounts].
+  Future<void> _loadSupabaseCounts() => _loadCounts(dataMayHaveChanged: true);
+
+  /// Reads the counts, one read at a time per account and session.
+  ///
+  /// A request while a read for the same account and session is under way
+  /// starts no second one: when [dataMayHaveChanged] (a record changed, a
+  /// pull, the Home tab again), one more read follows the current one — so
+  /// a change during a read is never missed, and many requests cost one
+  /// read; an auth event (no record changed) is covered by the read under
+  /// way. Another account or session always starts its own read; an answer
+  /// for one that is gone is dropped as before. The returned future ends
+  /// with the last of those reads.
+  Future<void> _loadCounts({required bool dataMayHaveChanged}) {
+    final accountId = _authRepository.currentUserId;
+    if (accountId == null) return Future<void>.value();
+    // The epoch moves on every sign-out and account change, so a read from
+    // before one never covers a read after it — even for the same account
+    // when no session id can be told.
+    final key = '$accountId|${_sessionNow()}|$_countsEpoch';
+    final current = _countsLoad;
+    if (current != null && current.key == key) {
+      if (dataMayHaveChanged) current.again = true;
+      return current.done;
+    }
+    final load = _CountsLoad(key);
+    _countsLoad = load;
+    load.done = () async {
+      do {
+        load.again = false;
+        await _readSupabaseCountsOnce();
+      } while (load.again && !_disposed && identical(_countsLoad, load));
+    }()
+        .whenComplete(() {
+      if (identical(_countsLoad, load)) _countsLoad = null;
+    });
+    return load.done;
+  }
+
+  Future<void> _readSupabaseCountsOnce() async {
     final accountId = _authRepository.currentUserId;
     if (accountId == null) return;
     _useAccount(accountId);
@@ -556,4 +601,13 @@ class HomeViewModel extends ChangeNotifier {
     _updateTimer?.cancel();
     super.dispose();
   }
+}
+
+/// One count read in progress for an account and session ([key]), and
+/// whether one more read should follow it.
+class _CountsLoad {
+  _CountsLoad(this.key);
+  final String key;
+  bool again = false;
+  late final Future<void> done;
 }

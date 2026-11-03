@@ -1924,6 +1924,50 @@
 - **ثمن الحجب:** قائمة محجوبة لا تُعرض online ولا offline على هذا الجهاز لذلك الحساب حتى Delete Account أو استرداد معتمد لاحقاً (حدث نادر: عبث أو تلف يمرّ من CRC وAES).
 - staging (P3.1a) **PENDING**؛ Samsung (D-54، ويُضاف: قائمة محجوبة تُظهر خطأ التحميل لا تحميلاً لا ينتهي) والبناء الأصلي **DEFERRED/UNVERIFIED**.
 - **الحالة:** P3.1d بالسياسة الصارمة = **CODE_PROVEN — جاهز لموافقة الـ commit النهائية**. **STOP:** لا commit/push؛ لا P3.2.
+- **أُودع** بموافقة المالك: `552bf5b` `fix(offline): prevent deleted records resurfacing with authenticated tombstones` (15 ملفاً)، ودفعه المالك (`origin` = `552bf5b`، §7AF).
+
+---
+
+## 7AF) P3.2 — إزالة تكرار استعلامات أعداد Home — 2026-11-03 (CODE_PROVEN؛ غير مدمج)
+
+**Git عند البدء (بعد `git fetch`):** `perf/phase-1-startup-baseline` @ `552bf5b` = `origin` (0/0)، نظيف، stashes = 2.
+
+### القياس (MEASURED في الاختبار — ليس حركة شبكة على جهاز)
+**الأداة:** `test/home/home_count_requests_test.dart` — `HomeViewModel` و`CountCacheService` و`SupabaseHomeCountsService` الحقيقية، و**عميل Supabase حقيقي** بتدفق المصادقة الحقيقي (`onAuthStateChange` = `ReplaySubject` في gotrue 2.27.2 يعيد للمستمع الجديد الأحداث السابقة)، وأحداث حقيقية (`setInitialSession` ⇒ initialSession؛ `refreshSession()` على `/auth/v1/token` مُحاكى ⇒ tokenRefreshed بالجلسة نفسها)، وبديل HTTP **يعدّ كل طلب عدّ** (7 طلبات = قراءة أعداد واحدة). الجلسات `session_id` بصيغة UUID كالحقيقية. **خط الأساس قيس على مصدر HEAD `552bf5b`** (نسخ مؤقت لملف واحد ثم إعادته، `Get-FileHash` مطابق).
+
+| السيناريو | قبل (HEAD) | بعد | |
+|---|---|---|---|
+| بدء بارد بجلسة مستعادة (حدث مُعاد واحد) | **14** طلباً (قراءتان) | **7** (قراءة) | −50% |
+| بدء بارد بعد 3 أحداث سابقة (تُعاد للمستمع) | **14** | **7** | −50% |
+| فتح Home ثانية (ViewModel جديد، كل الأحداث تُعاد) | **14** | **7** | −50% |
+| 3 تعديلات + سحبان **أثناء** قراءة واحدة | **35** (5 قراءات متوازية) | **14** (الجارية + واحدة بعدها) | −60% |
+| قراءة معلّقة ثم إغلاق Home | +7 بعد الإغلاق | **0** | |
+| token refresh لاحق / سحب واحد / تعديل واحد / جلسة جديدة للحساب نفسه / حساب آخر / فشل ثم إعادة | 7 لكلٍّ | **7 لكلٍّ (محفوظ)** | |
+**تصحيح استنتاج P3.0 (Q1):** «1 + R دفعات» كان استنتاجاً من المصدر؛ **المقاس: قراءتان عند البدء أياً كان عدد الأحداث المُعادة** (1 أو 3).
+
+### التحسين (`lib/src/viewmodels/home_viewmodel.dart` فقط)
+- **قراءة واحدة في كل مرة لكل حساب وجلسة وepoch** (`_CountsLoad`، مفتاح `account|session_id|_countsEpoch`): طلب أثناء قراءة جارية للمفتاح نفسه **لا يبدأ قراءة موازية**؛ إن كان **قد يغيّر البيانات** (تعديل/سحب/عودة لتبويب Home) ⇒ **قراءة واحدة تتبعها** (تغيير أثناء القراءة لا يُفقد — مُثبت)؛ إن كان **حدث مصادقة** (لا يغيّر سجلاً) ⇒ تغطيه القراءة الجارية (`_loadCounts(dataMayHaveChanged: false)` من مستمع المصادقة).
+- **حساب أو جلسة أخرى، أو epoch جديد** (خروج/تبديل حساب — حتى للحساب نفسه بلا `session_id` معروف) ⇒ قراءة مستقلة دائماً؛ الجواب القديم يُسقط بحراس P3.1c القائمة (`stillTheReader`).
+- لا قراءة لاحقة بعد إغلاق Home؛ الفشل يبقى كما كان (الجداول الفاشلة تُبقي المعروض، والمُطلِق التالي يقرأ — **لا تخطٍّ بعد اكتمال قراءة**، فالمحاولات الضمنية محفوظة).
+- `_loadSupabaseCounts()` باقٍ بالتوقيع نفسه للمُطلِقات الحاملة للبيانات (يحافظ على اختبار الربط النصي `home_filter_wiring_test`). **بلا تغيير:** `SupabaseHomeCountsService`، `CountCacheService` (R-02)، P3.1c (الأصفار/الجلسة)، الواجهة، الخادم، الطلبات نفسها (لا HEAD ولا حمولة — P3.3).
+
+### الأدلة (شغّلها الوكيل)
+- **`home_count_requests_test.dart` — 12/12 PASS** بعد التغيير؛ **على HEAD: 5 تفشل** (البدء البارد ×2، ViewModel ثانٍ، المُطلِقات المتزامنة، الإغلاق) و**7 تنجح** (السلوك المحفوظ).
+- **خلل وجده انحدار R-02 أثناء التنفيذ وأُصلح:** نسخة أولى بمفتاح `account|session` فقط ⇒ عند غياب `session_id` (null) خروج ودخول للحساب نفسه ينضم للقراءة القديمة التي تُسقط ⇒ لا قراءة جديدة؛ فشل `home_count_cache_isolation_test` «a read from before a sign-out is dropped even for the same account» ⇒ أُضيف `_countsEpoch` للمفتاح ⇒ PASS.
+- **فحص الطفرات — 7/7 التُقطت** (على اختبارات P3.2 وP3.1c وR-02؛ الملف أُعيد، `Get-FileHash` مطابق): أحداث المصادقة تطلب قراءة لاحقة؛ بلا single-flight؛ بلا قراءة لاحقة بعد تغيير؛ المفتاح بلا الجلسة؛ **المفتاح بلا epoch**؛ قراءة لاحقة بعد الإغلاق؛ عدم مسح القراءة المنتهية.
+- **انحدار:** `test/home/` كاملاً (R-02، P3.1c، الفلاتر) + `r2_home_responsive_test` ⇒ **301/301 PASS**؛ `test/auth/` + `map_sdk_warmup_test` ⇒ **282 PASS، 7 FAIL = FU-AUTH-BASELINE-7 بالضبط**.
+- **Analyzer** (الملف + الاختبار) → No issues (أُزيل استعمال `notifyAllSubscribers` الداخلي لصالح `refreshSession()` الحقيقي). **Format:** الملفان مطابقان. **`git diff --check`** → نظيف.
+
+### كفاءات متبقية (غير منفّذة)
+- **P3.3 (التالي):** كل قراءة أعداد = 7 طلبات `GET select=id` تُرجع صفوف المعرّفات ⇒ HEAD count (حمولة).
+- token refresh كل ساعة ما زال يقرأ الأعداد (محفوظ عمداً كمحاولة ضمنية بعد الفشل).
+- عودة تبويب Home = قراءة (Q3)؛ انتشار `CoreEntityMutationNotifier` لكل القوائم (Q4)؛ N+1 المفضلات (Q5)؛ `getRelatedItemsCount` متسلسل (Q6)؛ Search ست قراءات كاملة (Q7)؛ الترقيم/الاكتمال (P4).
+- Samsung والبناء الأصلي **DEFERRED/UNVERIFIED**؛ القياس هنا اختباري لا حركة جهاز.
+
+### الحالة و NOW / NEXT / STOP
+- **P3.2 = CODE_PROVEN** — ليس REAL_DEVICE_VERIFIED. FU-AUTH-BASELINE-7 وDelete Account التاريخي وFU-ACCOUNT-UI-BASELINE-1 **OPEN**؛ P3.1a staging **PENDING**.
+- **الملفات (غير مدمجة):** `lib/src/viewmodels/home_viewmodel.dart`؛ جديد `test/home/home_count_requests_test.dart`؛ وهذا الملف.
+- **NOW:** موافقة المالك على commit. **NEXT:** **P3.3 — Count Payload Optimization** (بموافقة منفصلة). **STOP:** لا P3.3 تلقائياً؛ لا commit/push.
 
 ### الحالة و NOW / NEXT / STOP
 - **FU-P2.5E-CRUD-STALE = CODE_PROVEN (P3.1d)، مع سياسة العلامات التالفة الصارمة المعتمدة (§7AE-1)** — ليس REAL_DEVICE_VERIFIED ولا STAGING_VERIFIED؛ **التقاعد مؤجَّل (P4 أو قرار البديل)**. P3.1a staging **PENDING**. FU-AUTH-BASELINE-7 وDelete Account التاريخي و**FU-ACCOUNT-UI-BASELINE-1** **OPEN**. Samsung (D-54 أدناه) والبناء الأصلي **DEFERRED/UNVERIFIED**.

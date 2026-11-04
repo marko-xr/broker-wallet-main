@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:broker_wallet/src/services/favorite_saved_records.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/private_card_media.dart';
@@ -34,10 +35,15 @@ class FavoriteCard extends StatefulWidget {
   final FavoriteItem favorite;
   final VoidCallback? onRemoveFromFavorites;
 
+  /// Where a favorite with no record finds it before its details open.
+  /// Tests replace it.
+  final FavoriteSavedRecords savedRecords;
+
   const FavoriteCard({
     super.key,
     required this.favorite,
     this.onRemoveFromFavorites,
+    this.savedRecords = const FavoriteSavedRecords(),
   });
 
   @override
@@ -53,6 +59,7 @@ class _FavoriteCardState extends State<FavoriteCard>
   late Animation<Offset> _slideAnimation;
 
   bool _isRemoving = false;
+  bool _findingRecord = false;
 
   @override
   void initState() {
@@ -713,21 +720,55 @@ class _FavoriteCardState extends State<FavoriteCard>
         }
         break;
       case 'requests':
-        context.push('/requested-details', extra: widget.favorite.originalData);
-        break;
       case 'owners':
-        context.push('/owners-details', extra: widget.favorite.originalData);
-        break;
       case 'offices':
-        context.push('/offices-details', extra: widget.favorite.originalData);
-        break;
       case 'brokers':
-        context.push('/brokers-details', extra: widget.favorite.originalData);
-        break;
       case 'watchmen':
-        context.push('/watchmen-details', extra: widget.favorite.originalData);
+        final record = widget.favorite.originalData;
+        if (record != null && _openDetails(context, record)) return;
+        // Drawn from the saved Favorites copy, which carries no record: these
+        // details screens cannot open without one.
+        unawaited(_openSavedRecord());
         break;
     }
+  }
+
+  /// Opens the details of [record]; false when it is not this favorite's
+  /// kind of record, so nothing was opened.
+  bool _openDetails(BuildContext context, Object record) {
+    final String? route = switch (widget.favorite.type) {
+      'requests' when record is RequestModel => '/requested-details',
+      'owners' when record is OwnerModel => '/owners-details',
+      'offices' when record is OfficeModel => '/offices-details',
+      'brokers' when record is BrokerModel => '/brokers-details',
+      'watchmen' when record is WatchmenModel => '/watchmen-details',
+      _ => null,
+    };
+    if (route == null) return false;
+    context.push(route, extra: record);
+    return true;
+  }
+
+  /// Opens the details with this account's saved record of the favorite, or,
+  /// when there is none, says the data could not be loaded and opens nothing.
+  Future<void> _openSavedRecord() async {
+    if (_findingRecord) return;
+    _findingRecord = true;
+    final Object? record;
+    try {
+      record = await widget.savedRecords
+          .find(widget.favorite.type, widget.favorite.id);
+    } finally {
+      _findingRecord = false;
+    }
+    if (!mounted) return;
+    if (record != null && _openDetails(context, record)) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content:
+            Text(AppLocalizations.of(context).translate('errorLoadingData')),
+      ),
+    );
   }
 
   String _localizedTypeLabel(AppLocalizations localization) {

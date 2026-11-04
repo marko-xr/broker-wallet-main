@@ -1,5 +1,9 @@
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
+import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/list_session_check.dart';
+import 'package:broker_wallet/src/services/supabase_core_entities_service.dart'
+    show CoreEntityListIncomplete, CoreEntityListProblem;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hive/hive.dart';
 import 'favorites_item_model.dart';
@@ -21,16 +25,20 @@ class FavoriteMetadata {
 }
 
 class FavoriteService {
-  /// [client] and [currentUserId] are for tests only; production uses the
-  /// app's Supabase client and the canonical signed-in account.
+  /// [client], [currentUserId] and [currentSessionId] are for tests only;
+  /// production uses the app's Supabase client, the canonical signed-in
+  /// account and that client's session.
   FavoriteService({
     @visibleForTesting sb.SupabaseClient? client,
     @visibleForTesting String? Function()? currentUserId,
+    @visibleForTesting String? Function()? currentSessionId,
   })  : _clientOverride = client,
-        _currentUserIdOverride = currentUserId;
+        _currentUserIdOverride = currentUserId,
+        _currentSessionIdOverride = currentSessionId;
 
   final sb.SupabaseClient? _clientOverride;
   final String? Function()? _currentUserIdOverride;
+  final String? Function()? _currentSessionIdOverride;
 
   sb.SupabaseClient get _client =>
       _clientOverride ?? sb.Supabase.instance.client;
@@ -39,6 +47,12 @@ class FavoriteService {
   String? get _activeUserId => _currentUserIdOverride != null
       ? _currentUserIdOverride()
       : RepositoryProvider.instance.authRepository.currentUserId;
+
+  /// The signed-in session (the access token's `session_id`): a token
+  /// refresh keeps it, a new sign-in — even to the same account — does not.
+  String? get _activeSessionId => _currentSessionIdOverride != null
+      ? _currentSessionIdOverride()
+      : AppSessionCoordinator.sessionId(_client.auth.currentSession);
 
   String _supabaseTable(String type) {
     const tables = {
@@ -437,68 +451,237 @@ class FavoriteService {
             .toList(growable: false));
   }
 
-  // Get all favorites with metadata (ID + timestamp)
+  /// Which records the signed-in account has as favorites, with the time each
+  /// was added: all six types, each list whole, newest first.
+  ///
+  /// The answer is complete or there is none: when any list cannot be read
+  /// whole — a failed or cut request, no usable count, a page out of order,
+  /// nobody signed in, or a session the database does not confirm — this
+  /// throws rather than answer with an empty or partial list, so a failure is
+  /// never taken for "no favorites" (FU-FAV-META-EMPTY). Completeness
+  /// problems are [CoreEntityListIncomplete], session ones
+  /// [ListSessionNotCurrent]; request failures pass through as they are.
   Future<Map<String, List<FavoriteMetadata>>>
       getAllFavoritesWithMetadata() async {
     if (_activeUserId == null) {
       // Wait for auth before proceeding
       await waitForAuthReady();
-      if (_activeUserId == null) {
-        return {};
-      }
+      if (_activeUserId == null) throw const ListSessionNotCurrent();
     }
 
     return _getServerFavoritesWithMetadata();
   }
 
-  // Fallback method for server data with metadata when cache fails
+  static const _favoriteTypes = [
+    _offersType,
+    _requestsType,
+    _ownersType,
+    _officesType,
+    _brokersType,
+    _watchmenType,
+  ];
+
+  /// Favorites asked for per page. The server may answer fewer (its own row
+  /// cap); a short page is never taken to mean the list has ended. The same
+  /// bounds as the six entity lists (P4.1): past either, the read fails
+  /// ([CoreEntityListProblem.tooLarge]) instead of returning the first rows.
+  static const int _favoritesPageSize = 500;
+  static const int _favoritesMaxPages = 40;
+  static const int _favoritesMaxRows = 20000;
+
+  /// Bumped by [cancelMetadataReads]; a read started before the bump asks for
+  /// nothing more.
+  int _metadataReadEpoch = 0;
+
+  /// Stops the metadata reads in progress from asking for anything more — no
+  /// further page, count or session check. A request already sent still
+  /// completes; its answer is not used and the read fails, so nothing is
+  /// shown or saved from it. Reads started afterwards are not affected.
+  /// Called when the Favorites screen that owns this service closes.
+  void cancelMetadataReads() => _metadataReadEpoch++;
+
   Future<Map<String, List<FavoriteMetadata>>>
       _getServerFavoritesWithMetadata() async {
-    if (_activeUserId == null) {
-      return {};
+    final ownerId = _activeUserId;
+    if (ownerId == null) throw const ListSessionNotCurrent();
+    final session = _activeSessionId;
+    final epoch = _metadataReadEpoch;
+
+    // Before and after every request: still wanted, still this account, in
+    // the session the read began under. A closed screen, a sign-out, another
+    // account, or this account signed in again (a new session) ends the
+    // read, with no further request.
+    void stillOurs() {
+      if (epoch != _metadataReadEpoch) throw const _MetadataReadNotWanted();
+      if (_activeUserId != ownerId || _activeSessionId != session) {
+        throw const ListSessionNotCurrent();
+      }
     }
 
+    // The six lists are independent, so they are asked for together; each
+    // one's pages follow one another. Any failure fails the whole read.
+    final lists = await Future.wait([
+      for (final type in _favoriteTypes)
+        _wholeFavoriteList(type, ownerId, session, stillOurs),
+    ]);
+
+    // An empty list is also what the database answers a session another
+    // device has replaced (its session gate hides rows, it does not fail).
+    // So an empty list is believed only once the database confirms this
+    // session; a list with rows already proves the gate let it through.
+    if (lists.any((list) => list.isEmpty)) {
+      stillOurs();
+      final check = ListSessionCheck.confirmFor(session);
+      if (check != null && !await check) throw const ListSessionNotCurrent();
+      stillOurs();
+    }
+
+    return {
+      for (var i = 0; i < _favoriteTypes.length; i++)
+        _favoriteTypes[i]: [
+          for (final row in lists[i])
+            FavoriteMetadata(
+              itemId: row.id,
+              type: _favoriteTypes[i],
+              addedAt: row.time,
+            ),
+        ],
+    };
+  }
+
+  /// [_pagedFavorites], read once more from the start when the favorites
+  /// changed while the pages were read and did not add up. Once only.
+  Future<List<_FavoriteCursor>> _wholeFavoriteList(
+    String type,
+    String ownerId,
+    String? session,
+    void Function() stillOurs,
+  ) async {
     try {
-      final ownerId = _activeUserId!;
-      const types = [
-        _offersType,
-        _requestsType,
-        _ownersType,
-        _officesType,
-        _brokersType,
-        _watchmenType,
-      ];
-
-      // The six lists are independent, so they are asked for together: one
-      // round trip instead of six in a row. Any failure still fails the
-      // whole read, as before.
-      final lists = await Future.wait([
-        for (final type in types)
-          _client
-              .from(_supabaseTable(type))
-              .select('target_id, added_at')
-              .eq('owner_id', ownerId)
-              .order('added_at', ascending: false),
-      ]);
-
-      return {
-        for (var i = 0; i < types.length; i++)
-          types[i]: lists[i]
-              .map((row) => FavoriteMetadata(
-                    itemId: row['target_id']?.toString() ?? '',
-                    type: types[i],
-                    addedAt: DateTime.tryParse(
-                          row['added_at']?.toString() ?? '',
-                        ) ??
-                        DateTime.now(),
-                  ))
-              .where((item) => item.itemId.isNotEmpty)
-              .toList(growable: false),
-      };
-    } catch (e) {
-      // Debug log suppressed: Error getting server favorites with metadata: $e
-      return {};
+      return await _pagedFavorites(type, ownerId, session, stillOurs);
+    } on CoreEntityListIncomplete catch (error) {
+      if (error.problem != CoreEntityListProblem.changedDuringRead) rethrow;
+      return _pagedFavorites(type, ownerId, session, stillOurs);
     }
+  }
+
+  /// Every favorite of [type] this account has, newest first by `added_at`
+  /// and then `target_id` (the table's key with `owner_id`, so the order is
+  /// total) — the same keyset reading as the six entity lists (P4.1).
+  ///
+  /// The first page also brings the exact number of favorites, and the list
+  /// is returned only once the pages add up to it. When they do not (a
+  /// favorite added or removed between requests, or a replaced session whose
+  /// pages come back empty), the session is confirmed and the favorites are
+  /// counted again; a count that still disagrees is
+  /// [CoreEntityListProblem.changedDuringRead].
+  Future<List<_FavoriteCursor>> _pagedFavorites(
+    String type,
+    String ownerId,
+    String? session,
+    void Function() stillOurs,
+  ) async {
+    final table = _supabaseTable(type);
+
+    sb.PostgrestTransformBuilder<sb.PostgrestList> page(
+        _FavoriteCursor? after) {
+      var rows = _client
+          .from(table)
+          .select('target_id, added_at')
+          .eq('owner_id', ownerId);
+      if (after != null) {
+        rows = rows.or('added_at.lt.${after.at},'
+            'and(added_at.eq.${after.at},target_id.lt.${after.id})');
+      }
+      return rows
+          .order('added_at', ascending: false)
+          .order('target_id', ascending: false)
+          .limit(_favoritesPageSize);
+    }
+
+    final collected = <_FavoriteCursor>[];
+    final seen = <String>{};
+
+    // Every favorite comes strictly after the one before it, and only once:
+    // a page that repeats, reorders or does not move on is refused.
+    void take(sb.PostgrestList rows) {
+      if (rows.length > _favoritesPageSize) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+      }
+      for (final row in rows) {
+        final key = _FavoriteCursor.of(row);
+        final previous = collected.isEmpty ? null : collected.last;
+        if (!seen.add(key.id) ||
+            (previous != null && !key.comesAfter(previous))) {
+          throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+        }
+        collected.add(key);
+      }
+    }
+
+    stillOurs();
+    final sb.PostgrestResponse<sb.PostgrestList> first;
+    try {
+      first = await page(null).count(sb.CountOption.exact);
+    } on TypeError {
+      // No count in the answer ("*" or none): the client's own cast fails.
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    } on FormatException {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    stillOurs();
+    final total = first.count;
+    if (total < 0) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    if (first.data.length > total) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+    }
+    if (total > _favoritesMaxRows) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+    }
+    take(first.data);
+
+    var pages = 1;
+    var lastPage = first.data.length;
+    while (collected.length < total && lastPage > 0) {
+      if (pages == _favoritesMaxPages) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+      }
+      stillOurs();
+      final rows = await page(collected.last);
+      stillOurs();
+      take(rows);
+      pages++;
+      lastPage = rows.length;
+      if (collected.length > _favoritesMaxRows) {
+        throw const CoreEntityListIncomplete(CoreEntityListProblem.tooLarge);
+      }
+    }
+    if (collected.length == total) return collected;
+
+    // The pages and the first count disagree: favorites were added or
+    // removed between requests — or the session was replaced, whose pages
+    // the database answers empty. The database decides which.
+    stillOurs();
+    final check = ListSessionCheck.confirmFor(session);
+    if (check != null && !await check) throw const ListSessionNotCurrent();
+    stillOurs();
+    final int now;
+    try {
+      now = await _client
+          .from(table)
+          .count(sb.CountOption.exact)
+          .eq('owner_id', ownerId);
+    } on TypeError {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    } on FormatException {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.missingCount);
+    }
+    stillOurs();
+    if (now == collected.length) return collected;
+    throw const CoreEntityListIncomplete(
+        CoreEntityListProblem.changedDuringRead);
   }
 
   // Keep old method for backward compatibility
@@ -629,4 +812,38 @@ class FavoriteService {
 
   Stream<List<String>> get favoriteWatchmenIds =>
       getFavoriteIdsByType(_watchmenType);
+}
+
+/// A metadata read stopped by [FavoriteService.cancelMetadataReads]; its
+/// screen has closed, so nobody uses the failure.
+class _MetadataReadNotWanted implements Exception {
+  const _MetadataReadNotWanted();
+}
+
+/// A favorite's place in its list: `added_at` (the raw text the server sent,
+/// for the next page's cursor, and its time) and `target_id`.
+class _FavoriteCursor {
+  const _FavoriteCursor(this.at, this.time, this.id);
+
+  /// [row]'s position, or a [CoreEntityListProblem.badPage] when it has none.
+  factory _FavoriteCursor.of(Map<String, dynamic> row) {
+    final at = row['added_at'];
+    final id = row['target_id'];
+    final time = at is String ? DateTime.tryParse(at) : null;
+    if (time == null || id is! String || id.isEmpty) {
+      throw const CoreEntityListIncomplete(CoreEntityListProblem.badPage);
+    }
+    return _FavoriteCursor(at as String, time, id);
+  }
+
+  final String at;
+  final DateTime time;
+  final String id;
+
+  /// Whether this favorite comes after [other], newest first: an older time,
+  /// or the same time and a smaller id (the database's uuid order).
+  bool comesAfter(_FavoriteCursor other) {
+    final byTime = time.compareTo(other.time);
+    return byTime < 0 || (byTime == 0 && id.compareTo(other.id) < 0);
+  }
 }

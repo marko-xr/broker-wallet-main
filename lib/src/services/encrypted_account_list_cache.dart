@@ -642,6 +642,28 @@ class EncryptedAccountListCache<T> {
   /// earlier untagged list is read only while no v2 list exists.
   Future<List<T>?> read(String uid) async => (await readSaved(uid))?.items;
 
+  /// Whether [uid] has a box of this list on this device, readable or not —
+  /// including one a recovery cut off between its two renames left only in
+  /// [recoveryDirectoryName]. Creates, moves and opens nothing. True when
+  /// that cannot be found out, so a caller choosing between this copy and an
+  /// older one never takes the older one because storage was briefly
+  /// unavailable.
+  Future<bool> hasSavedBox(String uid) async {
+    if (uid.isEmpty) return false;
+    try {
+      final dir = p.join(await _root(), directoryName);
+      if (await Hive.boxExists(boxNameOf(uid), path: dir)) return true;
+      final spare = p.join(dir, recoveryDirectoryName);
+      for (final name in [_fileName(uid), '${_fileName(uid)}.unreadable']) {
+        if (await File(p.join(spare, name)).exists()) return true;
+      }
+      return false;
+    } catch (error) {
+      _log('box check failed', error);
+      return true;
+    }
+  }
+
   /// As [read], with what is known about the list (see [SavedListInfo]).
   /// Null means there is no saved list, or none that can be read safely —
   /// never the same as a saved empty list.

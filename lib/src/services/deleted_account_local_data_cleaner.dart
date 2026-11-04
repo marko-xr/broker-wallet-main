@@ -2,6 +2,7 @@ import 'package:hive/hive.dart';
 
 import 'package:broker_wallet/src/services/brokers_local_cache.dart';
 import 'package:broker_wallet/src/services/count_cache_service.dart';
+import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart';
@@ -47,7 +48,9 @@ typedef OfferMediaUploadPurger = Future<int> Function(String ownerId);
 ///    `FavoriteService.boxNameForUid`) — deleted from disk outright rather
 ///    than merely cleared, and safe to do unconditionally because the box
 ///    name is unique to this uid and can never be a different, currently
-///    signed-in account's box.
+///    signed-in account's box;
+///  * that account's encrypted Favorites copy and its key
+///    ([FavoritesLocalCache]), and its decrypted copy in memory.
 ///
 /// Only when the deleted account was the one signed in on this device, because
 /// these single-slot caches belong to whichever account was signed in:
@@ -113,6 +116,8 @@ class DeletedAccountLocalDataCleaner {
     await _step(
       () => Hive.deleteBoxFromDisk(FavoriteService.boxNameForUid(deletedUid)),
     );
+    FavoritesMemory.forget(deletedUid);
+    await _step(() => const FavoritesLocalCache().forgetAccount(deletedUid));
     await _step(() => const RequestsLocalCache().forgetAccount(deletedUid));
     await _step(() => const OffersLocalCache().forgetAccount(deletedUid));
     await _step(() => const OwnersLocalCache().forgetAccount(deletedUid));

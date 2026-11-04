@@ -958,8 +958,8 @@ class FavoritesViewModel extends ChangeNotifier {
       // Update filtered favorites
       _applyFilter();
 
-      // Update cache
-      await _favoriteService.cacheFavorites(
+      // Update cache (never creates the encrypted copy; see the method)
+      await _favoriteService.cacheFavoritesAfterRemoval(
         _allFavorites,
         expectedGeneration: _creationGeneration,
       );

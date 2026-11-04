@@ -45,4 +45,12 @@
          phone does not receive, so a copy restored here could never be read.
          They refill from the server after sign-in. -->
     <exclude domain="root" path="app_flutter/offline_lists" />
+    <!-- The shared Favorites box of builds before per-account isolation:
+         plaintext customer names, never read again and deliberately not
+         deleted (see main.dart). Only its exact files are listed. The
+         per-account plaintext boxes (cached_favorites_<uid>) cannot be listed
+         here, their names carry the account id; each is removed once that
+         account's encrypted copy (in offline_lists) is in place. -->
+    <exclude domain="root" path="app_flutter/cached_favorites.hive" />
+    <exclude domain="root" path="app_flutter/cached_favorites.lock" />
 </full-backup-content>

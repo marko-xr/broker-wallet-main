@@ -2593,6 +2593,102 @@
 
 **الحالة:** FU-FAV-OFFLINE-NAV = **CODE_PROVEN** (ليس REAL_DEVICE_VERIFIED). **الملفات (غير مدمجة):** `lib/src/views/Screens/home/favorites/favorites_card.dart`؛ جديد `lib/src/services/favorite_saved_records.dart`؛ جديد `test/favorites/favorites_offline_navigation_test.dart`؛ وهذا الملف. **NOW:** موافقة المالك على commit. **NEXT:** P4.5a أو FU-FAV-CACHE-ENCRYPT بقرار. **STOP:** لا P4.5 تلقائياً؛ لا تغيير تشفير/صيغة/نسخ احتياطي دون موافقة؛ لا commit/push.
 
+## 7AQ) FU-FAV-CACHE-ENCRYPT — تصميم وفحص مسبق للترحيل — 2026-11-04 (DESIGN؛ لا تغيير كود؛ ينتظر موافقة المالك)
+
+**Git:** `perf/phase-1-startup-baseline` @ `d71f725` = `origin` (`git ls-remote` ⇒ **مدفوع**)؛ المعدّل فقط ملفات plugin الثلاثة؛ stashes = 2. الدليل: قراءة المصدر فقط (لم يُشغَّل شيء).
+
+### الوضع الحالي (SOURCE-READ)
+- **الكتابة الوحيدة:** `FavoriteService.cacheFavorites(list, expectedGeneration)` (4 مواضع في `FavoritesViewModel`: قراءة كاملة ×3، إزالة محلية ×1) ⇒ `box.clear()` ثم `addAll(CachedFavoriteItem…)` في `Hive.openBox<CachedFavoriteItem>('cached_favorites_<uid>')` **بلا cipher** في جذر `app_flutter` (غير مستثنى من النسخ).
+- **القراءة:** `getCachedFavoritesSync()` **متزامنة** من صندوق مفتوح (يفتحه `initializeCache()` عند الإقلاع عبر `_initializeFavoritesServiceAsync` وعند فتح الشاشة)؛ وإن لم يكن مفتوحاً عند بناء الشاشة، يرسم الـ VM الكاش بعد `initializeCache()` (مسار قائم).
+- **الحراس القائمة:** صندوق لكل uid، `_hasValidCacheBoxForCurrentUser`، عدّاد الجيل عند تغيّر الحساب، P4.4 (الفشل لا يكتب أبداً). **الخروج:** الصندوق يبقى. **حذف الحساب:** `deleteBoxFromDisk`.
+- **صندوق قديم مشترك `cached_favorites`** (قبل عزل الحسابات): لا يُفتح أبداً، **وتُرك عمداً** — حذفه جُرّب وأُلغي لأنه أتلف بيانات محفوظة (`main.dart`). غير مشفّر ويُنسخ احتياطياً.
+
+### اكتشاف حاسم
+`EncryptedAccountListCache._prepare` ينقل تلقائياً أي ملف `<boxPrefix><uid>.hive` من جذر المستندات إلى `offline_lists`. **إعادة استخدام البادئة `cached_favorites_` = نقل الصندوق غير المشفّر ثم فشل فتحه بالمفتاح ⇒ يُعامل كتالف.** ⇒ **بادئة جديدة إلزامية.**
+
+### التصميم المقترح (أصغر تغيير؛ إعادة استخدام كاملة للبنية القائمة)
+1. **جديد `FavoritesLocalCache extends EncryptedAccountListCache<SavedFavorite>`** — نفس نمط القوائم الست: بادئة `favorites_v1_`، مفتاح Keystore لكل حساب `favorites_cache_key_v1_<uid>`، `listKey: 'favorites_v1'`، HMAC-v2، داخل `offline_lists` (**مستثنى من النسخ أصلاً ⇒ لا تغيير XML**). السجل: `{account, id, type, title, subtitle, imageUrl?, addedAt, media{k,v}}`؛ `ownerOf = account` (يُرفض أي سجل لحساب آخر عند الكتابة والقراءة). يُحذف `thumbnailUrl` (نسخة من `imageUrl`) و`cachedAt` (لا يُقرأ).
+2. **`FavoriteService` (التواقيع بلا تغيير):** `initializeCache()` = قراءة النسخة المشفّرة للـ uid إلى **لقطة في الذاكرة** (للعملية فقط، تُمسح عند تغيّر الجيل)؛ `getCachedFavoritesSync()` يعيد اللقطة ⇒ **الرسم الأول بلا تغيير** حيث يحدث اليوم (التسخين عند الإقلاع قائم)، والحالة الباردة تمر بالمسار القائم «ارسم بعد `initializeCache`» — **لا واجهة جديدة ولا قفزة تخطيط جديدة**. `cacheFavorites()` يكتب المشفّر بالحراس نفسها (الجيل + الحساب + الجلسة).
+3. **الترحيل — بلا استيراد من النص الصريح:** النسخة المشفّرة تُملأ **فقط** من جواب خادم كامل (عقد P4.4) أو تعديل محلي بعده؛ **لا تُنسخ** محتويات `cached_favorites_<uid>` إليها (وإلا يُوقَّع بـ HMAC ملفٌ ربما عُدِّل أو استُعيد من نسخة احتياطية). بعد أول كتابة مشفّرة **مُتحقَّق منها بالقراءة الراجعة** للـ uid ⇒ `Hive.deleteBoxFromDisk('cached_favorites_<uid>')` لذلك الحساب فقط. لا حذف قبل ذلك أبداً (يحترم درس الصندوق المشترك).
+4. **الفشل مغلق:** مفتاح مفقود/صندوق تالف/HMAC فاشل ⇒ لا مفضلات من الكاش (تحميل الخادم كما اليوم)؛ الاستبدال فقط بجواب خادم (`mayRecover`) — كالقوائم الست.
+5. **حذف الحساب:** خطوة `FavoritesLocalCache().forgetAccount(uid)` بجانب حذف الصندوق القديم (يبقى).
+6. **الملفات المتوقعة:** جديد `lib/src/services/favorites_local_cache.dart`؛ `favorites_service.dart` (داخلياً)؛ `deleted_account_local_data_cleaner.dart` (خطوة)؛ اختبارات جديدة + تحديث `favorites_account_isolation_test` (50 مرجعاً للصندوق القديم) و`favorites_viewmodel_initial_load_test` وبدائل الملفات الأخرى (3 لكلٍّ). **لا** `main.dart` (تسجيل المحوّل يبقى لقراءة الانتقال)، لا خادم، لا تبعيات، لا UI، لا P3.4/P4.4.
+
+### قرارات المالك المطلوبة
+- **D1 (فترة الانتقال، حتى أول جواب خادم بعد التحديث):** **(A، موصى به)** عرض الصندوق القديم للحساب نفسه **للقراءة فقط** كما اليوم ثم حذفه بعد أول كتابة مشفّرة — لا فقدان offline عند الترقية؛ **(B)** عدم عرضه أبداً — أول فتح بعد الترقية ينتظر الخادم (offline ⇒ حالة الخطأ القائمة).
+- **D2 (`imageUrl` القديم):** **(موصى به)** إبقاؤه في النسخة المشفّرة لتطابق البطاقات؛ أو حذفه (بطاقات بلا صورة قديمة offline).
+- **D3 (الصندوق المشترك القديم `cached_favorites`):** **(موصى به، منفصل)** إضافة استثناء نسخ احتياطي **بالمسار الدقيق** `app_flutter/cached_favorites.hive` (لا حذف بيانات)؛ أو تركه كما هو (قرار سابق).
+
+### حدود باقية حتى بعد التنفيذ
+- صناديق `cached_favorites_<uid>` لحسابات لا تسجّل الدخول مجدداً على الجهاز تبقى (ولا يمكن استثناؤها بقاعدة XML لأن الاسم يحمل uid). تُحذف عند دخول ذلك الحساب أو حذفه.
+- إعادة تشغيل ملف مشفّر أقدم صالح (replay) ممكنة كما في القوائم الست (HMAC يغطي الحمولة لا الملف).
+- iOS backup غير مفحوص. لا شيء REAL_DEVICE_VERIFIED.
+
+### خطة الأدلة (عند الموافقة)
+اختبارات حمراء أولاً (Hive مؤقت + secure storage وهمي): ذهاب وإياب للحقول؛ سجل حساب آخر يُرفض؛ HMAC/مفتاح خاطئ ⇒ لا شيء؛ A/B؛ خروج ودخول الحساب نفسه (جلسة جديدة)؛ إعادة تشغيل؛ الفشل لا يكتب (P4.4)؛ **لا استيراد من الصندوق القديم**؛ حذف القديم فقط بعد كتابة مُتحقَّقة؛ D1(A) عرض القديم للقراءة فقط؛ حذف الحساب يزيل الاثنين؛ لا ملف مقروء نصاً تحت `app_flutter` بعد الترحيل. ثم طفرات، وانحدار `test/favorites` + `r2_search_favorites_responsive`، Analyzer مركّز، تنسيق 3.5، `git diff --check`.
+
+### الحالة و NOW / NEXT / STOP
+- **FU-FAV-CACHE-ENCRYPT = DESIGN (OPEN).** `d71f725` مدفوع.
+- **NOW:** قرارات المالك D1/D2/D3 وموافقة صريحة على التنفيذ. **NEXT:** التنفيذ بالخطة أعلاه وحدها، ثم P4.5a. **STOP:** لا تنفيذ قبل الموافقة؛ لا حذف بيانات قبل كتابة مشفّرة مُتحقَّقة؛ لا تغيير XML دون D3؛ لا commit/push؛ Samsung DEFERRED.
+
+### التنفيذ — 2026-11-04 (CODE_PROVEN؛ غير مدمج) — موافقة المالك: D1 = A، D2 بشرط، D3 = استثناء ضيق
+**Git عند البدء:** `d71f725` = `origin`؛ ملفات plugin الثلاثة وstashes الاثنان لم تُلمس.
+
+**D2 — فُحص `imageUrl` قبل التنفيذ ⇒ شرط التوقف انطبق:** `getOffersByIds` يمرّ عبر `_withDisplayMedia` ⇒ `applyOfferMedia` يضع **روابط R2 موقّعة** في `mediaUrls`؛ و`FavoritesViewModel` يضع `imageUrl = offer.mediaUrls.first` حين `FavoriteCardMedia.fromOffer` = null (مثلاً عرض بفيديو بلا إطار قابل للعرض) ⇒ **رابط موقّع قصير العمر كان يُحفظ في النسخة غير المشفّرة** (و`thumbnailUrl` نسخة منه). Owners: `mediaUrls` فارغة دائماً في Supabase ⇒ `imageUrl` = null. **البديل الآمن المُنفَّذ:** النسخة المشفّرة **لا تحفظ أي رابط** — فقط هوية الوسائط الثابتة القائمة (`FavoriteCardMedia.toStored` = `{k: offer-media:<uid>:<mediaId>, v}`)، وحتى العرض المؤقت من النسخة القديمة لا يحمل `imageUrl`. **العرض online بلا تغيير** (البطاقات من الخادم تحمل الرابط في الذاكرة)؛ بطاقة من الكاش كانت ستعرض رابطاً منتهياً (خطأ تحميل) تعرض الآن البديل الافتراضي. **مقترح لاحق (غير مُنفَّذ):** اشتقاق وسائط البطاقة لتلك العروض من هويات `mediaObjectIds` بدل الرابط.
+
+**الملفات:**
+- جديد `lib/src/services/favorites_local_cache.dart`: `FavoritesLocalCache extends EncryptedAccountListCache<StoredFavorite>` — بادئة **`favorites_v1_`** (لا تصطدم بـ `cached_favorites_*`)، مفتاح Keystore `favorites_cache_key_v1_<uid>`، `listKey: favorites_v1`، داخل `offline_lists`؛ السجل `{account,id,type,title,subtitle,addedAt,media}` فقط. و`FavoritesMemory` (ذاكرة العملية للنسخة المفكوكة + علامة «من النص الصريح») — **في `services/` عمداً**: `favorites_service` يُستورد بتهجئتين (`Views`/`views`) ⇒ مكتبتان وحالتان static منفصلتان؛ اختبار حذف الحساب كشف ذلك (الذاكرة لم تُمسح) قبل النقل.
+- `encrypted_account_list_cache.dart`: **إضافة قراءة فقط** `hasSavedBox(uid)` (لا تنشئ/تنقل/تفتح؛ عند الشك ⇒ `true` كي لا يُختار النص الصريح). **لا تغيير صيغة/HMAC/علامات.**
+- `favorites_service.dart` (التواقيع القائمة بلا تغيير): `initializeCache` ⇒ مشفّرة إن وُجدت؛ **موجودة وغير مقروءة (مفتاح مفقود/تالفة) ⇒ لا شيء، أبداً النص الصريح**؛ لا مشفّرة إطلاقاً ⇒ القديمة **للقراءة فقط** (D1-A). `getCachedFavoritesSync` من `FavoritesMemory`. `cacheFavorites` (الجواب الكامل للخادم فقط) ⇒ كتابة مشفّرة (`mayRecover` لاستبدال نسخة غير مقروءة بجواب الخادم فقط) ⇒ **قراءة راجعة ومطابقة حرفية** ⇒ ثم فقط حذف `cached_favorites_<uid>` لذلك الحساب. جديد `cacheFavoritesAfterRemoval` (للإزالة المحلية) **لا يُنشئ النسخة المشفّرة أبداً**. عناصر النص الصريح معلَّمة ولا تُكتب أبداً في النسخة المشفّرة. `invalidateForAccountChange` يمسح الذاكرة.
+- `favorites_viewmodel.dart`: سطر واحد — الإزالة تستدعي `cacheFavoritesAfterRemoval`.
+- `deleted_account_local_data_cleaner.dart`: `FavoritesMemory.forget` + `FavoritesLocalCache().forgetAccount` (الصندوق والمفتاح) بجانب حذف الصندوق القديم القائم.
+- `backup_rules.xml` و`data_extraction_rules.xml` (cloud-backup **و** device-transfer): استثناء **المسار الدقيق** `app_flutter/cached_favorites.hive` و`.lock` فقط (الصندوق المشترك القديم؛ **لا حذف**). لا استثناء واسع.
+- اختبارات: جديد `test/favorites/favorites_encrypted_cache_test.dart`؛ `favorites_account_isolation_test.dart` (إعداد التخزين المشفّر في setUp/tearDown فقط — التوقعات بلا تغيير).
+
+**سلوك الترحيل (مُثبت):** قراءة لا تُنشئ شيئاً؛ القديمة تُعرض حتى أول جواب كامل؛ الجواب (حتى الفارغ المؤكد) يُنشئ المشفّرة ثم يحذف القديمة لذلك الحساب فقط؛ كتابة غير مؤكدة (مفتاح لا يُحفظ، أو رفض الكاش) ⇒ **القديمة تبقى وتُعرض**؛ قديمة متروكة بجانب مشفّرة سليمة (تنظيف مقطوع) ⇒ تُحذف عند الفتح التالي؛ قديمة لحساب آخر ⇒ لا تُلمس؛ مفتاح مفقود/صندوق تالف ⇒ لا مفضلات من الكاش، **القديمة لا تُعرض ولا تُحذف**، وأول جواب كامل يستعيد ثم يحذفها.
+
+**الأدلة (شغّلها الوكيل بتفويض هذه المهمة):**
+- أحمر أولاً: الملف الجديد لم يُترجَم على الكود دون تغيير (الواجهة غير موجودة).
+- `favorites_encrypted_cache_test` **24/24** + `favorites_account_isolation_test` **11/11**: حفظ مشفّر + لا أسماء مقروءة في الملف + المفتاح في secure storage + إعادة تشغيل بالحقول والترتيب وهوية الوسائط بلا رابط؛ لا `imageUrl` في السجل؛ قائمة فارغة مؤكدة تُحفظ فارغة؛ عملية دافئة ⇒ عرض فوري لشاشة جديدة؛ كتابة قديمة الجيل تُرفض؛ A/B بعد إعادة التشغيل؛ خروج ⇒ لا شيء وذاكرة ممسوحة، دخول ⇒ تعود؛ **حذف الحساب عبر `DeletedAccountLocalDataCleaner` الحقيقي** ⇒ المشفّرة والمفتاح والقديمة والذاكرة تُزال وB باقٍ؛ مسارات الترحيل السبعة أعلاه؛ رفض الكاش ⇒ القديمة تبقى؛ مفتاح مفقود/صندوق تالف ⇒ لا رجوع؛ قواعد XML (مرة في full-backup، مرتان في Android 12+، لا استثناء لـ `app_flutter` كله)؛ الملف داخل `offline_lists`.
+- **الطفرات 8/8 التُقطت** (الملفان أُعيدا، SHA-256 مطابق): رجوع للنص الصريح عند صندوق غير مقروء؛ بلا مرشّح عناصر النص الصريح؛ الإزالة تُنشئ النسخة؛ بلا مطابقة القراءة الراجعة (**نجت أولاً ⇒ أُضيف اختبار «كتابة رفضها الكاش لا تُعدّ مؤكدة»**)؛ الذاكرة لا تُمسح عند تغيّر الحساب؛ بلا حذف المتروك عند الفتح؛ بلا `mayRecover`؛ المنظّف بلا `forgetAccount`.
+- **انحدار مركّز:** `test/favorites` + `r2_search_favorites_responsive` + `test/account` + `offline_lists_storage_test` + `owners_local_first_test` ⇒ **320 PASS، 2 FAIL — كلاهما سابق ومُصنّف:** `delete_account_test` (ملف الهجرة التاريخي) و`delete_account_ui_test` «a completed deletion…» (**FU-ACCOUNT-UI-BASELINE-1**؛ أُعيد إثبات استقلاله: نسخ HEAD من الملفات الأربعة المعدّلة مؤقتاً ⇒ يفشل بالطريقة نفسها، ثم أُعيدت بـ SHA-256 مطابق). حراس النسخ الاحتياطي في scanner/image_to_pdf/signature ⇒ PASS؛ `combine_source_guards` «honesty…» **يفشل على HEAD أيضاً** (`combine_pdfs_view.dart` في HEAD يحوي `LinearProgressIndicator`؛ لم يُلمس) ⇒ **FU-COMBINE-GUARD-1 (OPEN، مستقل)**.
+- **Analyzer** (7 ملفات) ⇒ No issues. **Format 3.5:** الملفان الجديدان مُنسّقان؛ المعدّلة بلا انحراف جديد (`favorites_viewmodel` 30 = 30 سابقة؛ البقية 0). **`git diff --check`** نظيف؛ CRLF؛ XML يُحلَّل.
+
+**أثر التحميل (MEASURED على VM الاختبار في Windows، secure storage وهمي — ليس Samsung ولا Keystore):** أول قراءة بعد «إعادة تشغيل»: 0 / 100 / 1,000 / 5,000 مفضّل ⇒ مشفّرة **13 / 16 / 37 / 97 ms** مقابل النص الصريح 3 / 6 / 21 / 24 ms (تشغيل منفرد)؛ تحت حمل الانحدار 28 / 44 / 97 / 289 مقابل 11 / 31 / 70 / 73. **الرسم المتزامن في أول إطار يحدث فقط بعد أن قُرئت النسخة في هذه العملية** (تسخين الإقلاع القائم `_initializeFavoritesServiceAsync` أو زيارة سابقة)؛ أول فتح بارد قبل اكتمال القراءة **غير متزامن** — يمر بمسار الـ VM القائم «ارسم الكاش بعد `initializeCache`» (لا واجهة جديدة). زمن Keystore الحقيقي غير مقيس.
+
+**المخاطر الباقية (نص صريح):**
+- `cached_favorites_<uid>` لحسابات لا تسجّل الدخول مجدداً على الجهاز يبقى (ويُنسخ احتياطياً — لا يمكن استثناؤه بالمسار لأن الاسم يحمل uid) حتى دخولها أو حذفها؛ قد يحوي روابط R2 موقّعة **منتهية** وأسماء عملاء.
+- الصندوق المشترك القديم `cached_favorites` يبقى على القرص (قرار سابق، لا حذف)؛ الآن **مستثنى** من النسخ الجديدة؛ **النسخ الاحتياطية التاريخية** التي أُخذت قبل هذا التغيير ما زالت تحويه (خارج سيطرة التطبيق).
+- مساران من ثلاثة لا يكتبان الجواب الفارغ المؤكد (`_refreshImmediately`، `_loadFreshFavoritesImmediately` — سلوك سابق)؛ المسار الثالث (`loadFavorites`/`refresh`) يكتبه، ولذلك يُرحَّل الحساب ذو الصفر عند أول تحميل عادي.
+- عنصر قديم معروض كان قيد تبديل وقت أول جواب ⇒ يُستبعد من النسخة المشفّرة (لا يُوقَّع)؛ الجواب التالي يُكمله.
+- إعادة تشغيل ملف مشفّر أقدم صالح (replay) ممكنة كالقوائم الست. iOS backup غير مفحوص. **لا شيء REAL_DEVICE_VERIFIED.**
+
+**الحالة:** **FU-FAV-CACHE-ENCRYPT = CODE_PROVEN** (ليس REAL_DEVICE_VERIFIED). **NOW:** مراجعة المالك ثم موافقة commit منفصلة. **NEXT:** P4.5a بقرار. **STOP:** لا commit/push؛ لا P4.5 تلقائياً؛ Samsung/البناء الأصلي DEFERRED (قبول الجهاز: ترقية فوق نسخة فيها نص صريح، offline بعد الترقية، فقدان Keystore، حذف الحساب).
+
+### المراجعة الأمنية والتوافقية النهائية — 2026-11-04 (قبل الإيداع)
+**Git:** `d71f725` = `origin`؛ stashes = 2؛ ملفات plugin الثلاثة لم تُلمس. **قرار المالك D2:** موافقة على **عدم حفظ روابط R2 الموقّعة**، وقبول بديل افتراضي مؤقت لمفضّل offline بلا هوية وسائط ثابتة؛ العرض online وتخزين الوسائط بالهوية يبقيان.
+
+| # | البند | النتيجة |
+|---|---|---|
+| 1 | أسماء مميزة | PASS — صندوق `favorites_v1_<uid>` في `offline_lists`، مفتاح `favorites_cache_key_v1_<uid>`؛ لا تصادم مع `cached_favorites_<uid>` (جذر `app_flutter`) ولا مع بادئات القوائم الست (`cached_<entity>_` / `<entity>_cache_key_v1_`). `_moveEarlierBox` يبحث عن `favorites_v1_<uid>.hive` في الجذر ⇒ لا ملف قديم بهذا الاسم ⇒ لا نقل. |
+| 2 | الإنشاء من جواب خادم فقط | PASS — `cacheFavorites` له 3 مستدعين فقط (`favorites_viewmodel` 215/462/618)، كلها بعد `getAllFavoritesWithMetadata` الناجح (عقد P4.4: كامل أو استثناء، والفراغ مؤكد الجلسة). الإزالة (962) ⇒ `cacheFavoritesAfterRemoval` لا يُنشئ. `OptimisticFavoritesService` لا يكتب الكاش. عناصر النص الصريح لا تُكتب أبداً (طفرة M2). المصالحة قد تُبقي عنصراً **سبق أن جاء من الخادم** قيد تبديل (سلوك P3/P4 القائم) — لا عنصر غير مؤكد. |
+| 3 | الفراغ المؤكد ≠ فشل الشبكة | PASS — الفشل لا يصل إلى `cacheFavorites` (اختبارات P4.4 `cacheWrites` فارغة — ضمن الانحدار 320)؛ الفراغ المؤكد يُحفظ قائمة فارغة **مقروءة** (`readSaved` ≠ null). |
+| 4 | حذف القديمة بعد التحقق | PASS — كتابة ⇒ `readSaved` (HMAC، `authenticated`) ⇒ مطابقة حرفية لكل سجل ⇒ ثم الحذف (طفرة M4 + اختبار «كتابة رفضها الكاش»). |
+| 5 | الانقطاع/إعادة التشغيل/الحسابات/الخروج/التلف/المفتاح/الاستعادة | PASS — مغطاة؛ **وُجدت فجوة ضيقة وأُغلقت (أدناه).** |
+| 6 | لا رجوع للنص الصريح | PASS بعد الإصلاح — **فجوة:** انقطاع `_recover` بين `rename(current ⇒ .recovery/*.unreadable)` و`rename(spare ⇒ current)` يترك الصندوق في `.recovery` فقط ⇒ كان `hasSavedBox` يُرجع false ⇒ تُعرض النسخة القديمة. **الإصلاح:** `hasSavedBox` يعدّ أيضاً `.recovery/<file>` و`.recovery/<file>.unreadable`. **اختبار جديد** «a recovery cut off between its renames does not fall back» — **أحمر بدون الإصلاح، أخضر معه** (الملف أُعيد، SHA-256 مطابق). |
+| 7 | لا روابط/أسرار/حسابات أخرى | PASS — `StoredFavorite` = `account,id,type,title,subtitle,addedAt,media` فقط؛ `media` = `{k: offer-media:<uid>:<mediaId>, v}` (يُرفض عند القراءة ما لا يبدأ بـ `offer-media:`)؛ `ownerOf` يُسقط سجلات حساب آخر عند الكتابة والقراءة؛ `account` = uid الكاتب دائماً. |
+| 8 | online بلا تغيير | PASS — `git diff` لـ `favorites_service.dart` محصور في قسم الكاش (أسطر HEAD 3–349)؛ الجلب والترقيم P4.4 والدفعات P3.4 وبناء `FavoriteItem` (مع `imageUrl` في الذاكرة) و`FavoriteCard` بلا تغيير. الترتيب: المحفوظ بترتيب الكتابة (مرتّب `addedAt` تنازلياً)، والقديم مرتّب تنازلياً. |
+| 9 | النسخ الاحتياطي وحذف الحساب | PASS — استثناء المسار الدقيق `app_flutter/cached_favorites.hive`/`.lock` (مرة في `full-backup-content`، مرتان في Android 12+)، لا استثناء واسع؛ حذف الحساب: القديمة + المشفّرة + المفتاح + الذاكرة (اختبار بالمنظّف الحقيقي). |
+| 10 | الذاكرة عبر `Views`/`views` | PASS — `FavoritesMemory` (والعلامة) في `services/` بتهجئة واحدة؛ اختبار حذف الحساب يجتاز **عبر التهجئتين فعلاً** (الاختبار `views`، المنظّف `Views`) — وهو ما كشف المشكلة قبل النقل. (`_accountGeneration` في `FavoriteService` ما زال static قابلاً للازدواج عبر التهجئتين — **سابق**، التطبيق يستخدم `Views` وحدها.) |
+| 11 | أول فتح بارد | موثّق أعلاه — لا ادعاء رسم فوري في أول إطار قبل قراءة النسخة في العملية؛ Keystore غير مقيس. |
+| 12 | نطاق `encrypted_account_list_cache.dart` | PASS — إضافة دالة قراءة واحدة `hasSavedBox` (لا تكتب/تنقل/تفتح/تنشئ مفتاحاً)؛ مستدعوها في `favorites_service` فقط؛ لا تغيير في `read`/`write`/`_recover`/`_prepare`/HMAC/العلامات/`directoryName` ⇒ D-1a/D-2/D-3 والقوائم الست بلا تأثير. |
+
+**الوسائط بلا هوية ثابتة ⇒ إلى نقطة Offline Media لاحقاً (FU-FAV-MEDIA-NO-IDENTITY، OPEN):** عرض Offer لا ينتج `FavoriteCardMedia` (مثلاً فيديو أول بلا إطار قابل للعرض، أو أنواع غير معروفة في `OfferMediaUrlCache`) كان يعتمد على `imageUrl` = رابط موقّع؛ offline الآن بديل افتراضي. المقترح: اشتقاق الوسائط من `mediaObjectIds` بالهوية. لا نظام وسائط جديد هنا.
+
+**الأدلة الإضافية (شغّلها الوكيل):** `favorites_encrypted_cache_test` **25/25** (بعد التنسيق)؛ `offline_lists_storage_test` + `offline_lists_integrity_test` + الملف الجديد ⇒ **70/70**؛ Analyzer (الملفان) ⇒ No issues؛ Format 3.5: الجديدان مطابقان، `encrypted_account_list_cache.dart` 0 انحراف؛ `git diff --check` نظيف؛ CRLF في كل الملفات المعدّلة. لم يُكرَّر الانحدار الكامل (التغيير محصور في `hasSavedBox` + اختبار).
+
+**الحكم:** **PASS — FU-FAV-CACHE-ENCRYPT = CODE_PROVEN.** المخاطر الباقية للنص الصريح (منفصلة): `cached_favorites_<uid>` لحسابات غير نشطة على الجهاز (غير قابلة للاستثناء بالمسار)؛ الصندوق المشترك القديم على القرص (مستثنى الآن)؛ النسخ الاحتياطية التاريخية؛ FU-FAV-MEDIA-NO-IDENTITY؛ FU-COMBINE-GUARD-1 مستقل. **STOP:** موافقة commit النهائية من المالك.
+
 ---
 
 ## 8) مراجع الاستمرار

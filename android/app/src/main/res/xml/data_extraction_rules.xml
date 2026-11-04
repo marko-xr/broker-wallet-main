@@ -22,6 +22,14 @@
   device transfer carries, so a copied box could never be read; they refill
   from the server after sign-in.
 -->
+<!--
+  app_flutter/cached_favorites.hive / .lock: the shared Favorites box of builds
+  before per-account isolation (plaintext customer names), never read again and
+  deliberately not deleted. Only its exact files are listed. The per-account
+  plaintext boxes (cached_favorites_<uid>) cannot be listed, their names carry
+  the account id; each is removed once that account's encrypted copy (in
+  offline_lists) is in place.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -33,6 +41,8 @@
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
+        <exclude domain="root" path="app_flutter/cached_favorites.hive" />
+        <exclude domain="root" path="app_flutter/cached_favorites.lock" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -44,5 +54,7 @@
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
+        <exclude domain="root" path="app_flutter/cached_favorites.hive" />
+        <exclude domain="root" path="app_flutter/cached_favorites.lock" />
     </device-transfer>
 </data-extraction-rules>

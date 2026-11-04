@@ -1,11 +1,13 @@
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:broker_wallet/src/services/list_session_check.dart';
 import 'package:broker_wallet/src/services/supabase_core_entities_service.dart'
     show CoreEntityListIncomplete, CoreEntityListProblem;
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show mapEquals, visibleForTesting;
 import 'package:hive/hive.dart';
+import 'favorite_card_media.dart';
 import 'favorites_item_model.dart';
 import 'dart:async';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -25,20 +27,24 @@ class FavoriteMetadata {
 }
 
 class FavoriteService {
-  /// [client], [currentUserId] and [currentSessionId] are for tests only;
-  /// production uses the app's Supabase client, the canonical signed-in
-  /// account and that client's session.
+  /// [client], [currentUserId], [currentSessionId] and [localCache] are for
+  /// tests only; production uses the app's Supabase client, the canonical
+  /// signed-in account, that client's session and the encrypted Favorites
+  /// cache.
   FavoriteService({
     @visibleForTesting sb.SupabaseClient? client,
     @visibleForTesting String? Function()? currentUserId,
     @visibleForTesting String? Function()? currentSessionId,
+    @visibleForTesting FavoritesLocalCache? localCache,
   })  : _clientOverride = client,
         _currentUserIdOverride = currentUserId,
-        _currentSessionIdOverride = currentSessionId;
+        _currentSessionIdOverride = currentSessionId,
+        _localCache = localCache ?? const FavoritesLocalCache();
 
   final sb.SupabaseClient? _clientOverride;
   final String? Function()? _currentUserIdOverride;
   final String? Function()? _currentSessionIdOverride;
+  final FavoritesLocalCache _localCache;
 
   sb.SupabaseClient get _client =>
       _clientOverride ?? sb.Supabase.instance.client;
@@ -127,15 +133,18 @@ class FavoriteService {
   ///
   /// Public: also used by `DeletedAccountLocalDataCleaner` to delete a
   /// deleted account's own box precisely.
+  ///
+  /// FU-FAV-CACHE-ENCRYPT: this per-account box is the OLD, plaintext copy.
+  /// It is never written again. It is read (read-only) only while the
+  /// account has no encrypted copy ([FavoritesLocalCache]) at all, and it is
+  /// removed once that account's encrypted copy has been written from a
+  /// complete server answer and read back intact.
   static String boxNameForUid(String uid) => 'cached_favorites_$uid';
 
-  // Hive box for the currently-initialized account's cached favorites, and
-  // the uid it was opened for. Both are null until [initializeCache]
-  // succeeds, and a mismatch between `_cacheBoxUid` and the live canonical
-  // uid (checked fresh on every read/write) is treated as "no valid cache" —
-  // never as "fall back to whatever is open."
-  Box<CachedFavoriteItem>? _cacheBox;
-  String? _cacheBoxUid;
+  /// Drops every decrypted copy held in memory ([FavoritesMemory]), as a
+  /// restart does.
+  @visibleForTesting
+  static void debugForgetSnapshots() => FavoritesMemory.forgetAll();
 
   /// Monotonic marker bumped once, synchronously, whenever the canonical
   /// Supabase identity transitions away from an account (see
@@ -158,62 +167,125 @@ class FavoriteService {
   /// (`AuthViewModel._handleSessionIdentity`). Synchronous in effect and
   /// cannot fail — there is no I/O left to perform here now that account
   /// isolation comes from box naming rather than a shared box's contents.
+  /// It also drops every decrypted copy held in memory, so no account's
+  /// favorites stay resident once another identity is current.
   static Future<void> invalidateForAccountChange() async {
     _accountGeneration++;
+    FavoritesMemory.forgetAll();
   }
 
-  // Opens this account's own cache box. `uidOverride` is an optional
-  // injection point for tests only (mirrors the existing injectable-service
-  // pattern already used by `FavoritesViewModel`'s constructor) — production
-  // callers never pass it and always resolve the canonical uid themselves.
+  // Reads this account's saved copy into memory, so [getCachedFavoritesSync]
+  // can answer at once. `uidOverride` is an optional injection point for
+  // tests only (mirrors the existing injectable-service pattern already used
+  // by `FavoritesViewModel`'s constructor) — production callers never pass it
+  // and always resolve the canonical uid themselves.
+  //
+  // Which copy: the encrypted one ([FavoritesLocalCache]) when the account
+  // has one. When it has one that cannot be read (its key is gone, or it is
+  // damaged), nothing — never the old plaintext copy. Only when the account
+  // has no encrypted copy at all is its old plaintext copy shown, read-only,
+  // until the first complete server answer replaces it.
   Future<void> initializeCache({@visibleForTesting String? uidOverride}) async {
     final uid = uidOverride ?? _safeActiveUserId;
-    if (uid == null || uid.isEmpty) {
-      _cacheBox = null;
-      _cacheBoxUid = null;
-      return;
-    }
+    if (uid == null || uid.isEmpty) return;
 
-    // Captured before the await, so a transition that happens while the box
-    // is opening can be detected once it resolves.
+    // Captured before the await, so a transition that happens while the copy
+    // is being read can be detected once it resolves.
     final generationAtStart = _accountGeneration;
 
+    List<StoredFavorite>? items;
+    var fromPlaintext = false;
+    var encryptedIsIntact = false;
     try {
-      final box = await Hive.openBox<CachedFavoriteItem>(boxNameForUid(uid));
-
-      // `Hive.openBox` can take real time (first-time disk I/O), during
-      // which the canonical identity can change — a sign-out, a different
-      // account signing in directly, or this very account signing out and
-      // back in. Re-resolve the same way `uid` was captured above (still
-      // honoring a test's `uidOverride`, never a second production identity
-      // authority — see `_safeActiveUserId`) and compare against both the
-      // uid and the generation captured before the await. A stale
-      // completion must not become this instance's active cache reference,
-      // even though `_hasValidCacheBoxForCurrentUser` would also catch it on
-      // the next read/write — this closes the gap locally instead of
-      // depending solely on that separate, later check.
-      //
-      // The box itself is left exactly as `Hive.openBox` returned it: not
-      // closed, not touched further. Hive tracks it globally by name, so
-      // another `FavoriteService` instance — or this same account's own
-      // next, legitimate `initializeCache` call — may still depend on it
-      // being open.
-      final currentUid = uidOverride ?? _safeActiveUserId;
-      final isStillCurrent =
-          currentUid == uid && generationAtStart == _accountGeneration;
-
-      if (!isStillCurrent) {
-        return;
+      final saved = await _localCache.readSaved(uid);
+      if (saved != null) {
+        items = saved.items;
+        encryptedIsIntact = saved.info.authenticated;
+      } else if (await _localCache.hasSavedBox(uid)) {
+        items = const <StoredFavorite>[];
+      } else {
+        items = await _readPlaintextCopy(uid);
+        fromPlaintext = true;
       }
-
-      _cacheBox = box;
-      _cacheBoxUid = uid;
     } catch (e) {
       // Debug log suppressed: Failed to initialize favorites cache: $e
-      _cacheBox = null;
-      _cacheBoxUid = null;
+      items = null;
+    }
+
+    // Reading can take real time, during which the canonical identity can
+    // change — a sign-out, a different account signing in directly, or this
+    // very account signing out and back in. A stale completion publishes
+    // nothing.
+    final currentUid = uidOverride ?? _safeActiveUserId;
+    if (currentUid != uid || generationAtStart != _accountGeneration) return;
+    if (items != null) {
+      FavoritesMemory.put(uid, items, fromPlaintext: fromPlaintext);
+    }
+
+    // An old plaintext copy left beside an intact encrypted one (a clean-up
+    // that was cut off) goes now.
+    if (encryptedIsIntact) await _removePlaintextCopy(uid);
+  }
+
+  /// The account's old plaintext copy, newest first; empty when there is
+  /// none. Opens nothing that does not exist. Its `imageUrl` (possibly a
+  /// short-lived signed link) is not carried over; its media identity is.
+  Future<List<StoredFavorite>> _readPlaintextCopy(String uid) async {
+    final name = boxNameForUid(uid);
+    if (!Hive.isBoxOpen(name) && !await Hive.boxExists(name)) {
+      return const <StoredFavorite>[];
+    }
+    final box = Hive.isBoxOpen(name)
+        ? Hive.box<CachedFavoriteItem>(name)
+        : await Hive.openBox<CachedFavoriteItem>(name);
+    final cached = box.values.toList()
+      ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    return [
+      for (final c in cached)
+        StoredFavorite(
+          account: uid,
+          id: c.id,
+          type: c.type,
+          title: c.title,
+          subtitle: c.subtitle,
+          addedAt: c.addedAt,
+          media: c.entityData,
+        ),
+    ];
+  }
+
+  /// Removes the account's old plaintext copy. Best effort; never another
+  /// account's copy, and never the shared pre-isolation box.
+  Future<void> _removePlaintextCopy(String uid) async {
+    final name = boxNameForUid(uid);
+    try {
+      if (Hive.isBoxOpen(name) || await Hive.boxExists(name)) {
+        await Hive.deleteBoxFromDisk(name);
+      }
+    } catch (_) {
+      // Left for the next open, which removes it then.
     }
   }
+
+  StoredFavorite _toStored(String uid, FavoriteItem item) => StoredFavorite(
+        account: uid,
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        subtitle: item.subtitle,
+        addedAt: item.addedAt,
+        // The card's private media, by identity only (never a link).
+        media: item.media?.toStored(),
+      );
+
+  FavoriteItem _fromStored(StoredFavorite f) => FavoriteItem(
+        id: f.id,
+        type: f.type,
+        title: f.title,
+        subtitle: f.subtitle,
+        media: FavoriteCardMedia.fromStored(f.media),
+        addedAt: f.addedAt,
+      );
 
   // Test-only override for "who is canonically signed in right now" (mirrors
   // `initializeCache`'s `uidOverride`). Production never sets this; a test
@@ -241,57 +313,23 @@ class FavoriteService {
     }
   }
 
-  // True only when a box is open, it was opened for exactly the uid that is
-  // canonically current right now, and that uid is non-null. Any mismatch —
-  // not yet initialized, initialized for a different (now-stale) uid, or no
-  // one signed in — fails closed to "no cache", never to "whatever box
-  // happens to be open".
-  bool get _hasValidCacheBoxForCurrentUser {
-    final uid = _safeActiveUserId;
-    final box = _cacheBox;
-    return uid != null &&
-        uid.isNotEmpty &&
-        uid == _cacheBoxUid &&
-        box != null &&
-        box.isOpen;
-  }
-
-  // A screen builds a new FavoriteService whose own box is not open yet, but
-  // this account's box is usually already open in Hive, opened by an earlier
-  // instance. Adopting it lets the screen paint the cached list in its first
-  // frame instead of waiting for [initializeCache]. The box name is built from
-  // the live canonical uid, so this can only ever reach the signed-in account's
-  // own box, never another account's.
-  void _adoptOpenCacheBox() {
-    final uid = _safeActiveUserId;
-    if (uid == null || uid.isEmpty) return;
-    final name = boxNameForUid(uid);
-    if (!Hive.isBoxOpen(name)) return;
-    try {
-      _cacheBox = Hive.box<CachedFavoriteItem>(name);
-      _cacheBoxUid = uid;
-    } catch (_) {
-      // Not usable as a cache: [initializeCache] opens it the normal way.
-    }
-  }
-
-  // Get cached favorites instantly (synchronous)
+  // The signed-in account's saved copy, from memory: answered at once (in a
+  // screen's first frame) once [initializeCache] has read it in this process;
+  // empty before that, for no one signed in, and for any other account. The
+  // live canonical uid picks the copy, so this never reaches another
+  // account's.
   List<FavoriteItem> getCachedFavoritesSync() {
-    if (!_hasValidCacheBoxForCurrentUser) {
-      _adoptOpenCacheBox();
+    final uid = _safeActiveUserId;
+    if (uid == null || uid.isEmpty) return [];
+    final held = FavoritesMemory.of(uid);
+    if (held == null) return [];
+    final items = [for (final f in held.items) _fromStored(f)];
+    if (held.fromPlaintext) {
+      for (final item in items) {
+        FavoritesMemory.markPlaintext(item);
+      }
     }
-    if (!_hasValidCacheBoxForCurrentUser) {
-      return [];
-    }
-
-    try {
-      final cachedItems = _cacheBox!.values.toList()
-        ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
-
-      return cachedItems.map((item) => item.toFavoriteItem()).toList();
-    } catch (e) {
-      return [];
-    }
+    return items;
   }
 
   // Get cached favorites instantly (async version)
@@ -299,54 +337,89 @@ class FavoriteService {
     return getCachedFavoritesSync();
   }
 
-  // Cache favorites after fetching from network.
+  // Saves a complete server answer as this account's encrypted copy.
+  //
+  // Only a complete, session-checked answer of [getAllFavoritesWithMetadata]
+  // (as the view model applies it) may come here: it is what creates the
+  // encrypted copy, and what replaces one that cannot be read.
   //
   // `expectedGeneration` must be `FavoriteService.currentAccountGeneration`
   // captured by the caller when the fetch that produced [favorites] began —
   // required, not optional, so a future call site cannot silently bypass the
   // check by omitting it. If the account has changed since (see
-  // [invalidateForAccountChange]), or the cache box no longer belongs to the
-  // account that is canonically current right now, this is a silent no-op: a
-  // slow fetch that started under a previous account must never write its
-  // result anywhere a later account could read it.
+  // [invalidateForAccountChange]), this is a silent no-op: a slow fetch that
+  // started under a previous account must never write its result anywhere a
+  // later account could read it.
+  //
+  // Once written, the copy is read back; only when it reads back exactly as
+  // written is the account's old plaintext copy removed. Any failure leaves
+  // whatever is on the device as it was.
   Future<void> cacheFavorites(
     List<FavoriteItem> favorites, {
     required int expectedGeneration,
+  }) =>
+      _save(favorites,
+          expectedGeneration: expectedGeneration, fromServer: true);
+
+  // Saves the list after a local change the server accepted (a removal).
+  //
+  // Never creates the encrypted copy: while the account has none, the list
+  // on screen may still be the old plaintext copy, which must not be signed
+  // into an authenticated list. The next complete server answer saves it.
+  Future<void> cacheFavoritesAfterRemoval(
+    List<FavoriteItem> favorites, {
+    required int expectedGeneration,
+  }) =>
+      _save(favorites,
+          expectedGeneration: expectedGeneration, fromServer: false);
+
+  Future<void> _save(
+    List<FavoriteItem> favorites, {
+    required int expectedGeneration,
+    required bool fromServer,
   }) async {
     if (expectedGeneration != _accountGeneration) return;
-    if (!_hasValidCacheBoxForCurrentUser) return;
-    final box = _cacheBox!;
+    final uid = _safeActiveUserId;
+    if (uid == null || uid.isEmpty) return;
+    bool stillCurrent() =>
+        expectedGeneration == _accountGeneration && _safeActiveUserId == uid;
 
     try {
-      await box.clear(); // Clear old cache
+      if (!fromServer && !await _localCache.hasSavedBox(uid)) return;
+      if (!stillCurrent()) return;
 
-      if (expectedGeneration != _accountGeneration ||
-          !_hasValidCacheBoxForCurrentUser) {
-        // The account changed while the clear was in flight; leave this
-        // (no-longer-current) box empty rather than writing into it.
-        return;
+      final kept = [
+        for (final item in favorites)
+          if (!FavoritesMemory.isPlaintext(item)) item,
+      ];
+      final stored = [for (final item in kept) _toStored(uid, item)];
+      await _localCache.write(uid, stored,
+          mayRecover: fromServer ? stillCurrent : null);
+      if (!stillCurrent()) return;
+
+      final back = await _localCache.readSaved(uid);
+      if (!stillCurrent()) return;
+      if (back == null ||
+          !back.info.authenticated ||
+          !_sameRecords(back.items, stored)) {
+        return; // Not confirmed: the old plaintext copy stays.
       }
-
-      final cachedItems = favorites
-          .map((item) => CachedFavoriteItem(
-                id: item.id,
-                type: item.type,
-                title: item.title,
-                subtitle: item.subtitle,
-                imageUrl: item.imageUrl,
-                thumbnailUrl:
-                    item.imageUrl, // Use same URL for now, can optimize later
-                addedAt: item.addedAt,
-                cachedAt: DateTime.now(),
-                // The card's private media, by identity only (never a link).
-                entityData: item.media?.toStored(),
-              ))
-          .toList();
-
-      await box.addAll(cachedItems);
+      FavoritesMemory.put(uid, back.items, fromPlaintext: false);
+      await _removePlaintextCopy(uid);
     } catch (e) {
-      // Silently handle cache errors
+      // Silently handle cache errors: nothing is removed on a failure.
     }
+  }
+
+  static bool _sameRecords(List<StoredFavorite> a, List<StoredFavorite> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!mapEquals(FavoritesLocalCache.encodeRecord(a[i]),
+          FavoritesLocalCache.encodeRecord(b[i]))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // Favorite types

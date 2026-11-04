@@ -80,6 +80,7 @@ class SearchViewModel extends ChangeNotifier {
     SearchEngine? engine,
     this.debounce = defaultDebounce,
     this.cacheValidFor = defaultCacheValidFor,
+    this.serverRetryAfter = defaultServerRetryAfter,
     Stream<void>? dataChanges,
     DateTime Function()? clock,
     SearchCardMediaResolver? cardMedia,
@@ -98,8 +99,13 @@ class SearchViewModel extends ChangeNotifier {
   /// How long loaded records are trusted when nothing says they changed.
   static const Duration defaultCacheValidFor = Duration(minutes: 5);
 
+  /// How long a failed server read is not repeated by an ordinary search
+  /// while records are on hand to answer from.
+  static const Duration defaultServerRetryAfter = Duration(seconds: 30);
+
   final Duration debounce;
   final Duration cacheValidFor;
+  final Duration serverRetryAfter;
 
   /// Chooses the photo or video frame each Offer and Owner card shows. The list
   /// read carries no media links, so a card asks for its own when it is on
@@ -154,6 +160,33 @@ class SearchViewModel extends ChangeNotifier {
   SearchCorpus? _corpus;
   DateTime? _corpusLoadedAt;
   String? _corpusUserId;
+  String? _corpusSession;
+
+  /// Whether the records searched are the server's (complete, all six kinds)
+  /// or this device's saved lists ([_corpusCoverage] says which kinds).
+  bool _corpusFromServer = false;
+  Set<SearchResultType> _corpusCoverage = const <SearchResultType>{};
+
+  Future<void>? _savedLoading;
+  DateTime? _serverFailedAt;
+  Object? _serverError;
+
+  LocalFirstSearchSource? get _localFirst {
+    final Object source = _dataSource;
+    return source is LocalFirstSearchSource ? source : null;
+  }
+
+  String? get _sessionNow => _localFirst?.currentSessionId;
+
+  /// True while the results come from this device's saved lists, not (yet)
+  /// from the server.
+  bool get resultsFromSavedCopy => _corpusUsable && !_corpusFromServer;
+
+  /// The kinds the saved lists in use cover; all six once the server's
+  /// records are in use. Never claims a kind that had no readable saved list.
+  Set<SearchResultType> get savedCoverage => _corpusFromServer
+      ? SearchResultType.values.toSet()
+      : (_corpusUsable ? _corpusCoverage : const <SearchResultType>{});
 
   /// Counts the user's own data changing; the corpus remembers the count it was
   /// loaded at.
@@ -259,6 +292,7 @@ class SearchViewModel extends ChangeNotifier {
     _debounceTimer?.cancel();
     if (!hasQuery) return;
     _corpusLoadedAt = null; // forces a reload
+    _serverFailedAt = null; // and asks the server now
     unawaited(_search());
   }
 
@@ -272,13 +306,16 @@ class SearchViewModel extends ChangeNotifier {
   /// Drops loaded records so the next search reads them again.
   void refreshCache() {
     _corpusLoadedAt = null;
+    _serverFailedAt = null;
     if (hasQuery) unawaited(_search());
   }
 
   // ---- searching ------------------------------------------------------------
 
   bool get _corpusUsable =>
-      _corpus != null && _corpusUserId == _dataSource.currentUserId;
+      _corpus != null &&
+      _corpusUserId == _dataSource.currentUserId &&
+      _corpusSession == _sessionNow;
 
   bool get _corpusFresh {
     final loadedAt = _corpusLoadedAt;
@@ -304,57 +341,161 @@ class SearchViewModel extends ChangeNotifier {
     final key = _keyOf(tokens);
 
     try {
+      // P4.5a: nothing loaded for this account and session yet ⇒ this
+      // device's saved lists first, so a search needs no network to answer.
+      if (!_corpusFresh && !_corpusUsable && _localFirst != null) {
+        await _loadSaved();
+        if (!_isCurrent(generation)) return;
+      }
+
+      // An answer from the saved lists alone, or null when they cannot give
+      // one (a miss among kinds this device has no saved list for is not
+      // "nothing found").
+      List<SearchResult>? savedAnswer() {
+        final corpus = _corpus;
+        if (corpus == null || !_corpusUsable || _corpusFromServer) return null;
+        final results = _engine.search(
+          corpus,
+          tokens: tokens,
+          displayQuery: display,
+          type: type,
+        );
+        if (results.isEmpty && !_coversSearch(type)) return null;
+        return results;
+      }
+
       if (!_corpusUsable) {
         // Nothing to search yet: show that, and leave the last answer alone
         // until there is a new one.
         isLoading = true;
         errorKind = null;
         _notify();
+      } else if (!_corpusFresh && !_corpusFromServer) {
+        final early = savedAnswer();
+        if (early != null) {
+          // Shown at once; the server read below may replace it.
+          _show(early, display, key);
+        } else {
+          isLoading = true;
+          errorKind = null;
+          _notify();
+        }
       }
 
       if (!_corpusFresh) {
-        try {
-          await _load();
-        } catch (error) {
-          if (!_isCurrent(generation)) return;
-          // Records already loaded keep serving; only a search with nothing to
-          // search through fails.
-          if (!_corpusUsable) {
-            searchResults = const <SearchResult>[];
-            resultsQuery = '';
-            _resultsKey = null;
-            errorKind = classifySearchError(error);
-            isLoading = false;
-            _notify();
-            return;
+        if (_mayReadServer) {
+          try {
+            await _load();
+          } catch (error) {
+            if (!_isCurrent(generation)) return;
+            // Records already loaded keep serving; only a search with nothing
+            // to search through fails.
+            if (!_corpusUsable ||
+                (!_corpusFromServer && savedAnswer() == null)) {
+              _fail(error);
+              return;
+            }
           }
+          if (!_isCurrent(generation)) return;
+        } else if (!_corpusFromServer && savedAnswer() == null) {
+          // The server failed moments ago and is not asked again yet; the
+          // saved lists cannot answer this one.
+          _fail(_serverError ?? const SocketException('offline'));
+          return;
         }
-        if (!_isCurrent(generation)) return;
       }
 
       final corpus = _corpus;
       if (corpus == null || !_corpusUsable) return;
 
-      searchResults = _engine.search(
-        corpus,
-        tokens: tokens,
-        displayQuery: display,
-        type: type,
+      _show(
+        _engine.search(
+          corpus,
+          tokens: tokens,
+          displayQuery: display,
+          type: type,
+        ),
+        display,
+        key,
       );
-      resultsQuery = display;
-      _resultsKey = key;
-      errorKind = null;
-      isLoading = false;
-      _notify();
     } catch (error) {
       if (!_isCurrent(generation)) return;
-      searchResults = const <SearchResult>[];
-      resultsQuery = '';
-      _resultsKey = null;
-      errorKind = classifySearchError(error);
-      isLoading = false;
-      _notify();
+      _fail(error);
     }
+  }
+
+  void _show(List<SearchResult> results, String display, String key) {
+    searchResults = results;
+    resultsQuery = display;
+    _resultsKey = key;
+    errorKind = null;
+    isLoading = false;
+    _notify();
+  }
+
+  void _fail(Object error) {
+    searchResults = const <SearchResult>[];
+    resultsQuery = '';
+    _resultsKey = null;
+    errorKind = classifySearchError(error);
+    isLoading = false;
+    _notify();
+  }
+
+  /// Whether the records searched cover [type] (null: every kind) — always
+  /// for the server's records; for saved ones, only the kinds whose saved
+  /// list could be read.
+  bool _coversSearch(SearchResultType? type) {
+    if (_corpusFromServer) return true;
+    return type == null
+        ? _corpusCoverage.length == SearchResultType.values.length
+        : _corpusCoverage.contains(type);
+  }
+
+  /// False for a while after a failed server read, so a search made offline
+  /// does not read every list again on every search. Retry and a refresh ask
+  /// at once.
+  bool get _mayReadServer {
+    final failedAt = _serverFailedAt;
+    if (failedAt == null || !_corpusUsable) return true;
+    final since = _clock().difference(failedAt);
+    return since >= serverRetryAfter || since.isNegative;
+  }
+
+  /// Reads this device's saved lists for the signed-in account and session,
+  /// once however many searches ask. Installs them only when nothing usable
+  /// is loaded and at least one kind could be read.
+  Future<void> _loadSaved() {
+    return _savedLoading ??=
+        _readSaved().whenComplete(() => _savedLoading = null);
+  }
+
+  Future<void> _readSaved() async {
+    final source = _localFirst;
+    if (source == null) return;
+    final userId = _dataSource.currentUserId;
+    if (userId == null || userId.isEmpty) return;
+    final session = source.currentSessionId;
+    final SavedSearchData saved;
+    try {
+      saved = await source.loadSaved();
+    } catch (_) {
+      return;
+    }
+    if (_disposed || saved.isEmpty) return;
+    if (_dataSource.currentUserId != userId ||
+        source.currentSessionId != session) {
+      return;
+    }
+    if (_corpusUsable) return; // the server's records arrived meanwhile
+    _corpus = _engine.index(saved.data);
+    cardMedia.invalidate();
+    _corpusLoadedAt = null; // never fresh: the server is still asked
+    _corpusUserId = userId;
+    _corpusSession = session;
+    _corpusFromServer = false;
+    _corpusCoverage = Set<SearchResultType>.unmodifiable(saved.covered);
+    _corpusDataVersion = _dataVersion;
   }
 
   /// Loads and indexes the records, once however many searches ask for them. A
@@ -366,12 +507,33 @@ class SearchViewModel extends ChangeNotifier {
   Future<void> _loadRecords() async {
     final version = _dataVersion;
     final userId = _dataSource.currentUserId;
-    final data = await _dataSource.load();
+    final session = _sessionNow;
+    final SearchData data;
+    try {
+      data = await _dataSource.load();
+    } catch (error) {
+      // Only a failure of the account and session still signed in holds the
+      // next server read back; one cut off by a sign-out or another session
+      // says nothing about the session that follows.
+      if (_dataSource.currentUserId == userId && _sessionNow == session) {
+        _serverFailedAt = _clock();
+        _serverError = error;
+      }
+      rethrow;
+    }
     if (_disposed) return;
+    // Read for an account or session that is no longer the signed-in one:
+    // dropped, so it can never replace records that still are.
+    if (_dataSource.currentUserId != userId || _sessionNow != session) return;
     _corpus = _engine.index(data);
     cardMedia.invalidate();
     _corpusLoadedAt = _clock();
     _corpusUserId = userId;
+    _corpusSession = session;
+    _corpusFromServer = true;
+    _corpusCoverage = const <SearchResultType>{};
+    _serverFailedAt = null;
+    _serverError = null;
     // If the user's data changed while this was loading, these records are
     // already out of date, and the next search reads them again.
     _corpusDataVersion = version;
@@ -396,6 +558,8 @@ class SearchViewModel extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _debounceTimer?.cancel();
+    // A closed screen reads no more pages.
+    _localFirst?.cancelReads();
     unawaited(_dataChanges.cancel());
     super.dispose();
   }

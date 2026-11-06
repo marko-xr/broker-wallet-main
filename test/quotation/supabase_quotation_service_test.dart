@@ -375,18 +375,27 @@ void main() {
 
     test('the list is live rows only, newest first, header columns only',
         () async {
-      final backend = _Backend((_) => _json([
-            {
-              'id': _quotationId,
-              'owner_id': _uid,
-              'property_title': 'Villa',
-              'office_name': 'Realtig',
-              'version': 2,
-              'pdf_media_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-              'created_at': '2026-10-01T10:00:00+00:00',
-              'updated_at': '2026-10-01T10:00:00+00:00',
-            }
-          ]));
+      // Q-1a: the list is read in pages with an exact count (see
+      // quotation_list_pagination_test.dart), so the answer carries one.
+      final backend = _Backend((_) => http.Response(
+            jsonEncode([
+              {
+                'id': _quotationId,
+                'owner_id': _uid,
+                'property_title': 'Villa',
+                'office_name': 'Realtig',
+                'version': 2,
+                'pdf_media_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                'created_at': '2026-10-01T10:00:00+00:00',
+                'updated_at': '2026-10-01T10:00:00+00:00',
+              }
+            ]),
+            200,
+            headers: {
+              'content-type': 'application/json',
+              'content-range': '0-0/1',
+            },
+          ));
       final service =
           SupabaseQuotationService(client: await _signedIn(backend.client));
 
@@ -395,9 +404,13 @@ void main() {
       final request = backend.requests.single;
       expect(request.url.path, '/rest/v1/quotations');
       expect(request.url.queryParameters['deleted_at'], 'is.null');
+      expect(request.url.queryParameters['owner_id'], 'eq.$_uid');
       // postgrest appends `.nullslast` to a descending order by default.
       expect(
           request.url.queryParameters['order'], startsWith('created_at.desc'));
+      expect(request.url.queryParameters['order'], contains('id.desc'));
+      expect(request.url.queryParameters['limit'], '500');
+      expect(request.headers['Prefer'], contains('count=exact'));
       expect(request.url.queryParameters['select'],
           isNot(contains('quotation_downpayments')),
           reason: 'a card does not need the child tables');

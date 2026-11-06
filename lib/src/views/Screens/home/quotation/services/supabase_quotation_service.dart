@@ -14,6 +14,9 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.d
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/list_session_check.dart';
+import 'package:broker_wallet/src/services/r2_offer_media_upload_service.dart';
+import 'package:broker_wallet/src/services/supabase_core_entities_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Why a Quotation operation failed. A fixed category: never SQL, provider
@@ -117,6 +120,15 @@ class SupabaseQuotationService implements QuotationRemote {
   /// Resolved on use, so constructing this never touches Supabase before it
   /// is initialized.
   SupabaseClient get _client => _customClient ?? Supabase.instance.client;
+
+  /// The entity lists' paged reader (P4), on this same client, made on first
+  /// use. Only its whole-list read is used; its media helpers are never.
+  SupabaseCoreEntitiesService get _pages =>
+      _pagesOnce ??= SupabaseCoreEntitiesService(
+        client: _client,
+        offerMedia: R2OfferMediaUploadService(supabaseClient: _client),
+      );
+  SupabaseCoreEntitiesService? _pagesOnce;
 
   void _requireSession() {
     final user = _client.auth.currentUser;
@@ -234,15 +246,32 @@ class SupabaseQuotationService implements QuotationRemote {
   }
 
   @override
-  Future<List<QuotationModel>> listQuotations() async {
+  Future<List<QuotationModel>> listQuotations() => _listQuotations(() => true);
+
+  /// Every live Quotation of the signed-in account, newest first: read whole
+  /// in pages of 500 by `created_at` then `id`, as the entity lists are (Q-1a;
+  /// before, one request was cut short at the hosted row cap without a word).
+  /// Nothing is returned in part. An empty answer is taken only once the
+  /// session is confirmed current, since a superseded session is answered
+  /// with no rows. [stillWanted] stops the read between pages.
+  Future<List<QuotationModel>> _listQuotations(
+      bool Function() stillWanted) async {
     _requireSession();
     final accessToken = _client.auth.currentSession?.accessToken;
+    final session =
+        AppSessionCoordinator.sessionId(_client.auth.currentSession);
     try {
-      final rows = await _client
-          .from('quotations')
-          .select(QuotationSupabaseMapper.listColumns)
-          .isFilter('deleted_at', null)
-          .order('created_at', ascending: false);
+      final rows = await _pages.readWholeOwnedList(
+        'quotations',
+        QuotationSupabaseMapper.listColumns,
+        stillWanted: stillWanted,
+      );
+      if (rows.isEmpty) {
+        final check = ListSessionCheck.confirmFor(session);
+        if (check != null && !await check) {
+          throw const ListSessionNotCurrent();
+        }
+      }
       return rows
           .map((row) =>
               QuotationSupabaseMapper.headerFromRow(Map<String, dynamic>.from(row)))
@@ -282,7 +311,8 @@ class SupabaseQuotationService implements QuotationRemote {
       do {
         readAgain = false;
         try {
-          final rows = await listQuotations();
+          // A screen that has closed reads no further page.
+          final rows = await _listQuotations(() => controller.hasListener);
           if (!controller.hasListener) return;
           delivered = true;
           controller.add(rows);

@@ -2973,6 +2973,65 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 
 **الحالة:** **P4.7c (C) = CODE_PROVEN.** **NOW:** مراجعة المالك ثم موافقة commit. **NEXT (اقتراح):** Q-1 (Quotations: ترقيم + إبقاء القائمة) أولوية صحة؛ ثم قياس Samsung لتقرير P4.7c-2 (A) وP4.7d. **STOP:** لا A/B/P4.7d/Quotations تلقائياً؛ لا commit/push.
 
+## 7AV) Q-1a — ترقيم قائمة Quotations وموثوقية التحديث — 2026-11-06 (CODE_PROVEN؛ غير مدمج)
+
+**Git:** `perf/phase-1-startup-baseline` @ `9a31d7b` = `origin`؛ ملفات plugin الثلاثة وstashes الاثنان و`docs/ADD_DETAILS_*` لم تُلمس.
+
+### الفحص (S — من الهجرات والمصدر)
+- **الجدول:** `public.quotations` — `id uuid primary key`، `owner_id uuid not null`، `created_at timestamptz not null`، `deleted_at timestamptz`، فهرس `(owner_id, created_at desc)` ⇒ **الشكل نفسه للقوائم الست** ⇒ مفتاح keyset `(created_at desc, id desc)` فريد وكلي.
+- **RLS:** `quotations_select_own` = `owner_id = auth.uid()` + **بوابة `app_session_gate` المقيِّدة** (SAD؛ `20261005175500`) ⇒ الجلسة المُزاحة تُجاب بلا صفوف (كالقوائم الست). الحذف: `deleted_at` يُرشَّح في الطلب.
+- **السبب الجذري للقص:** `listQuotations` = طلب **واحد بلا `limit` ولا عدّ** ⇒ يُقص بصمت عند `max_rows` المستضاف (1,000، §7AL). **(M)** قبل: 1,200 / 5,000 / 10,000 عرض سعر ⇒ **1,000 فقط، طلب واحد، بلا خطأ.**
+- **السبب الجذري لاختفاء القائمة:** `StreamBuilder` في `list_quotation_view.dart` يفحص `hasError` قبل البيانات، و`StreamBuilder` **يُسقط بياناته عند حدث خطأ** ⇒ فشل إعادة القراءة (بعد أي تعديل كيان) يستبدل القائمة المعروضة بحالة الخطأ (مُثبت باختبار §7AS).
+- **فراغ بلا تأكيد:** لا تأكيد جلسة لقائمة فارغة (جلسة مُزاحة ⇒ «لا عروض أسعار» كاذبة).
+- **الحسابات/PDF:** القائمة تقرأ أعمدة البطاقة فقط (`listColumns`)؛ الحسابات في `AddQuotationViewModel`/`aggregateFromRow` وPDF في `pdf_generation_service`/`QuotationPdfCache` — **لم تُلمس**.
+
+### التنفيذ (أصغر تغيير؛ لا SQL/RLS/Auth/SAD/حسابات/PDF/واجهة)
+1. **`lib/src/services/supabase_core_entities_service.dart`:** طريقة عامة واحدة `readWholeOwnedList(table, columns, {stillWanted})` **تفوّض حرفياً إلى `_wholeList`** (P4: 500/صفحة، `count=exact` في الأولى، مؤشر keyset بالنص الخام، 40 صفحة / 20,000، `badPage`/`missingCount`/`tooLarge`/`changedDuringRead`، تأكيد الجلسة + عدّ HEAD عند عدم التطابق، `ListSessionNotCurrent` عند تغيّر الحساب/الجلسة) — **لا تغيير في منطق P4**.
+2. **`…/quotation/services/supabase_quotation_service.dart`:** `listQuotations()` (العقد العام بلا تغيير) ⇒ `_listQuotations(stillWanted)`: القارئ المرقّم على **العميل نفسه** (مُنشأ عند الاستخدام الأول مع مساعد وسائط على العميل نفسه — لا `Supabase.instance`)؛ **قائمة فارغة ⇒ تأكيد جلسة واحد** (`ListSessionCheck.confirmFor`) وإلا `ListSessionNotCurrent`؛ الأخطاء تمر عبر `_translate` القائم (الشبكة ⇒ `network`، الباقي ⇒ `unknown`). `watchQuotations` يمرّر `() => controller.hasListener` ⇒ **شاشة مغلقة لا تقرأ صفحة أخرى**. الفلتر صار يتضمن `owner_id = <الحساب>` صراحة (مطابق لسياسة RLS).
+3. **`…/quotation/list_quotations_viewmodel.dart`:** محوّل على تدفق القائمة: **قبل أول قائمة** الخطأ يصل للشاشة كما كان (حالة الخطأ القائمة)؛ **بعدها** يُبقى المعروض ولا يُستبدل بحالة الخطأ — كقاعدة القوائم الست (`EntityListState`)؛ القائمة التالية (أو فارغة موثوقة) تحل محله. **`list_quotation_view.dart` بلا تغيير.**
+
+### القياس (M — محاكي PostgREST حتمي بحد `max_rows`=1000، VM الاختبار؛ ليس شبكة مستضافة ولا Samsung)
+| عروض الأسعار | قبل: المُعاد / الطلبات | بعد: المُعاد / الطلبات / بايتات الجسم |
+|---|---|---|
+| 0 / 1 / 100 | كلها / 1 | كلها / 1 (+ تأكيد جلسة عند 0) |
+| 500 / 501 | كلها / 1 | كلها / 1 / 2 |
+| 1,000 | 1,000 / 1 | 1,000 / 2 / 451 KB |
+| 1,200 | **1,000 بصمت** / 1 | **1,200 / 3** / 541 KB |
+| 5,000 | **1,000 بصمت** / 1 | **5,000 / 10** / 2.26 MB |
+| 10,000 | **1,000 بصمت** / 1 | **10,000 / 20** / 4.52 MB |
+| > 20,000 | 1,000 بصمت | **فشل `tooLarge` بعد طلب واحد** (لا قائمة جزئية) |
+- زمن القراءة في المحاكي (VM): 10,000 ⇒ ~1.1 s (يشمل كلفة المحاكي) — **ليس زمن شبكة**. البناء (القائمة غير lazy، بلا تغيير): 18 / 42 / 84 ms لـ 100 / 500 / 1,000 بطاقة. **عرض فشل التحديث:** قبل ⇒ حالة الخطأ تستبدل القائمة؛ بعد ⇒ **القائمة باقية** (`list kept: true; error shown: false`).
+- **التكلفة الجديدة المقصودة:** القائمة الآن كاملة ⇒ طلبات وذاكرة تتناسب مع العدد الحقيقي (حتى 20,000) بدل سقف 1,000 صامت.
+
+### الأدلة (شغّلها الوكيل بتفويض هذه المهمة)
+- **أحمر أولاً:** `quotation_list_pagination_test` على الكود دون تغيير ⇒ 1,200/5,000/10,000 ⇒ 1,000 فقط وإخفاقات متعددة؛ `quotation_list_refresh_test` على VM الـ HEAD ⇒ إخفاق «فشل التحديث يُبقي القائمة».
+- **جديد `test/quotation/quotation_list_pagination_test.dart` — 26/26:** 0/1/499/500/501/1,000/1,200/10,000 ⇒ كلها وبالترتيب وعدد الطلبات المتوقع (1/1/1/1/2/2/3/20) وكل طلب بـ `owner_id` و`deleted_at=is.null` و`created_at.desc`+`id.desc` و`limit=500` بلا الجداول الفرعية، والأول `count=exact`؛ أوقات متطابقة عبر حدود الصفحات ⇒ كل سجل مرة؛ المحذوف وصفوف حساب آخر لا تُعرض؛ **حقول البطاقة كما كانت** (العنوان، `totalAmount`، الأقساط، العملة، المكتب، `hasPdf`، الإصدار)؛ > 20,000 ⇒ رفض بعد طلب واحد؛ صف مكرر ⇒ رفض؛ عدّ مفقود/`*`/تالف ⇒ رفض؛ فشل الصفحة 2 ⇒ `network` بلا قائمة؛ حذف بين الصفحات ⇒ عدّ HEAD و1,199؛ فارغة ⇒ تأكيد واحد (true يُقبل، false يُرفض، null يُقبل)، غير فارغة ⇒ بلا تأكيد؛ **حساب آخر / الحساب نفسه بجلسة جديدة بعد الصفحة 1 ⇒ لا صفحة 2 ولا قائمة**؛ جلسة مُزاحة (صفحات فارغة) ⇒ رفض؛ **إغلاق الشاشة أثناء الصفحة 1 ⇒ لا صفحة 2**؛ فشل إعادة قراءة ⇒ حدث خطأ والتدفق يستمر ثم يتعافى (يشمل إعادات عميل PostgREST التلقائية لـ GET)؛ قياسات.
+- **جديد `test/quotation/quotation_list_refresh_test.dart` — 5/5** (الشاشة الحقيقية): فشل بعد قائمة ⇒ القائمة باقية بلا حالة خطأ ولا مؤشر تحميل؛ فشل قبل أي قائمة ⇒ حالة الخطأ القائمة؛ بعد الفشل القائمة التالية تحل محلها؛ فارغة موثوقة ⇒ حالة الفراغ؛ التحديث بلا مؤشر واشتراك واحد.
+- **حُدِّث عمداً:** `supabase_quotation_service_test` «the list is live rows only…» — الجواب يحمل `content-range` (مطلوب للعدّ الدقيق) + توقعات `owner_id` و`id.desc` و`limit=500` و`count=exact` (كل التوقعات القديمة باقية)؛ `test/perf/list_open_baseline_test` Part 4 — كان يوثّق الخلل، صار يثبت الإصلاح.
+- **الطفرات 5/5 التُقطت** (الملفات أُعيدت، SHA-256 مطابق): بلا تأكيد الفراغ؛ الشاشة المغلقة تواصل القراءة؛ فشل التحديث يستبدل القائمة؛ إخفاء الفشل الأول؛ جدول خاطئ (**نجت أولاً لأن المحاكي قبل أي مسار يبدأ بـ `quotations` ⇒ شُدّد المحاكي ليطابق المسار حرفياً ثم التُقطت**).
+- **انحدار مركّز:** `test/quotation` كاملاً (**الحسابات** `add_quotation_viewmodel_test`، **PDF/الوسائط** `quotation_service_test`/`quotation_media_workflow_test`/`r2_quotation_media_service_test`، المُحوِّل، الحفظ، إزالة الإرث) + `entity_keyset_pagination_test` + `requests_keyset_pagination_test` + `list_row_cap_characterization_test` + `test/home` + `test/perf` ⇒ **688/688**. بعد التنسيق: الملفات الثلاثة المعنية ⇒ **53/53**.
+- **Analyzer** (7 ملفات) ⇒ No issues. **Format 3.5:** `supabase_quotation_service.dart` 22 انحرافاً سابقاً = 22 (لا جديد)؛ البقية 0؛ الاختباران الجديدان مُنسّقان. **`git diff --check`** نظيف؛ CRLF.
+
+### الحدود الباقية
+- **غير مُتحقَّق مستضافاً:** ترقيم Quotations على PostgREST الحقيقي — يُضاف إلى **P4.3-ACCEPT-NONEMPTY (OPEN)**؛ أداة P4.3b لم تُوسَّع لـ Quotations.
+- **إعادة قراءة مع كل تعديل كيان:** `CoreEntityMutationNotifier` بلا نوع ⇒ تعديل Owner/Offer يعيد قراءة Quotations كاملة (صار أثقل مع اكتمالها) ⇒ **Q-1b (اقتراح):** إشعار بنوع الكيان.
+- **مسار عدّ Home القديم** (`home_viewmodel` يقرأ `getUserQuotations().first` لعدّ) ⇒ صار كاملاً ومرقّماً إن استُخدم؛ العدّ الحالي في Home عبر HEAD (P3.3).
+- القائمة غير lazy (`Column`) — رخيصة حتى 1,000 (84 ms)؛ للآلاف تُقاس لاحقاً.
+- **Quotations Offline-First غير مُنفَّذ** (لا نسخة محلية؛ offline ⇒ حالة الخطأ أول مرة): يحتاج قرار أمان/منتج (كاش مشفّر للحساب على نواة P2، ربط PDF المحلي، الحسابات تبقى على الخادم).
+- لا قياس Samsung/شبكة حقيقية. **P4.3-ACCEPT-NONEMPTY: OPEN.**
+
+**الملفات (غير مدمجة):** `lib/src/services/supabase_core_entities_service.dart`؛ `lib/src/views/Screens/home/quotation/services/supabase_quotation_service.dart`؛ `lib/src/views/Screens/home/quotation/list_quotations_viewmodel.dart`؛ جديد `test/quotation/quotation_list_pagination_test.dart`؛ جديد `test/quotation/quotation_list_refresh_test.dart`؛ `test/quotation/supabase_quotation_service_test.dart`؛ `test/perf/list_open_baseline_test.dart`؛ وهذا الملف.
+
+**الحالة:** **Q-1a = CODE_PROVEN — STAGING_UNVERIFIED، REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit. **NEXT (اقتراح):** Q-1b (إشعار تعديل بنوع الكيان) أو توسيع P4.3-ACCEPT-NONEMPTY لـ Quotations. **STOP:** لا Quotations Offline/P4.7d/وسائط تلقائياً؛ لا commit/push؛ Samsung DEFERRED.
+
+### مراجعة تجربة فشل التحديث — 2026-11-06 (CODE_PROVEN؛ غير مدمج)
+- **التحميل الأول الفاشل** (لا قائمة): حالة الخطأ القائمة كما كانت (`quotationListLoadFailed`) — مُثبت.
+- **فشل تحديث والقائمة معروضة:** القائمة باقية — مُثبت. **لكن (خلل UX حقيقي في Q-1a كما سُلّم):** المحوّل كان **يبتلع الخطأ بصمت** — لا أي إشارة للمستخدم (السلوك نفسه في القوائم الست عبر `EntityListState`، وهو خارج هذا النطاق).
+- **الإصلاح الأصغر (إعادة استخدام آلية قائمة، بلا تصميم ولا نص جديد):** الشاشة تستخدم أصلاً **toast أحمر** (`_showToast`، Fluttertoast) لأخطاء PDF/الحذف، والنص `quotationListLoadFailed` موجود (EN/AR). ⇒ `QuotationListViewModel.onRefreshFailed` (تضبطه الشاشة عند إنشاء الـ VM) يُستدعى عند فشل إعادة قراءة **بعد** أول قائمة؛ الشاشة تعرض الـ toast بالنص القائم **فقط إن كانت المسار الظاهر** (`ModalRoute.isCurrent` — إعادات القراءة تتبع تعديلات على شاشات أخرى، مثل حفظ عرض سعر في شاشة الإضافة فوقها). **مرة واحدة لكل سلسلة فشل** (لا تكرار)؛ قراءة ناجحة تعيد التسليح؛ فشل تحت شاشة أخرى لا يُعدّ «قيل» ⇒ الفشل التالي على الشاشة يقوله. التحميل الأول الفاشل: حالة الخطأ وحدها، بلا toast.
+- **الملفات:** `list_quotations_viewmodel.dart` (الحقل + منطق المرة الواحدة)؛ `list_quotation_view.dart` (ربط `onRefreshFailed` في `create` + `_refreshFailed` بفحص المسار، يستعمل `_showToast` القائم). البطاقات/الترتيب/التنقل/الحسابات/PDF/فحوص الحساب والجلسة/عقد P4 بلا تغيير.
+- **الأدلة:** `quotation_list_refresh_test` **7/7** (+2: «يُقال مرة بالـ toast القائم، لا تكرار في السلسلة، ويُقال ثانية بعد نجاح»، «تحت شاشة أخرى لا يُقال، وبعد العودة يقوله الفشل التالي»، + التحميل الأول الفاشل بلا toast). **طفرات 3/3 التُقطت** (toast لكل فشل؛ بلا فحص المسار؛ بلا إعادة تسليح بعد النجاح) — الملفان أُعيدا بـ SHA-256 مطابق. **المتأثر:** `test/quotation` كاملاً + `test/perf/list_open_baseline_test` ⇒ **232/232**. Analyzer (3 ملفات) ⇒ No issues؛ Format 3.5: الـ VM 0؛ الشاشة 20 سابقة = 20؛ `git diff --check` نظيف؛ CRLF.
+- **حدّ موثّق (قرار منتج منفصل، لم يُنفَّذ):** القوائم الست ما زالت تُبقي القائمة **بصمت** عند فشل التحديث (`EntityListState`) — توحيد الإشارة عبر الشاشات السبع قرار تصميم/منتج.
+
 ---
 
 ## 8) مراجع الاستمرار

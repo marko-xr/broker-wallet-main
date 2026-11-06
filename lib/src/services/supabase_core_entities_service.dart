@@ -1118,6 +1118,18 @@ class SupabaseCoreEntitiesService {
   static const int _maxPages = 40;
   static const int _maxListRows = 20000;
 
+  /// Every row of [table] the signed-in account owns and has not deleted,
+  /// newest first, read whole in pages exactly as the entity lists are (see
+  /// [_wholeList] and [_pagedRows]): for a table of the same shape —
+  /// `owner_id`, `created_at`, a unique `id` and `deleted_at`. Used by the
+  /// Quotations list (Q-1a). [stillWanted] stops the read between pages.
+  Future<List<Map<String, dynamic>>> readWholeOwnedList(
+    String table,
+    String columns, {
+    bool Function()? stillWanted,
+  }) =>
+      _wholeList(table, columns, stillWanted ?? () => true);
+
   /// [_pagedRows], read once more from the start when the rows changed while
   /// the pages were read and did not add up. Once only: a list that changes
   /// on every read fails ([CoreEntityListProblem.changedDuringRead]).

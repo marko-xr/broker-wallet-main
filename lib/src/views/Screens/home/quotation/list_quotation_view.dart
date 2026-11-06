@@ -31,7 +31,11 @@ class _QuotationListViewState extends State<QuotationListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => widget.viewModel ?? QuotationListViewModel(),
+      create: (providerContext) {
+        final vm = widget.viewModel ?? QuotationListViewModel();
+        vm.onRefreshFailed = () => _refreshFailed(providerContext);
+        return vm;
+      },
       child: Consumer<QuotationListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -367,6 +371,19 @@ class _QuotationListViewState extends State<QuotationListView> {
         fetchPdf: () => vm.resolvePdfForShare(quotation),
       ),
     );
+  }
+
+  /// A re-read failed while quotations are shown: they stay, and the screen
+  /// says so with its existing toast and wording — only while it is the
+  /// screen on top (re-reads also follow changes made on other screens).
+  bool _refreshFailed(BuildContext context) {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    _showToast(
+        AppLocalizations.of(context).translate('quotationListLoadFailed'),
+        Colors.red);
+    return true;
   }
 
   void _showToast(String message, Color bgColor) {

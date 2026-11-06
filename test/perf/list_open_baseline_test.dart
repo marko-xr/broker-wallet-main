@@ -453,7 +453,9 @@ void part4(TestWidgetsFlutterBinding binding) {
       });
     }
 
-    testWidgets('a failed refresh replaces the list on screen (as is)',
+    // Q-1a: this documented the bug (the list was replaced by the error
+    // state); it now holds the fix: the list stays.
+    testWidgets('a failed refresh keeps the list on screen (Q-1a)',
         (tester) async {
       final source = _QuotationSource();
       await tester.pumpWidget(app(QuotationListView(
@@ -473,8 +475,8 @@ void part4(TestWidgetsFlutterBinding binding) {
       debugPrint('[QuotationRefreshFailure] list kept: '
           '${find.text('Villa 0').evaluate().isNotEmpty}; error shown: '
           '${find.text(failed).evaluate().isNotEmpty}');
-      expect(find.text(failed), findsOneWidget,
-          reason: 'documents current behavior; not a desired one');
+      expect(find.text(failed), findsNothing);
+      expect(find.text('Villa 0'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
   });

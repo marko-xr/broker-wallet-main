@@ -992,6 +992,7 @@
 | D-52 | P3.1a (§7AB) | حذف Request/Offer/Owner/Office/Broker/Watchman من قائمته؛ ثم حذف العنصر نفسه من جهاز ثانٍ بعد حذفه؛ ثم محاولة حذف بعد إزاحة الجلسة | الأول يُحذف برسالة النجاح؛ المحذوف مسبقاً يُعدّ محذوفاً بلا خطأ؛ بعد الإزاحة: رسالة الفشل القائمة ثم حوار الإزاحة/الخروج، والعنصر لا يُعلَّم محذوفاً | PENDING |
 | D-53 | P3.1c (§7AC) | Home بأعداد ظاهرة؛ Samsung في الخلفية؛ دخول بالحساب نفسه على جهاز آخر؛ ثم إعادة Samsung إلى المقدمة (وسحب Home) | لا تصير الأعداد أصفاراً؛ يظهر حوار الإزاحة/الخروج المعتاد؛ بعد إعادة الدخول تظهر الأعداد المحفوظة ثم الحقيقية؛ حساب جديد فارغ يظهر بأصفار | PENDING |
 | D-54 | P3.1d (§7AE) | حذف سجل من قائمة ثم قطع الشبكة فوراً؛ ثم إغلاق التطبيق وفتحه offline والقائمة نفسها؛ ثم إعادة الشبكة | السجل المحذوف لا يظهر offline ولا بعد إعادة التشغيل؛ بعد الشبكة تظهر قائمة الخادم كما هي؛ حذف رُفض (إزاحة/حساب آخر) لا يُخفي شيئاً | PENDING |
+| D-55 | Q-1a + Q-1b (§7AV، §7AW) | قائمة Quotations مفتوحة تحت شاشة أخرى؛ تعديل/حذف Owner وOffer ثم العودة؛ ثم إنشاء وتعديل وحذف عرض سعر؛ ثم قطع الشبكة وتعديل عرض سعر | لا قراءة ولا toast بعد تعديل Owner/Offer؛ القائمة تتحدث بعد كل تعديل Quotation؛ عند الفشل تبقى القائمة وtoast مرة واحدة | PENDING (DEFERRED) |
 
 ---
 
@@ -3031,6 +3032,58 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 - **الملفات:** `list_quotations_viewmodel.dart` (الحقل + منطق المرة الواحدة)؛ `list_quotation_view.dart` (ربط `onRefreshFailed` في `create` + `_refreshFailed` بفحص المسار، يستعمل `_showToast` القائم). البطاقات/الترتيب/التنقل/الحسابات/PDF/فحوص الحساب والجلسة/عقد P4 بلا تغيير.
 - **الأدلة:** `quotation_list_refresh_test` **7/7** (+2: «يُقال مرة بالـ toast القائم، لا تكرار في السلسلة، ويُقال ثانية بعد نجاح»، «تحت شاشة أخرى لا يُقال، وبعد العودة يقوله الفشل التالي»، + التحميل الأول الفاشل بلا toast). **طفرات 3/3 التُقطت** (toast لكل فشل؛ بلا فحص المسار؛ بلا إعادة تسليح بعد النجاح) — الملفان أُعيدا بـ SHA-256 مطابق. **المتأثر:** `test/quotation` كاملاً + `test/perf/list_open_baseline_test` ⇒ **232/232**. Analyzer (3 ملفات) ⇒ No issues؛ Format 3.5: الـ VM 0؛ الشاشة 20 سابقة = 20؛ `git diff --check` نظيف؛ CRLF.
 - **حدّ موثّق (قرار منتج منفصل، لم يُنفَّذ):** القوائم الست ما زالت تُبقي القائمة **بصمت** عند فشل التحديث (`EntityListState`) — توحيد الإشارة عبر الشاشات السبع قرار تصميم/منتج.
+
+---
+
+## 7AW) Q-1b — تحديث Quotations بحسب نوع الكيان — 2026-11-07 (CODE_PROVEN؛ غير مدمج)
+
+**Git (مُتحقَّق قبل البدء):** `perf/phase-1-startup-baseline` @ `f717951` = `origin` (0/0 بعد `git fetch`)؛ stashes الاثنان باقيان؛ ملفات plugin الثلاثة و`docs/ADD_DETAILS_*` لم تُلمس.
+
+### تدقيق الاعتماديات (S — من المصدر والهجرات)
+- **ما تقرأه القائمة:** `listColumns` = أعمدة `quotations` وحدها (العنوان، النوع، التاريخ، `total_amount`، الأقساط، `office_name`، العملة، `office_logo_media_id`، `pdf_media_id`، الإصدار، الأوقات) — **بلا مورد مضمَّن ولا join**؛ كل طلب القائمة إلى `/rest/v1/quotations` فقط (مُثبت باختبار).
+- **الجدول:** `public.quotations` يشير فقط إلى `profiles(id)`؛ **لا FK** إلى requests/offers/owners/offices/brokers/watchmen؛ `office_name` **نص محفوظ في عرض السعر** (ليس مرجعاً لـ `offices`). المحفّزات على `quotations`: `bump_sync_version` و`validate_direct_media_ownership` فقط؛ **لا محفّز على الجداول الست يكتب `quotations`**. كتابة `quotations` تأتي فقط من `save_quotation` و RPC وسائط Quotation و soft delete — وكلها عبر `QuotationService` في العميل.
+- **مصادر الإشارة (`CoreEntityMutationNotifier.notify`):** 12 حفظ/تعديل + 6 حذف (عبر `_softDeleteAndNotify`) في `SupabaseCoreEntitiesService` للأنواع الست؛ إشارتان في `QuotationService` (المفردة والمجمّعة: حفظ، شعار، PDF، حذف). **لا مصدر آخر في `lib/`.**
+- **الحسابات/PDF:** الحسابات في `AddQuotationViewModel`/`aggregateFromRow` والـ PDF في `pdf_generation_service`/`QuotationPdfCache` لا تقرأ أي كيان من الست (`AddQuotationViewModel` لا يقرأ `offices`)؛ `hasPdf` يُشتق من `pdf_media_id` على الصف نفسه.
+- **الخلاصة:** تعديل أي نوع من الست **لا يمكن أن يغيّر** أي حقل تعرضه قائمة Quotations ⇒ إعادة القراءة بعده عمل ضائع. **لا اعتماد كيان مرتبط يجب حفظه.** تغيّر الجلسة/الحساب لا يمر عبر هذه الإشارة أصلاً (يبقى كما كان: فحوص الجلسة في القارئ + `AppSessionCoordinator`).
+- **تحديث صريح:** الشاشة بلا سحب للتحديث ولا lifecycle resume؛ المسار الصريح الوحيد `QuotationListViewModel.refreshQuotations()` (تدفق جديد ⇒ قراءة كاملة) — بلا تغيير.
+
+### التنفيذ (4 ملفات إنتاجية؛ لا SQL/RLS/Auth/SAD/حسابات/PDF/مسارات ملفات/عقود CRUD/واجهة/تبعيات)
+1. **`lib/src/services/core_entity_mutation_notifier.dart`:** `enum CoreEntityKind {request, offer, owner, office, broker, watchman, quotation}`؛ `notify([CoreEntityKind? kind])` (الإشارة بلا نوع = «قد يكون أي شيء»)؛ **`changes` بلا تغيير** (كل إشارة لكل المستمعين: القوائم الست، أعداد Home، Search، Map)؛ جديد `changesTo(kind)` = إشارات ذلك النوع **+ الإشارات بلا نوع** (افتراض آمن). التسليم متزامن كما كان.
+2. **`lib/src/services/supabase_core_entities_service.dart`:** كل `notify()` صار `notify(CoreEntityKind.<نوع الطريقة>)`؛ `_softDeleteAndNotify(table, id, kind)`. **منطق القوائم الست/الحذف/P4 بلا تغيير** (القوائم الست ما زالت تستمع لـ `changes` كلها).
+3. **`…/quotation/services/quotation_service.dart`:** الإشارتان ⇒ `CoreEntityKind.quotation` (التجميع بلا تغيير).
+4. **`…/quotation/services/supabase_quotation_service.dart`:** `watchQuotations` يستمع إلى `changesTo(CoreEntityKind.quotation)` بدل `changes`. حلقة القراءة الواحدة (`reading`/`readAgain`)، `stillWanted`، ترقيم Q-1a، معالجة الفشل وtoast المرة الواحدة **بلا تغيير**.
+
+### عدد الطلبات (M — محاكي PostgREST حتمي، `max_rows`=1000، VM الاختبار؛ ليس شبكة مستضافة ولا Samsung)
+السيناريو: فتح القائمة؛ ستة تعديلات منفصلة (حذف Request ثم Offer ثم Owner ثم Office ثم Broker ثم Watchman، كلٌّ يستقر)؛ ثم حذف Quotation واحد.
+
+| عروض الأسعار | الفتح | بعد الستة — قبل | بعد الستة — بعد | حذف Quotation (قبل = بعد) |
+|---|---|---|---|---|
+| 0 | 1 | 6 طلبات / 12 B | **0 / 0 B** | 1 |
+| 3 | 1 | 6 / 7,986 B | **0 / 0 B** | 1 |
+| 1,200 | 3 | 18 / 3,247,776 B | **0 / 0 B** | 3 |
+| 10,000 | 20 | **120 / 27,113,484 B** | **0 / 0 B** | 20 |
+- «قبل» = الكود عند `f717951` بالاختبار نفسه (تشغيل أحمر)؛ «بعد» = بعد Q-1b. إشارات كثيرة أثناء قراءة: **قبل** إشارات الست وحدها ⇒ قراءة إضافية كاملة؛ **بعد** ⇒ لا شيء؛ إشارات Quotation متعددة ⇒ قراءة إضافية **واحدة** (قبل = بعد).
+
+### الأدلة (شغّلها الوكيل بتفويض هذه المهمة)
+- **أحمر أولاً:** `quotation_list_type_aware_refresh_test` على الكود دون تغيير ⇒ **13 إخفاقاً** (كلها قراءات بعد أنواع أخرى أو إشارات بلا نوع)؛ اختبارات الحفظ (إنشاء/تعديل/حذف، التجميع، الإشارة بلا نوع، إشارات متعددة، التحديث الصريح، الإغلاق، تبديل الحساب أثناء القراءة) نجحت على الـ HEAD = **سلوك محفوظ**.
+- **جديد `test/quotation/quotation_list_type_aware_refresh_test.dart` — 23/23** (مصدرو الإشارة الحقيقيون على عميل واحد): القائمة تقرأ `quotations` وحدها؛ كل مصدر في `lib/` يسمّي نوعه، كل حفظ/تعديل/حذف من الست يسمّي **نوعه هو**، إشارتا Quotation = `quotation`؛ حذف من الأنواع الست ⇒ **0** قراءة (1,200 صف)؛ إنشاء/تعديل/حذف Quotation ⇒ قراءة كاملة لكل منها بالحقول الجديدة؛ حفظ مجمّع ⇒ قراءة واحدة؛ إشارة بلا نوع ⇒ قراءة؛ 3 حذف Quotation + 6 أنواع أخرى أثناء قراءة ⇒ قراءة إضافية واحدة؛ أنواع أخرى فقط أثناء قراءة ⇒ لا شيء؛ التحديث الصريح ⇒ قراءة كاملة؛ فشل إعادة القراءة ⇒ القائمة باقية، toast مرة لكل سلسلة، النجاح يعيد التسليح، الأنواع الأخرى لا تسبب قراءة/فشلاً؛ فشل أول تحميل ⇒ حالة الخطأ بلا toast؛ جلسة مُزاحة ⇒ رفض بعد إشارة Quotation فقط، بلا فراغ كاذب، بلا فحص جلسة بعد الأنواع الأخرى؛ حساب آخر ⇒ لا قراءة بعد الأنواع الأخرى، وقراءته هو (`owner_id=eq.B`) بعد إشارة Quotation؛ تبديل الحساب أثناء قراءة مرقّمة ⇒ لا صفحة 2 ولا نتيجة متأخرة؛ خروج ⇒ لا طلب، ثم الحساب نفسه بجلسة جديدة ⇒ قراءة بعد Quotation فقط؛ إغلاق الشاشة ⇒ لا قراءة أياً كانت الإشارة، وإغلاق أثناء قراءة ⇒ لا صفحة تالية؛ حقول البطاقة كما كانت؛ قياسات.
+- **جديد `test/services/core_entity_mutation_notifier_test.dart` — 5/5:** `changes` يسلّم كل الأنواع + بلا نوع؛ `changesTo(quotation)` يسلّم Quotation وبلا نوع فقط؛ أي نوع آخر بالمثل؛ التسليم متزامن؛ المستمع الملغى لا يستلم.
+- **الطفرات 8/8 التُقطت** (كل ملف أُعيد بـ SHA-256 مطابق، ومُتحقَّق بـ `sha256sum -c`): M1 القائمة تستمع لكل الإشارات (7 إخفاقات)؛ M2 الفلتر يُسقط الإشارة بلا نوع (3)؛ M3 الفلتر يمرّر كل شيء (8)؛ M4 إشارة Quotation المفردة بنوع Office (11)؛ M5 الإشارة المجمّعة بنوع Office (2)؛ M6 حذف Owner بنوع Quotation (7)؛ M7 مساعد الحذف يتجاهل نوعه (8)؛ M8 `saveOffice` بنوع Offer (1 — يلتقطه اختبار المصدر وحده، إذ لا أثر سلوكي له على Quotations).
+- **انحدار مركّز — 1,889/1,889:** `test/quotation` كاملاً (**الحسابات** `add_quotation_viewmodel_test`، **PDF/الوسائط** `quotation_service_test`/`quotation_media_workflow_test`/`r2_quotation_media_service_test`، ترقيم Q-1a، toast Q-1a، المُحوِّل، إزالة الإرث) + `test/services/core_entity_mutation_notifier_test` + `test/lists` كاملاً (القوائم الست، الحذف المؤكَّد، تدفق التحديث، الكاش) + `test/home` + `test/search` + كل اختبارات `test/map` التي تستخدم الإشارة + `favorites_request_count_test` + `offer_media_save_test` + `owner_media_test` + `related_items_service_test` + `r2_search_favorites_responsive_test` + `test/perf/list_open_baseline_test`. بعد آخر تعديل (مسافات/import فقط) أُعيد الملفان الجديدان ⇒ **28/28**.
+- **Analyzer** (6 ملفات) ⇒ No issues. **Format 3.5:** الملفات الإنتاجية 0 / 0 / 0 / 22 سابقة = الـ HEAD (لا جديد)؛ الاختباران الجديدان مُنسّقان. **`git diff --check`** نظيف؛ CRLF.
+
+### السلوك المحفوظ
+قراءة كاملة بعد إنشاء/تعديل/شعار/PDF/حذف Quotation؛ الإشارة المجمّعة الواحدة للحفظ؛ قراءة واحدة في كل مرة + قراءة إضافية واحدة لما وصل أثناءها؛ التحديث الصريح؛ ترقيم Q-1a (500/صفحة، عدّ دقيق، 20,000) وتأكيد الفراغ؛ إبقاء القائمة عند الفشل وtoast المرة الواحدة؛ حالة الخطأ لأول تحميل؛ فحوص الحساب/الجلسة بين الصفحات (`ListSessionNotCurrent`)؛ إيقاف القراءة عند إغلاق الشاشة؛ القوائم الست وأعداد Home وSearch وMap تستمع لكل الإشارات كما كانت؛ عدّ Home القديم عبر `getUserQuotations().first` بلا تغيير.
+
+### الحدود الباقية
+- **الإشارة محلية للعملية فقط** (كما كانت): تغييرات من جهاز آخر لا تصل إلى القائمة حتى إعادة فتحها — لا تغيير.
+- **أثر جانبي مقصود:** قبل Q-1b كان تعديل كيان آخر يعيد قراءة Quotations «مجاناً» بعد فشل تحديث سابق (فيتعافى) أو يكتشف جلسة مُزاحة؛ الآن التعافي يحدث بأول تعديل Quotation أو بإعادة فتح الشاشة، والجلسة المُزاحة يكتشفها `AppSessionCoordinator` وبقية الشاشات كما كان.
+- **الإشارة بلا نوع ما زالت تعيد القراءة** (افتراض آمن)؛ لا يوجد مصدر كهذا في `lib/` اليوم، واختبار المصدر يمنع إضافته دون نوع.
+- **غير مُتحقَّق مستضافاً ولا على Samsung:** يُضاف **D-55** إلى §7N؛ ترقيم Quotations المستضاف ما زال ضمن **P4.3-ACCEPT-NONEMPTY (OPEN)**.
+
+**الملفات (غير مدمجة):** `lib/src/services/core_entity_mutation_notifier.dart`؛ `lib/src/services/supabase_core_entities_service.dart`؛ `lib/src/views/Screens/home/quotation/services/quotation_service.dart`؛ `lib/src/views/Screens/home/quotation/services/supabase_quotation_service.dart`؛ جديد `test/quotation/quotation_list_type_aware_refresh_test.dart`؛ جديد `test/services/core_entity_mutation_notifier_test.dart`؛ وهذا الملف.
+
+**الحالة:** **Q-1b = CODE_PROVEN — STAGING_UNVERIFIED، REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit (المالك يدفع). **NEXT (مرحلة منفصلة تحتاج موافقة):** **Q-2 — نسخة Quotations المحلية المشفّرة (Offline)** — تصميم وموافقة أمان/منتج أولاً؛ الحسابات وPDF ومسارات الملفات محمية. **STOP:** لا Q-2 تلقائياً؛ لا commit/push؛ Samsung DEFERRED.
 
 ---
 

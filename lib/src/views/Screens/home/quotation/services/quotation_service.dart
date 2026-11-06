@@ -66,7 +66,7 @@ class QuotationService {
     if (_mutationBatchDepth > 0) {
       _mutationSignalPending = true;
     } else {
-      CoreEntityMutationNotifier.notify();
+      CoreEntityMutationNotifier.notify(CoreEntityKind.quotation);
     }
   }
 
@@ -82,7 +82,7 @@ class QuotationService {
       _mutationBatchDepth--;
       if (_mutationBatchDepth == 0 && _mutationSignalPending) {
         _mutationSignalPending = false;
-        CoreEntityMutationNotifier.notify();
+        CoreEntityMutationNotifier.notify(CoreEntityKind.quotation);
       }
     }
   }

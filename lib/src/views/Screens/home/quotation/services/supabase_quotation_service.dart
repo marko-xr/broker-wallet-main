@@ -284,10 +284,13 @@ class SupabaseQuotationService implements QuotationRemote {
     }
   }
 
-  /// The rows now, then again after every core-entity mutation in this
-  /// process (create, update, media change, delete). A failed re-read is
-  /// delivered as an error event and the stream keeps listening; a failed
-  /// first read ends the stream. Reads run one at a time.
+  /// The rows now, then again after every Quotation mutation in this process
+  /// (create, update, media change, delete) and after any mutation that does
+  /// not say what it changed. A Request, Offer, Owner, Office, Broker or
+  /// Watchman change cannot alter a Quotation row (no join, foreign key or
+  /// trigger links them), so it no longer re-reads the list (Q-1b). A failed
+  /// re-read is delivered as an error event and the stream keeps listening; a
+  /// failed first read ends the stream. Reads run one at a time.
   @override
   Stream<List<QuotationModel>> watchQuotations() {
     late final StreamController<List<QuotationModel>> controller;
@@ -332,7 +335,8 @@ class SupabaseQuotationService implements QuotationRemote {
     controller = StreamController<List<QuotationModel>>(
       onListen: () {
         mutations =
-            CoreEntityMutationNotifier.changes.listen((_) => unawaited(read()));
+            CoreEntityMutationNotifier.changesTo(CoreEntityKind.quotation)
+                .listen((_) => unawaited(read()));
         unawaited(read());
       },
       onCancel: stopListening,

@@ -191,7 +191,7 @@ class SupabaseCoreEntitiesService {
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.request);
     return id;
   }
 
@@ -209,7 +209,7 @@ class SupabaseCoreEntitiesService {
       payload: payload,
       areas: model.selectedAreas,
     );
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.request);
   }
 
   Stream<List<RequestModel>> getRequests() => _refreshedStream(_fetchRequests);
@@ -282,7 +282,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteRequest(String id) => _softDeleteAndNotify('requests', id);
+  Future<void> deleteRequest(String id) =>
+      _softDeleteAndNotify('requests', id, CoreEntityKind.request);
 
   // -------------------------------------------------------------------------
   // Offers
@@ -308,7 +309,7 @@ class SupabaseCoreEntitiesService {
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
     return id;
   }
 
@@ -326,7 +327,7 @@ class SupabaseCoreEntitiesService {
       payload: payload,
       areas: model.selectedAreas,
     );
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
   }
 
   Stream<List<OfferModel>> getOffers() => _refreshedStream(_fetchOffers);
@@ -743,7 +744,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteOffer(String id) => _softDeleteAndNotify('offers', id);
+  Future<void> deleteOffer(String id) =>
+      _softDeleteAndNotify('offers', id, CoreEntityKind.offer);
 
   // -------------------------------------------------------------------------
   // Owners
@@ -758,7 +760,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('owner.create', 'owners', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
     return id;
   }
 
@@ -768,7 +770,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.owner(model, id: id, ownerId: ownerId),
     );
     await _update('owner.update', 'owners', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
   }
 
   Stream<List<OwnerModel>> getOwners() => _refreshedStream(_fetchOwners);
@@ -811,7 +813,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteOwner(String id) => _softDeleteAndNotify('owners', id);
+  Future<void> deleteOwner(String id) =>
+      _softDeleteAndNotify('owners', id, CoreEntityKind.owner);
 
   // -------------------------------------------------------------------------
   // Offices
@@ -826,7 +829,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('office.create', 'offices', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.office);
     return id;
   }
 
@@ -836,7 +839,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.office(model, id: id, ownerId: ownerId),
     );
     await _update('office.update', 'offices', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.office);
   }
 
   Stream<List<OfficeModel>> getOffices() => _refreshedStream(_fetchOffices);
@@ -876,7 +879,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteOffice(String id) => _softDeleteAndNotify('offices', id);
+  Future<void> deleteOffice(String id) =>
+      _softDeleteAndNotify('offices', id, CoreEntityKind.office);
 
   // -------------------------------------------------------------------------
   // Brokers
@@ -891,7 +895,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('broker.create', 'brokers', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
     return id;
   }
 
@@ -901,7 +905,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.broker(model, id: id, ownerId: ownerId),
     );
     await _update('broker.update', 'brokers', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
   }
 
   Stream<List<BrokerModel>> getBrokers() => _refreshedStream(_fetchBrokers);
@@ -935,7 +939,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteBroker(String id) => _softDeleteAndNotify('brokers', id);
+  Future<void> deleteBroker(String id) =>
+      _softDeleteAndNotify('brokers', id, CoreEntityKind.broker);
 
   // -------------------------------------------------------------------------
   // Watchmen
@@ -950,7 +955,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('watchman.create', 'watchmen', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
     return id;
   }
 
@@ -960,7 +965,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.watchman(model, id: id, ownerId: ownerId),
     );
     await _update('watchman.update', 'watchmen', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
   }
 
   Stream<List<WatchmenModel>> getWatchmen() => _refreshedStream(_fetchWatchmen);
@@ -1002,7 +1007,7 @@ class SupabaseCoreEntitiesService {
       );
 
   Future<void> deleteWatchman(String id) =>
-      _softDeleteAndNotify('watchmen', id);
+      _softDeleteAndNotify('watchmen', id, CoreEntityKind.watchman);
 
   // -------------------------------------------------------------------------
   // Reads of several records by id (Favorites)
@@ -1435,9 +1440,10 @@ class SupabaseCoreEntitiesService {
     throw const CoreEntityNotDeleted();
   }
 
-  Future<void> _softDeleteAndNotify(String table, String id) async {
+  Future<void> _softDeleteAndNotify(
+      String table, String id, CoreEntityKind kind) async {
     await _softDelete(table, id);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(kind);
   }
 }
 

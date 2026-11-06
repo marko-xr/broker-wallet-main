@@ -22,6 +22,11 @@ class LocalQuotationService implements QuotationService {
     return events.stream.map((rows) => rows);
   }
 
+  /// The list screen's stream (Q-2b); layout tests have no saved copy.
+  @override
+  Stream<List<QuotationModel>> watchUserQuotationsLocalFirst() =>
+      getUserQuotations();
+
   @override
   dynamic noSuchMethod(Invocation invocation) {
     unexpectedCalls++;

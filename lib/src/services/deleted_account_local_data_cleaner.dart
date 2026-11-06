@@ -12,6 +12,7 @@ import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/services/offers_local_cache.dart';
 import 'package:broker_wallet/src/services/offices_local_cache.dart';
 import 'package:broker_wallet/src/services/owners_local_cache.dart';
+import 'package:broker_wallet/src/services/quotations_local_cache.dart';
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/services/watchmen_local_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
@@ -50,7 +51,12 @@ typedef OfferMediaUploadPurger = Future<int> Function(String ownerId);
 ///    name is unique to this uid and can never be a different, currently
 ///    signed-in account's box;
 ///  * that account's encrypted Favorites copy and its key
-///    ([FavoritesLocalCache]), and its decrypted copy in memory.
+///    ([FavoritesLocalCache]), and its decrypted copy in memory;
+///  * that account's encrypted copies of its six entity lists and of its
+///    Quotations list ([QuotationsLocalCache]), with their keys.
+///
+/// Not yet: the Quotation PDF copies in the documents folder, which carry no
+/// account (tracker §7AX, Q-2c).
 ///
 /// Only when the deleted account was the one signed in on this device, because
 /// these single-slot caches belong to whichever account was signed in:
@@ -124,6 +130,7 @@ class DeletedAccountLocalDataCleaner {
     await _step(() => const OfficesLocalCache().forgetAccount(deletedUid));
     await _step(() => const BrokersLocalCache().forgetAccount(deletedUid));
     await _step(() => const WatchmenLocalCache().forgetAccount(deletedUid));
+    await _step(() => const QuotationsLocalCache().forgetAccount(deletedUid));
     await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 
     // Queued uploads first, so none keeps sending a deleted account's file.

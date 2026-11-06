@@ -46,7 +46,10 @@ class QuotationListViewModel extends ChangeNotifier {
     // and the next successful read (or an authoritative empty list) replaces
     // it.
     var delivered = false;
-    _quotationsStream = _quotationService.getUserQuotations().transform(
+    // Q-2b: the saved copy first, then the server's list (D-Q5: a failure
+    // after the saved copy is said once, as for any shown list).
+    final service = _quotationService;
+    _quotationsStream = service.watchUserQuotationsLocalFirst().transform(
           StreamTransformer<List<QuotationModel>,
               List<QuotationModel>>.fromHandlers(
             handleData: (quotations, sink) {

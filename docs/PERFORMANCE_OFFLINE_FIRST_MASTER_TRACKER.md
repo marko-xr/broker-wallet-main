@@ -993,6 +993,7 @@
 | D-53 | P3.1c (§7AC) | Home بأعداد ظاهرة؛ Samsung في الخلفية؛ دخول بالحساب نفسه على جهاز آخر؛ ثم إعادة Samsung إلى المقدمة (وسحب Home) | لا تصير الأعداد أصفاراً؛ يظهر حوار الإزاحة/الخروج المعتاد؛ بعد إعادة الدخول تظهر الأعداد المحفوظة ثم الحقيقية؛ حساب جديد فارغ يظهر بأصفار | PENDING |
 | D-54 | P3.1d (§7AE) | حذف سجل من قائمة ثم قطع الشبكة فوراً؛ ثم إغلاق التطبيق وفتحه offline والقائمة نفسها؛ ثم إعادة الشبكة | السجل المحذوف لا يظهر offline ولا بعد إعادة التشغيل؛ بعد الشبكة تظهر قائمة الخادم كما هي؛ حذف رُفض (إزاحة/حساب آخر) لا يُخفي شيئاً | PENDING |
 | D-55 | Q-1a + Q-1b (§7AV، §7AW) | قائمة Quotations مفتوحة تحت شاشة أخرى؛ تعديل/حذف Owner وOffer ثم العودة؛ ثم إنشاء وتعديل وحذف عرض سعر؛ ثم قطع الشبكة وتعديل عرض سعر | لا قراءة ولا toast بعد تعديل Owner/Offer؛ القائمة تتحدث بعد كل تعديل Quotation؛ عند الفشل تبقى القائمة وtoast مرة واحدة | PENDING (DEFERRED) |
+| D-56 | Q-2b (§7AX) | فتح Quotations بشبكة ثم وضع الطيران وإعادة فتح الشاشة ثم إعادة تشغيل التطبيق داخل جلسة معتمدة؛ ثم استئناف مع عودة الشبكة؛ ثم حذف عرض سعر offline-بعد-حذف؛ ثم تبديل الحساب؛ ثم حذف حساب الاختبار؛ وزمن ظهور قائمة كبيرة | النسخة تظهر فوراً وتبقى مع toast مرة؛ تتحدث عند العودة؛ المحذوف لا يعود؛ الحساب الآخر لا يرى شيئاً؛ الحذف يمسح `cached_quotations_<uid>` ومفتاحه | PENDING (DEFERRED) |
 
 ---
 
@@ -3084,6 +3085,161 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 **الملفات (غير مدمجة):** `lib/src/services/core_entity_mutation_notifier.dart`؛ `lib/src/services/supabase_core_entities_service.dart`؛ `lib/src/views/Screens/home/quotation/services/quotation_service.dart`؛ `lib/src/views/Screens/home/quotation/services/supabase_quotation_service.dart`؛ جديد `test/quotation/quotation_list_type_aware_refresh_test.dart`؛ جديد `test/services/core_entity_mutation_notifier_test.dart`؛ وهذا الملف.
 
 **الحالة:** **Q-1b = CODE_PROVEN — STAGING_UNVERIFIED، REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit (المالك يدفع). **NEXT (مرحلة منفصلة تحتاج موافقة):** **Q-2 — نسخة Quotations المحلية المشفّرة (Offline)** — تصميم وموافقة أمان/منتج أولاً؛ الحسابات وPDF ومسارات الملفات محمية. **STOP:** لا Q-2 تلقائياً؛ لا commit/push؛ Samsung DEFERRED.
+
+---
+
+## 7AX) Q-2a — تصميم Quotations Offline-First وفحص أمني مسبق — 2026-11-07 (DESIGN؛ لا تغيير كود؛ ينتظر موافقة المالك)
+
+**Git (مُتحقَّق):** `perf/phase-1-startup-baseline` @ `2a75427` = `origin` (0/0 بعد `git fetch`)؛ stashes الاثنان باقيان؛ ملفات plugin الثلاثة و`docs/ADD_DETAILS_*` لم تُلمس. **هذا القسم وحده تغيّر.**
+
+### 1) تدقيق البيانات (S — من المصدر والهجرات)
+- **مسار القائمة اليوم:** `QuotationListViewModel` ← `QuotationService.getUserQuotations()` ← `SupabaseQuotationService.watchQuotations()` (Q-1a ترقيم كامل؛ Q-1b `changesTo(quotation)`) ⇒ **خادم فقط، لا نسخة محلية**؛ offline ⇒ حالة الخطأ في أول فتح. `getUserQuotations().first` يستعمله أيضاً مسار عدّ Home القديم (`home_viewmodel.dart:441`).
+- **التفاصيل = نموذج التعديل:** النقر ⇒ `/add-quotation?mode=edit&id=<id>` ⇒ `AddQuotationViewModel.loadForEdit()` ⇒ `getQuotationById` (التجميع كاملاً من الخادم) + اسم الشعار وروابط موقّعة. offline ⇒ حالة `loadFailed` القائمة. **لا يستعمل نموذج القائمة إلا `id`.**
+- **الحسابات:** `totalAmount` وبقية المبالغ **قيم يدخلها المستخدم** في `AddQuotationViewModel` وتُرسل كما هي إلى `save_quotation`؛ الخادم يحفظها ويفرض القيود (`numeric(14,2)`، غير سالبة، الأقساط > 0، العملة كبيرة). **لا مبلغ يُشتق في القائمة**؛ `AdministrativeFees.total` وحده يُحسب عند إعادة الفتح (مجموع البنود) — في التفاصيل لا في القائمة.
+
+**تصنيف الحقول** (القائمة تقرأ `listColumns` الـ 14 فقط):
+
+| الحقل | البطاقة | التفاصيل | مالي | مشتق | من الخادم | PDF/وسائط | يُحفظ محلياً (اقتراح) |
+|---|---|---|---|---|---|---|---|
+| `id` | مفتاح/تنقل | نعم | — | — | نعم | — | **نعم** |
+| `owner_id` → `userId` | فحص الحساب | — | — | — | نعم | — | **نعم** (فحص الملكية) |
+| `property_title` | نعم | نعم | — | — | نعم | في PDF | **نعم** |
+| `property_type` | نعم | نعم | — | — | نعم | في PDF | **نعم** |
+| `display_date` | نعم | نعم | — | — | نعم | في PDF | **نعم** |
+| `total_amount` | نعم (`aed` + `toStringAsFixed(2)`) | نعم | **نعم** | لا (مُدخل) | نعم | في PDF | **نعم — قرار D-Q1** |
+| `number_of_installments` | نعم | نعم | **نعم** | لا | نعم | في PDF | **نعم — D-Q1** |
+| `currency_code` | لا (البطاقة تعرض `aed` ثابتاً) | نعم | **نعم** | لا | نعم | في PDF | **نعم — D-Q1** (المبلغ بلا عملته بيانات ناقصة) |
+| `office_name` | نعم | نعم | — | — | نعم (نص محفوظ) | في PDF | **نعم** |
+| `pdf_media_id` | `hasPdf` + فتح/مشاركة | — | — | — | نعم (RPC وسائط) | **نعم** | **نعم — قرار D-Q2** |
+| `office_logo_media_id` | لا | الشعار | — | — | نعم | **نعم** | **لا** |
+| `version` | لا | التحرير (يُقرأ من الخادم) | — | — | نعم | — | **لا** |
+| `created_at` / `updated_at` | ترتيب/النموذج يتطلبهما | — | — | — | نعم | — | **نعم** (المُنشئ يتطلبهما؛ هوية الترتيب) |
+| بقية التجميع: `professional_fee`، `insurance_*`، `payment_type`، الدفعات، الرسوم الحكومية/الإدارية، `custom_note`، رسالة الترحيب، `subtitle`، `parking`، تواريخ البداية/النهاية | — | نعم | **نعم** (أغلبها) | `admin total` | نعم | في PDF | **لا — لا تقرأها القائمة أصلاً** |
+| `officeLogoUrl`، روابط موقّعة، مسارات ملفات | — | عرض مؤقت | — | — | — | — | **لا أبداً** |
+
+### 2) التصميم الأمني — أصغر امتداد للنواة القائمة (لا نظام تشفير جديد)
+- **`QuotationsLocalCache extends EncryptedAccountListCache<QuotationModel>`** (نسخة من نمط `OfficesLocalCache`، ~60 سطراً): `boxPrefix = 'cached_quotations_'`، مفتاح `quotations_cache_key_v1_<uid>` (`SecureAccountCacheKeyStore`: Keystore/Keychain)، `listKey = 'quotations_v1'`، `ownerOf = userId`، `idOf = id`، encode/decode **للحقول الـ 12 الموسومة «نعم» فقط**.
+- **موروث كما هو بلا تعديل:** AES-256 لكل حساب؛ غلاف v2 مُصادَق (HMAC، D-3)؛ مجلد `app_flutter/offline_lists` المستثنى من النسخ الاحتياطي ونقل الجهاز (Android — القاعدة قائمة، **لا تغيير XML**)؛ D-1a نقل الصندوق القديم (لا يوجد صندوق قديم)؛ D-2 الاستعادة بعد قراءة خادم مُعتمدة فقط؛ فشل مغلق عند مفتاح مفقود/خاطئ/صندوق تالف (لا قراءة ولا كتابة)؛ حجب السلامة لعلامات تالفة؛ إسقاط سجلات حساب آخر عند الحفظ والقراءة.
+- **`localFirstList`** يوفّر الباقي حرفياً: النسخة المحفوظة **للحساب المسجّل فقط**؛ كل جواب مربوط **بجلسة بدء القراءة** (خروج ثم دخول — ولو للحساب نفسه — ⇒ الجواب المتأخر يُسقط ولا يُحفظ والقائمة تتوقف)؛ **القائمة الفارغة لا تُقبل ولا تُحفظ إلا بعد تأكيد الجلسة** (الجلسة المُزاحة تُجاب بلا صفوف)؛ قائمة الخادم تستبدل المحفوظة كاملة (الفارغة الموثوقة تُحفظ فارغة)؛ لا شيء يُحفظ عند الفشل (فشل الصفحة 2 ⇒ لا قائمة ⇒ المحفوظة كما هي)؛ وقت آخر قراءة (`serverReadAt`، P2.5c) مؤشر لا سلطة.
+- **SAD والإقلاع البارد:** بلا تغيير — شاشة Quotations لا تُبلغ قبل بوابة الجلسة (الإقلاع البارد offline يتوقف عند Retry كما في P1)؛ الكاش ليس سلطة وصول.
+- **فحص التصادم (S):** لا `cached_quotations_` ولا `quotations_cache_key` في `lib/` ولا في تاريخ git (`git log -S` فارغ)؛ بادئات الست + Favorites مختلفة؛ صناديق Hive الأخرى (`pending_uploads`، `local_media`، `local_profile`، `pending_profile_uploads`، analytics، offline_data) لا تتقاطع؛ ملفات PDF `quotation_<id>_<mediaId>.pdf` في **جذر** المستندات و`QuotationPdfCache` يمسح الجذر بلا تعمّق ⇒ لا تقاطع مع `offline_lists/`.
+- **Delete Account:** `DeletedAccountLocalDataCleaner` يمسح كاش الست بـ `forgetAccount` ⇒ **Q-2b يضيف سطراً لـ `QuotationsLocalCache`**.
+- **فجوة خاصة بـ Quotations (S، حاسمة لـ Q-2b):** `localFirstList` يعيد المحاولة ويستمع لإشارات الاستئناف/الشبكة فقط بعد `isRetryableListError` (Socket/Timeout/Handshake/Http/ClientException). لكن `SupabaseQuotationService._translate` يحوّل فشل الشبكة إلى **`QuotationException(network)`** ⇒ بلا معالجة، **أول فشل شبكة يوقف إعادة المحاولة وإشارات العودة نهائياً** لقائمة Quotations ⇒ **قرار D-Q4**.
+- **فجوة الحذف المؤكد (S):** علامات الحذف (P3.1d، لا تُتقاعد أبداً) تُكتب فقط عبر `deleteThenRemember` بعد حذف **أكّده الخادم**. `SupabaseQuotationService.softDelete` يطلب `select('id')` **ويتجاهل النتيجة** (نجاح بلا صف = نجاح — كالست قبل P3.1a) ⇒ علامة بعد حذف غير مؤكد قد تُخفي عرض سعر حياً في النسخة المحلية ⇒ **قرار D-Q3**.
+
+### 3) السلامة المالية
+- النسخة المحلية **لقطة تاريخية لقيم خزّنها الخادم**، لا سلطة: لا حساب ولا PDF ولا حفظ ولا تحقق يقرأ منها؛ القيم تُعرض كما أرسلها الخادم (double من `numeric(14,2)`، بلا تقريب جديد؛ البطاقة تبقى `toStringAsFixed(2)`).
+- **لا كتابة offline** (لا إنشاء/تعديل/حذف/طابور مزامنة)؛ الحفظ يبقى `save_quotation` مع `expectedVersion` على الخادم.
+- **التفاصيل لا تُحمَّل من النسخة المحلية** (نموذج تعديل؛ تحميل لقطة قديمة في نموذج قابل للحفظ = خطر خلط) ⇒ تبقى من الخادم.
+- **الإشارة إلى القِدم بلا واجهة جديدة:** فتح offline بنسخة محفوظة ⇒ تُعرض النسخة ثم يأتي فشل القراءة ⇒ **toast Q-1a القائم مرة واحدة** (`quotationListLoadFailed`) — هذا الإشعار الوحيد المتاح دون نص/تصميم جديد ⇒ **قرار D-Q5**. لا ادعاء «حالي» في أي مكان.
+- **حقل يحتاج قراراً منفصلاً:** `total_amount` + `number_of_installments` + `currency_code` (D-Q1). البقية المالية **لا تُحفظ** (القائمة لا تقرأها).
+- **ملاحظة واجهة (backlog، لا تنفيذ):** البطاقة تعرض `aed` ثابتاً لا `currency_code` — سلوك قائم سابق.
+
+### 4) حدود PDF والتفاصيل (S)
+- **مكان الملفات:** `getApplicationDocumentsDirectory()` **الجذر** (`app_flutter/` على Android، Documents على iOS): `quotation_<id>_<mediaId>.pdf` (`QuotationPdfCache`) + ملف التوليد المؤقت `quotation_<id>.pdf` (`pdf_generation_service.dart:244`) قبل `adopt` (قد يبقى إن انقطع الحفظ).
+- **غير مشفّرة**؛ **ليست لكل حساب** (المعرّف UUID لا يتصادم، لكن الملف يبقى بعد الخروج/تبديل الحساب)؛ **غير مستثناة من النسخ الاحتياطي** (Android: `backup_rules.xml`/`data_extraction_rules.xml` تستثني مجلدات محددة فقط، الجذر ليس منها؛ iOS: لا `isExcludedFromBackup` لها)؛ **Delete Account لا يحذفها** (المنظِّف لا يذكرها)؛ الحذف من القائمة يحذف نسخة ذلك العرض (`purge`).
+- **المحتوى:** PDF يحمل التجميع المالي كاملاً (الرسوم، الدفعات، التأمين، الملاحظات، رسالة الترحيب، اسم/شعار المكتب) ⇒ **أشد حساسية من حقول القائمة**.
+- **إعادة الفتح offline:** `resolvePdfFile` يعيد النسخة المحلية **قبل أي شبكة** إن طابقت `pdfMediaId` ⇒ **مع D-Q2 = نعم**، ملف نُزّل سابقاً يُفتح/يُشارك offline تلقائياً (لا كود PDF جديد). `pdfMediaId` قديم (PDF أُعيد توليده من جهاز آخر) ⇒ يُفتح **الإصدار المحلي الأقدم بالضبط** (اسم الملف يحمل المعرّف) — لقطة تاريخية أيضاً.
+- **التوصية:** **Q-2b = القائمة فقط.** **Q-2c (منفصل، يحتاج تصميماً وموافقة):** نقل ملفات PDF إلى مجلد لكل حساب (`app_flutter/quotation_pdfs/<uid>/`)، استثناؤه من النسخ (Android XML + iOS)، مسحه في Delete Account (وقرار الخروج)، ترحيل/تنظيف الملفات الجذرية القديمة وملف التوليد المتبقي، وقرار تشفيرها. **تفاصيل offline للقراءة فقط** = واجهة جديدة ⇒ قرار منتج منفصل (Q-2d أو لاحقاً).
+
+### 5) التحديث والأداء
+- **الربط:** `QuotationService.watchUserQuotationsLocalFirst()` = `localFirstList(server: _remote.watchQuotations, cache: QuotationsLocalCache(), currentUserId: authRepository.currentUserId)` — مطابق للست. **`getUserQuotations()` يبقى خادماً فقط** (عدّ Home القديم بـ `.first` لا يجوز أن يأخذ النسخة المحلية).
+- **Q-1a:** الترقيم وتأكيد الفراغ في `_listQuotations` بلا تغيير؛ فشل أي صفحة ⇒ لا قائمة ⇒ لا حفظ. **ملاحظة قياس:** قائمة فارغة تُؤكَّد مرتين (الخدمة ثم `localFirstList`) ⇒ طلب تحقق جلسة إضافي **فقط لحساب بلا عروض** — يُقاس في Q-2b، لا يُزال دون قرار.
+- **Q-1b:** إعادات القراءة بعد تعديل Quotation تمر عبر التدفق نفسه وتُحفظ؛ الأنواع الست لا تسبب قراءة ولا كتابة.
+- **التحديث الصريح:** `refreshQuotations()` يعيد إنشاء التدفق ⇒ النسخة المحفوظة ثم الخادم.
+- **الاستئناف/عودة الشبكة:** إشارات `ListRefreshSignals` الافتراضية — **تعمل فقط بعد D-Q4**.
+- **الخطأ/toast:** محوّل Q-1a في الـ VM بلا تغيير: النسخة المحفوظة تُعدّ «قائمة مُسلّمة» ⇒ فشل لاحق = toast مرة (D-Q5)؛ بلا نسخة وفشل ⇒ حالة الخطأ كما هي.
+- **الإغلاق/الحساب/الجلسة:** `localFirstList` (إلغاء، لا قراءة خادم إن أُغلقت الشاشة أثناء قراءة النسخة) + `stillWanted` و`ListSessionNotCurrent` من Q-1a.
+- **القوائم الكبيرة:** حتى 20,000 (حد P4). تقدير الحمولة (من قياس Q-1a ~452 B/صف لـ 14 عموداً): **~8–9 MB JSON** مشفّر في مدخل واحد عند 20,000 (Q-1a: 4.52 MB لكل 10,000 صف) — مثل الست (P4.7b/c: تخطي إعادة الكتابة المطابقة، إعادة استعمال الغلاف المُتحقَّق). **لا ادعاء لزمن الإطار الأول** — يُقاس في Q-2b على VM ثم Samsung.
+
+### 6) قرارات المالك المطلوبة
+- **D-Q1:** حفظ `total_amount` و`number_of_installments` و`currency_code` (لقطة مالية مشفّرة، للبطاقة) — **توصية: نعم** (البطاقة بدونها ناقصة؛ الحساسية مماثلة لهواتف Owners المحفوظة أصلاً).
+- **D-Q2:** حفظ `pdf_media_id` (يفعّل فتح/مشاركة PDF نُزّل سابقاً offline — ملف غير مشفّر موجود أصلاً) — **توصية: نعم**، مع Q-2c لاحقاً لحماية الملفات. البديل: عدم حفظه ⇒ لا شارة PDF offline (يتطلب حيلة في النموذج — غير موصى).
+- **D-Q3:** الحذف المؤكد: **(A موصى)** `softDelete` يتحقق من الصف المُعاد (و قراءة «محذوف أصلاً؟» واحدة كـ P3.1a) ثم `deleteThenRemember` ⇒ فشل كان صامتاً يصير toast `quotationDeleteFailed` القائم؛ **(B)** بلا علامات ⇒ عرض سعر محذوف قد يظهر offline حتى أول قائمة خادم ناجحة.
+- **D-Q4:** إعادة المحاولة لـ `QuotationException(network)`: **(A موصى)** معامل اختياري إضافي `isRetryable` في `localFirstList` (افتراضه `isRetryableListError` ⇒ الست بلا تغيير سلوكي) تمرّره Quotations؛ **(B)** توسيع `isRetryableListError` نفسه (أبسط لكنه يلمس منطقاً مشتركاً).
+- **D-Q5:** فتح offline بنسخة محفوظة ⇒ toast القائم مرة واحدة — **توصية: نعم** (بديل: صامت كالست).
+- **D-Q6:** Q-2c لملفات PDF (أعلاه) — **توصية: مرحلة منفصلة بعد Q-2b**.
+
+### 7) ترتيب تنفيذ Q-2b (عند الموافقة؛ لا SQL/RLS/حسابات/PDF/واجهة/تبعيات)
+1. اختبارات حمراء أولاً (أدناه).
+2. جديد `QuotationsLocalCache` (الحقول الـ 12).
+3. D-Q4: معامل `isRetryable` الإضافي في `localFirstList`.
+4. `QuotationService.watchUserQuotationsLocalFirst()`؛ `getUserQuotations()` بلا تغيير.
+5. `QuotationListViewModel` يغيّر مصدر التدفق فقط (محوّل Q-1a بلا تغيير؛ الشاشة بلا تغيير).
+6. D-Q3: حذف مؤكد + `deleteThenRemember`.
+7. `DeletedAccountLocalDataCleaner`: `QuotationsLocalCache().forgetAccount`.
+8. انحدار مركّز + طفرات + analyzer/format/`git diff --check` + هذا الملف.
+**الملفات المتوقعة:** ~5–6 إنتاجية (`quotations_local_cache.dart` جديد، `encrypted_account_list_cache.dart` [معامل إضافي فقط]، `quotation_service.dart`، `supabase_quotation_service.dart` [D-Q3]، `list_quotations_viewmodel.dart` [سطر]، `deleted_account_local_data_cleaner.dart` [سطر]).
+
+### 8) الاختبارات المطلوبة في Q-2b
+- **إعادة الفتح offline بعد قراءة ناجحة:** النسخة تظهر فوراً، ثم فشل الخادم ⇒ القائمة باقية + toast مرة.
+- **الإقلاع البارد:** بلا حساب مسجّل ⇒ لا قراءة صندوق ولا عرض؛ `currentUserId` null ⇒ خادم فقط كما الآن.
+- **العزل لكل حساب:** صندوق ومفتاح لكل uid؛ سجل `userId` آخر يُسقط عند الحفظ والقراءة؛ الحساب B لا يرى صندوق A.
+- **الحساب نفسه بجلسة جديدة / إبطال الجلسة:** جواب متأخر يُسقط ولا يُحفظ؛ قائمة فارغة لجلسة مُزاحة لا تُحفظ ولا تمسح النسخة.
+- **الكتابة المنقطعة:** فشل أثناء الحفظ ⇒ النسخة السابقة سليمة.
+- **مفتاح مفقود/خاطئ، HMAC تالف:** فشل مغلق؛ D-2 فقط بعد قراءة خادم مُعتمدة؛ علامات تالفة ⇒ حجب.
+- **قائمة فارغة موثوقة:** تُحفظ فارغة وتظهر حالة الفراغ.
+- **فشل تحديث متعدد الصفحات** (الصفحة 2 من 1,200): لا حفظ؛ المحفوظة كما هي.
+- **أمانة الحقول المالية:** `totalAmount` (0، كسور مثل 0.1/0.7، 999,999,999,999.99، null)، الأقساط، العملة — تطابق البت بعد التشفير/فك التشفير؛ البطاقة نفسها.
+- **الحقول المستبعدة لا تُكتب:** فك تشفير الحمولة في الاختبار ⇒ مفاتيحها = الـ 12 فقط (لا رسوم/دفعات/ملاحظات/شعار/روابط/مسارات).
+- **PDF/التفاصيل:** `hasPdf` من النسخة؛ PDF محلي موجود يُفتح offline بلا أي طلب؛ غير موجود ⇒ فشل `resolvePdf` القائم؛ النقر يمرّر `id` فقط والتفاصيل من الخادم.
+- **Delete Account:** يمسح صندوق Quotations ومفتاحه لذلك الحساب فقط.
+- **إعادة تشغيل الكاش:** `debugForgetProcessState` ⇒ النسخة تُقرأ وتُتحقَّق من جديد.
+- **قوائم كبيرة:** 1,200 / 10,000 / 20,000: زمن الحفظ/القراءة وبايتات الحمولة (VM)؛ تخطي إعادة الكتابة المطابقة.
+- **خاص بـ Quotations:** `QuotationException(network)` يعيد المحاولة ويستجيب للاستئناف (D-Q4)؛ عدّ Home القديم يبقى خادماً؛ Q-1b (الأنواع الست لا تقرأ ولا تكتب)؛ حذف مؤكد ⇒ علامة، غير مؤكد ⇒ لا علامة وفشل ظاهر (D-Q3)؛ الحفظ المجمّع ⇒ قراءة وحفظ واحد؛ تأكيد الفراغ المزدوج يُقاس.
+
+### 9) القبول المتبقي
+- **مستضاف:** ترقيم Quotations غير الفارغ — **P4.3-ACCEPT-NONEMPTY (OPEN)**.
+- **Samsung (DEFERRED):** D-55 (Q-1a/Q-1b) + عند Q-2b: فتح offline بعد قراءة، إعادة تشغيل التطبيق، تبديل الحساب، حذف الحساب، زمن أول إطار لقوائم كبيرة، وأثر النسخ الاحتياطي/الاستعادة (لا يمكن قراءة الصندوق المستعاد).
+- **موروث (ليس جديداً، للتوثيق):** على iOS لا يُستدعى `isExcludedFromBackup` لـ `offline_lists` (كالست) — يُراجع ضمن Q-2c أو مهمة منصّة منفصلة.
+
+**الحالة (Q-2a):** **DESIGN** — انتهى؛ القرارات أدناه.
+
+### Q-2b — التنفيذ — 2026-11-07 (CODE_PROVEN؛ غير مدمج)
+
+**موافقة المالك:** **D-Q1…D-Q6 كما أُوصي بها**: D-Q1 الحقول الـ 12 (بما فيها المبلغ/الأقساط/العملة كلقطة تاريخية)؛ D-Q2 `pdfMediaId` فقط (لا رابط موقّع ولا محتوى PDF ولا مسار ملف)؛ D-Q3 حذف مؤكد بدليل الخادم قبل أي علامة؛ D-Q4 تصنيف إعادة محاولة ضيق لـ `QuotationException(network)` دون تغيير الست؛ D-Q5 النسخة المحفوظة أولاً ثم toast القائم مرة لكل سلسلة وعلى الشاشة الظاهرة فقط؛ D-Q6 ملفات PDF مؤجلة إلى Q-2c.
+**Git:** `perf/phase-1-startup-baseline` @ `2a75427` = `origin` (0/0)؛ تعديل Q-2a على هذا الملف محفوظ؛ stashes الاثنان وملفات plugin الثلاثة و`docs/ADD_DETAILS_*` لم تُلمس.
+
+**الملفات الإنتاجية (7):**
+1. **جديد `lib/src/services/quotations_local_cache.dart`** — `QuotationsLocalCache extends EncryptedAccountListCache<QuotationModel>`: صندوق `cached_quotations_<uid>`، مفتاح `quotations_cache_key_v1_<uid>` (Keystore/Keychain)، `listKey = quotations_v1` (المدخل المخزّن `quotations_v2`، العلامات `quotations_deleted_v1`)؛ encode/decode **للحقول الـ 12 فقط**؛ `ownerOf = userId`. **لا صيغة تشفير جديدة** — AES + v2/HMAC + `offline_lists` المستثنى + D-2 + الحجب كلها موروثة.
+2. **`encrypted_account_list_cache.dart`** — معامل اختياري واحد `isRetryable` في `localFirstList` (افتراضه `isRetryableListError`؛ يُستعمل في `fail()` فقط) ⇒ **الست بلا تغيير سلوكي**.
+3. **`quotation_service.dart`** — معاملات اختيارية `localCache`/`currentUserId`/`sessionOf` (الافتراض: `authRepository.currentUserId` كالست، وجلسة التطبيق)؛ جديد `watchUserQuotationsLocalFirst()` = `localFirstList(server: getUserQuotations, …, isRetryable: isRetryableListFailure)`؛ **`getUserQuotations()` بلا تغيير (خادم فقط)**؛ `isRetryableListFailure` = العامة + `QuotationException(network)` فقط؛ `deleteQuotation` عبر `deleteThenRemember` (ثم purge PDF والإشارة كما كانا).
+4. **`supabase_quotation_service.dart`** — `softDelete` مؤكد (كـ P3.1a): `PATCH … select=id` يعيد الصف ⇒ تم؛ لا صف ⇒ قراءة واحدة `deleted_at=not.is.null` (سياسة `quotations_select_own` = المالك + بوابة الجلسة، بلا فلتر `deleted_at` ⇒ المالك يقرأ صفه المحذوف) ⇒ محذوف أصلاً = تم؛ وإلا تحقق الجلسة القائم + `QuotationException(notFound)` ⇒ VM يعرض `quotationDeleteFailed` القائم (لا PDF purge ولا إشارة).
+5. **`list_quotations_viewmodel.dart`** — المصدر فقط ⇒ `watchUserQuotationsLocalFirst()` (محوّل Q-1a بلا تغيير؛ الشاشة بلا تغيير).
+6. **`deleted_account_local_data_cleaner.dart`** — `QuotationsLocalCache().forgetAccount` + سطر توثيق (ملفات PDF ليست بعد ⇒ Q-2c).
+7. (اختبارات) **`test/responsive/r6b_quotation_fakes.dart`** — الـ fake بـ `noSuchMethod` يحتاج تمرير `watchUserQuotationsLocalFirst()`؛ **`test/quotation/supabase_quotation_service_test.dart`** — «المحذوف أصلاً نجاح» صار يتطلب القراءة المؤكِّدة (`PATCH`،`GET`) — **تغيير مقصود لعقد D-Q3**.
+**اختباران جديدان:** `test/quotation/quotation_confirmed_delete_test.dart` (6)، `test/quotation/quotation_list_local_first_test.dart` (31).
+
+**الأدلة (شغّلها الوكيل بتفويض هذه المهمة):**
+- **أحمر أولاً:** `quotation_confirmed_delete_test` على الكود دون تغيير ⇒ 4 إخفاقات (الحذف بلا صف كان «نجاحاً» صامتاً). `quotation_list_local_first_test` كان **أحمر ترجمةً** (الكاش غير موجود) — سلوكه مُثبت بالطفرات أدناه.
+- **جديد 37/37:** الحقول الـ 12 حرفياً وما سواها غائب (لا رسوم/دفعات/ملاحظات/رسائل/شعار/روابط/طريقة دفع)؛ قيم مالية وزمنية بالضبط بعد إعادة تشغيل (0، 0.1، 0.7، 999,999,999,999.99، null؛ ميكروثواني؛ الترتيب)؛ أسماء صندوق/مفتاح فريدة عن الست + Favorites والمفتاح في secure storage والصندوق في `offline_lists`؛ الست لا تتأثر؛ سجلات حساب آخر/بلا حساب لا تُحفظ؛ Keystore غير متاح ⇒ لا صندوق ولا قراءة؛ مفتاح آخر ⇒ لا قراءة والملف والمفتاح كما هما؛ **الشاشة الحقيقية**: 1,200 (3 صفحات) تُحفظ ثم تُفتح offline **قبل أي جواب** بالترتيب، تبقى، بلا حالة خطأ، toast مرة؛ بلا نسخة + offline ⇒ حالة الخطأ بلا toast؛ فشل الصفحة 2 ⇒ لا حفظ؛ فراغ مؤكد ⇒ يُحفظ فارغاً؛ فراغ جلسة مُزاحة ⇒ لا يُحفظ ولا يُعرض؛ **قياس: الفراغ يسأل تحقق الجلسة مرتين بالضبط** (قارئ Q-1a ثم `localFirstList`)، والقائمة غير الفارغة لا تسأل؛ حساب آخر لا يرى النسخة؛ بعد الخروج لا نسخة؛ **حساب آخر / الحساب نفسه بجلسة جديدة أثناء القراءة ⇒ الجواب يُسقط ولا يُحفظ**؛ إغلاق الشاشة أثناء القراءة ⇒ لا حفظ؛ Q-1b: الأنواع الست ⇒ لا قراءة ولا كتابة (البايتات نفسها)، Quotation ⇒ قراءة + حفظ؛ تغييرات متزامنة ⇒ قراءة إضافية واحدة والأخيرة تُحفظ؛ **offline ثم استئناف مع عودة الشبكة ⇒ تعافٍ** (D-Q4)؛ الافتراض لا يعيد محاولة `QuotationException(network)` (الست) ومُصنّف Quotations يعيد الشبكة فقط؛ حذف مؤكد ⇒ لا يظهر offline؛ حذف غير مؤكد ⇒ فشل وبلا علامة؛ علامات تالفة ⇒ `ListIntegrityBlocked` بلا قائمة ولا قراءة؛ HMAC تالف ⇒ لا شيء ثم قراءة خادم موثّقة تستعيد (D-2)؛ **Home: `getUserQuotations()` خادم فقط ولا يكتب**؛ بطاقة محفوظة تفتح PDF نُزّل سابقاً **بلا أي طلب**؛ Delete Account يمسح صندوق ومفتاح الحساب وحده؛ قياسات.
+- **الطفرات 11/11 التُقطت** (SHA-256 مطابق بعد كلٍّ): M0 `softDelete` كما في الـ HEAD (4)؛ M1 حقل مالي إضافي محفوظ (1)؛ M2 تقريب المبلغ عند القراءة (2)؛ M3 الشاشة تقرأ الخادم فقط (14)؛ M4 بلا مُصنّف Quotations (1)؛ M5 كل فشل Quotation يُعاد (1)؛ M6 `localFirstList` يتجاهل `isRetryable` (2)؛ M7 الحذف لا يُعلَّم (2)؛ M8 الحذف غير المؤكد يُقبل (3)؛ M9 Delete Account يُبقي الصندوق (1)؛ M10 Home يقرأ النسخة المحفوظة (1).
+- **انحدار مركّز — 2,503 نجاح / 4 إخفاقات، كلها خارج Q-2b:** `test/quotation` + `test/services` + `test/lists` + `test/home` + `test/search` + `test/favorites` + `test/account` + اختبارا auth للهوية/SAD + `test/share` + `save_cancel_buttons` + `r6b_quotations_responsive` + `perf/list_open_baseline`. الإخفاقات: (1) `supabase_quotation_service_test` «المحذوف أصلاً» = العقد القديم ⇒ **حُدِّث عمداً** (أعلاه)؛ (2) `delete_account_test` setUpAll يقرأ هجرة باسم غير موجود (`20260913000100_…`؛ الموجود `20260913175221_…`) — **خط أساس معروف**؛ (3) `delete_account_ui_test` = **FU-ACCOUNT-UI-BASELINE-1**؛ (4) `list_refresh_test` «retry في الخلفية» — **ليس تأكيداً بل teardown** (`deleteSync` على Windows: الملف مقفل) تحت الحمل؛ **ينجح منفرداً**. بعد التعديلات الأخيرة: الملفات المعنية (منها `list_refresh_test`، Q-1a/Q-1b، r6b) ⇒ **213/213**، ثم الملفان الجديدان ⇒ **37/37**.
+- **Analyzer** (10 ملفات) ⇒ No issues. **Format 3.5:** كل الملفات 0 جديد (`supabase_quotation_service.dart` 22 سابقة = الـ HEAD)؛ الجديدة مُنسّقة. **`git diff --check`** نظيف؛ CRLF.
+- **ملاحظة اختبار:** supabase 2.16.1 `from()` لا يمرّر خيارات إعادة المحاولة ⇒ كل GET يُعاد 3 مرات (1+2+4 ث) قبل فشل الشبكة؛ اختبارات offline تنتظر نتيجة الشاشة. **الإنتاج بلا تغيير**.
+
+**القياس (M — VM الاختبار، تشغيلان؛ ليس Samsung):**
+
+| عروض الأسعار | الحمولة | الكتابة | القراءة الباردة (بعد إعادة تشغيل) |
+|---|---|---|---|
+| 100 | 42.6 KB | 12–13 ms | 16–19 ms |
+| 1,200 | 511 KB | 67–70 ms | 47–59 ms |
+| 10,000 | 4.26 MB | 507–528 ms | 348–363 ms |
+| 20,000 | 8.52 MB | 1,211–1,292 ms | 748–914 ms |
+- القراءة الباردة تسبق ظهور النسخة؛ تخطي إعادة الكتابة المطابقة وإعادة استعمال الغلاف المُتحقَّق (P4.7b/c) موروثان. **لا ادعاء لزمن الإطار الأول على الجهاز.**
+
+**التوافق المالي وPDF:** لا حساب/حفظ/PDF من النسخة؛ القيم كما أرسلها الخادم (اختبار تطابق)؛ الحسابات (`add_quotation_viewmodel_test`) وPDF/الوسائط (`quotation_service_test`، `quotation_media_workflow_test`، `r2_quotation_media_service_test`) ضمن الانحدار ⇒ نجحت؛ `pdf_generation_service`/`QuotationPdfCache`/المسارات **بلا تغيير**؛ التفاصيل تبقى من الخادم بـ `id`؛ لا كتابة offline.
+
+**الحدود الباقية:**
+- **Q-2c — OPEN (خصوصية PDF):** ملفات `quotation_<id>_<mediaId>.pdf` (+ بقايا `quotation_<id>.pdf`) **غير مشفّرة، ليست لكل حساب، غير مستثناة من النسخ الاحتياطي (Android + iOS)، لا يمسحها Delete Account**؛ مع D-Q2 صار PDF نُزّل سابقاً يُفتح offline من بطاقة محفوظة (الملف كان موجوداً أصلاً).
+- `pdfMediaId` محفوظ قد يكون أقدم من الخادم ⇒ يُفتح الإصدار المحلي الأقدم بالضبط (لقطة تاريخية).
+- نماذج البطاقة من النسخة بلا `version`/شعار (لا تُستعمل في القائمة؛ التحرير يقرأ من الخادم).
+- الفراغ يكلّف تحقق جلسة مزدوجاً (مقيس: 2) — لم يُزل (قرار منفصل إن لزم).
+- **iOS:** `offline_lists` بلا `isExcludedFromBackup` (موروث كالست).
+- **غير مُتحقَّق مستضافاً:** عقد الحذف المؤكد على PostgREST الحقيقي (**لم تُعدَّل بيانات مستضافة**)، وترقيم Quotations غير الفارغ — **P4.3-ACCEPT-NONEMPTY: OPEN**.
+- **Samsung (DEFERRED):** D-56 أدناه.
+
+**الحالة:** **Q-2b = CODE_PROVEN — STAGING_UNVERIFIED، REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit (المالك يدفع). **NEXT (مرحلة منفصلة تحتاج موافقة):** **Q-2c — حماية ملفات PDF**. **STOP:** لا Q-2c تلقائياً؛ لا commit/push؛ **P4.3-ACCEPT-NONEMPTY: OPEN**؛ Samsung DEFERRED.
 
 ---
 

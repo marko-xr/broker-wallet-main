@@ -18,7 +18,10 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotatio
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart';
+import 'package:broker_wallet/src/services/quotations_local_cache.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
@@ -32,12 +35,18 @@ class QuotationService {
     QuotationPdfCache? pdfCache,
     http.Client? httpClient,
     Uuid? uuid,
+    QuotationsLocalCache localCache = const QuotationsLocalCache(),
+    String? Function()? currentUserId,
+    String? Function()? sessionOf,
   }) : this._(
           remote ?? SupabaseQuotationService(),
           mediaTransport ?? R2QuotationMediaService(),
           pdfCache ?? QuotationPdfCache(),
           httpClient ?? http.Client(),
           uuid ?? const Uuid(),
+          localCache,
+          currentUserId,
+          sessionOf,
         );
 
   QuotationService._(
@@ -46,6 +55,9 @@ class QuotationService {
     this._pdfCache,
     this._http,
     this._uuid,
+    this._localCache,
+    this._currentUserIdOverride,
+    this._sessionOf,
   ) : _media = QuotationMediaWorkflow(_transport);
 
   final QuotationRemote _remote;
@@ -54,6 +66,24 @@ class QuotationService {
   final QuotationPdfCache _pdfCache;
   final http.Client _http;
   final Uuid _uuid;
+  final QuotationsLocalCache _localCache;
+  final String? Function()? _currentUserIdOverride;
+
+  /// The session a read or delete is made under; by default the app
+  /// session's (see [localFirstList]).
+  final String? Function()? _sessionOf;
+
+  /// The canonical signed-in account, or null when there is none (or no
+  /// auth repository yet).
+  String? _currentUserId() {
+    final override = _currentUserIdOverride;
+    if (override != null) return override();
+    try {
+      return RepositoryProvider.instance.authRepository.currentUserId;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static const Duration _downloadTimeout = Duration(seconds: 60);
 
@@ -119,6 +149,30 @@ class QuotationService {
     return _remote.watchQuotations();
   }
 
+  /// The Quotations screen's list: this account's encrypted saved copy at
+  /// once (when there is one), then the server's whole list
+  /// ([getUserQuotations]), which replaces it and is saved for next time. A
+  /// failed read keeps what is shown. The saved copy is a historical snapshot
+  /// of server values for reading only: nothing is calculated, saved,
+  /// generated or decided from it. [getUserQuotations] stays server-only.
+  Stream<List<QuotationModel>> watchUserQuotationsLocalFirst() {
+    if (!SupabaseConfig.useSupabaseAuth) return getUserQuotations();
+    return localFirstList(
+      server: getUserQuotations,
+      cache: _localCache,
+      currentUserId: _currentUserId,
+      sessionOf: _sessionOf,
+      isRetryable: isRetryableListFailure,
+    );
+  }
+
+  /// A network failure of the Quotations list, worth reading again for: the
+  /// list's own network category as well as the general ones.
+  static bool isRetryableListFailure(Object error) =>
+      isRetryableListError(error) ||
+      (error is QuotationException &&
+          error.failure == QuotationFailure.network);
+
   /// The whole Quotation, or null when it does not exist or was deleted.
   Future<QuotationModel?> getQuotationById(String quotationId) =>
       _remote.getQuotation(quotationId);
@@ -132,8 +186,16 @@ class QuotationService {
       _remote.getMediaFileName(mediaId);
 
   /// Soft-deletes the Quotation and forgets this device's copy of its PDF.
+  /// Once the server has confirmed the delete (and only then), the saved list
+  /// remembers it, so it is never shown again offline.
   Future<void> deleteQuotation(String quotationId) async {
-    await _remote.softDelete(quotationId);
+    await deleteThenRemember(
+      cache: _localCache,
+      id: quotationId,
+      currentUserId: _currentUserId,
+      sessionOf: _sessionOf,
+      delete: () => _remote.softDelete(quotationId),
+    );
     await _pdfCache.purge(quotationId);
     _signalMutation();
   }

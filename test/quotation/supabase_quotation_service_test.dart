@@ -460,12 +460,20 @@ void main() {
       expect(DateTime.parse(body['deleted_at'] as String).isUtc, isTrue);
     });
 
-    test('an already-deleted Quotation is a success', () async {
-      final backend = _Backend((_) => _json(<Object>[]));
+    // Q-2b (D-Q3): a PATCH that changed no row no longer counts on its own;
+    // one read confirms the row is this account's and already deleted
+    // (quotation_confirmed_delete_test covers every case).
+    test('an already-deleted Quotation is a success once the server says so',
+        () async {
+      final backend = _Backend((request) => _json(request.method == 'PATCH'
+          ? <Object>[]
+          : [
+              {'id': _quotationId}
+            ]));
       final service =
           SupabaseQuotationService(client: await _signedIn(backend.client));
       await service.softDelete(_quotationId); // does not throw
-      expect(backend.requests.single.method, 'PATCH');
+      expect(backend.requests.map((r) => r.method), ['PATCH', 'GET']);
     });
 
     test('a refusal is a permission failure, not a crash', () async {

@@ -344,25 +344,51 @@ class SupabaseQuotationService implements QuotationRemote {
     return controller.stream;
   }
 
+  /// Soft-deletes the Quotation and returns only once the server has
+  /// confirmed it (Q-2b, as the entity lists since P3.1a).
+  ///
+  /// PostgREST answers an update that changed no row with success — for a
+  /// missing id, another account's row or a session the database no longer
+  /// accepts alike — so success alone proves nothing. The update returns the
+  /// id it changed: that is the confirmation. When none came back, one read
+  /// tells this account's already-deleted row (done) from anything else,
+  /// which fails with [QuotationFailure.notFound] and asks the existing
+  /// session check, so a replaced session is signed out as usual.
   @override
   Future<void> softDelete(String quotationId) async {
     _requireSession();
     final accessToken = _client.auth.currentSession?.accessToken;
+    final List<dynamic> changed;
+    final List<dynamic> deleted;
     try {
       // The only column a client may change; the row's own live-row policy
-      // decides whether this account may. Already deleted is a success.
-      await _client
+      // decides whether this account may.
+      changed = await _client
           .from('quotations')
           .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', quotationId)
           .isFilter('deleted_at', null)
           .select('id');
+      if (changed.isNotEmpty) return;
+      // Already deleted is a success: the owner may read a deleted row.
+      deleted = await _client
+          .from('quotations')
+          .select('id')
+          .eq('id', quotationId)
+          .not('deleted_at', 'is', null);
     } catch (error) {
       if (accessToken != null) {
         AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
       }
       throw _translate(error);
     }
+    if (deleted.isNotEmpty) return;
+    final check =
+        ListSessionCheck.confirmFor(ListSessionCheck.currentSession());
+    if (check != null) {
+      unawaited(check.then<void>((_) {}, onError: (Object _) {}));
+    }
+    throw const QuotationException(QuotationFailure.notFound);
   }
 
   // -------------------------------------------------------------------------

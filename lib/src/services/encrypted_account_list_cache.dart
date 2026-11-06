@@ -1344,6 +1344,11 @@ bool isRetryableListError(Object error) =>
 /// fails on the network counts as a network failure. A newer list, a closed
 /// screen or another account makes the answer moot. A list with rows is
 /// never checked: the database let that read through.
+///
+/// What counts as a network failure is [isRetryable], by default
+/// [isRetryableListError]. A list whose server read reports network failures
+/// as its own error type (Quotations, Q-2b) passes a check that also knows
+/// that type; nothing else changes.
 Stream<List<T>> localFirstList<T>({
   required Stream<List<T>> Function() server,
   required EncryptedAccountListCache<T> cache,
@@ -1357,7 +1362,9 @@ Stream<List<T>> localFirstList<T>({
   void Function(LocalListStatus status)? onStatus,
   Future<bool>? Function(String? session)? confirmEmptyList,
   String? Function()? sessionOf,
+  bool Function(Object error)? isRetryable,
 }) {
+  final retryable = isRetryable ?? isRetryableListError;
   final appIsActive =
       isAppActive ?? () => ListRefreshSignals.instance.appIsActive;
   late final StreamController<List<T>> controller;
@@ -1488,7 +1495,7 @@ Stream<List<T>> localFirstList<T>({
       errorShown = true;
       controller.addError(error, stackTrace);
     }
-    if (isRetryableListError(error)) {
+    if (retryable(error)) {
       scheduleRetry();
     } else {
       stop();

@@ -614,15 +614,28 @@ class EncryptedAccountListCache<T> {
   /// Saves [payload] as [uid]'s authenticated list and, only once it reads
   /// back as authentic, records [serverReadAt] for it (when given) and
   /// removes the earlier untagged list from the box.
+  ///
+  /// [current] is the box's v2 list as already verified under this key,
+  /// account and list. When its payload is exactly [payload] — the same
+  /// records, fields and order, compared in full — the list is not written
+  /// again: it already is that list, authentic. Only the read time is
+  /// recorded, bound to that list's tag as for a new one. An unverified,
+  /// missing or different list is always written and read back.
   Future<bool> _store(
     Box<String> box,
     String uid,
     List<int> boxKey,
     String payload,
-    DateTime? serverReadAt,
-  ) async {
-    await box.put(_v2Key, _seal(uid, boxKey, payload));
-    final stored = _verified(uid, boxKey, box.get(_v2Key));
+    DateTime? serverReadAt, {
+    ({String payload, String tag})? current,
+  }) async {
+    final ({String payload, String tag})? stored;
+    if (current != null && current.payload == payload) {
+      stored = current;
+    } else {
+      await box.put(_v2Key, _seal(uid, boxKey, payload));
+      stored = _verified(uid, boxKey, box.get(_v2Key));
+    }
     if (stored == null || stored.payload != payload) return false;
     if (serverReadAt != null) {
       await box.put(_syncKey, _sealSync(uid, boxKey, stored.tag, serverReadAt));
@@ -790,8 +803,9 @@ class EncryptedAccountListCache<T> {
         // A list that fails its check is an integrity failure: it is
         // replaced only by a list the server just returned for this account.
         final existing = box.get(_v2Key);
+        final current = existing == null ? null : _verified(uid, key, existing);
         if (existing != null &&
-            _verify(uid, key, existing) == null &&
+            current == null &&
             !(mayRecover?.call() ?? false)) {
           _log('write skipped', StateError('list not authentic'));
           return;
@@ -802,7 +816,8 @@ class EncryptedAccountListCache<T> {
           _block(uid);
           return;
         }
-        if (!await _store(box, uid, key, value, serverReadAt)) {
+        if (!await _store(box, uid, key, value, serverReadAt,
+            current: current)) {
           _log('write not verified', StateError('list not authentic'));
         }
       } catch (error) {
@@ -1233,6 +1248,18 @@ Stream<List<T>> localFirstList<T>({
   DateTime? lastSuccess;
   DateTime? lastStart;
   String? lastShown;
+  // The saved list on screen whose fingerprint is not worked out yet: it is
+  // shown first and fingerprinted only when a server list needs comparing.
+  List<T>? shownNotFingerprinted;
+  String? shownFingerprint() {
+    final pending = shownNotFingerprinted;
+    if (pending != null) {
+      shownNotFingerprinted = null;
+      lastShown = cache.fingerprintOf(pending);
+    }
+    return lastShown;
+  }
+
   var errorShown = false;
   var showing = LocalListSource.nothing;
   DateTime? shownServerReadAt;
@@ -1305,7 +1332,7 @@ Stream<List<T>> localFirstList<T>({
     // sent it (a stale one is not saved at all).
     final visible = cache.withoutConfirmedDeletions(uid!, items);
     final shown = cache.fingerprintOf(visible);
-    if (shown != lastShown) {
+    if (shown != shownFingerprint()) {
       lastShown = shown;
       controller.add(visible);
     }
@@ -1474,7 +1501,7 @@ Stream<List<T>> localFirstList<T>({
       return;
     }
     if (saved != null && stillTheAccount()) {
-      lastShown = cache.fingerprintOf(saved.items);
+      shownNotFingerprinted = saved.items;
       showing = LocalListSource.savedCopy;
       shownServerReadAt = saved.info.serverReadAt;
       controller.add(saved.items);

@@ -217,7 +217,97 @@ class EncryptedAccountListCache<T> {
     _thisRun.clear();
     _stored.clear();
     _blocked.clear();
+    _verifiedEnvelopes.clear();
   }
+
+  // ---------------------------------------------------------------------
+  // Verified envelopes (P4.7c), in this process only
+  //
+  // A v2 envelope is verified in full ([_verifiedFully]) the first time it is
+  // met. The result is kept for that envelope OBJECT: while the same open box
+  // hands back the very same String instance under the same key, the list is
+  // the one already verified, and verifying it again would only recompute
+  // the same answer. Nothing else is ever reused: another String (even with
+  // the same contents), another box (a reopened one is a new Box object),
+  // another key or another account is verified in full. An entry is made
+  // only by a full verification, and only of an object Hive handed back;
+  // never because an object was written, and never from its identity alone.
+  // Entries go with their box: when it is closed (dropped at the next use of
+  // this map), replaced by recovery, or forgotten with the account. Nothing
+  // here is written anywhere or logged. Hive's in-memory value is what the
+  // checks have always verified; this says nothing about what is on disk.
+  // ---------------------------------------------------------------------
+
+  static final Map<String, _VerifiedEnvelope> _verifiedEnvelopes = {};
+
+  /// Full verifications made so far (tests only).
+  @visibleForTesting
+  static int debugFullVerifications = 0;
+
+  /// Whole-list JSON encodings made so far (tests only).
+  @visibleForTesting
+  static int debugEncodes = 0;
+
+  /// Whether a verified envelope is held for the box [boxName] (tests only).
+  @visibleForTesting
+  static bool debugMemoIsFor(String boxName) =>
+      _verifiedEnvelopes.containsKey(boxName.toLowerCase());
+
+  /// Characters of payload the held entries keep alive (tests only).
+  @visibleForTesting
+  static int get debugRetainedPayloadChars => _verifiedEnvelopes.values
+      .fold(0, (sum, e) => sum + e.verified.payload.length);
+
+  /// Waits until every operation already queued for [uid]'s box has ended
+  /// (tests only).
+  @visibleForTesting
+  Future<void> debugSettled(String uid) =>
+      _oneAtATime(boxNameOf(uid), () async {});
+
+  static void _forgetVerified(String boxName) =>
+      _verifiedEnvelopes.remove(boxName.toLowerCase());
+
+  /// [sealed], as read from [box], verified: from the held entry when it is
+  /// for that very object of that very open box under [boxKey] and [uid];
+  /// otherwise in full, and then held. Null when it does not verify.
+  ({String payload, String tag})? _checked(
+    Box<String> box,
+    String uid,
+    List<int> boxKey,
+    Object? sealed,
+  ) {
+    final name = boxNameOf(uid).toLowerCase();
+    final held = _verifiedEnvelopes[name];
+    if (held != null &&
+        sealed is String &&
+        identical(held.sealed, sealed) &&
+        identical(held.box, box) &&
+        box.isOpen &&
+        held.uid == uid &&
+        listEquals(held.key, boxKey)) {
+      return held.verified;
+    }
+    final verified = _verified(uid, boxKey, sealed);
+    _verifiedEnvelopes
+        .removeWhere((_, e) => !e.box.isOpen || identical(e.box, box));
+    if (verified != null && sealed is String) {
+      _verifiedEnvelopes[name] = _VerifiedEnvelope(
+        box: box,
+        sealed: sealed,
+        uid: uid,
+        key: List<int>.unmodifiable(boxKey),
+        verified: verified,
+      );
+    }
+    return verified;
+  }
+
+  /// The verified payload a [SavedList] was decoded from, kept only when the
+  /// list hides no confirmed deletion. [localFirstList] compares a server
+  /// list's encoding with it instead of re-encoding the saved list: equal
+  /// means the server sent exactly what is saved; anything else is shown, so
+  /// a difference can only ever cause one extra update, never a missed one.
+  static final Expando<String> _savedPayloads = Expando<String>('payload');
 
   /// Remembers that the server confirmed deleting [id] from [uid]'s list
   /// (call only after that confirmation; see [deleteThenRemember]).
@@ -566,6 +656,7 @@ class EncryptedAccountListCache<T> {
   ({String payload, String tag})? _verified(
       String uid, List<int> boxKey, Object? sealed) {
     if (sealed is! String) return null;
+    debugFullVerifications++;
     try {
       final decoded = json.decode(sealed);
       if (decoded is! Map || decoded.length != 3 || decoded['v'] != 2) {
@@ -595,8 +686,10 @@ class EncryptedAccountListCache<T> {
   }
 
   /// The stored form of [items], to tell whether two lists differ.
-  String fingerprintOf(List<T> items) =>
-      json.encode([for (final item in items) _encode(item)]);
+  String fingerprintOf(List<T> items) {
+    debugEncodes++;
+    return json.encode([for (final item in items) _encode(item)]);
+  }
 
   /// [uid]'s records in [payload]; anyone else's are dropped.
   List<T>? _items(String uid, String payload) {
@@ -634,7 +727,8 @@ class EncryptedAccountListCache<T> {
       stored = current;
     } else {
       await box.put(_v2Key, _seal(uid, boxKey, payload));
-      stored = _verified(uid, boxKey, box.get(_v2Key));
+      // The envelope just stored is a new object: verified in full.
+      stored = _checked(box, uid, boxKey, box.get(_v2Key));
     }
     if (stored == null || stored.payload != payload) return false;
     if (serverReadAt != null) {
@@ -692,13 +786,15 @@ class EncryptedAccountListCache<T> {
         final List<T>? items;
         final bool authenticated;
         DateTime? at;
+        String? verifiedPayload;
         final sealed = box.get(_v2Key);
         if (sealed != null) {
-          final stored = _verified(uid, key, sealed);
+          final stored = _checked(box, uid, key, sealed);
           if (stored == null) {
             _log('integrity check failed', StateError('list not authentic'));
             return null;
           }
+          verifiedPayload = stored.payload;
           items = _items(uid, stored.payload);
           authenticated = true;
           final record = box.get(_syncKey);
@@ -722,7 +818,7 @@ class EncryptedAccountListCache<T> {
         _stored[boxNameOf(uid)] = marks;
         if (items == null) return null;
         final visible = withoutConfirmedDeletions(uid, items);
-        return SavedList(
+        final saved = SavedList(
           visible,
           SavedListInfo(
             authenticated: authenticated,
@@ -730,6 +826,12 @@ class EncryptedAccountListCache<T> {
             hidesConfirmedDeletions: visible.length != items.length,
           ),
         );
+        // Only an authenticated list that hides nothing is exactly what its
+        // verified payload decodes to.
+        if (verifiedPayload != null && identical(visible, items)) {
+          _savedPayloads[saved] = verifiedPayload;
+        }
+        return saved;
       } catch (error) {
         _log('read failed', error);
         return null;
@@ -756,6 +858,19 @@ class EncryptedAccountListCache<T> {
     List<T> items, {
     bool Function()? mayRecover,
     DateTime? serverReadAt,
+  }) =>
+      _write(uid, items, mayRecover: mayRecover, serverReadAt: serverReadAt);
+
+  /// As [write]. [encoded] is [fingerprintOf] of exactly [items], already
+  /// made by the caller ([localFirstList], for the list it compared); it is
+  /// used as the stored payload only when it is exactly what [write] would
+  /// encode — every record [uid]'s own — and otherwise ignored.
+  Future<void> _write(
+    String uid,
+    List<T> items, {
+    bool Function()? mayRecover,
+    DateTime? serverReadAt,
+    String? encoded,
   }) async {
     if (uid.isEmpty) return;
     await _oneAtATime(boxNameOf(uid), () async {
@@ -774,10 +889,18 @@ class EncryptedAccountListCache<T> {
           _log('write skipped', StateError('list blocked'));
           return;
         }
-        final value = json.encode([
-          for (final item in items)
-            if (_ownerOf(item) == uid) _encode(item),
-        ]);
+        // The caller's encoding of these very items is the payload exactly
+        // when no record is dropped for belonging to another account.
+        final String value;
+        if (encoded != null && items.every((item) => _ownerOf(item) == uid)) {
+          value = encoded;
+        } else {
+          debugEncodes++;
+          value = json.encode([
+            for (final item in items)
+              if (_ownerOf(item) == uid) _encode(item),
+          ]);
+        }
         var key = await _keys.read(uid);
         if (key == null) {
           if (await Hive.boxExists(boxNameOf(uid), path: dir)) {
@@ -803,7 +926,8 @@ class EncryptedAccountListCache<T> {
         // A list that fails its check is an integrity failure: it is
         // replaced only by a list the server just returned for this account.
         final existing = box.get(_v2Key);
-        final current = existing == null ? null : _verified(uid, key, existing);
+        final current =
+            existing == null ? null : _checked(box, uid, key, existing);
         if (existing != null &&
             current == null &&
             !(mayRecover?.call() ?? false)) {
@@ -999,6 +1123,8 @@ class EncryptedAccountListCache<T> {
       return;
     }
     final name = boxNameOf(uid);
+    // The box may be replaced: nothing verified in it before is reused.
+    _forgetVerified(name);
     final keyNow = await _keys.read(uid);
     if (!listEquals(keyNow, observedKey) ||
         !await Hive.boxExists(name, path: dir)) {
@@ -1079,7 +1205,9 @@ class EncryptedAccountListCache<T> {
     _thisRun.remove(boxNameOf(uid));
     _stored.remove(boxNameOf(uid));
     _blocked.remove(boxNameOf(uid)); // the damaged record goes with the box
+    _forgetVerified(boxNameOf(uid));
     await _oneAtATime(boxNameOf(uid), () async {
+      _forgetVerified(boxNameOf(uid));
       try {
         final root = await _root();
         final dir = p.join(root, directoryName);
@@ -1341,8 +1469,15 @@ Stream<List<T>> localFirstList<T>({
     report();
     // This list is a successful server read for the signed-in account:
     // the one case in which an unreadable box may be recovered.
-    unawaited(
-        cache.write(uid!, items, mayRecover: stillTheReader, serverReadAt: at));
+    // When nothing was hidden, `shown` is the encoding of exactly `items`:
+    // the save need not encode the list again.
+    unawaited(cache._write(
+      uid!,
+      items,
+      mayRecover: stillTheReader,
+      serverReadAt: at,
+      encoded: identical(visible, items) ? shown : null,
+    ));
   }
 
   /// A failed read for the signed-in account: what is shown stays.
@@ -1501,7 +1636,14 @@ Stream<List<T>> localFirstList<T>({
       return;
     }
     if (saved != null && stillTheAccount()) {
-      shownNotFingerprinted = saved.items;
+      // Compared by its verified payload when it hides nothing; otherwise
+      // fingerprinted when a server list first needs comparing.
+      final payload = EncryptedAccountListCache._savedPayloads[saved];
+      if (payload != null) {
+        lastShown = payload;
+      } else {
+        shownNotFingerprinted = saved.items;
+      }
       showing = LocalListSource.savedCopy;
       shownServerReadAt = saved.info.serverReadAt;
       controller.add(saved.items);
@@ -1533,4 +1675,23 @@ Stream<List<T>> localFirstList<T>({
     },
   );
   return controller.stream;
+}
+
+/// One v2 envelope verified in full: the very String Hive handed back from
+/// [box], under [key] for [uid], and what its verification found. See
+/// [EncryptedAccountListCache._verifiedEnvelopes].
+class _VerifiedEnvelope {
+  _VerifiedEnvelope({
+    required this.box,
+    required this.sealed,
+    required this.uid,
+    required this.key,
+    required this.verified,
+  });
+
+  final Box<String> box;
+  final String sealed;
+  final String uid;
+  final List<int> key;
+  final ({String payload, String tag}) verified;
 }

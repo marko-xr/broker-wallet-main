@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 
 /// What a local Offer-media cleanup actually managed to remove.
@@ -163,6 +164,16 @@ class OfflineMediaService {
 
   static Future<void> _removeBytesFromSharedCache(String cacheKey) =>
       DefaultCacheManager().removeFile(cacheKey).timeout(_cacheCallTimeout);
+
+  /// Removes the private image cache's copy of a stable identity (M1c), when
+  /// its item is dropped or access to it is proven gone. Overridable for
+  /// tests like [removeCachedBytes].
+  @visibleForTesting
+  static Future<void> Function(String cacheKey) removePrivateBytes =
+      _removePrivateBytes;
+
+  static Future<void> _removePrivateBytes(String cacheKey) =>
+      PrivateMediaCache.instance.forget(cacheKey).timeout(_cacheCallTimeout);
 
   /// The media object ids last confirmed for [offerId], in display order.
   ///
@@ -366,6 +377,12 @@ class OfflineMediaService {
   static Future<String?> Function(String cacheKey, String? url)
       fetchCachedBytes = _fetchBytesFromSharedCache;
 
+  /// The shared image cache's file for a stable identity, if it already holds
+  /// one: read only, never a download (M1c reads what it holds rather than
+  /// fetching the image again).
+  Future<String?> heldInSharedCache(String cacheKey) =>
+      fetchCachedBytes(cacheKey, null);
+
   static Future<String?> _fetchBytesFromSharedCache(
     String cacheKey,
     String? url,
@@ -509,6 +526,11 @@ class OfflineMediaService {
     try {
       await removeCachedBytes(cacheKey);
       cacheEntriesRemoved += 1;
+    } catch (e) {
+      failures += 1;
+    }
+    try {
+      await removePrivateBytes(cacheKey);
     } catch (e) {
       failures += 1;
     }

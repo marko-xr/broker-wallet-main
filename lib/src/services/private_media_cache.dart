@@ -166,6 +166,10 @@ class PrivateMediaCache {
     return id == null ? null : PrivateMediaScope(account: account, session: id);
   }
 
+  /// Whether [key] may be read now: there is an application session and the
+  /// key names its account. Touches no storage.
+  bool canRead(String key) => _scopeFor(key) != null;
+
   /// The held copy of [key], with no network; null when there is none, when
   /// it is damaged (it is then removed), or when [key] is not the current
   /// session's account's.

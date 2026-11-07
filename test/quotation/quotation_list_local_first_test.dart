@@ -30,7 +30,9 @@ import 'package:broker_wallet/src/services/offices_local_cache.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport;
 import 'package:broker_wallet/src/services/owners_local_cache.dart';
+import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
 import 'package:broker_wallet/src/services/quotations_local_cache.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/services/watchmen_local_cache.dart';
 import 'package:flutter/services.dart';
@@ -245,9 +247,19 @@ class _App {
 
   late final SupabaseQuotationService remote =
       SupabaseQuotationService(client: client);
+
+  /// The account's encrypted PDF copies (Q-2c-1b), in this test's folder.
+  late final QuotationPdfVault vault = QuotationPdfVault(
+    documents: () async => dir,
+    temporary: () async => dir,
+    keys: _VaultKeys(),
+    backup: _NoBackupGuard(),
+  );
+
   late final QuotationService quotations = QuotationService(
     remote: remote,
     pdfCache: QuotationPdfCache(directory: () async => dir),
+    pdfVault: vault,
     httpClient: MockClient((_) async => http.Response('', 404)),
     currentUserId: () => client.auth.currentUser?.id,
     sessionOf: () =>
@@ -991,13 +1003,15 @@ void main() {
       await screen.close();
       await restart();
       final saved = (await cache.read(_alice))!.first; // Villa 2: has a PDF
-      final file = File('${app.dir.path}${Platform.pathSeparator}'
-          'quotation_${saved.id}_${saved.pdfMediaId}.pdf');
-      await file.writeAsBytes([37, 80, 68, 70]);
+      // Q-2c-1b: this device's copy is the account's encrypted one.
+      await app.vault.store(_alice, saved.id!, saved.pdfMediaId!,
+          Uint8List.fromList([37, 80, 68, 70]));
       app.server.networkDown = true;
       final requests = app.server.requests.length;
       final opened = await app.quotations.resolvePdfFile(saved);
-      expect(opened.path, file.path);
+      expect(opened.readAsBytesSync(), [37, 80, 68, 70]);
+      expect(
+          QuotationPdfVault.isViewingCopy(opened.path, app.dir.path), isTrue);
       expect(app.server.requests.length, requests);
       expect(saved.totalAmount, 120002.5, reason: 'the server value');
     });
@@ -1047,6 +1061,21 @@ void main() {
     // ignore: avoid_print
     print(lines.join('\n'));
   }, timeout: const Timeout(Duration(minutes: 5)));
+}
+
+class _VaultKeys implements AccountCacheKeyStore {
+  final Map<String, List<int>> keys = {};
+  @override
+  Future<List<int>?> read(String uid) async => keys[uid];
+  @override
+  Future<void> write(String uid, List<int> key) async => keys[uid] = key;
+  @override
+  Future<void> delete(String uid) async => keys.remove(uid);
+}
+
+class _NoBackupGuard implements ScannerBackupGuard {
+  @override
+  Future<bool> exclude(String path) async => true;
 }
 
 class _UnavailableKeys implements AccountCacheKeyStore {

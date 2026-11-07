@@ -23,6 +23,10 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quota
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart'
+    show AccountCacheKeyStore;
+import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
@@ -329,6 +333,22 @@ class _Env {
   final List<String> toasts;
 }
 
+/// Master keys in memory (Q-2c-1b).
+class _MemoryKeys implements AccountCacheKeyStore {
+  final Map<String, List<int>> keys = {};
+  @override
+  Future<List<int>?> read(String uid) async => keys[uid];
+  @override
+  Future<void> write(String uid, List<int> key) async => keys[uid] = key;
+  @override
+  Future<void> delete(String uid) async => keys.remove(uid);
+}
+
+class _NoBackupGuard implements ScannerBackupGuard {
+  @override
+  Future<bool> exclude(String path) async => true;
+}
+
 Future<_Env> _env({
   String? uid = 'user-1',
   String? editId,
@@ -351,6 +371,14 @@ Future<_Env> _env({
     remote: backend,
     mediaTransport: backend,
     pdfCache: QuotationPdfCache(directory: () async => dir),
+    // Q-2c-1b: the account's encrypted PDF copies, in this test's folder.
+    currentUserId: () => uid,
+    pdfVault: QuotationPdfVault(
+      documents: () async => dir,
+      temporary: () async => dir,
+      keys: _MemoryKeys(),
+      backup: _NoBackupGuard(),
+    ),
   );
   final vm = AddQuotationViewModel(
     quotationService: service,
@@ -953,9 +981,18 @@ void main() {
           .whereType<File>()
           .where((f) => f.path.endsWith('.pdf'))
           .toList();
-      expect(pdfFiles, hasLength(1),
-          reason: 'only the published PDF remains; the discarded one is gone');
-      expect(pdfFiles.single.path, contains(env.server.pdfId!));
+      // Q-2c-1b: the published PDF is kept encrypted for the account, never
+      // as a plain file; the discarded one is gone.
+      expect(pdfFiles, isEmpty,
+          reason: 'no plaintext PDF remains in the documents folder');
+      final sealed = Directory('${env.dir.path}${Platform.pathSeparator}'
+              'quotation_pdfs${Platform.pathSeparator}user-1')
+          .listSync()
+          .whereType<File>()
+          .toList();
+      expect(sealed, hasLength(1),
+          reason: 'only the published PDF is kept; the discarded one is gone');
+      expect(sealed.single.path, contains(env.server.pdfId!));
     });
 
     test('a failed save leaves no generated PDF behind once its renderer finishes',

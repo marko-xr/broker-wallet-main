@@ -45,6 +45,11 @@
          phone does not receive, so a copy restored here could never be read.
          They refill from the server after sign-in. -->
     <exclude domain="root" path="app_flutter/offline_lists" />
+    <!-- Quotation PDFs (Q-2c-1): the private financial PDFs of each account
+         and the work folder they are generated in. They are re-downloadable
+         from R2 by an authorized session. PDFs an earlier version kept
+         directly in app_flutter cannot be listed (their names carry ids). -->
+    <exclude domain="root" path="app_flutter/quotation_pdfs" />
     <!-- The shared Favorites box of builds before per-account isolation:
          plaintext customer names, never read again and deliberately not
          deleted (see main.dart). Only its exact files are listed. The

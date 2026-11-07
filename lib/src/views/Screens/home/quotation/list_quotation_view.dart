@@ -335,8 +335,11 @@ class _QuotationListViewState extends State<QuotationListView> {
         '${loc.translate('quotation')} - ${quotation.propertyTitle.isEmpty ? loc.translate('untitled') : quotation.propertyTitle}';
     try {
       final file = await vm.resolvePdf(quotation);
-      if (!mounted) return;
-      Navigator.of(context).push(
+      if (!mounted) {
+        await vm.releasePdf(file);
+        return;
+      }
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => PdfViewerScreen(
             localFile: file,
@@ -344,6 +347,8 @@ class _QuotationListViewState extends State<QuotationListView> {
           ),
         ),
       );
+      // The viewer has closed: a temporary plain copy goes (Q-2c-1b).
+      await vm.releasePdf(file);
     } catch (_) {
       if (mounted) {
         _showToast(loc.translate('quotationPdfUnavailable'), Colors.red);

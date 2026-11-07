@@ -17,6 +17,8 @@ import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/services/watchmen_local_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
 
 typedef ProfileMediaForgetter = Future<void> Function({
   Iterable<String>? mediaIds,
@@ -55,8 +57,15 @@ typedef OfferMediaUploadPurger = Future<int> Function(String ownerId);
 ///  * that account's encrypted copies of its six entity lists and of its
 ///    Quotations list ([QuotationsLocalCache]), with their keys.
 ///
-/// Not yet: the Quotation PDF copies in the documents folder, which carry no
-/// account (tracker §7AX, Q-2c).
+///  * that account's Quotation PDFs ([QuotationPdfFiles.forgetAccount]): its
+///    work folder, and each PDF in the documents folder that names a
+///    Quotation of its verified saved list — read before that list goes;
+///    and its encrypted copies, their key and its viewing copies
+///    ([QuotationPdfVault.forgetAccount]).
+///
+/// Not removed: a Quotation PDF in the documents folder whose account is not
+/// proven (no readable saved list names it), which stays untouched (tracker
+/// §7AY, D-P4).
 ///
 /// Only when the deleted account was the one signed in on this device, because
 /// these single-slot caches belong to whichever account was signed in:
@@ -77,16 +86,22 @@ class DeletedAccountLocalDataCleaner {
     ProfileMediaForgetter? forgetProfileMedia,
     OfferMediaForgetter? forgetOfferMedia,
     OfferMediaUploadPurger? purgeOfferMediaUploads,
+    Future<int> Function(String uid)? forgetQuotationPdfs,
   })  : _forgetProfileMedia = forgetProfileMedia ??
             OfflineMediaService.instance.forgetProfileMedia,
         _forgetOfferMedia =
             forgetOfferMedia ?? OfflineMediaService.instance.forgetOfferMedia,
         _purgeOfferMediaUploads = purgeOfferMediaUploads ??
-            ((ownerId) => OfferMediaUploadQueue.instance.purgeOwner(ownerId));
+            ((ownerId) => OfferMediaUploadQueue.instance.purgeOwner(ownerId)),
+        _forgetQuotationPdfs = forgetQuotationPdfs ??
+            ((uid) async =>
+                await QuotationPdfFiles().forgetAccount(uid) +
+                await QuotationPdfVault().forgetAccount(uid));
 
   final ProfileMediaForgetter _forgetProfileMedia;
   final OfferMediaForgetter _forgetOfferMedia;
   final OfferMediaUploadPurger _purgeOfferMediaUploads;
+  final Future<int> Function(String uid) _forgetQuotationPdfs;
 
   static const List<String> _uidKeyedBoxes = [
     'local_profile',
@@ -130,6 +145,8 @@ class DeletedAccountLocalDataCleaner {
     await _step(() => const OfficesLocalCache().forgetAccount(deletedUid));
     await _step(() => const BrokersLocalCache().forgetAccount(deletedUid));
     await _step(() => const WatchmenLocalCache().forgetAccount(deletedUid));
+    // Its saved list proves which PDFs are its own: before the list goes.
+    await _step(() => _forgetQuotationPdfs(deletedUid));
     await _step(() => const QuotationsLocalCache().forgetAccount(deletedUid));
     await _step(() => CountCacheService.instance.clearAccount(deletedUid));
 

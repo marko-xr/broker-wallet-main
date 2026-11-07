@@ -66,6 +66,18 @@ class QuotationPdfCache {
     await _removeOthers(quotationId);
   }
 
+  /// Removes `quotation_<id>.pdf`, a generated PDF an earlier version left
+  /// in this folder (Q-2c-1b: generation now uses a backup-excluded work
+  /// folder). Best effort.
+  Future<void> removeGenerated(String quotationId) async {
+    try {
+      final dir = await _directory();
+      final file = File('${dir.path}${Platform.pathSeparator}'
+          'quotation_$quotationId.pdf');
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   Future<File> _file(String quotationId, String mediaId) async {
     final dir = await _directory();
     return File('${dir.path}${Platform.pathSeparator}'

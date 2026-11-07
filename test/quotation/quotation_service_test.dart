@@ -3,13 +3,18 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
+import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
+import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart'
+    show AccountCacheKeyStore;
+import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -108,8 +113,12 @@ class _FakeTransport implements QuotationMediaTransport {
     required String contentType,
   }) async {
     calls.add('upload');
+    onUpload?.call();
     if (uploadError != null) throw uploadError!;
   }
+
+  /// Runs while the upload is in flight (Q-2c-1b: a session change).
+  void Function()? onUpload;
 
   @override
   Future<QuotationMediaConfirmation> confirm({
@@ -139,17 +148,45 @@ class _FakeTransport implements QuotationMediaTransport {
   }
 }
 
+/// Master keys in memory (Q-2c-1b).
+class _Keys implements AccountCacheKeyStore {
+  final Map<String, List<int>> keys = {};
+  @override
+  Future<List<int>?> read(String uid) async => keys[uid];
+  @override
+  Future<void> write(String uid, List<int> key) async => keys[uid] = key;
+  @override
+  Future<void> delete(String uid) async => keys.remove(uid);
+}
+
+class _NoBackupGuard implements ScannerBackupGuard {
+  @override
+  Future<bool> exclude(String path) async => true;
+}
+
 class _Harness {
-  _Harness(this.dir, {http.Client? httpClient}) {
+  _Harness(this.dir, {http.Client? httpClient, String? Function()? sessionOf}) {
+    vault = QuotationPdfVault(
+      documents: () async => dir,
+      temporary: () async => dir,
+      keys: _Keys(),
+      backup: _NoBackupGuard(),
+    );
     service = QuotationService(
       remote: remote,
       mediaTransport: transport,
       pdfCache: QuotationPdfCache(directory: () async => dir),
       httpClient: httpClient,
+      // The account the test Quotations belong to (Q-2c-1: the resolver
+      // opens only the signed-in account's PDFs).
+      currentUserId: () => 'u',
+      sessionOf: sessionOf,
+      pdfVault: vault,
     );
   }
 
   final Directory dir;
+  late final QuotationPdfVault vault;
   final _FakeRemote remote = _FakeRemote();
   final _FakeTransport transport = _FakeTransport();
   late final QuotationService service;
@@ -164,10 +201,11 @@ class _Harness {
   }
 }
 
-Future<_Harness> _harness({http.Client? httpClient}) async {
+Future<_Harness> _harness(
+    {http.Client? httpClient, String? Function()? sessionOf}) async {
   final dir = await Directory.systemTemp.createTemp('quotation_service_test_');
   addTearDown(() => dir.delete(recursive: true));
-  return _Harness(dir, httpClient: httpClient);
+  return _Harness(dir, httpClient: httpClient, sessionOf: sessionOf);
 }
 
 /// Counts the process-wide refresh signals the service emits.
@@ -304,18 +342,43 @@ void main() {
       final pdf = await h.generatedPdf();
       final signals = _Signals();
       addTearDown(signals.close);
+      // An earlier unencrypted copy of this Quotation in the documents
+      // folder, and one of another Quotation.
+      final older = h.cached(_q, _pdfB)..writeAsBytesSync(_pdfBytes);
+      final another = h.cached('3f2c9d0a-5b7e-4c1a-9a55-0d6f8e1b2a45', _pdfA)
+        ..writeAsBytesSync(_pdfBytes);
 
       final binding = await h.service
           .publishPdf(quotationId: _q, pdf: pdf, expectedMediaId: _pdfA);
+      expect(older.existsSync(), isFalse,
+          reason: 'its plaintext copies go once the encrypted one is in place');
+      expect(another.existsSync(), isTrue);
 
       expect(h.transport.calls,
           ['authorize:quotation_pdf:$_pdfA', 'upload', 'confirm:quotation_pdf']);
       expect(binding.resultingVersion, 4);
-      final copy = h.cached(_q, binding.mediaObjectId);
-      expect(await copy.exists(), isTrue);
-      expect(await copy.readAsBytes(), _pdfBytes);
+      // Q-2c-1b: kept encrypted for this account, not as a plain file in
+      // the (backed-up) documents folder.
+      expect(await h.vault.read('u', _q, binding.mediaObjectId), _pdfBytes);
+      expect(await h.cached(_q, binding.mediaObjectId).exists(), isFalse);
       expect(await pdf.exists(), isFalse, reason: 'the generated file is consumed');
       expect(signals.count, 1);
+    });
+
+    test(
+        'a session change during the upload: bound, but kept for no one '
+        '(Q-2c-1b)', () async {
+      var session = 's1';
+      final h = await _harness(sessionOf: () => session);
+      h.transport.onUpload = () => session = 's2';
+      final pdf = await h.generatedPdf();
+
+      final binding = await h.service
+          .publishPdf(quotationId: _q, pdf: pdf, expectedMediaId: _pdfA);
+
+      expect(await h.vault.versionsOf('u', _q), isEmpty);
+      expect(await h.cached(_q, binding.mediaObjectId).exists(), isFalse);
+      expect(await pdf.exists(), isFalse, reason: 'never left behind');
     });
 
     test('a failed upload keeps nothing in the cache and binds nothing', () async {
@@ -335,6 +398,7 @@ void main() {
           .whereType<File>()
           .where((f) => f.path.contains('quotation_${_q}_'));
       expect(cached, isEmpty);
+      expect(await h.vault.versionsOf('u', _q), isEmpty);
     });
 
     test('a slot that moved is re-read from the server and retried once',
@@ -362,12 +426,39 @@ void main() {
     test('this device\'s copy of the exact media object opens with no network',
         () async {
       final h = await _harness();
-      await h.cached(_q, _pdfA).writeAsBytes(_pdfBytes);
+      // Q-2c-1b: this device's copy is the account's encrypted one.
+      await h.vault.store('u', _q, _pdfA, Uint8List.fromList(_pdfBytes));
 
       final file = await h.service.resolvePdfFile(_model(pdfMediaId: _pdfA));
 
-      expect(file.path, h.cached(_q, _pdfA).path);
+      expect(await file.readAsBytes(), _pdfBytes);
+      expect(QuotationPdfVault.isViewingCopy(file.path, h.dir.path), isTrue);
       expect(h.transport.fetchSignedCalls, 0);
+    });
+
+    test(
+        'a plaintext copy an earlier version left is never opened in its '
+        'place (final review R1)', () async {
+      final h = await _harness(
+        httpClient:
+            MockClient((_) async => http.Response.bytes(_pdfBytes, 200)),
+      );
+      h.transport.signed = QuotationSignedMedia(
+        quotationPdf: SignedQuotationMedia(
+          mediaObjectId: _pdfA,
+          contentType: 'application/pdf',
+          url: 'https://signed.example/get',
+          expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+        ),
+      );
+      await h
+          .cached(_q, _pdfA)
+          .writeAsBytes('%PDF-1.4\nforged\n%%EOF\n'.codeUnits);
+
+      final file = await h.service.resolvePdfFile(_model(pdfMediaId: _pdfA));
+
+      expect(await file.readAsBytes(), _pdfBytes, reason: 'the server\'s copy');
+      expect(h.transport.fetchSignedCalls, 1);
     });
 
     test('without a copy it downloads once through a fresh signed link and caches it',
@@ -391,8 +482,11 @@ void main() {
       final file = await h.service.resolvePdfFile(_model(pdfMediaId: _pdfA));
 
       expect(await file.readAsBytes(), _pdfBytes);
-      expect(file.path, h.cached(_q, _pdfA).path,
-          reason: 'named by the stable media id, not by the signed URL');
+      // Q-2c-1b: kept encrypted under the stable media id; what opens is a
+      // temporary viewing copy, never named by the signed URL.
+      expect(await h.vault.read('u', _q, _pdfA), _pdfBytes);
+      expect(QuotationPdfVault.isViewingCopy(file.path, h.dir.path), isTrue);
+      expect(await h.cached(_q, _pdfA).exists(), isFalse);
       expect(downloads, hasLength(1));
       expect(file.path.contains('X-Amz'), isFalse);
 
@@ -419,7 +513,9 @@ void main() {
       // no copy of it, and the server's current PDF is _pdfB.
       final file = await h.service.resolvePdfFile(_model(pdfMediaId: _pdfA));
 
-      expect(file.path, h.cached(_q, _pdfB).path);
+      // Q-2c-1b: the server's current PDF is what is kept and opened.
+      expect(await h.vault.read('u', _q, _pdfB), _pdfBytes);
+      expect(await h.vault.versionsOf('u', _q), {_pdfB});
       expect(await file.readAsBytes(), _pdfBytes);
     });
 
@@ -449,6 +545,7 @@ void main() {
       expect(caught.toString().contains('expired'), isFalse,
           reason: 'the signed URL never reaches an error');
       expect(await h.cached(_q, _pdfA).exists(), isFalse);
+      expect(await h.vault.versionsOf('u', _q), isEmpty);
     });
 
     test('a Quotation with no bound PDF cannot be opened', () async {

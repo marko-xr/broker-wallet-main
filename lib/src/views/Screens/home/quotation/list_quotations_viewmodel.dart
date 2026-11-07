@@ -91,6 +91,10 @@ class QuotationListViewModel extends ChangeNotifier {
   Future<File> resolvePdf(QuotationModel quotation) =>
       _quotationService.resolvePdfFile(quotation);
 
+  /// Ends what [resolvePdf] opened once it is no longer shown: a temporary
+  /// plain copy of an encrypted PDF is removed (Q-2c-1b).
+  Future<void> releasePdf(File file) => _quotationService.releasePdfFile(file);
+
   /// [resolvePdf] for sharing: the same private local copy, but any failure is
   /// a [ShareFailure] carrying only a category, so no provider text, link or
   /// path can reach the Share dialog.

@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 
 /// What a local Offer-media cleanup actually managed to remove.
 ///
@@ -399,6 +400,11 @@ class OfflineMediaService {
   /// makes an ownership-scoped sweep possible without a catalogue.
   static const String offerMediaDirectoryName = 'offer_media';
 
+  /// Marks a private media folder as excluded from backup where the platform
+  /// needs the app to (iPhone; M0.5). Overridable in tests.
+  @visibleForTesting
+  static ScannerBackupGuard backupGuard = PlatformScannerBackupGuard();
+
   /// Where app-owned media directories are created.
   ///
   /// Overridable for the same reason as [removeCachedBytes]: path_provider
@@ -758,6 +764,9 @@ class OfflineMediaService {
         if (!await profileDir.exists()) {
           await profileDir.create(recursive: true);
         }
+        // M0.5: private originals stay out of iPhone backups (Android lists
+        // the folder in its backup rules). Best effort; never throws.
+        await backupGuard.exclude(profileDir.path);
 
         final safeId = mediaId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
         final dot = sourcePath.lastIndexOf('.');

@@ -36,6 +36,14 @@
   from R2 by an authorized session. PDFs an earlier version kept directly in
   app_flutter cannot be listed (their names carry ids).
 -->
+<!--
+  Private media (M0.5): app_flutter/profile_media (profile originals uploaded
+  on this phone), the Hive boxes url_mapping and local_media (media identity
+  map and catalogue, with their lock and compaction files), and files/
+  libCachedImageData.db (flutter_cache_manager's image index, which records
+  each entry's key and the signed link it was fetched from) with SQLite's
+  files beside it. All are rebuilt or re-downloaded after a restore.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -47,6 +55,17 @@
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="root" path="app_flutter/quotation_pdfs" />
+        <exclude domain="root" path="app_flutter/profile_media" />
+        <exclude domain="root" path="app_flutter/url_mapping.hive" />
+        <exclude domain="root" path="app_flutter/url_mapping.hivec" />
+        <exclude domain="root" path="app_flutter/url_mapping.lock" />
+        <exclude domain="root" path="app_flutter/local_media.hive" />
+        <exclude domain="root" path="app_flutter/local_media.hivec" />
+        <exclude domain="root" path="app_flutter/local_media.lock" />
+        <exclude domain="file" path="libCachedImageData.db" />
+        <exclude domain="file" path="libCachedImageData.db-journal" />
+        <exclude domain="file" path="libCachedImageData.db-wal" />
+        <exclude domain="file" path="libCachedImageData.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />
@@ -61,6 +80,17 @@
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
         <exclude domain="root" path="app_flutter/quotation_pdfs" />
+        <exclude domain="root" path="app_flutter/profile_media" />
+        <exclude domain="root" path="app_flutter/url_mapping.hive" />
+        <exclude domain="root" path="app_flutter/url_mapping.hivec" />
+        <exclude domain="root" path="app_flutter/url_mapping.lock" />
+        <exclude domain="root" path="app_flutter/local_media.hive" />
+        <exclude domain="root" path="app_flutter/local_media.hivec" />
+        <exclude domain="root" path="app_flutter/local_media.lock" />
+        <exclude domain="file" path="libCachedImageData.db" />
+        <exclude domain="file" path="libCachedImageData.db-journal" />
+        <exclude domain="file" path="libCachedImageData.db-wal" />
+        <exclude domain="file" path="libCachedImageData.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />

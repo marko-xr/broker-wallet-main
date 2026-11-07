@@ -3434,6 +3434,102 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 
 **الحالة:** **Q-2c (1 + 1b + المراجعة) = CODE_PROVEN — REAL_DEVICE_UNVERIFIED.** **NOW:** موافقة المالك النهائية على commit واحد لـ Q-2c. **NEXT:** D-57 على Samsung عند جلسة الأجهزة المؤجلة. **STOP:** لا commit/push؛ لا Offline Media/Smart Map/Toolkit/Offline Writes.
 
+**تحديث Git:** Q-2c أُودع `45fa169` والمالك دفعه (= `origin`).
+
+---
+
+## 7AZ) M0 — تدقيق الوسائط والتفاصيل Offline — 2026-11-07 (AUDIT؛ SOURCE-READ؛ لا تغيير كود)
+
+**Git (مُتحقَّق):** `perf/phase-1-startup-baseline` @ `45fa169` = `origin` (0/0)؛ stashes الاثنان باقيان؛ المعدّل فقط ملفات plugin الثلاثة (مُعاد توليدها، لم تُلمس)؛ `docs/ADD_DETAILS_*` **ما زالا مفقودين** (لم يُنشآ). **هذا القسم وحده تغيّر.**
+**طبيعة الدليل:** قراءة المصدر الحي + مصدر الحزم في `C:/DevCaches` (flutter_cache_manager 3.4.2، hive 2.2.3) + الـ Worker (قراءة فقط). **لا اختبار ولا جهاز ولا طلب مستضاف**؛ كل زمن = **NOT MEASURED**. يحدّث §7AP (2026-11-04) بما تغيّر منذه: Favorites مشفّرة (§7AQ)، Search محلي أولاً (§7AR)، Quotations (§7AV–§7AY).
+
+### 1) خط الوسائط الفعلي (S)
+- **كاش واحد مشترك:** لا `Config` مخصص في أي مكان ⇒ كل الصور تمر بـ **`DefaultCacheManager`** (مفتاح `libCachedImageData`؛ **30 يوماً / 200 ملف لكل التطبيق**). **البايتات** في `getTemporaryDirectory()` (Android: cache dir؛ iOS: Caches) ⇒ **يمسحها النظام**، خارج النسخ الاحتياطي. **فهرسه** SQLite `libCachedImageData.db` في **`getApplicationSupportDirectory()`** (Android `files/`؛ iOS Application Support) ⇒ **يبقى بعد مسح الملفات ويُنسخ احتياطياً افتراضياً**، ويخزّن لكل مدخل `key` **و`url` الأصلي = الرابط الموقّع** (`CacheObject.columnUrl`).
+- **الهوية الثابتة:** Offer/Owner = `offer-media:<owner>:<mediaId>` (`offerMediaCacheKey`، مربوط بالحساب)؛ ملصق الفيديو `<key>:poster`؛ Profile = `profile_media_id` وحده. خريطة «مفتاح ⇒ مسار ملف» في صندوق Hive **`url_mapping`** (`mediaId::<key>`)، وكتالوج وسائط كل عرض/مالك `offerMediaCatalog::<owner>::<offer>` في **`local_media`** — الصندوقان في `app_flutter/` **غير مشفّرين وغير مستثنيين من النسخ**.
+- **`buildOfflineAwareImage`:** (1) ملف من `url_mapping` موجود ⇒ `Image.file` بلا شبكة؛ (2) مسار URL محلي قديم؛ (3) لا رابط ⇒ **placeholder حتى لو كان الكاش يحمل البايتات بالمفتاح نفسه** (الخريطة وحدها تقرّر)؛ (4) `CachedNetworkImage(url, cacheKey)`.
+- **التخزين بالبايتات:** `ensureMediaIdCached` ⇒ `getSingleFile(signedUrl, key)` **بمهلة 5 ث** ثم الخريطة؛ الأصول التي رفعها هذا الجهاز ⇒ `app_flutter/offer_media` (**مستثنى**)؛ صور Profile التي رفعها هذا الجهاز ⇒ **`app_flutter/profile_media` (غير مستثنى ⇒ تُنسخ احتياطياً)**؛ الملصقات ⇒ `offer_media` (مستثنى).
+- **الروابط الموقّعة:** GET TTL **900 ث** (`GET_URL_TTL_SECONDS`، worker.js)؛ في الذاكرة `OfferMediaUrlCache` بهامش 60 ث؛ تُجدَّد عند الطلب (`refreshSignedUrl` للفيديو).
+- **مسارات تبقى مفتاحها الرابط (تدور مع كل توقيع ⇒ cache miss وتكرار):** `OfflineMediaService.getImageProvider` (`cacheKey: imageUrl`، يستعمله `views/Widgets/favorite_card.dart`)؛ precache بـ `imageUrl` في `favorites_card.dart`/`search_result_card.dart` (المسار البديل)؛ `universal_media_viewer.dart` و`unified_media_preview_grid.dart:476` و`map_view.dart:1159` (`CachedNetworkImage` بلا `cacheKey`).
+- **الفيديو:** التشغيل `networkUrl` برابط موقّع؛ `getVideoFile` يعيد ملفاً محلياً **فقط لما رفعه هذا الجهاز** (خريطة URL/`local://`)؛ **لا تنزيل للفيديو الكامل أبداً** ⇒ لا تشغيل offline لفيديو لم يرفعه الجهاز (مطابق للسياسة).
+- **حدّ أساسي:** الإقلاع البارد offline **يتوقف عند بوابة الجلسة (Retry)** (P1) ⇒ «offline بعد إعادة التشغيل» غير ممكن لأي شاشة؛ الـ offline الواقعي = تطبيق بدأ بشبكة ثم انقطعت، أو استئناف.
+
+### 2) التوفر offline حسب الشاشة (داخل جلسة معتمدة)
+| الشاشة | السجل | الصور | الفيديو | يحتاج شبكة |
+|---|---|---|---|---|
+| **Profile avatar** | لقطة `cached_profile_snapshot_v1` تحفظ `profileMediaId` (لا رابط) | نعم إن بقيت الخريطة والملف (`profile_media` أو cache)؛ `warmMediaIdMapping` يرمّم الخريطة من الكاش؛ انتهاء الرابط لا يهم | — | أول تنزيل؛ بعد مسح النظام للـ cache |
+| **Offers/Owners (قوائم)** | الكاش المشفّر (P2/D-3) | البطاقات بلا صور (أيقونات) | — | التحديث |
+| **Offer/Owner Details** | النموذج المُمرَّر يُعرض أولاً | الكتالوج المحلي يرسم ما رُئي سابقاً في الإطار الأول؛ ثم الصف الموثوق + روابط موقّعة **بالتوازي**؛ الجيل يرفض المتأخر؛ فشل ⇒ يبقى المعروض + إعادة محاولة | ملصق محفوظ إن وُلِّد؛ التشغيل يحتاج شبكة | وسائط لم تُفتح سابقاً، كل فيديو |
+| **Favorites** | مشفّرة لكل حساب (§7AQ)؛ البطاقة تحفظ **المفتاح + isVideo** (لا رابط) | بالهوية إن وُجد مدخل في الخريطة؛ وإلا المسار البديل برابط ⇒ أيقونة offline (**FU-FAV-MEDIA-NO-IDENTITY**) | ملصق إن وُجد | ما لم يُرَ |
+| **Search** | من الكاشات الست المشفّرة (P4.5a) | `SearchCardMediaResolver`: المحفوظ فوراً (الكتالوج)، وإلا توقيع عند الظهور (3 متوازية، صلاحية 5 د، فشل 30 ث) | ملصق إن وُجد | كل ما لم يُحفظ |
+| **Map** | ذاكرة 5 د | بالهوية حيث تُعرف، وإلا رابط بلا مفتاح | — | بلاطات Google دائماً |
+| **Plan files** | — | `temp/plan_attachments` بعد فحص النوع ⇒ يُفتح offline إن نُزِّل | — | أول فتح |
+- **سبب جذري لغياب الوسائط offline في Search/Favorites/التفاصيل لما لم يُفتح:** الكاشات المشفّرة لـ Offers/Owners **لا تحفظ `mediaObjectIds`** (و`mediaUrls` يُفكّ فارغاً) ⇒ السجل المحفوظ **بلا هوية وسائط**؛ الهوية تأتي فقط من الكتالوج غير المشفّر الذي يُكتب عند فتح التفاصيل أو الرفع.
+
+### 3) المخاطر الأمنية/الخصوصية (مرتبة؛ للقرار)
+1. **FU-MEDIA-INDEX-BACKUP (جديد، متوسط):** `libCachedImageData.db` (Application Support، **يُنسخ احتياطياً** على Android وiOS) يحفظ **روابط R2 موقّعة** (صالحة 15 د بعد الإصدار) + مفاتيح بمعرّفات الحسابات والوسائط + أسماء الملفات. خطر الرابط قصير، لكن **الرابط الموقّع يُحفظ على القرص في مكان منسوخ** (يخالف روح قاعدة «الروابط الموقّعة عرض مؤقت»).
+2. **FU-PROFILE-MEDIA-BACKUP (جديد، متوسط):** `app_flutter/profile_media/<mediaId>.<ext>` (صورة الملف الشخصي الأصلية لمن رفعها هذا الجهاز) **غير مستثنى** ⇒ بايتات خاصة في النسخ.
+3. **FU-MEDIA-MAP-BACKUP (قائم §7AP):** `url_mapping`/`local_media` غير مشفّرة ومنسوخة: معرّفات حسابات/عروض/وسائط + كتالوجات + مسارات (لا بايتات ولا روابط).
+4. **FU-PLAN-CLEANUP (قائم):** `temp/plan_attachments` لا يكنسه Delete Account (جزء Quotations من FU-PLAN-QUOTE-CLEANUP أُغلق بـ Q-2c).
+5. **البايتات المنزّلة غير مشفّرة** في cache (مستثنى من النسخ، قابل للمسح) — مثل اليوم؛ عزل الحسابات **منطقي** بالمفتاح (`<owner>`) لا تشفيري؛ تبقى بعد الخروج (مقصود للفتح offline بعد عودة الحساب).
+6. **Profile key غير مقرون بالحساب** (`mediaId` UUID فريد ⇒ تصادم غير واقعي)؛ Delete Account: الحساب المسجّل ⇒ كل خرائط/كاش Profile + `profile_media`؛ غيره ⇒ معرّفاته فقط ✓.
+7. **Delete Account للوسائط:** Offer/Owner بالبادئة `<owner>` (كتالوج، أصول، كاش، ملصقات) ✓ مع تقرير جزئي؛ **لا يمسح** مدخلات فهرس `libCachedImageData.db` لمسارات الرابط-مفتاحاً، ولا Plan.
+
+### 4) الأداء (S — أسباب قابلة للقياس؛ NOT MEASURED)
+- **P-1 (أعلى أثر محتمل):** مسارات الرابط-مفتاحاً ⇒ **تنزيل جديد مع كل توقيع** + نسخ مكررة تستهلك **حصة 200 ملف المشتركة** فتطرد مدخلات الهوية الثابتة ⇒ صور «مخزّنة» تختفي.
+- **P-2:** `getSingleFile` بمهلة **5 ث** ⇒ صورة كبيرة على شبكة بطيئة لا تُحفظ أبداً ⇒ إعادة تنزيل في كل فتح للتفاصيل.
+- **P-3:** فتح تفاصيل بلا بايتات محلية = قراءة الصف + طلب توقيع (متوازيان) + N تنزيلات صور.
+- **P-4:** `CurrentUserAvatar` يرسم `Image.file`/الصورة **بلا `cacheWidth`** ⇒ فك تشفير الصورة الأصلية بكامل دقتها لدائرة صغيرة في كل إقلاع وشاشة (البطاقات `cacheWidth: 600`، المصغّرات 120، رأس المعرض محسوب ✓).
+- **P-5:** Search بعد إعادة التشغيل: ذاكرة الروابط فارغة ⇒ توقيع جديد لكل بطاقة غير محفوظة (3 متوازية).
+- **P-6:** ملصق الفيديو يُولَّد بقراءة نطاقات بايت عبر الرابط حتى يُحفظ (ثم محلي)؛ إعادة المحاولة بعد دقيقتين.
+- **قياس مقترح (اختباري فقط، في M1):** عدّاد طلبات `getSingleFile`/التوقيع وإصابات الخريطة لكل فتح تفاصيل، ونسبة hit/miss بعد «إعادة توقيع» محاكاة. Samsung: زمن أول صورة في التفاصيل والـ avatar (DEFERRED).
+
+### 5) ترتيب التنفيذ المقترح (مرحلة واحدة في كل مرة)
+- **M0.5 — إصلاح الخصوصية أولاً (صغير):** استثناء `app_flutter/profile_media` و`app_flutter/url_mapping.hive|.lock` و`app_flutter/local_media.hive|.lock` من النسخ (XML) + استثناء `libCachedImageData.db` (`domain="file"`) + iOS عبر الحارس القائم. **الملفات:** `backup_rules.xml`، `data_extraction_rules.xml`، نقطة إقلاع واحدة للحارس على iOS. **خطر:** استعادة بلا كتالوجات ⇒ يُعاد بناؤها من الخادم (لا فقد). **اختبارات:** نص XML حرفياً + القديمة كما هي. **أثر:** لا روابط/معرّفات/صور شخصية في النسخ الجديدة (لا يمحو القديمة).
+- **M1 — هوية الصور والكاش:** CacheManager **مخصص للوسائط الخاصة** (مفتاح منفصل، حصة أكبر، مدة أطول) يُستعمل بالهوية فقط؛ **إزالة مسارات الرابط-مفتاحاً** للوسائط الخاصة (تبقى للروابط العامة القديمة فقط)؛ ترميم الخريطة من الكاش حين يغيب الرابط؛ مهلة تنزيل منفصلة عن مهلة العرض؛ `cacheWidth` للـ avatar؛ عدادات اختبار. **الملفات:** `offline_media_service.dart`، `current_user_avatar.dart`، `favorites_card.dart`، `search_result_card.dart`، `views/Widgets/favorite_card.dart`، `map_view.dart` (مسار البديل فقط). **خطر:** تغيير مكان الكاش ⇒ أول فتح يعيد التنزيل مرة. **قرار:** حصة/مدة الكاش؛ هل يُصفّى فهرس الروابط القديم.
+- **M2 — تفاصيل Offers/Owners offline:** حفظ **`mediaObjectIds` + النوع** في الكاشات المشفّرة لـ Offers/Owners (يغيّر **محتوى** الحمولة v2، لا الغلاف/HMAC — **يحتاج موافقة صريحة**: «تنسيق القوائم المشفّرة» محمي) أو نقل الكتالوج إلى تخزين مشفّر؛ معرض التفاصيل يرسم المحفوظ بلا شبكة؛ لا تنزيل مسبق.
+- **M3 — وسائط Favorites/Search:** إغلاق FU-FAV-MEDIA-NO-IDENTITY باشتقاق الوسائط من الهوية المحفوظة (بعد M2)؛ placeholder ثابت بلا تحميل لا ينتهي.
+- **M4 — Avatar:** `cacheWidth`، عزل الحساب عند التبديل، اختبار «مسح النظام للـ cache» ⇒ ترميم.
+- **M5 — سياسة الفيديو:** تشغيل الملفات المحلية الموجودة فقط (رفع هذا الجهاز)؛ أي تنزيل فيديو للعرض offline = قرار منتج/تخزين/تشفير منفصل (حجم، نسخ، Delete Account).
+- **(مستقل) FU-PLAN-CLEANUP:** كنس `temp/plan_attachments` للحساب في Delete Account.
+
+### 6) قرارات المالك المطلوبة
+- **D-M1:** تنفيذ **M0.5** (استثناءات النسخ للخصوصية) قبل M1 — **موصى**.
+- **D-M2:** إزالة الروابط الموقّعة من فهرس الكاش للوسائط الخاصة (CacheManager مخصص بـ `url` غير موقّع/مُطهَّر أو تنظيف الفهرس) — **موصى ضمن M1**.
+- **D-M3:** حصة ومدة كاش الوسائط الخاصة (مثلاً 1,000 ملف / 90 يوماً، أو حد بالحجم) — قرار تخزين.
+- **D-M4:** حفظ هوية الوسائط في الكاشات المشفّرة لـ Offers/Owners (تغيير محتوى الحمولة) **أو** تشفير الكتالوج — **مطلوب لـ M2/M3**.
+- **D-M5:** هل تُشفَّر بايتات الصور المنزّلة (اليوم صريحة في cache مستثنى) — توصية: **لا الآن** (مستثناة، قابلة للمسح، إعادة تنزيل رخيصة)؛ إعادة تقييم بعد M1.
+- **D-M6:** لا تنزيل فيديو للعرض offline (افتراض) — تأكيد.
+- **D-M7:** إضافة كنس Plan إلى Delete Account.
+
+**الحدود المفتوحة المحفوظة:** P4.3-ACCEPT-NONEMPTY **OPEN**؛ D-57 (Samsung/iOS) **DEFERRED**؛ إخفاقات Auth/Delete Account التاريخية (FU-AUTH-BASELINE-7، `delete_account_test` setUpAll، FU-ACCOUNT-UI-BASELINE-1)؛ قيود PDF عروض الأسعار القديمة (§7AY)؛ فجوات Smart Map (ذاكرة 5 د، البلاطات) وToolkit (قبول جهاز) offline.
+
+**الحالة (M0):** AUDIT مكتمل (SOURCE-READ). **D-M1 موافق ⇒ M0.5 أدناه.**
+
+### M0.5 — حماية الوسائط الخاصة من النسخ الاحتياطي — 2026-11-07 (CODE_PROVEN؛ غير مدمج)
+
+**الموافقة:** **D-M1** (M0.5 أولاً) — استثناء من النسخ فقط؛ لا تشفير ولا ترحيل ولا حذف. **Git:** `45fa169` = `origin` (0/0)؛ stashes الاثنان باقيان؛ تعديل M0 على هذا الملف محفوظ؛ ملفات plugin الثلاثة معدّلة (يعيد Flutter توليدها، لم تُلمس)؛ `docs/ADD_DETAILS_*` لم يُنشآ.
+
+**المواقع المُتحقَّقة (S — من مصدر الحزم):**
+- `Hive.initFlutter()` بلا مجلد فرعي (`main.dart`) ⇒ `getApplicationDocumentsDirectory` (Android: `getDir("flutter")` = **`app_flutter/`**، النطاق `root`؛ iOS: Documents). ملفات الصندوق في hive 2.2.3: **`<name>.hive`** و**`<name>.lock`** و**`<name>.hivec`** (أثناء الضغط). الصندوقان **مشتركان بين الحسابات** (المفاتيح تحمل الحساب): `url_mapping` (خريطة الهوية `mediaId::`) و`local_media` (كتالوجات `offerMediaCatalog::<owner>::<offer>`).
+- `profile_media` = `adoptLocalFileForMediaId` الافتراضي تحت المستندات (`app_flutter/profile_media`)؛ `offer_media` (مستثنى على Android سابقاً).
+- فهرس الصور: flutter_cache_manager **3.4.2**، `DefaultCacheManager.key = 'libCachedImageData'`؛ على Android/iOS `CacheObjectProvider` (sqflite) ⇒ **`getApplicationSupportDirectory()/libCachedImageData.db`** (Android `context.filesDir` = `files/`، النطاق **`file`**؛ iOS Library/Application Support). sqflite: **WAL معطّل افتراضياً** (`WAL_ENABLED_BY_DEFAULT = false`، ولا meta في الـ manifest) ⇒ الملف المرافق `-journal` المؤقت؛ أُدرج `-wal`/`-shm` احتياطاً (استثناء ملف غير موجود لا أثر له). **قواعد Android تقبل مسار ملف ⇒ استثناء ضيق ممكن، بلا استثناء `files/` ولا Application Support كاملاً.**
+
+**التنفيذ (5 ملفات + اختبار):**
+1. **`backup_rules.xml`** (`full-backup-content`) و**`data_extraction_rules.xml`** (`cloud-backup` **و** `device-transfer`): **11 استثناء** — `root`: `app_flutter/profile_media`، `app_flutter/url_mapping.hive|.hivec|.lock`، `app_flutter/local_media.hive|.hivec|.lock`؛ `file`: `libCachedImageData.db|.db-journal|.db-wal|.db-shm` + تعليقات. **لا سطر حُذف**؛ كل الاستثناءات السابقة (offer_media وطابورها، scanner، mlkit، combine_pdfs، image_to_pdf، signature_pdfs، offline_lists، quotation_pdfs، cached_favorites) كما هي.
+2. **جديد `lib/src/services/private_media_backup_exclusions.dart`** — `excludeExisting()`: يطلب من **الحارس القائم** (`PlatformScannerBackupGuard`، قناة `AppDelegate.swift` — **بلا تغيير native**) وضع `isExcludedFromBackup` على كل عنصر **موجود** من القائمة نفسها (+ `offer_media` الذي لم يكن مُعلَّماً على iOS)؛ لا يُنشئ ولا يغيّر ولا يحذف شيئاً؛ لا يرمي. على Android الحارس لا يفعل شيئاً (القواعد تصريحية).
+3. **`lib/main.dart`** — `unawaited(PrivateMediaBackupExclusions().excludeExisting())` بعد `OfflineMediaService.instance.initialize()` (الصناديق مفتوحة) ⇒ يُعلَّم **ما أنشأته نسخ سابقة** عند كل إقلاع.
+4. **`offline_media_service.dart`** — `backupGuard` قابل للحقن، وسطر واحد بعد ضمان مجلد `adoptLocalFileForMediaId` (profile_media/offer_media) ⇒ المجلد الجديد يُعلَّم **عند إنشائه** لا عند الإقلاع التالي. النسخ والخريطة **بلا تغيير**.
+
+**الأدلة:** **أحمر أولاً** (الواجهة غير موجودة، والقواعد بلا المسارات). **جديد `test/services/private_media_backup_test.dart` — 10/10:** القواعد الثلاث تحوي الـ 11 **وكل السابقة** وعددها بالضبط (لا توسيع)؛ لا استثناء لـ `app_flutter`/`.`/فارغ ولا `<include>`؛ الأسماء = ما يستعمله الكود (`DefaultCacheManager.key`، أسماء الصناديق، `profile_media`، `Hive.initFlutter()` بلا مجلد فرعي)؛ الإقلاع يعلّم بعد فتح الصناديق؛ iOS: العناصر الموجودة فقط تُعلَّم، **البايتات والأوقات بلا تغيير، لا شيء يُنشأ**؛ حارس فاشل/مجلد غير متاح ⇒ لا رمي؛ `adoptLocalFileForMediaId` لـ profile_media وoffer_media: نسخ وخريطة كما كانا، الأصل باقٍ، المجلد مُعلَّم. **الطفرات 9/9 التُقطت** (SHA-256 مطابق): Auto Backup يُبقي profile_media؛ cloud-backup يُبقي url_mapping؛ **device-transfer وحده** يُبقي الفهرس؛ استثناء واسع لـ `app_flutter`؛ تعليم العناصر غير الموجودة؛ اسم فهرس خاطئ؛ profile_media غير مُعلَّم؛ مجلد adopt غير مُعلَّم؛ الإقلاع لا يعلّم. **انحدار مركّز — 620 نجاح / 1:** حراس مصدر Scanner/Combine/Images-to-PDF/Signature، `favorites_encrypted_cache_test`، `offline_lists_storage_test`، `quotation_pdf_protection_test`، `test/services`، `test/offers` كاملاً، `owner_media_test`، `favorite_card_media_test`، `favorites_viewmodel_initial_load_test`، `search_card_media_test`، `last_known_good_profile_test`، `share_media_preview_test`، `single_active_session_source_test`، `plan_attachment_source_guards_test` — الإخفاق الوحيد **FU-COMBINE-GUARD-1** (OPEN، مستقل؛ لم يُلمس أي ملف Combine). **Analyzer** (4) ⇒ No issues؛ **Format 3.5:** `main.dart` و`offline_media_service.dart` 0 = HEAD، الجديدان مُنسّقان؛ **`git diff --check`** نظيف؛ CRLF.
+
+**سلوك الوسائط بلا تغيير:** لا مسح للكاش ولا حذف للصناديق ولا ترحيل ولا تغيير معرّفات/روابط/واجهات/معارض/تشفير/حدود الكاش/تنزيل/تنقل/Auth/SAD/Delete Account/PDF؛ الصور المحفوظة متاحة بالشروط نفسها؛ عزل الحسابات A/B كما هو (لا تغيير مفاتيح).
+
+**الحدود الأمنية (لا تُغلق مشكلة خصوصية الوسائط):** الاستثناء **لا يشفّر** — البيانات الوصفية والبايتات تبقى صريحة داخل حماية تخزين التطبيق؛ **النسخ الاحتياطية التاريخية لا تُمحى**؛ ما نُقل إلى جهاز آخر لا يُزال؛ **الروابط الموقّعة المنتهية في النسخ القديمة** تبقى بيانات تاريخية؛ iOS: التعليم best effort (فشل القناة ⇒ يبقى قابلاً للنسخ)، ويُفقد إن أعادت مكتبة إنشاء الملف — يُعاد عند الإقلاع التالي؛ `-journal` يُنشأ ويُحذف أثناء الكتابات (مستثنى على Android بالاسم، وعلى iOS فقط إن وُجد عند الإقلاع)؛ `offline_lists` على iOS ما زال بلا تعليم (موروث، مشفّر، خارج نطاق M0.5). **Android/iOS الفعلي REAL_DEVICE_UNVERIFIED** (يُضاف إلى D-57: نسخة `bmgr`/سحابية ونقل جهاز ونسخ iCloud لا تحوي هذه المسارات).
+
+**القرارات الباقية:** **D-M2…D-M7 معلّقة** (لم يُنفَّذ منها شيء)؛ FU-PLAN-CLEANUP مفتوح. **المحفوظ:** P4.3-ACCEPT-NONEMPTY **OPEN**، D-57 DEFERRED، إخفاقات Auth/Delete Account التاريخية، قيود PDF عروض الأسعار، فجوات Smart Map وToolkit.
+
+**الحالة:** **M0.5 = CODE_PROVEN — REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit. **NEXT:** **M1** (هوية الصور والكاش) بعد قرار D-M2/D-M3. **STOP:** لا M1 تلقائياً؛ لا commit/push؛ لا Samsung/بناء native.
+
 ---
 
 ## 8) مراجع الاستمرار

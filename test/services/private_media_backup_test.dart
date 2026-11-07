@@ -11,11 +11,14 @@
 //    Android/iOS: getApplicationSupportDirectory()/libCachedImageData.db
 //    (Android files/, backup domain "file") [Library/Application Support],
 //    with sqflite's -journal (WAL off by default; -wal/-shm listed too).
+//  * M1b: the private image cache's own index, bwPrivateMedia.db, in the same
+//    folder (its bytes are in the temporary folder, never backed up).
 // Nothing here is moved, cleared, encrypted or deleted.
 import 'dart:io';
 
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/private_media_backup_exclusions.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,6 +66,14 @@ const _added = [
   ('file', 'libCachedImageData.db-shm'),
 ];
 
+/// What M1b adds (domain, path): the private image cache's index.
+const _m1b = [
+  ('file', 'bwPrivateMedia.db'),
+  ('file', 'bwPrivateMedia.db-journal'),
+  ('file', 'bwPrivateMedia.db-wal'),
+  ('file', 'bwPrivateMedia.db-shm'),
+];
+
 List<String> _sections(String xml, String tag) => [
       for (final m
           in RegExp('<$tag>(.*?)</$tag>', dotAll: true).allMatches(xml))
@@ -79,10 +90,10 @@ void main() {
   group('Android backup rules', () {
     void expectRules(String section, String where) {
       final rules = _excludes(section);
-      for (final rule in [..._earlier, ..._added]) {
+      for (final rule in [..._earlier, ..._added, ..._m1b]) {
         expect(rules, contains(rule), reason: '$where: $rule');
       }
-      expect(rules, hasLength(_earlier.length + _added.length),
+      expect(rules, hasLength(_earlier.length + _added.length + _m1b.length),
           reason: '$where: nothing else added or broadened');
     }
 
@@ -118,13 +129,19 @@ void main() {
   });
 
   group('the excluded names are the ones the code uses', () {
-    test('the image-cache index is DefaultCacheManager\'s database', () {
+    test('the image-cache indexes: DefaultCacheManager\'s and the private one',
+        () {
       expect(DefaultCacheManager.key, 'libCachedImageData');
+      expect(PrivateMediaCache.storeKey, 'bwPrivateMedia');
       expect(PrivateMediaBackupExclusions.cacheIndexFiles, [
         'libCachedImageData.db',
         'libCachedImageData.db-journal',
         'libCachedImageData.db-wal',
         'libCachedImageData.db-shm',
+        'bwPrivateMedia.db',
+        'bwPrivateMedia.db-journal',
+        'bwPrivateMedia.db-wal',
+        'bwPrivateMedia.db-shm',
       ]);
     });
 
@@ -181,6 +198,7 @@ void main() {
         File(_sep([documents.path, 'local_media.lock']))..writeAsBytesSync([2]),
         File(_sep([support.path, 'libCachedImageData.db']))
           ..writeAsBytesSync([3, 4]),
+        File(_sep([support.path, 'bwPrivateMedia.db']))..writeAsBytesSync([6]),
       ];
       final profile = Directory(_sep([documents.path, 'profile_media']))
         ..createSync();
@@ -202,6 +220,7 @@ void main() {
         _sep([documents.path, 'local_media.lock']),
         _sep([documents.path, 'profile_media']),
         _sep([support.path, 'libCachedImageData.db']),
+        _sep([support.path, 'bwPrivateMedia.db']),
       });
       expect(marked, guard.excluded);
       for (final entry in before.entries) {
@@ -210,7 +229,7 @@ void main() {
         expect(f.lastModifiedSync(), entry.value.$2, reason: entry.key);
       }
       expect(documents.listSync().length, 3, reason: 'nothing created');
-      expect(support.listSync().length, 1, reason: 'nothing created');
+      expect(support.listSync().length, 2, reason: 'nothing created');
     });
 
     test('a guard that fails, or a missing directory, never throws', () async {

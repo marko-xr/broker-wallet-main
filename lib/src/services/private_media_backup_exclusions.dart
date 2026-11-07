@@ -13,6 +13,7 @@
 
 import 'dart:io';
 
+import 'package:broker_wallet/src/services/private_media_cache.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path/path.dart' as p;
@@ -48,11 +49,11 @@ class PrivateMediaBackupExclusions {
   static const List<String> documentFolders = ['profile_media', 'offer_media'];
 
   /// In the application-support folder: the image cache's index (it records
-  /// each entry's key and the link it was fetched from) and SQLite's files
-  /// beside it.
+  /// each entry's key and the link it was fetched from), the private image
+  /// cache's index (M1b: keys only), and SQLite's files beside each.
   static final List<String> cacheIndexFiles = [
-    for (final suffix in ['', '-journal', '-wal', '-shm'])
-      '${DefaultCacheManager.key}.db$suffix',
+    for (final store in [DefaultCacheManager.key, PrivateMediaCache.storeKey])
+      for (final suffix in ['', '-journal', '-wal', '-shm']) '$store.db$suffix',
   ];
 
   /// Marks every listed item that exists now; returns the paths it asked

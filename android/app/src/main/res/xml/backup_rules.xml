@@ -68,6 +68,14 @@
     <exclude domain="file" path="libCachedImageData.db-journal" />
     <exclude domain="file" path="libCachedImageData.db-wal" />
     <exclude domain="file" path="libCachedImageData.db-shm" />
+    <!-- Private image cache (M1b): files/bwPrivateMedia.db, the separate index of
+         the private image cache (keys and fixed bw-private-media:// addresses, no
+         signed links), with SQLite's files beside it. Its bytes are in the cache
+         directory, which is never backed up. -->
+    <exclude domain="file" path="bwPrivateMedia.db" />
+    <exclude domain="file" path="bwPrivateMedia.db-journal" />
+    <exclude domain="file" path="bwPrivateMedia.db-wal" />
+    <exclude domain="file" path="bwPrivateMedia.db-shm" />
     <!-- The shared Favorites box of builds before per-account isolation:
          plaintext customer names, never read again and deliberately not
          deleted (see main.dart). Only its exact files are listed. The

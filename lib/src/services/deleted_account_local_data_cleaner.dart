@@ -9,6 +9,7 @@ import 'package:broker_wallet/src/services/offer_media_upload_queue.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport, OfflineMediaService;
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
 import 'package:broker_wallet/src/services/offers_local_cache.dart';
 import 'package:broker_wallet/src/services/offices_local_cache.dart';
 import 'package:broker_wallet/src/services/owners_local_cache.dart';
@@ -47,6 +48,8 @@ typedef OfferMediaUploadPurger = Future<int> Function(String ownerId);
 ///  * that account's own Offer-media catalogue, the cached image bytes behind
 ///    it, and its adopted originals — all keyed by that account's id;
 ///  * that account's own queued Offer media uploads and their local copies;
+///  * that account's copies in the private image cache
+///    ([PrivateMediaCache.forgetAccount]): only keys naming that account;
 ///  * that account's own Favorites cache box (`cached_favorites_<uid>`, see
 ///    `FavoriteService.boxNameForUid`) — deleted from disk outright rather
 ///    than merely cleared, and safe to do unconditionally because the box
@@ -87,6 +90,7 @@ class DeletedAccountLocalDataCleaner {
     OfferMediaForgetter? forgetOfferMedia,
     OfferMediaUploadPurger? purgeOfferMediaUploads,
     Future<int> Function(String uid)? forgetQuotationPdfs,
+    Future<int> Function(String uid)? forgetPrivateMedia,
   })  : _forgetProfileMedia = forgetProfileMedia ??
             OfflineMediaService.instance.forgetProfileMedia,
         _forgetOfferMedia =
@@ -96,12 +100,15 @@ class DeletedAccountLocalDataCleaner {
         _forgetQuotationPdfs = forgetQuotationPdfs ??
             ((uid) async =>
                 await QuotationPdfFiles().forgetAccount(uid) +
-                await QuotationPdfVault().forgetAccount(uid));
+                await QuotationPdfVault().forgetAccount(uid)),
+        _forgetPrivateMedia =
+            forgetPrivateMedia ?? PrivateMediaCache.instance.forgetAccount;
 
   final ProfileMediaForgetter _forgetProfileMedia;
   final OfferMediaForgetter _forgetOfferMedia;
   final OfferMediaUploadPurger _purgeOfferMediaUploads;
   final Future<int> Function(String uid) _forgetQuotationPdfs;
+  final Future<int> Function(String uid) _forgetPrivateMedia;
 
   static const List<String> _uidKeyedBoxes = [
     'local_profile',
@@ -165,6 +172,9 @@ class DeletedAccountLocalDataCleaner {
     await _step(() async {
       offerMedia = await _forgetOfferMedia(ownerId: deletedUid);
     });
+    // Keys name their account, so this is exact whichever account is
+    // signed in.
+    await _step(() => _forgetPrivateMedia(deletedUid));
 
     if (!wasSignedInAccount) {
       await _step(() => _forgetProfileMedia(mediaIds: profileMediaIds));

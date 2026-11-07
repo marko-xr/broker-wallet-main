@@ -3528,7 +3528,112 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 
 **القرارات الباقية:** **D-M2…D-M7 معلّقة** (لم يُنفَّذ منها شيء)؛ FU-PLAN-CLEANUP مفتوح. **المحفوظ:** P4.3-ACCEPT-NONEMPTY **OPEN**، D-57 DEFERRED، إخفاقات Auth/Delete Account التاريخية، قيود PDF عروض الأسعار، فجوات Smart Map وToolkit.
 
-**الحالة:** **M0.5 = CODE_PROVEN — REAL_DEVICE_UNVERIFIED.** **NOW:** مراجعة المالك ثم موافقة commit. **NEXT:** **M1** (هوية الصور والكاش) بعد قرار D-M2/D-M3. **STOP:** لا M1 تلقائياً؛ لا commit/push؛ لا Samsung/بناء native.
+**الحالة (M0.5):** CODE_PROVEN — REAL_DEVICE_UNVERIFIED؛ أُودع `e8162a9` والمالك دفعه (= `origin`).
+
+### M1a — هوية وسائط ثابتة وكاش صور موثوق — 2026-11-07 (DESIGN؛ SOURCE-READ؛ لا تغيير كود)
+
+**Git (مُتحقَّق):** `e8162a9` = `origin` (0/0)؛ stashes الاثنان باقيان؛ ملفات plugin الثلاثة فقط معدّلة (مُعاد توليدها)؛ `docs/ADD_DETAILS_*` لم يُنشآ. **هذا القسم وحده تغيّر.** المصدر: flutter_cache_manager **3.4.2** (`C:/DevCaches`) + الكود الحي.
+
+**1) سلوك الكاش الفعلي (S — من مصدر الحزمة):**
+- **`cacheKey` يستبدل المفتاح فقط، لا الرابط:** كل تنزيل يكتب `CacheObject.copyWith(url: url)` (`web_helper.dart:105`) ⇒ عمود **`url` في `libCachedImageData.db` يحمل آخر رابط موقّع** لذلك المفتاح (إلى جانب `key`، `relativePath`، `eTag`، `validTill`، `touched`، `length`). **⇒ نعم، الروابط الموقّعة تبقى في بيانات وصفية دائمة** (مستثناة من النسخ منذ M0.5، لكنها على القرص؛ صالحة 900 ث بعد إصدارها).
+- **البحث بالهوية بلا رابط ممكن:** `getFileFromCache(key)` لا يحتاج رابطاً ولا يفحص الصلاحية — يستعمله `ensureMediaIdCached`/`warmMediaIdMapping` اليوم (محلي أولاً صحيح).
+- **الصلاحية:** بلا `Cache-Control` من الاستجابة ⇒ `validTill = الآن + 7 أيام` (`file_service.dart:91`). بعدها: `getSingleFile` **يعيد التنزيل** (ويفشل offline رغم وجود البايتات)؛ `getFileStream` (يستعمله `CachedNetworkImage`) يعرض المحفوظ أولاً ثم **يحاول التنزيل في كل عرض**، وعند **404 يحذف المدخل**.
+- **الإخلاء:** `touched` يُحدَّث عند الوصول؛ ما زاد عن **200** يُخلى الأقدم لمساً، وما لم يُلمس **30 يوماً** يُحذف (`getObjectsOverCapacity`/`getOldObjects`)؛ تنظيف كل ≥10 ث بعد العمليات.
+- **التكرار:** المدخل فريد **بالمفتاح**؛ المسارات التي مفتاحها الرابط تنشئ **مدخلاً جديداً لكل توقيع**. **بعد إعادة التشغيل:** الفهرس باقٍ (Application Support)، البايتات باقية ما لم يمسح النظام مجلد temp.
+- **تصنيف مسارات الرابط-مفتاحاً (M0):** **ميتة** (بلا مستدعين): `views/Widgets/favorite_card.dart` ⇒ `OfflineMediaService.getImageProvider`، `UniversalMediaViewer`، `mapUrlToLocalFile`. **قديمة لروابط عادية (Firebase/تحرير)**: `MediaPreviewItem.fromUrl` (`media_upload_widget` ⇐ `uploadedFileUrls`)، بديل `map_view` (`locationInfo.mediaUrl`) — يُتحقق في M1c أنها لا تحمل روابط R2. **حيّة وقد تحمل رابطاً موقّعاً:** مسار `imageUrl` البديل في `favorites_card`/`search_result_card` (FU-FAV-MEDIA-NO-IDENTITY). المسارات الخاصة الرئيسية (`PrivateCardMedia`، المعرض، العارض الكامل، الشبكة لعناصر Offer) **تمرّر المفتاح الثابت**.
+- **بايتات فعلية مقابل خريطة:** `buildOfflineAwareImage` يرسم بلا شبكة **فقط** عبر خريطة `url_mapping` المتزامنة؛ الكاش وحده (async) لا يُستشار في الإطار الأول.
+
+**2) الهوية القانونية المقترحة:** `media_objects.id` = **UUID مفتاح أساسي** و`owner_id NOT NULL` ⇒ **فريد عالمياً ولكل معرّف مالك واحد**. لا إصدار في الخادم غير المعرّف نفسه (الاستبدال = معرّف جديد) ⇒ **البايتات لكل معرّف ثابتة**. الصيغة: **إبقاء `offer-media:<owner>:<mediaId>` كما هي** (Offers وOwners — مربوطة بالحساب، تعمل بها الكتالوجات والخرائط اليوم)، الملصق `<key>:poster` كما هو، و**جديد للملف الشخصي `profile-media:<uid>:<mediaId>`** (بدل `mediaId` العاري). لا متغيّرات حجم في الخادم ⇒ متغيّر الدقة يبقى قراراً **عند الفك** (`cacheWidth`) لا مفتاحاً.
+
+**3) البحث المحلي أولاً:** (1) الشاشة تعرف `(uid الحالي، المفتاح)` من سجل حسابها؛ **رفض أي مفتاح مالكه ≠ uid الحالي**؛ (2) خريطة `url_mapping` المتزامنة ⇒ ملف موجود ⇒ يُرسم بلا رابط؛ (3) وإلا `getFileFromCache(key)` (async) ⇒ يرمّم الخريطة؛ (4) وإلا online: توقيع مُصرَّح ثم **تنزيل واحد** يُخزَّن بالمفتاح؛ (5) offline وغير موجود ⇒ placeholder القائم؛ (6) ملف مفقود/تالف (فك فاشل) ⇒ يُعامل كغائب، يُعاد عند الاتصال. **انتهاء الرابط لا يُبطل البايتات المُصرَّح بها سابقاً**؛ لا عرض لسجل حساب آخر لأن المفتاح يحمل المالك والسجلات تأتي من قوائم الحساب (RLS/الكاش المشفّر).
+
+**4) خيارات التخزين:**
+| | A. `DefaultCacheManager` بمفاتيح ثابتة | **B′. CacheManager خاص `bwPrivateMedia` + `FileService` مخصص** | C. هجين يدوي (ملفات `offer_media`/`profile_media` + خريطة) |
+|---|---|---|---|
+| روابط موقّعة في الفهرس | **نعم دائماً** (`copyWith(url)`) | **لا**: الكاش يرى رابطاً زائفاً ثابتاً `bw-private-media://v1/<key>`؛ الـ `FileService` يطلب رابطاً موقّعاً طازجاً **داخل** التنزيل ولا يعيده | لا (لا فهرس حزمة) |
+| تكرار/7 أيام | التكرار يزول بالمفاتيح؛ إعادة المحاولة كل 7 أيام باقية | الاستجابة تعيد `validTill` بعيداً (المعرّف ثابت البايتات) ⇒ لا تنزيل دوري | يدوي |
+| الإخلاء/الحصة | مشتركة مع كل شيء (200) | **منفصلة** (تبقى 200/30 الآن حسب التعليمات؛ قابلة للضبط لاحقاً) | يدوي بالكامل |
+| عزل الحساب / Delete Account | منطقي بالمفتاح؛ لا كنس بالبادئة إلا عبر الكتالوج | منطقي بالمفتاح + `repo.getAllObjects()` لكنس بادئة الحساب | ممكن |
+| النسخ الاحتياطي | M0.5 يغطي `libCachedImageData.db` | **يتطلب استثناءً جديداً** لـ `bwPrivateMedia.db` (+journal) في القواعد الثلاث + iOS (قرار) | المجلدات مستثناة |
+| الفساد | الحزمة تتعامل | الحزمة تتعامل | يدوي |
+| التعقيد/الخطر | أقل؛ لا يحل الروابط | **متوسط، ضمن نقاط امتداد الحزمة (Config/FileService) — لا تبعية ولا تشفير جديد** | الأعلى |
+**التوصية: B′.** الوحيد الذي **يمنع كتابة الروابط الموقّعة** في بيانات دائمة ويُنهي إعادة التنزيل الدورية، مع إبقاء البايتات في temp (يمسحها النظام، خارج النسخ) و**بلا تشفير جديد** (D-M5 يبقى قراراً منفصلاً — B′ لا يجعل البايتات أكثر انكشافاً من اليوم).
+
+**5) توافق الموجود (لا حذف تلقائي):** مدخلات `url_mapping` (`mediaId::<key>`) ⇒ تبقى ويُعاد توجيهها عند الترحيل؛ `local_media` (الكتالوجات) ⇒ بلا تغيير؛ **بايتات `DefaultCacheManager`** ⇒ تُنسخ إلى الكاش الجديد عبر `putFile(pseudoUrl, bytes, key)` **فقط** لمفاتيح **مُثبتة للحساب الحالي** (`offer-media:<uid>:` أو `profile_media_id` الحالي من الملف الشخصي)، ثم قراءة مطابقة، ثم تحديث الخريطة؛ المدخل القديم **يبقى** (يُخليه الكاش الافتراضي طبيعياً) ما لم يقرر المالك كنسه (D-M1a-3)؛ مفاتيح غير مُثبتة الملكية ⇒ لا تُلمس ولا تُنسب. أصول `profile_media`/`offer_media` والملصقات ⇒ تبقى ملفات محلية كما هي (الخريطة تشير إليها). فشل الترحيل ⇒ القديم سليم.
+
+**6) الجودة والأداء (S؛ NOT MEASURED):** لا مصغّرات في الخادم ⇒ الأصل يُنزَّل دائماً؛ البطاقات `cacheWidth: 600`، المصغّرات 120، رأس المعرض محسوب؛ **الـ avatar بلا `cacheWidth`** (فك الأصل لدائرة صغيرة)؛ لا مشاركة لتنزيل متزامن للمفتاح نفسه خارج ما تفعله الحزمة داخلياً (`WebHelper` يجمع الطلبات المتزامنة لنفس المفتاح). **المكاسب المتوقعة (تقدير):** صفر تنزيل لتوقيع جديد لمعرّف محفوظ؛ لا محاولة شبكة كل عرض بعد 7 أيام؛ حصة غير مشتركة مع وسائط عامة؛ فك أصغر للـ avatar. **القياس (M1e، اختباري حتمي):** عدّاد استدعاءات `FileService.get` وإصابات `getFileFromCache` لسيناريو «3 توقيعات للمعرّف نفسه» (قبل: 3 تنزيلات في المسارات الرابط-مفتاحاً / بعد: 1) و«بعد 8 أيام» (قبل: محاولة لكل عرض / بعد: 0)؛ Samsung: زمن أول صورة (DEFERRED). **لا تغيير لحد 200/30 الآن** — يُقاس عدد الصور المميزة المعروضة لكل جلسة قبل اقتراح حد.
+
+**7) الأمان ودورة الحياة:** تبديل الحساب/الخروج ⇒ البايتات تبقى، لا يُطلب مفتاح حساب آخر (والطبقة ترفض)؛ الحساب نفسه بعد العودة ⇒ يُرسم محلياً؛ جلسة مُزاحة ⇒ لا توقيع جديد (Worker يرفض)، المحفوظ يبقى معروضاً كبقية الكاشات (ليس سلطة)؛ **تنزيل متأخر بعد تغيّر الحساب/الجلسة ⇒ الـ FileService يرفضه قبل التخزين** (الربط بالجلسة عند البدء)؛ Delete Account ⇒ كنس بادئة `offer-media:<uid>:`/`profile-media:<uid>:` في الكاش الجديد + القائم اليوم؛ ملف مفقود/تالف ⇒ غائب؛ تصادم المعرّف مستحيل (UUID + المالك في المفتاح)؛ انتهاء الرابط لا أثر على المحفوظ؛ استبدال الوسائط = معرّف جديد ⇒ القديم يُخلى أو يُكنس بالكتالوج القائم؛ الإقلاع البارد offline ما زال يتوقف عند بوابة الجلسة (P1) — لا يتغير.
+
+**8) خطة التنفيذ:**
+- **M1b — الكاش الخاص والهوية:** جديد `private_media_cache.dart` (`CacheManager(Config('bwPrivateMedia', fileService: _ResolvingFileService))`، رابط زائف، ربط الحساب/الجلسة، `validTill` بعيد)؛ مفتاح `profile-media:<uid>:<id>`؛ `OfflineMediaService` يستعمله لـ `ensureMediaIdCached`/`warm`؛ استثناء `bwPrivateMedia.db*` من النسخ (XML + iOS). **اختبارات:** لا رابط موقّع في `repo` بعد تنزيل؛ رفض مفتاح حساب آخر؛ تنزيل متأخر بعد تبديل ⇒ لا تخزين؛ 3 توقيعات ⇒ تنزيل واحد؛ +8 أيام ⇒ لا شبكة؛ offline ⇒ المحفوظ. **طفرات:** إعادة الرابط الحقيقي للكاش، إزالة فحص المالك/الجلسة، `validTill` قصير. **قرار:** D-M1a-1/2/4.
+- **M1c — استبدال المسارات:** `favorites_card`/`search_result_card` (البديل) و`CachedNetworkImage` الخاصة ⇒ الكاش الخاص بالمفتاح؛ إزالة الشيفرة الميتة (D-M1a-6)؛ `cacheWidth` للـ avatar. **ملفات:** `offline_media_service.dart`، `private_card_media.dart`، `current_user_avatar.dart`، `favorites_card.dart`، `search_result_card.dart`، `media_gallery_widget.dart`، `full_screen_media_viewer.dart`.
+- **M1d — الترحيل:** نسخ مُثبت الملكية من `DefaultCacheManager` + إعادة توجيه الخريطة؛ اختياري كنس القديم (D-M1a-3). **اختبارات:** حسابان، مفاتيح غير مُثبتة لا تُلمس، انقطاع ⇒ القديم سليم وidempotent.
+- **M1e — قياس وانحدار:** العدادات أعلاه + انحدار الوسائط/المفضلة/البحث.
+- **التراجع:** الكاش الجديد إضافي؛ التراجع = العودة للكاش الافتراضي (بايتاته باقية ما لم يُكنس)؛ بعد كنس D-M1a-3 التراجع يعني إعادة تنزيل.
+
+**9) قرارات المالك:**
+- **D-M1a-1:** التخزين **B′** (كاش خاص + FileService يحل الرابط داخلياً، رابط زائف بلا توقيع في الفهرس) — **موصى**.
+- **D-M1a-2:** `validTill` بعيد (مثلاً سنة) للمعرّفات الثابتة؛ الإخلاء يبقى 200/30 بـ `touched` حتى القياس — **موصى**.
+- **D-M1a-3:** بعد نسخ مُتحقَّق: **كنس** مدخلات الوسائط الخاصة من `DefaultCacheManager` (يزيل الروابط الموقّعة والتكرار من الفهرس القديم) أو **إبقاؤها** (الافتراضي بلا موافقة).
+- **D-M1a-4:** مفتاح Profile الجديد `profile-media:<uid>:<id>` — **موصى**.
+- **D-M1a-5:** استثناء `bwPrivateMedia.db` + `-journal/-wal/-shm` من النسخ (Android + iOS) — **مطلوب مع B′**.
+- **D-M1a-6:** حذف الشيفرة الميتة للمسارات الرابط-مفتاحاً (`views/Widgets/favorite_card.dart`، `UniversalMediaViewer`، `getImageProvider`، `mapUrlToLocalFile`) — ليست واجهة مستخدمة، لكن الحذف للمالك.
+- **D-M2…D-M7 (§7AZ)** تبقى معلّقة؛ D-M2 (إزالة الروابط من الفهرس) **يتحقق بـ B′ + D-M1a-3**.
+
+**المحفوظ:** P4.3-ACCEPT-NONEMPTY **OPEN**؛ D-57 + قبول M0.5 على الأجهزة **DEFERRED**؛ FU-FAV-MEDIA-NO-IDENTITY **OPEN**؛ إخفاقات Auth/Delete Account التاريخية وFU-COMBINE-GUARD-1؛ قيود PDF عروض الأسعار؛ Smart Map/Toolkit. **تحقق الأجهزة المؤجل لـ M1:** بقاء الكاش بعد مسح النظام لـ temp، زمن أول صورة، فك الـ avatar، النسخ الاحتياطي لـ `bwPrivateMedia.db`.
+
+**الحالة:** **M1a = DESIGN مكتمل.** **NOW:** قرارات المالك D-M1a-1…6. **NEXT:** **M1b** بعد الموافقة. **STOP:** لا تنفيذ؛ لا commit/push؛ لا تغيير Auth/SAD/SQL/RLS/Cloudflare/PDF/تنسيق القوائم/سياسة الفيديو.
+
+### M1b — أساس الكاش الخاص للصور — 2026-11-08 (CODE_PROVEN؛ غير مدمج)
+
+**قرارات المالك (2026-11-08):** **D-M1a-1 APPROVED** (كاش خاص + FileService مخصص؛ لا رابط موقّع في البيانات الوصفية أبداً). **D-M1a-2 CONDITIONALLY APPROVED** (الهوية الثابتة لا انتهاء الرابط تقرر إعادة التنزيل؛ 200 مدخل / 30 يوماً بلا استعمال؛ الحداثة منفصلة عن الإخلاء؛ **شرط:** التحقق من ثبات المعرّف وإمكان الاستبدال/السحب في الخادم قبل سياسة «بلا تحديث»). **D-M1a-3 DEFER DELETION** (لا حذف/مسح/استبدال لمدخلات `DefaultCacheManager` في M1b). **D-M1a-4 APPROVED** (`profile-media:<uid>:<mediaId>`؛ Offer/Owner كما هي). **D-M1a-5 APPROVED** (استثناء فهرس الكاش الجديد وملفاته من النسخ/النقل في Android + آلية iOS القائمة، بأسماء ومواقع مُتحقَّقة). **D-M1a-6 DEFER** (لا حذف للشيفرة الميتة).
+
+**Git (مُتحقَّق قبل البدء):** `e8162a9` = `origin` (0/0)؛ الـ stashes الاثنان باقيان؛ ملفات plugin الثلاثة معدّلة (مُعاد توليدها، لم تُلمس)؛ `docs/ADD_DETAILS_*` لم يُنشآ.
+
+**1) بوابة D-M1a-2 — ثبات المعرّف والسحب (S — من المصدر؛ مُثبت ببنود اختبار):**
+- **كل رفع = معرّف جديد:** `crypto.randomUUID()` في `handleAuthorize` (Profile) و`requestedId ?? crypto.randomUUID()` (Offer/Owner/Quotation/Plan)؛ `media_objects.id` مفتاح أساسي، `unique (bucket, object_key)`، والمفتاح يحمل المعرّف.
+- **لا توقيع رفع لعنصر جاهز:** `resumeMediaUpload` يوقّع PUT **فقط** في `pending_upload`؛ `ready` يعود بلا توقيع، `failed` نهائي، `pending_delete`/`deleted` ⇒ 410. `confirm_*_media_upload` يشترط `pending_upload` ويفحص التوقيع (magic bytes) قبل `ready`. ⇒ **البايتات لكل معرّف ثابتة.** **متبقٍّ ضيق (S):** رابط PUT صدر قبل التأكيد صالح ≤ 300 ث (`SIGNED_PUT_TTL_SECONDS`)؛ حامله **هو المالك نفسه** فقط — لا يغيّر شيئاً لحساب آخر.
+- **الاستبدال:** صورة جديدة = معرّف جديد = مدخل جديد؛ القديم يبقى حتى الإخلاء (30 يوماً/200) أو `forget`.
+- **السحب:** الرؤية للمالك وحده (`media_objects_select_own`، و`assertOwnsParent` في كل مسار Worker) ⇒ لا مشاركة بين حسابات تُسحب. الإزالة فعل المالك (`pending_delete` ⇒ `deleted` + حذف R2). الإشارة الموثوقة الوحيدة لفقد الوصول تبقى `OfferMediaFailureKind.accessDenied` القائمة ⇒ المستدعي يستدعي `forget(key)` (التوصيل في M1c).
+- **الخلاصة:** الشرط **مُثبت**؛ لا STOP. «بلا تحديث» = لا إعادة تنزيل لنسخة محفوظة سليمة؛ **ليست** دائمة: الإخلاء والإزالة الصريحة وDelete Account تنهيها.
+
+**2) النطاق المنفَّذ بالضبط:**
+- **جديد** `lib/src/services/private_media_cache.dart`: `PrivateMediaCache` (`storeKey = 'bwPrivateMedia'`، `CacheManager(Config(storeKey, stalePeriod: 30d, maxNrOfCacheObjects: 200, fileService: خاص))`)، `PrivateMediaScope(account, session)`، `profileMediaKey`، `accountOf`، `pseudoUrlFor`، `cached`، `get`، `forget`، `forgetAccount`، `dispose`، `applicationScope()`.
+- `offer_media_session.dart`: getter للقراءة فقط `applicationAccount` (نفس `_owner`؛ لا تغيير سلوك).
+- `deleted_account_local_data_cleaner.dart`: خطوة `forgetPrivateMedia` (افتراضياً `PrivateMediaCache.instance.forgetAccount`) بعد Offer media.
+- النسخ الاحتياطي: `bwPrivateMedia.db` + `-journal/-wal/-shm` (domain `file`) في `full-backup-content` و`cloud-backup` و`device-transfer`؛ و`PrivateMediaBackupExclusions.cacheIndexFiles` (iOS) يضيفها.
+- **لم يُغيَّر:** أي شاشة أو widget أو `OfflineMediaService` أو `CachedNetworkImage` أو القوائم أو التنقل أو الفيديو أو الحدود؛ لا مسار عرض يستعمل الكاش الجديد بعد (M1c). لا حذف لـ `DefaultCacheManager` ولا لشيفرة ميتة. لا تبعية جديدة (flutter_cache_manager/path_provider مباشرتان أصلاً).
+
+**3) الهوية وصيغة البيانات الوصفية:**
+- المفاتيح: `offer-media:<owner>:<mediaId>` (Offer وOwner، كما هي)، `offer-media:<owner>:<mediaId>:poster`، **`profile-media:<uid>:<mediaId>`**. `accountOf` يقرأ الحساب من البادئة؛ مفتاح بلا حساب ⇒ مرفوض.
+- العنوان المخزَّن: **`bw-private-media://v1/<encodeComponent(key)>`** — ثابت، من المفتاح وحده.
+- صف الفهرس (حقول `CacheObject`): `url` = العنوان الزائف، `key`، `relativePath` = `<uuid>.<jpg|png|webp|heic|''>`، `eTag` = **null دائماً**، `validTill` = الآن + 365 يوماً (`freshFor`؛ لا يُقرَّر به شيء)، `touched`، `length`.
+- المواقع (S — مصدر الحزمة/path_provider): الفهرس `getApplicationSupportDirectory()/bwPrivateMedia.db` على Android (`files/`) وiOS (Application Support) عبر `CacheObjectProvider`؛ على مضيف سطح المكتب `bwPrivateMedia.json` (`JsonCacheInfoRepository`) بالحقول نفسها. البايتات `getTemporaryDirectory()/bwPrivateMedia/` = Android `cacheDir`، iOS `Library/Caches` (`NSCachesDirectory`) — **خارج النسخ أصلاً**.
+
+**4) كيف يعمل:** `cached(key)` ⇒ نطاق حالي + حساب المفتاح = حساب النطاق ⇒ `getFileFromCache` ⇒ فحص سلامة (الملف موجود، طوله > 0 ويساوي `length` المسجل؛ وإلا يُزال ويُعامل كغائب) ⇒ إعادة فحص النطاق. `get(key, signedUrl:)` ⇒ المحفوظ أولاً (بلا طلب رابط)؛ وإلا رحلة واحدة لكل (جلسة، مفتاح)؛ تُسجَّل «تذكرة» (النطاق + دالة التوقيع) للعنوان الزائف ⇒ `downloadFile(pseudo, key, force: true)` ⇒ الـ FileService الخاص: بلا تذكرة ⇒ رفض بلا شبكة؛ فحص النطاق ⇒ طلب الرابط من المستدعي (المسار القائم: Worker يتحقق من التوكن و`is_current_app_session`) ⇒ فحص النطاق ⇒ GET بلا ترويسات، 200 فقط، ≤ 10 MiB، غير فارغ، مهلة 30 ث ⇒ فحص النطاق **قبل** أن تكتب الحزمة شيئاً. الرابط في الذاكرة لطلب واحد فقط. `force: true` يمنع الانضمام إلى تنزيل الحزمة الجاري لجلسة سابقة (طفرة M6 أثبتته).
+
+**5) دليل أن الروابط الموقّعة لا تُحفظ (CODE_PROVEN):** اختبار يشغّل الإعداد الإنتاجي ويقرأ الفهرس الفعلي وكل ملف/اسم تحت مجلدَي support وtemp: لا `X-Amz` ولا مضيف R2 ولا `Signature` — بعد تنزيل، تنزيل ثانٍ، رفض 403، استثناء يحمل الرابط في رسالته (`HttpExceptionWithStatus` و`Exception`)، إعادة محاولة ناجحة، وإعادة تشغيل؛ و`FlutterError` و`debugPrint` بلا تقارير. الرابط استُعمل فعلاً في الذاكرة (مُثبت). إعادة التوجيه تحدث داخل عميل HTTP ولا تصل للفهرس (العنوان المخزَّن يُبنى من المفتاح، لا من الاستجابة). `PrivateMediaUnavailable` لا يحمل رابطاً ولا يخرج من الملف (المستدعي يرى null).
+
+**6) عزل الحساب والجلسة:** حساب آخر لا يقرأ نسخة حساب (ولا يُطلب له رابط)؛ معرّف الوسائط نفسه تحت حساب آخر = مدخل منفصل؛ بعد الخروج لا عرض ولا جلب (البايتات وحدها ليست إذناً) والنسخة تبقى؛ الحساب نفسه بجلسة جديدة ⇒ عرض محلي بلا شبكة؛ استبدال الجلسة / تبديل الحساب / الخروج **أثناء** التنزيل ⇒ البايتات المتأخرة تُرمى ولا يُكتب شيء؛ تغيّر الجلسة أثناء التوقيع ⇒ R2 لا يُسأل؛ طالب جلسة مُستبدلة لا يشارك تنزيل الجلسة الجديدة. `applicationScope()` = حساب `OfferMediaSession` المصادَق تطبيقياً (لا recovery/quarantine) + جلسة يقبلها `AppSessionCoordinator.isAuthorized` (SAD) + `session.user.id` مطابق. Delete Account: `forgetAccount(uid)` يزيل مفاتيح `offer-media:<uid>:`/`profile-media:<uid>:` فقط (الفاصل `:` يمنع بادئة حساب آخر) ولا يحتاج جلسة؛ الخروج لا يحذف (كما اليوم).
+
+**7) القياس (حتمي، عدّادات اختبار؛ زمن الجهاز NOT MEASURED):** 3 روابط موقّعة مختلفة للعنصر نفسه ⇒ **طلب شبكة 1، توقيع 1** (المسار الرابط-مفتاحاً اليوم: 3)؛ 3 طلبات متزامنة ⇒ **1/1** وملف واحد؛ إصابة محلية (حتى برابط منتهٍ وR2 يرفض) ⇒ **0 شبكة، 0 توقيع**؛ بعد إعادة التشغيل ⇒ **0 شبكة**؛ بعد +8 أيام: لا شيء يقرر بـ `validTill` (365 يوماً) ⇒ 0 (مقابل محاولة لكل عرض اليوم). لا تحويل لمسارات العرض بعد ⇒ لا تغيير زمن مرئي في M1b.
+
+**8) الاختبارات:** جديد `test/services/private_media_cache_test.dart` (**34**) + `private_media_backup_test.dart` (**10**، مُحدَّث عمداً: `_m1b` 4 استثناءات، قائمة iOS، ووسم `bwPrivateMedia.db`) — **44/44 ✅ (أربع إعادات للملف: ثابت)**. يغطي: الهوية، الإعدادات (200/30، `storeKey` ≠ `DefaultCacheManager.key`)، 3 روابط ⇒ تنزيل واحد، التزامن، المحلي بلا شبكة مع رابط منتهٍ، الاستبدال = معرّف جديد، الفهرس بلا روابط (+ فشل/إعادة/إعادة تشغيل)، عزل الحساب، الخروج والعودة، تبديل الحساب أثناء قراءة نسخة محفوظة وأثناء كتابة البايتات، 3 سيناريوهات تغيّر أثناء التنزيل، تغيّر أثناء التوقيع، offline، بلا رابط/موقّع فاشل، فارغ/كبير، مبتور، ملف مختفٍ، الإخلاء، طلب غير مُصرَّح، إعادة التشغيل، `forgetAccount` بدقة، عدم لمس `libCachedImageData` (فهرساً وملفات ومصدراً)، توصيل Delete Account، وعقد Worker (معرّف جديد لكل رفع، لا توقيع لـ `ready`).
+
+**9) الطفرات:** **19 طفرة، 18 مقتولة.** M1 رابط موقّع في العنوان المخزَّن، M2 بلا فحص حساب المفتاح، M3 بلا إعادة فحص بعد التوقيع، M4 بلا فحص قبل التخزين، M5 بلا مشاركة الرحلة، M6 الانضمام لتنزيل الحزمة الجاري (`force: false`)، M7 بلا فحص الطول، M8 بادئة حساب بلا فاصل، M9 `cached()` بلا إعادة فحص، M10 إبقاء ETag، M11 قبول طلب غير مُصرَّح، M12 بلا حدود حجم، M13 قبول استجابة فارغة، M14 بلا المحلي أولاً، M16 إعادة الملف بعد تغيّر النطاق، M17 غياب خطوة Delete Account، M18 قائمة iOS بلا الفهرس الخاص، M19 قاعدة device-transfer ناقصة ملفاً — **كلها قُتلت** (M9 وM16 نجتا أولاً ⇒ أُضيف اختباران بتبديل الحساب أثناء انتظار نظام الملفات فقُتلتا). **M15** (حذف فحص النطاق قبل بدء الرحلة) **نجت — مكافئة**: فحص الـ FileService عند الدخول يرفض قبل أي توقيع أو شبكة بالنتيجة نفسها؛ أُبقي كدفاع إضافي. كل ملف أُعيد وتطابق SHA-256.
+
+**10) التحقق:** انحدار مركّز للملفات التي تستعمل منظّف Delete Account و`OfferMediaSession` واستثناءات النسخ (17 ملفاً: quarantine، المفضلة المشفّرة، قوائم local-first السبع، offline_lists الثلاثة، offer_media_session، Quotations الثلاثة، والملفان الجديدان) **362/362 ✅**. `delete_account_test` + `delete_account_ui_test`: **الإخفاقان المعروفان فقط** (setUpAll اسم ملف الترحيل؛ FU-ACCOUNT-UI-BASELINE-1). `flutter analyze` على الملفات الستة: **No issues found**. `dart format --set-exit-if-changed` على الستة: 0 تغيير (الجديدان مُنسَّقان؛ سطري في `private_media_backup_exclusions.dart` عُدّل يدوياً). `git diff --check` نظيف. لا بناء أصلي ولا Samsung.
+
+**11) المخاطر الباقية:** لا مسار عرض يستعمل الكاش بعد (M1c)؛ الفهرس القديم `libCachedImageData.db` ما زال يحمل روابط موقّعة سابقة (D-M1a-3 مؤجل، مستثنى من النسخ منذ M0.5)؛ البايتات غير مشفّرة (كما اليوم؛ D-M5)؛ النسخ القديمة والمنقولة باقية (D-57)؛ PUT ≤ 300 ث للمالك نفسه (§1)؛ `applicationScope()` لا يُختبر هنا بلا عميل Supabase (منطق صغير؛ يُغطى بانحدار M1c)؛ سلوك الأجهزة (مسح النظام لـ temp، النسخ الفعلي لـ `bwPrivateMedia.db`) **REAL_DEVICE_UNVERIFIED**.
+
+**12) نقاط تفتيش منفصلة (لم تبدأ):**
+- **M1c — توصيل مسارات العرض:** `OfflineMediaService`/`PrivateCardMedia`/المعرض/العارض/الـ avatar (`cacheWidth`) ⇒ `PrivateMediaCache` بالمفتاح؛ `accessDenied` ⇒ `forget`؛ بديل `imageUrl` في `favorites_card`/`search_result_card` (FU-FAV-MEDIA-NO-IDENTITY)؛ مفتاح Profile الجديد في `CurrentUserAvatar`.
+- **M1d — الترحيل:** نسخ مُثبت الملكية من `DefaultCacheManager` عبر `putFile(pseudo, bytes, key)` + إعادة توجيه `url_mapping`؛ القديم يبقى ما لم يقرر المالك D-M1a-3.
+
+**المحفوظ:** P4.3-ACCEPT-NONEMPTY **OPEN**؛ D-57 **DEFERRED**؛ FU-FAV-MEDIA-NO-IDENTITY **OPEN**؛ إخفاقات Auth/Delete Account التاريخية (delete_account_test setUpAll، FU-ACCOUNT-UI-BASELINE-1) وFU-COMBINE-GUARD-1؛ قيود PDF عروض الأسعار التاريخية؛ Smart Map/Toolkit معلّقان.
+
+**الحالة:** **M1b = CODE_PROVEN — REAL_DEVICE_UNVERIFIED؛ غير مدمج.** **NOW:** مراجعة المالك النهائية. **STOP:** لا commit/push؛ لا بدء M1c/M1d.
 
 ---
 

@@ -44,6 +44,12 @@
   each entry's key and the signed link it was fetched from) with SQLite's
   files beside it. All are rebuilt or re-downloaded after a restore.
 -->
+<!--
+  Private image cache (M1b): files/bwPrivateMedia.db, the separate index of
+  the private image cache (keys and fixed bw-private-media:// addresses, no
+  signed links), with SQLite's files beside it. Its bytes are in the cache
+  directory, which is never backed up.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -66,6 +72,10 @@
         <exclude domain="file" path="libCachedImageData.db-journal" />
         <exclude domain="file" path="libCachedImageData.db-wal" />
         <exclude domain="file" path="libCachedImageData.db-shm" />
+        <exclude domain="file" path="bwPrivateMedia.db" />
+        <exclude domain="file" path="bwPrivateMedia.db-journal" />
+        <exclude domain="file" path="bwPrivateMedia.db-wal" />
+        <exclude domain="file" path="bwPrivateMedia.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />
@@ -91,6 +101,10 @@
         <exclude domain="file" path="libCachedImageData.db-journal" />
         <exclude domain="file" path="libCachedImageData.db-wal" />
         <exclude domain="file" path="libCachedImageData.db-shm" />
+        <exclude domain="file" path="bwPrivateMedia.db" />
+        <exclude domain="file" path="bwPrivateMedia.db-journal" />
+        <exclude domain="file" path="bwPrivateMedia.db-wal" />
+        <exclude domain="file" path="bwPrivateMedia.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />

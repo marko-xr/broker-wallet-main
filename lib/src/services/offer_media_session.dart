@@ -30,6 +30,10 @@ abstract final class OfferMediaSession {
     }
   }
 
+  /// The application-authenticated account now, or null. Read-only; the
+  /// private image cache reads it to bind every read to this session.
+  static String? get applicationAccount => _owner;
+
   @visibleForTesting
   static String? get activeOwner => _owner;
 

@@ -14,6 +14,15 @@
 /// next open — cold or offline — paints at once. No link is ever requested
 /// here: a miss with no link in hand waits for the screen's own media
 /// resolution to supply one.
+///
+/// An image shown from the previous cache (step 3, or a mapping that names
+/// its entry) is then copied into the private cache in the background, once
+/// per item and with no network (tracker §7AZ, M1d-1, D-M1d-1..6) — only when
+/// the key is exactly `offer-media:<session account>:<media id>` and the
+/// media id is trusted: named by that account's media catalogue, or resolved
+/// by the Worker in this run as an image. The display never waits for it;
+/// the previous cache's entry, `url_mapping` and the catalogue are left as
+/// they are, so what is shown does not change (the mapping switch is M1d-2).
 library;
 
 import 'dart:async';
@@ -23,6 +32,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_url_cache.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/private_media_cache.dart';
@@ -57,13 +67,19 @@ abstract final class PrivateMediaImages {
     final override = debugLoad;
     if (override != null) return override(cacheKey, signedUrl);
     try {
+      // The session this image is shown in; a copy is made only for it.
+      final origin = cache().scopeFor(cacheKey);
       final mapped = heldNow(cacheKey);
-      if (mapped != null) return mapped;
+      if (mapped != null) {
+        _copyLater(cacheKey, mapped, origin, fromMapping: true);
+        return mapped;
+      }
       final store = cache();
       if (!store.canRead(cacheKey)) return null;
 
       var file = await store.cached(cacheKey);
-      file ??= await _previousCache(cacheKey);
+      File? previous;
+      if (file == null) file = previous = await _previousCache(cacheKey);
       file ??= await store.get(
         cacheKey,
         signedUrl: () async => _linkFor(cacheKey, signedUrl),
@@ -72,10 +88,117 @@ abstract final class PrivateMediaImages {
 
       await OfflineMediaService.instance
           .mapMediaIdToLocalFile(cacheKey, file.path);
-      return store.canRead(cacheKey) ? file : null;
+      if (!store.canRead(cacheKey)) return null;
+      if (previous != null) {
+        _copyLater(cacheKey, previous, origin, fromMapping: false);
+      }
+      return file;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Copies running now, by session and key.
+  static final Map<String, Future<void>> _copies = {};
+
+  /// Items settled for good in this run, by session and key: copied, already
+  /// held, not from the previous cache, or unusable there. Anything else is
+  /// tried again the next time the image is shown.
+  static final Set<String> _settled = {};
+
+  static const Set<String> _settledOutcomes = {
+    'adopted',
+    'alreadyHeld',
+    'notPrevious',
+    'unusableSource',
+  };
+
+  /// Reports how each copy ended, by key; for tests and measurement only.
+  @visibleForTesting
+  static void Function(String cacheKey, String outcome)? debugOnMigration;
+
+  /// Completes once no copy is running.
+  @visibleForTesting
+  static Future<void> debugMigrationsSettled() async {
+    while (_copies.isNotEmpty) {
+      await Future.wait(_copies.values.toList());
+    }
+  }
+
+  /// Forgets what this run settled, as a restart would.
+  @visibleForTesting
+  static void debugForgetMigrations() => _settled.clear();
+
+  /// Starts the copy of [shown] into the private cache, unless it is settled
+  /// or already running. Never waits and never throws.
+  static void _copyLater(
+    String cacheKey,
+    File shown,
+    PrivateMediaScope? origin, {
+    required bool fromMapping,
+  }) {
+    if (origin == null) return;
+    final id = '${origin.session}\n$cacheKey';
+    if (_settled.contains(id) || _copies.containsKey(id)) return;
+    _copies[id] = () async {
+      var outcome = 'failed';
+      try {
+        outcome = await _copy(cacheKey, shown, origin, fromMapping);
+      } catch (_) {
+        // Nothing to undo: the shown file is untouched.
+      } finally {
+        _copies.remove(id);
+      }
+      if (_settledOutcomes.contains(outcome)) _settled.add(id);
+      debugOnMigration?.call(cacheKey, outcome);
+    }();
+  }
+
+  static Future<String> _copy(
+    String cacheKey,
+    File shown,
+    PrivateMediaScope origin,
+    bool fromMapping,
+  ) async {
+    final store = cache();
+    if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
+    if (!_trusted(cacheKey, origin)) return 'untrusted';
+    if (await store.cached(cacheKey) != null) return 'alreadyHeld';
+    if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
+    var source = shown;
+    if (fromMapping) {
+      // A mapping may name an adopted original or a private copy: only the
+      // previous cache's own entry for this exact key is copied.
+      final previous = await _previousCache(cacheKey);
+      if (previous == null || previous.path != shown.path) {
+        return 'notPrevious';
+      }
+      if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
+      source = previous;
+    }
+    return (await store.adopt(cacheKey, source, origin: origin)).name;
+  }
+
+  /// Whether [cacheKey] is exactly the current account's key of a media id
+  /// that account's own records name — never the key, a file name, a link
+  /// or an image format alone.
+  static bool _trusted(String cacheKey, PrivateMediaScope origin) {
+    final prefix = '$offerMediaCacheKeyPrefix${origin.account}:';
+    if (!cacheKey.startsWith(prefix)) return false;
+    final mediaId = cacheKey.substring(prefix.length);
+    // Rejects a still frame's `:poster` key and anything else derived.
+    if (mediaId.isEmpty || mediaId.contains(':') || mediaId.trim() != mediaId) {
+      return false;
+    }
+    if (offerMediaCacheKey(ownerId: origin.account, mediaObjectId: mediaId) !=
+        cacheKey) {
+      return false;
+    }
+    // This run's Worker answer for the account, which also says what it is.
+    final resolved = OfferMediaUrlCache.instance.get(cacheKey);
+    if (resolved != null) return !resolved.isVideo;
+    return OfflineMediaService.instance
+        .catalogueNamesMedia(ownerId: origin.account, mediaObjectId: mediaId);
   }
 
   /// A link valid in memory for this item, else the one the screen holds.

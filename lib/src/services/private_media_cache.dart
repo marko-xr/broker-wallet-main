@@ -31,6 +31,12 @@
 ///    the key's account must be that session's account. Holding the bytes is
 ///    never permission on its own.
 ///
+/// An image this device already holds in the image cache used before M1c can
+/// be copied in with [PrivateMediaCache.adopt] (tracker §7AZ, M1d-1): its
+/// bytes enter through the same file service, size limit and session checks
+/// as a download, with the local file standing in for the link, and the copy
+/// is read back and compared before it counts.
+///
 /// Storage (backup-excluded, tracker §7AZ M1b): the index is
 /// `bwPrivateMedia.db` in the application-support folder on Android and iOS
 /// (`bwPrivateMedia.json` on desktop hosts), and the bytes are in
@@ -43,11 +49,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/image_signature_detector.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_session.dart';
 
@@ -83,12 +91,39 @@ class PrivateMediaUnavailable implements Exception {
   String toString() => 'PrivateMediaUnavailable($reason)';
 }
 
+/// How [PrivateMediaCache.adopt] ended (tracker §7AZ, M1d-1).
+enum PrivateMediaAdoption {
+  /// Stored, read back and found identical to the source.
+  adopted,
+
+  /// A valid copy is already held; nothing was written.
+  alreadyHeld,
+
+  /// The item is already being stored for this session; nothing was read.
+  inProgress,
+
+  /// No current session for the key's account, or no longer the session that
+  /// asked. Nothing is kept.
+  notAllowed,
+
+  /// The file is missing, unreadable, empty, over [PrivateMediaCache.maxBytes]
+  /// or not a JPEG, PNG or WebP image.
+  unusableSource,
+
+  /// Storing or reading back failed. Nothing is kept.
+  failed,
+}
+
 class PrivateMediaCache {
   PrivateMediaCache({
     required PrivateMediaScope? Function() currentScope,
     FileService? transport,
     Duration timeout = const Duration(seconds: 30),
-  }) : _currentScope = currentScope {
+    // Tests only: stands in for the index the library picks for this host
+    // (JSON here, SQLite on Android/iOS), e.g. to delay its writes.
+    @visibleForTesting CacheInfoRepository? debugRepository,
+  })  : _currentScope = currentScope,
+        _debugRepository = debugRepository {
     _service = _PrivateMediaFileService(
       currentScope: currentScope,
       transport: transport ?? HttpFileService(),
@@ -119,9 +154,22 @@ class PrivateMediaCache {
   static const String _pseudoUrlPrefix = 'bw-private-media://v1/';
 
   final PrivateMediaScope? Function() _currentScope;
+  final CacheInfoRepository? _debugRepository;
   late final _PrivateMediaFileService _service;
   Future<_Store>? _store;
   final Map<String, Future<File?>> _inFlight = {};
+
+  /// [adopt]s in progress, by key — whichever session started them, since a
+  /// copy written for one session is visible to every session of its account
+  /// until it is verified or removed. Each settles to the verified copy, or
+  /// null.
+  final Map<String, Future<File?>> _adopting = {};
+
+  /// Called at each step of [adopt] — `source_read` once the source bytes
+  /// passed their checks, `written` once the copy is stored and before it is
+  /// read back — so tests can change the session or damage the copy there.
+  @visibleForTesting
+  Future<void> Function(String step, File file)? debugOnAdoptStep;
 
   /// The account-scoped key for a profile photo, or null without both ids.
   static String? profileMediaKey({
@@ -170,12 +218,25 @@ class PrivateMediaCache {
   /// key names its account. Touches no storage.
   bool canRead(String key) => _scopeFor(key) != null;
 
+  /// The current scope when [key] names its account, else null. Touches no
+  /// storage. Captured when an image is shown, so later work can tell whether
+  /// it is still that session.
+  PrivateMediaScope? scopeFor(String key) => _scopeFor(key);
+
   /// The held copy of [key], with no network; null when there is none, when
   /// it is damaged (it is then removed), or when [key] is not the current
-  /// session's account's.
+  /// session's account's. While [adopt] is storing [key] — for this session
+  /// or a replaced one — waits for it, so an unverified copy is never handed
+  /// out, and a fetch for a newer session starts only after the older copy
+  /// was kept or removed.
   Future<File?> cached(String key) async {
     final scope = _scopeFor(key);
     if (scope == null) return null;
+    final adopting = _adopting[key];
+    if (adopting != null) {
+      final copy = await adopting;
+      if (copy != null) return _currentScope() == scope ? copy : null;
+    }
     try {
       final file = await _held(await _open(), key);
       return _currentScope() == scope ? file : null;
@@ -207,6 +268,41 @@ class PrivateMediaCache {
       if (identical(_inFlight[flightKey], flight)) _inFlight.remove(flightKey);
     }));
     return flight;
+  }
+
+  /// Copies [source], an image this device already holds, into this cache
+  /// under [key] with no network (tracker §7AZ, M1d-1). [origin] is the scope
+  /// in which the image was shown; it must still be current, and is checked
+  /// again after every wait.
+  ///
+  /// The bytes enter through the same file service, [maxBytes] limit and
+  /// index handling as a download, with [source] standing in for the link,
+  /// and must be a JPEG, PNG or WebP image (the Worker's formats). A format
+  /// says nothing about whose image it is: the caller establishes that.
+  /// Nothing is written over a valid copy. The stored copy is read back and
+  /// compared (SHA-256 and size); a copy that differs, or whose session ended
+  /// first, is removed. [source] is only read, never changed or removed.
+  Future<PrivateMediaAdoption> adopt(
+    String key,
+    File source, {
+    required PrivateMediaScope origin,
+  }) async {
+    if (_scopeFor(key) != origin) return PrivateMediaAdoption.notAllowed;
+    final flightKey = '${origin.session}\n$key';
+    if (_adopting.containsKey(key) || _inFlight.containsKey(flightKey)) {
+      return PrivateMediaAdoption.inProgress;
+    }
+    final copy = Completer<File?>();
+    _adopting[key] = copy.future;
+    var outcome = PrivateMediaAdoption.failed;
+    File? file;
+    try {
+      (outcome, file) = await _adopt(key, source, origin);
+    } finally {
+      _adopting.remove(key);
+      copy.complete(outcome == PrivateMediaAdoption.adopted ? file : null);
+    }
+    return outcome;
   }
 
   /// Removes the copy of [key], e.g. once its item was removed or access to
@@ -289,16 +385,112 @@ class PrivateMediaCache {
     }
   }
 
+  Future<(PrivateMediaAdoption, File?)> _adopt(
+    String key,
+    File source,
+    PrivateMediaScope origin,
+  ) async {
+    final url = pseudoUrlFor(key);
+    final ticket = _Ticket.local(origin, source, debugOnAdoptStep);
+    File? written;
+    try {
+      final store = await _open();
+      if (await _held(store, key) != null) {
+        return (PrivateMediaAdoption.alreadyHeld, null);
+      }
+      if (_currentScope() != origin) {
+        return (PrivateMediaAdoption.notAllowed, null);
+      }
+      // Asked again inside the file service, right before the bytes are
+      // handed over: a copy that appeared meanwhile is never written over.
+      ticket.destinationFree = () async => !await _holdsValid(store, key);
+      _service.allow(url, ticket);
+      final info = await store.manager.downloadFile(url, key: key, force: true);
+      written = info.file;
+      await debugOnAdoptStep?.call('written', written);
+      if (!await _sameBytes(written, ticket)) {
+        await _discard(store, key, written);
+        return (PrivateMediaAdoption.failed, null);
+      }
+      if (_currentScope() != origin) {
+        await _discard(store, key, written);
+        return (PrivateMediaAdoption.notAllowed, null);
+      }
+      return (PrivateMediaAdoption.adopted, written);
+    } on PrivateMediaUnavailable catch (refused) {
+      return (
+        switch (refused.reason) {
+          'already_held' => PrivateMediaAdoption.alreadyHeld,
+          'session_changed' => PrivateMediaAdoption.notAllowed,
+          'unreadable' ||
+          'empty' ||
+          'too_large' ||
+          'not_image' =>
+            PrivateMediaAdoption.unusableSource,
+          _ => PrivateMediaAdoption.failed,
+        },
+        null
+      );
+    } catch (_) {
+      if (written != null) {
+        try {
+          await _discard(await _open(), key, written);
+        } catch (_) {}
+      }
+      return (PrivateMediaAdoption.failed, null);
+    } finally {
+      _service.withdraw(url, ticket);
+    }
+  }
+
+  /// Whether [written] holds exactly the bytes the file service handed over.
+  static Future<bool> _sameBytes(File written, _Ticket ticket) async {
+    final expected = ticket.copiedDigest;
+    final length = ticket.copiedLength;
+    if (expected == null || length == null) return false;
+    if (!await written.exists() || await written.length() != length) {
+      return false;
+    }
+    return await sha256.bind(written.openRead()).first == expected;
+  }
+
+  /// Removes a copy [adopt] wrote and does not keep. Every write is a new,
+  /// uniquely named file, so deleting [written] can never touch another
+  /// entry; the index row, written by the library without waiting, is
+  /// removed with it when it is there, and otherwise dropped by the library
+  /// the next time it finds the file missing.
+  Future<void> _discard(_Store store, String key, File written) async {
+    try {
+      final current = await store.manager.getFileFromCache(key);
+      if (current != null && current.file.path == written.path) {
+        await store.manager.removeFile(key);
+      }
+    } catch (_) {}
+    try {
+      if (await written.exists()) await written.delete();
+    } catch (_) {}
+  }
+
   Future<File?> _held(_Store store, String key) async {
     final info = await store.manager.getFileFromCache(key);
     if (info == null) return null;
+    final file = await _valid(store, key, info.file);
+    if (file == null) await store.manager.removeFile(key);
+    return file;
+  }
+
+  /// Like [_held], but changes nothing.
+  Future<bool> _holdsValid(_Store store, String key) async {
+    final info = await store.manager.getFileFromCache(key);
+    return info != null && await _valid(store, key, info.file) != null;
+  }
+
+  Future<File?> _valid(_Store store, String key, File file) async {
     final row = await store.config.repo.get(key);
-    final file = info.file;
     final length = await file.exists() ? await file.length() : -1;
     if (row == null ||
         length <= 0 ||
         (row.length != null && row.length != length)) {
-      await store.manager.removeFile(key);
       return null;
     }
     return file;
@@ -312,12 +504,21 @@ class PrivateMediaCache {
       try {
         await getApplicationSupportDirectory();
         await getTemporaryDirectory();
-        final config = Config(
-          storeKey,
-          stalePeriod: unusedFor,
-          maxNrOfCacheObjects: maxEntries,
-          fileService: _service,
-        );
+        final repository = _debugRepository;
+        final config = repository == null
+            ? Config(
+                storeKey,
+                stalePeriod: unusedFor,
+                maxNrOfCacheObjects: maxEntries,
+                fileService: _service,
+              )
+            : Config(
+                storeKey,
+                stalePeriod: unusedFor,
+                maxNrOfCacheObjects: maxEntries,
+                repo: repository,
+                fileService: _service,
+              );
         return _Store(config, CacheManager(config));
       } catch (_) {
         _store = null;
@@ -334,17 +535,32 @@ class _Store {
   final CacheManager manager;
 }
 
-/// One authorized fetch: who asked, and how to get its link.
+/// One authorized fetch: who asked, and how to get its link — or, for
+/// [PrivateMediaCache.adopt], the local file standing in for it.
 class _Ticket {
-  _Ticket(this.scope, this.signedUrl);
+  _Ticket(this.scope, Future<String?> Function() this.signedUrl)
+      : source = null,
+        onStep = null;
+
+  _Ticket.local(this.scope, File this.source, this.onStep) : signedUrl = null;
 
   final PrivateMediaScope scope;
-  final Future<String?> Function() signedUrl;
+  final Future<String?> Function()? signedUrl;
+  final File? source;
+  final Future<void> Function(String step, File file)? onStep;
+
+  /// For a local source: false when a valid copy is held by now.
+  Future<bool> Function()? destinationFree;
+
+  /// What a local source handed over, for the read-back comparison.
+  Digest? copiedDigest;
+  int? copiedLength;
 }
 
 /// The only way bytes enter the cache: a fetch that [PrivateMediaCache.get]
-/// authorized for exactly this address. Any other request — the library
-/// refreshing on its own, say — is refused without touching the network.
+/// or [PrivateMediaCache.adopt] authorized for exactly this address. Any
+/// other request — the library refreshing on its own, say — is refused
+/// without touching the network.
 class _PrivateMediaFileService extends FileService {
   _PrivateMediaFileService({
     required PrivateMediaScope? Function() currentScope,
@@ -373,10 +589,12 @@ class _PrivateMediaFileService extends FileService {
     final ticket = _tickets[url];
     if (ticket == null) throw const PrivateMediaUnavailable('not_requested');
     _stillCurrent(ticket);
+    final source = ticket.source;
+    if (source != null) return _fromLocal(ticket, source);
 
     final String? link;
     try {
-      link = await ticket.signedUrl();
+      link = await ticket.signedUrl!();
     } catch (_) {
       throw const PrivateMediaUnavailable('no_link');
     }
@@ -410,6 +628,48 @@ class _PrivateMediaFileService extends FileService {
     // The late answer of a session that is gone is dropped here, before the
     // library writes anything.
     _stillCurrent(ticket);
+    return _Bytes(bytes, extension);
+  }
+
+  /// A local file in place of a download (M1d-1): the same size limit and
+  /// session checks, and it must be a supported image. No link is asked for
+  /// and the network is never used.
+  Future<FileServiceResponse> _fromLocal(_Ticket ticket, File source) async {
+    final Uint8List bytes;
+    try {
+      final size = await source.length().timeout(_timeout);
+      if (size <= 0) throw const PrivateMediaUnavailable('empty');
+      if (size > PrivateMediaCache.maxBytes) {
+        throw const PrivateMediaUnavailable('too_large');
+      }
+      bytes = await source.readAsBytes().timeout(_timeout);
+    } on PrivateMediaUnavailable {
+      rethrow;
+    } catch (_) {
+      // File errors quote the path; none of their text goes on.
+      throw const PrivateMediaUnavailable('unreadable');
+    }
+    if (bytes.isEmpty) throw const PrivateMediaUnavailable('empty');
+    if (bytes.length > PrivateMediaCache.maxBytes) {
+      throw const PrivateMediaUnavailable('too_large');
+    }
+    final extension = switch (ImageSignatureDetector.detectMimeType(bytes)) {
+      'image/jpeg' => '.jpg',
+      'image/png' => '.png',
+      'image/webp' => '.webp',
+      _ => throw const PrivateMediaUnavailable('not_image'),
+    };
+    await ticket.onStep?.call('source_read', source);
+    _stillCurrent(ticket);
+    final free = ticket.destinationFree;
+    if (free != null && !await free()) {
+      throw const PrivateMediaUnavailable('already_held');
+    }
+    // A session that ended meanwhile gets nothing written.
+    _stillCurrent(ticket);
+    ticket
+      ..copiedLength = bytes.length
+      ..copiedDigest = sha256.convert(bytes);
     return _Bytes(bytes, extension);
   }
 

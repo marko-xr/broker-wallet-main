@@ -208,6 +208,32 @@ class OfflineMediaService {
     }
   }
 
+  /// Whether one of [ownerId]'s remembered Offer or Owner media lists names
+  /// [mediaObjectId] (tracker §7AZ, M1d-1). Those lists are written only from
+  /// the Worker's answers for that signed-in account and from uploads the
+  /// server accepted for it, so this is account-scoped evidence that the id
+  /// is that account's own media. Synchronous, read only.
+  bool catalogueNamesMedia({
+    required String ownerId,
+    required String mediaObjectId,
+  }) {
+    final owner = ownerId.trim();
+    final media = mediaObjectId.trim();
+    if (!_isInitialized || owner.isEmpty || media.isEmpty) return false;
+    final prefix = '$_offerMediaCatalogPrefix$owner::';
+    try {
+      for (final key in _localMediaBox.keys) {
+        if (key is! String || !key.startsWith(prefix)) continue;
+        final stored = _localMediaBox.get(key);
+        final ids = stored is Map ? stored['ids'] : null;
+        if (ids is List && ids.contains(media)) return true;
+      }
+    } catch (e) {
+      // Unreadable: no evidence.
+    }
+    return false;
+  }
+
   /// Replaces the remembered media identity for [offerId] wholesale.
   ///
   /// Always a replacement, never a merge: an authoritative `/offer-media`

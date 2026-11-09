@@ -5,6 +5,9 @@ import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
+import 'package:broker_wallet/src/services/private_media_images.dart';
+import 'package:broker_wallet/src/views/Widgets/private_media_image.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -84,6 +87,13 @@ void main() {
     // cache eviction.
     OfflineMediaService.removeCachedBytes = (_) async {};
     OfflineMediaService.fetchCachedBytes = (_, __) async => null;
+    // M1c: Offer/Owner detail images need the application session of the
+    // key's account, and go through the private image cache.
+    PrivateMediaImages.cache = () => PrivateMediaCache(
+          currentScope: () =>
+              const PrivateMediaScope(account: 'owner-1', session: 's-1'),
+        );
+    OfflineMediaService.removePrivateBytes = (_) async {};
     await OfflineMediaService.instance.initialize();
 
     _localOnlyFile = await _writeImage('local-only.png');
@@ -293,8 +303,8 @@ void main() {
     });
 
     testWidgets(
-        'falls back to the signed URL under its stable key when the bytes '
-        'are not held', (tester) async {
+        'bytes not held: the private cache fetches it by its stable key '
+        '(M1c), not the old network image', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: OptimizedMediaGalleryWidget(
@@ -309,10 +319,11 @@ void main() {
         ),
       );
 
+      expect(find.byType(CachedNetworkImage), findsNothing);
       final image =
-          tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+          tester.widget<PrivateMediaImage>(find.byType(PrivateMediaImage));
       expect(image.cacheKey, 'offer-media:owner-1:media-c');
-      expect(image.imageUrl, contains('sig=fresh'));
+      expect(image.signedUrl, contains('sig=fresh'));
     });
 
     testWidgets('another account cannot address these cached bytes',
@@ -335,10 +346,12 @@ void main() {
         ),
       );
 
-      // No FileImage: owner-2 gets a different key and must fetch its own.
-      expect(find.byType(CachedNetworkImage), findsOneWidget);
+      // No FileImage: owner-2 gets a different key, which the signed-in
+      // account (owner-1) may not read at all.
+      expect(find.byType(CachedNetworkImage), findsNothing);
+      expect(find.byType(Image), findsNothing);
       final image =
-          tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+          tester.widget<PrivateMediaImage>(find.byType(PrivateMediaImage));
       expect(image.cacheKey, 'offer-media:owner-2:media-a');
     });
   });

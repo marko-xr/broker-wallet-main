@@ -1,11 +1,15 @@
 import 'dart:io';
 
+import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart';
+import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorite_card_media.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // -----------------------------------------------------------------------------
 // Regression coverage for the Favorites account-isolation fix.
@@ -65,17 +69,28 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('favorites_isolation_test');
     Hive.init(tempDir.path);
     Hive.registerAdapter(CachedFavoriteItemAdapter());
+    // FU-FAV-CACHE-ENCRYPT: the saved copy is the encrypted per-account
+    // list cache, kept under the same temporary directory.
+    EncryptedAccountListCache.debugStorageRoot = tempDir.path;
   });
 
   tearDownAll(() async {
     await Hive.close();
+    EncryptedAccountListCache.debugStorageRoot = null;
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }
   });
 
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
+
   tearDown(() async {
+    FavoriteService.debugForgetSnapshots();
     for (final uid in [_uidA, _uidB]) {
+      await const FavoritesLocalCache().forgetAccount(uid);
       final name = FavoriteService.boxNameForUid(uid);
       if (Hive.isBoxOpen(name)) {
         await Hive.box<CachedFavoriteItem>(name).clear();

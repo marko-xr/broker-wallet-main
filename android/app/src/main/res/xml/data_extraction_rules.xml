@@ -22,6 +22,34 @@
   device transfer carries, so a copied box could never be read; they refill
   from the server after sign-in.
 -->
+<!--
+  app_flutter/cached_favorites.hive / .lock: the shared Favorites box of builds
+  before per-account isolation (plaintext customer names), never read again and
+  deliberately not deleted. Only its exact files are listed. The per-account
+  plaintext boxes (cached_favorites_<uid>) cannot be listed, their names carry
+  the account id; each is removed once that account's encrypted copy (in
+  offline_lists) is in place.
+-->
+<!--
+  app_flutter/quotation_pdfs (Q-2c-1): each account's private financial
+  Quotation PDFs and the work folder they are generated in; re-downloadable
+  from R2 by an authorized session. PDFs an earlier version kept directly in
+  app_flutter cannot be listed (their names carry ids).
+-->
+<!--
+  Private media (M0.5): app_flutter/profile_media (profile originals uploaded
+  on this phone), the Hive boxes url_mapping and local_media (media identity
+  map and catalogue, with their lock and compaction files), and files/
+  libCachedImageData.db (flutter_cache_manager's image index, which records
+  each entry's key and the signed link it was fetched from) with SQLite's
+  files beside it. All are rebuilt or re-downloaded after a restore.
+-->
+<!--
+  Private image cache (M1b): files/bwPrivateMedia.db, the separate index of
+  the private image cache (keys and fixed bw-private-media:// addresses, no
+  signed links), with SQLite's files beside it. Its bytes are in the cache
+  directory, which is never backed up.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -32,7 +60,25 @@
         <exclude domain="root" path="app_flutter/image_to_pdf" />
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
+        <exclude domain="root" path="app_flutter/quotation_pdfs" />
+        <exclude domain="root" path="app_flutter/profile_media" />
+        <exclude domain="root" path="app_flutter/url_mapping.hive" />
+        <exclude domain="root" path="app_flutter/url_mapping.hivec" />
+        <exclude domain="root" path="app_flutter/url_mapping.lock" />
+        <exclude domain="root" path="app_flutter/local_media.hive" />
+        <exclude domain="root" path="app_flutter/local_media.hivec" />
+        <exclude domain="root" path="app_flutter/local_media.lock" />
+        <exclude domain="file" path="libCachedImageData.db" />
+        <exclude domain="file" path="libCachedImageData.db-journal" />
+        <exclude domain="file" path="libCachedImageData.db-wal" />
+        <exclude domain="file" path="libCachedImageData.db-shm" />
+        <exclude domain="file" path="bwPrivateMedia.db" />
+        <exclude domain="file" path="bwPrivateMedia.db-journal" />
+        <exclude domain="file" path="bwPrivateMedia.db-wal" />
+        <exclude domain="file" path="bwPrivateMedia.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
+        <exclude domain="root" path="app_flutter/cached_favorites.hive" />
+        <exclude domain="root" path="app_flutter/cached_favorites.lock" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -43,6 +89,24 @@
         <exclude domain="root" path="app_flutter/image_to_pdf" />
         <exclude domain="root" path="app_flutter/signature_pdfs" />
         <exclude domain="root" path="app_flutter/offline_lists" />
+        <exclude domain="root" path="app_flutter/quotation_pdfs" />
+        <exclude domain="root" path="app_flutter/profile_media" />
+        <exclude domain="root" path="app_flutter/url_mapping.hive" />
+        <exclude domain="root" path="app_flutter/url_mapping.hivec" />
+        <exclude domain="root" path="app_flutter/url_mapping.lock" />
+        <exclude domain="root" path="app_flutter/local_media.hive" />
+        <exclude domain="root" path="app_flutter/local_media.hivec" />
+        <exclude domain="root" path="app_flutter/local_media.lock" />
+        <exclude domain="file" path="libCachedImageData.db" />
+        <exclude domain="file" path="libCachedImageData.db-journal" />
+        <exclude domain="file" path="libCachedImageData.db-wal" />
+        <exclude domain="file" path="libCachedImageData.db-shm" />
+        <exclude domain="file" path="bwPrivateMedia.db" />
+        <exclude domain="file" path="bwPrivateMedia.db-journal" />
+        <exclude domain="file" path="bwPrivateMedia.db-wal" />
+        <exclude domain="file" path="bwPrivateMedia.db-shm" />
         <exclude domain="file" path="mlkit_docscan_ui_client" />
+        <exclude domain="root" path="app_flutter/cached_favorites.hive" />
+        <exclude domain="root" path="app_flutter/cached_favorites.lock" />
     </device-transfer>
 </data-extraction-rules>

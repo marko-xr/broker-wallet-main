@@ -1,11 +1,13 @@
 // P4.0 (tracker §7AI): what a list read gets from a server that caps its
-// answer at `max_rows` — recorded as it is (characterization, not a fix).
-// PostgREST answers a capped read with status 200, the first `max_rows` rows
-// and `Content-Range: 0-<max_rows - 1>/*`: nothing says rows were left out.
+// answer at `max_rows`. PostgREST answers a capped read with status 200, the
+// first `max_rows` rows and `Content-Range: 0-<max_rows - 1>/*`: nothing says
+// rows were left out, so a read with no limit, range or count is cut silently.
 //
-// Since P4.1/P4.2 (§7AJ/§7AK) the six entity lists are read in pages and no
-// longer cut. The Favorites lists (which records are favorites) are still
-// one request each, with no limit, range or count, so this records them.
+// Since P4.1/P4.2 (§7AJ/§7AK) the six entity lists are read in pages, and
+// since P4.4 (§7AO) the Favorites lists too: no list read is one unpaged
+// request any more. This records the last one that was — 1,200 favorite
+// Offers on a server capped at the hosted value (1,000, verified on the
+// Dashboard in P4.3, §7AM) — now coming back whole.
 import 'dart:convert';
 
 import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
@@ -16,14 +18,14 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 const _uid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-/// The cap the server applies here. The hosted value is not known (§7AI);
-/// the local configuration's is used.
+/// The hosted `max_rows` (P4.3, §7AM).
 const _maxRows = 1000;
 
 void main() {
   test(
-      '1,200 favorite Offers from a server capped at 1,000: 1,000 come back, '
-      'with no error and nothing marking the list as cut', () async {
+      '1,200 favorite Offers from a server capped at 1,000: all 1,200 come '
+      'back, in pages of 500 with an exact count (was: 1,000, silently)',
+      () async {
     final reads = <http.Request>[];
     final favorites = [
       for (var n = 0; n < 1200; n++)
@@ -41,13 +43,28 @@ void main() {
       httpClient: MockClient((request) async {
         final table = request.url.pathSegments.last;
         if (table == 'favorite_offers') reads.add(request);
-        final rows = table == 'favorite_offers'
-            ? favorites.take(_maxRows).toList()
-            : const <Object>[];
+        var rows = table == 'favorite_offers'
+            ? favorites
+            : const <Map<String, String>>[];
+        final total = rows.length;
+        final or = request.url.queryParameters['or'];
+        if (or != null) {
+          final after =
+              RegExp(r'target_id\.lt\.([0-9a-f-]+)').firstMatch(or)!.group(1);
+          rows =
+              rows.skipWhile((r) => r['target_id'] != after).skip(1).toList();
+        }
+        final limit =
+            int.parse(request.url.queryParameters['limit'] ?? '$total');
+        rows = rows.take(limit < _maxRows ? limit : _maxRows).toList();
+        final counting =
+            (request.headers['Prefer'] ?? '').contains('count=exact');
+        final count = counting ? '$total' : '*';
         return http.Response(jsonEncode(rows), 200,
             headers: {
               'content-type': 'application/json',
-              'content-range': rows.isEmpty ? '*/*' : '0-${rows.length - 1}/*',
+              'content-range':
+                  rows.isEmpty ? '*/$count' : '0-${rows.length - 1}/$count',
             },
             request: request);
       }),
@@ -57,11 +74,12 @@ void main() {
     final service = FavoriteService(client: client, currentUserId: () => _uid);
     final metadata = await service.getAllFavoritesWithMetadata();
 
-    expect(metadata['offers'], hasLength(_maxRows),
-        reason: '200 favorite Offers silently missing');
-    final read = reads.single;
-    expect(read.url.queryParameters.containsKey('limit'), isFalse);
-    expect(read.url.queryParameters.containsKey('offset'), isFalse);
-    expect(read.headers['Prefer'] ?? '', isNot(contains('count=')));
+    expect(metadata['offers'], hasLength(1200));
+    expect(reads, hasLength(3));
+    for (final read in reads) {
+      expect(read.url.queryParameters['limit'], '500');
+      expect(read.url.queryParameters.containsKey('offset'), isFalse);
+    }
+    expect(reads.first.headers['Prefer'], contains('count=exact'));
   });
 }

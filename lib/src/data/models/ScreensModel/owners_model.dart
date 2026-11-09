@@ -18,6 +18,11 @@ class OwnerModel {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// The ids of the Owner record's `ready` media in gallery order, as the
+  /// Owner read itself returned them (tracker §7AZ, M2-1): identity only —
+  /// no link. Empty when the read carried none. Nothing displays from it yet.
+  final List<String> listedMediaObjectIds;
+
   OwnerModel({
     this.id,
     required this.userId,
@@ -36,6 +41,7 @@ class OwnerModel {
     required this.mediaUrls,
     required this.createdAt,
     required this.updatedAt,
+    this.listedMediaObjectIds = const <String>[],
   });
 
   // Copy with method for updates
@@ -54,6 +60,7 @@ class OwnerModel {
     List<String>? mediaUrls,
     DateTime? createdAt,
     DateTime? updatedAt,
+    List<String>? listedMediaObjectIds,
   }) {
     return OwnerModel(
       id: id ?? this.id,
@@ -73,6 +80,7 @@ class OwnerModel {
       mediaUrls: mediaUrls ?? this.mediaUrls,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      listedMediaObjectIds: listedMediaObjectIds ?? this.listedMediaObjectIds,
     );
   }
 }

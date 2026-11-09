@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -191,7 +190,7 @@ class SupabaseCoreEntitiesService {
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.request);
     return id;
   }
 
@@ -209,7 +208,7 @@ class SupabaseCoreEntitiesService {
       payload: payload,
       areas: model.selectedAreas,
     );
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.request);
   }
 
   Stream<List<RequestModel>> getRequests() => _refreshedStream(_fetchRequests);
@@ -282,7 +281,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteRequest(String id) => _softDeleteAndNotify('requests', id);
+  Future<void> deleteRequest(String id) =>
+      _softDeleteAndNotify('requests', id, CoreEntityKind.request);
 
   // -------------------------------------------------------------------------
   // Offers
@@ -308,7 +308,7 @@ class SupabaseCoreEntitiesService {
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
     return id;
   }
 
@@ -326,7 +326,7 @@ class SupabaseCoreEntitiesService {
       payload: payload,
       areas: model.selectedAreas,
     );
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
   }
 
   Stream<List<OfferModel>> getOffers() => _refreshedStream(_fetchOffers);
@@ -384,14 +384,7 @@ class SupabaseCoreEntitiesService {
     final ownerId = _requireUserId();
     final rows = await _client
         .from('offers')
-        .select('''
-          id, owner_id, offer_type, selected_city, location_text,
-          phone_number, country_code, min_price, max_price, square_footage,
-          notes, property_type, specific_property_type, rooms, bathrooms,
-          pickup_location_text, pickup_latitude, pickup_longitude,
-          pickup_address, legacy_uploaded_file_name, status, created_at,
-          updated_at, offer_areas(area, ordinal)
-        ''')
+        .select(_offerColumns)
         .eq('owner_id', ownerId)
         .eq('id', id)
         .isFilter('deleted_at', null)
@@ -641,14 +634,11 @@ class SupabaseCoreEntitiesService {
     );
   }
 
-  /// The local file holding [cacheKey]'s bytes, if this device still has it.
-  String? _localPathFor(String? cacheKey) {
-    if (cacheKey == null) return null;
-    final path =
-        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
-    if (path == null || path.isEmpty) return null;
-    return File(path).existsSync() ? path : null;
-  }
+  /// The local file holding [cacheKey]'s bytes, if this device still has it:
+  /// the mapped file, or — when a private copy it was switched to is gone —
+  /// the old-cache file it replaced (tracker §7AZ, M1d-2).
+  String? _localPathFor(String? cacheKey) =>
+      OfflineMediaService.instance.usableLocalPathForMediaId(cacheKey);
 
   /// Persists the durable identity of [refs] for this account.
   ///
@@ -741,9 +731,11 @@ class SupabaseCoreEntitiesService {
             PropertyStatus.fromString(row['status']?.toString() ?? 'available'),
         createdAt: _date(row['created_at']),
         updatedAt: _date(row['updated_at']),
+        listedMediaObjectIds: _readyMediaIds(row['offer_media']),
       );
 
-  Future<void> deleteOffer(String id) => _softDeleteAndNotify('offers', id);
+  Future<void> deleteOffer(String id) =>
+      _softDeleteAndNotify('offers', id, CoreEntityKind.offer);
 
   // -------------------------------------------------------------------------
   // Owners
@@ -758,7 +750,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('owner.create', 'owners', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
     return id;
   }
 
@@ -768,14 +760,14 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.owner(model, id: id, ownerId: ownerId),
     );
     await _update('owner.update', 'owners', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
   }
 
   Stream<List<OwnerModel>> getOwners() => _refreshedStream(_fetchOwners);
 
   /// The whole Owners list, read in pages (see [_wholeList]); rows only.
   Future<List<OwnerModel>> _fetchOwners(bool Function() stillWanted) async {
-    final rows = await _wholeList('owners', '*', stillWanted);
+    final rows = await _wholeList('owners', _ownerColumns, stillWanted);
     return rows.map(_ownerFromRow).toList(growable: false);
   }
 
@@ -783,7 +775,7 @@ class SupabaseCoreEntitiesService {
     final ownerId = _requireUserId();
     final rows = await _client
         .from('owners')
-        .select()
+        .select(_ownerColumns)
         .eq('owner_id', ownerId)
         .eq('id', id)
         .isFilter('deleted_at', null)
@@ -809,9 +801,11 @@ class SupabaseCoreEntitiesService {
         mediaUrls: const <String>[],
         createdAt: _date(row['created_at']),
         updatedAt: _date(row['updated_at']),
+        listedMediaObjectIds: _readyMediaIds(row['owner_media']),
       );
 
-  Future<void> deleteOwner(String id) => _softDeleteAndNotify('owners', id);
+  Future<void> deleteOwner(String id) =>
+      _softDeleteAndNotify('owners', id, CoreEntityKind.owner);
 
   // -------------------------------------------------------------------------
   // Offices
@@ -826,7 +820,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('office.create', 'offices', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.office);
     return id;
   }
 
@@ -836,7 +830,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.office(model, id: id, ownerId: ownerId),
     );
     await _update('office.update', 'offices', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.office);
   }
 
   Stream<List<OfficeModel>> getOffices() => _refreshedStream(_fetchOffices);
@@ -876,7 +870,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteOffice(String id) => _softDeleteAndNotify('offices', id);
+  Future<void> deleteOffice(String id) =>
+      _softDeleteAndNotify('offices', id, CoreEntityKind.office);
 
   // -------------------------------------------------------------------------
   // Brokers
@@ -891,7 +886,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('broker.create', 'brokers', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
     return id;
   }
 
@@ -901,7 +896,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.broker(model, id: id, ownerId: ownerId),
     );
     await _update('broker.update', 'brokers', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
   }
 
   Stream<List<BrokerModel>> getBrokers() => _refreshedStream(_fetchBrokers);
@@ -935,7 +930,8 @@ class SupabaseCoreEntitiesService {
         updatedAt: _date(row['updated_at']),
       );
 
-  Future<void> deleteBroker(String id) => _softDeleteAndNotify('brokers', id);
+  Future<void> deleteBroker(String id) =>
+      _softDeleteAndNotify('brokers', id, CoreEntityKind.broker);
 
   // -------------------------------------------------------------------------
   // Watchmen
@@ -950,7 +946,7 @@ class SupabaseCoreEntitiesService {
       ownerId: ownerId,
     );
     await _insert('watchman.create', 'watchmen', payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
     return id;
   }
 
@@ -960,7 +956,7 @@ class SupabaseCoreEntitiesService {
       CoreEntityPayloadBuilder.watchman(model, id: id, ownerId: ownerId),
     );
     await _update('watchman.update', 'watchmen', id, payload);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
   }
 
   Stream<List<WatchmenModel>> getWatchmen() => _refreshedStream(_fetchWatchmen);
@@ -1002,7 +998,7 @@ class SupabaseCoreEntitiesService {
       );
 
   Future<void> deleteWatchman(String id) =>
-      _softDeleteAndNotify('watchmen', id);
+      _softDeleteAndNotify('watchmen', id, CoreEntityKind.watchman);
 
   // -------------------------------------------------------------------------
   // Reads of several records by id (Favorites)
@@ -1021,15 +1017,74 @@ class SupabaseCoreEntitiesService {
           status, created_at, updated_at, request_areas(area, ordinal)
         ''';
 
-  /// The same columns as [getOfferMetadata].
+  /// The columns of every Offer read: the list, [getOfferMetadata] and the
+  /// reads by id.
+  ///
+  /// `offer_media(…)` is the Offer's media identity (tracker §7AZ, M2-1): its
+  /// link rows with only what decides which ids count — never an object key,
+  /// a bucket or a link. A plain embed: an Offer with no link rows is still
+  /// returned (with `[]`), and RLS and the session gate apply to the embedded
+  /// rows as to the Offer. Which links count is decided by [_readyMediaIds].
   static const String _offerColumns = '''
           id, owner_id, offer_type, selected_city, location_text,
           phone_number, country_code, min_price, max_price, square_footage,
           notes, property_type, specific_property_type, rooms, bathrooms,
           pickup_location_text, pickup_latitude, pickup_longitude,
           pickup_address, legacy_uploaded_file_name, status, created_at,
-          updated_at, offer_areas(area, ordinal)
+          updated_at, offer_areas(area, ordinal),
+          offer_media(media_id, ordinal, media_objects(status, content_type))
         ''';
+
+  /// The columns of every Owner read: the list, [getOwner] and the reads by
+  /// id — all of the row, and its media identity as for Offers.
+  static const String _ownerColumns = '''
+          *, owner_media(media_id, ordinal, media_objects(status, content_type))
+        ''';
+
+  /// The content types the media Worker lists for a record (its
+  /// `OFFER_MEDIA_TYPES`, HEIC included: listed though no longer uploaded).
+  static const Set<String> _listedMediaTypes = {
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'video/mp4',
+    'video/quicktime',
+    'video/3gpp',
+  };
+
+  /// A `media_objects.id` as the database prints it.
+  static final RegExp _mediaId =
+      RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+
+  /// The record's media identity from its embedded link rows, as the media
+  /// Worker would list it: only `ready` media of a listed type, each id once,
+  /// by `ordinal` (then id, for a stable order). Anything malformed — a link
+  /// that is not a map, an id that is not a canonical UUID, a missing or
+  /// negative ordinal, a missing media row — is left out. Identity only: it
+  /// is never a reason to show, fetch or keep anything.
+  static List<String> _readyMediaIds(Object? links) {
+    if (links is! List) return const <String>[];
+    final found = <(int, String)>[];
+    final seen = <String>{};
+    for (final link in links) {
+      if (link is! Map) continue;
+      final id = link['media_id'];
+      final ordinal = link['ordinal'];
+      final media = link['media_objects'];
+      if (id is! String || !_mediaId.hasMatch(id)) continue;
+      if (ordinal is! int || ordinal < 0) continue;
+      if (media is! Map ||
+          media['status'] != 'ready' ||
+          !_listedMediaTypes.contains(media['content_type'])) {
+        continue;
+      }
+      if (seen.add(id)) found.add((ordinal, id));
+    }
+    found.sort(
+        (a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+    return List<String>.unmodifiable([for (final f in found) f.$2]);
+  }
 
   /// The rows of [table] with these [ids] that this account owns and has not
   /// deleted — the same filters as the single-record reads — in
@@ -1093,7 +1148,7 @@ class SupabaseCoreEntitiesService {
   }
 
   Future<List<OwnerModel>> getOwnersByIds(Iterable<String> ids) =>
-      _rowsByIds('owners', '*', ids, _ownerFromRow);
+      _rowsByIds('owners', _ownerColumns, ids, _ownerFromRow);
 
   Future<List<OfficeModel>> getOfficesByIds(Iterable<String> ids) =>
       _rowsByIds('offices', '*', ids, _officeFromRow);
@@ -1117,6 +1172,18 @@ class SupabaseCoreEntitiesService {
   /// never returns the first rows only.
   static const int _maxPages = 40;
   static const int _maxListRows = 20000;
+
+  /// Every row of [table] the signed-in account owns and has not deleted,
+  /// newest first, read whole in pages exactly as the entity lists are (see
+  /// [_wholeList] and [_pagedRows]): for a table of the same shape —
+  /// `owner_id`, `created_at`, a unique `id` and `deleted_at`. Used by the
+  /// Quotations list (Q-1a). [stillWanted] stops the read between pages.
+  Future<List<Map<String, dynamic>>> readWholeOwnedList(
+    String table,
+    String columns, {
+    bool Function()? stillWanted,
+  }) =>
+      _wholeList(table, columns, stillWanted ?? () => true);
 
   /// [_pagedRows], read once more from the start when the rows changed while
   /// the pages were read and did not add up. Once only: a list that changes
@@ -1423,9 +1490,10 @@ class SupabaseCoreEntitiesService {
     throw const CoreEntityNotDeleted();
   }
 
-  Future<void> _softDeleteAndNotify(String table, String id) async {
+  Future<void> _softDeleteAndNotify(
+      String table, String id, CoreEntityKind kind) async {
     await _softDelete(table, id);
-    CoreEntityMutationNotifier.notify();
+    CoreEntityMutationNotifier.notify(kind);
   }
 }
 

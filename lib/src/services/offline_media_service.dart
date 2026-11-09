@@ -6,6 +6,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
+import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 
 /// What a local Offer-media cleanup actually managed to remove.
 ///
@@ -163,6 +165,90 @@ class OfflineMediaService {
   static Future<void> _removeBytesFromSharedCache(String cacheKey) =>
       DefaultCacheManager().removeFile(cacheKey).timeout(_cacheCallTimeout);
 
+  /// Removes the private image cache's copy of a stable identity (M1c), when
+  /// its item is dropped or access to it is proven gone. Overridable for
+  /// tests like [removeCachedBytes].
+  @visibleForTesting
+  static Future<void> Function(String cacheKey) removePrivateBytes =
+      _removePrivateBytes;
+
+  static Future<void> _removePrivateBytes(String cacheKey) =>
+      PrivateMediaCache.instance.forget(cacheKey).timeout(_cacheCallTimeout);
+
+  /// Accounts whose media this device forgot because the account was deleted
+  /// (tracker §7AZ, DA-MAP-1, D-DAM-3), each with the application session
+  /// that was current for it at that moment (null when none was). Memory
+  /// only: what it guards against is work still in flight in this process.
+  static final Map<String, String?> _deletedAccounts = {};
+
+  /// The signed-in application session (account and session id, as the
+  /// Single Active Device check authorized it); replaced in tests.
+  @visibleForTesting
+  static PrivateMediaScope? Function() sessionScope =
+      PrivateMediaCache.applicationScope;
+
+  /// Forgets which accounts were deleted, as a new process would.
+  @visibleForTesting
+  static void debugForgetDeletedAccounts() => _deletedAccounts.clear();
+
+  /// A Supabase account id in its canonical form (lower-case UUID). Only
+  /// such an id names an account's media namespace for the sweep and the
+  /// guard below; anything else sweeps nothing more than the catalogue.
+  static final RegExp _canonicalAccountId =
+      RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+
+  static String? _canonicalAccount(String? id) =>
+      id != null && _canonicalAccountId.hasMatch(id) ? id : null;
+
+  /// Whether media writes for [account] are refused now: it was deleted on
+  /// this device, and no new application session for it has begun since. A
+  /// deletion whose outcome was not known may leave the account alive; its
+  /// next sign-in is a new session id, which lifts the refusal. The session
+  /// that was current at the deletion — or none at all — never does.
+  static bool _isDeletedAccount(String? account) {
+    if (account == null || !_deletedAccounts.containsKey(account)) {
+      return false;
+    }
+    final scope = sessionScope();
+    if (scope != null &&
+        scope.account == account &&
+        scope.session != _deletedAccounts[account]) {
+      _deletedAccounts.remove(account);
+      return false;
+    }
+    return true;
+  }
+
+  /// [_isDeletedAccount] for the account an `offer-media:` key names.
+  static bool _refusesKey(String? cacheKey) {
+    if (cacheKey == null || !cacheKey.startsWith(offerMediaCacheKeyPrefix)) {
+      return false;
+    }
+    final rest = cacheKey.substring(offerMediaCacheKeyPrefix.length);
+    final colon = rest.indexOf(':');
+    return colon > 0 && _isDeletedAccount(rest.substring(0, colon));
+  }
+
+  /// The item key a mapping entry of [account]'s namespace belongs to: its
+  /// own key, or the key of the item whose still frame (`:poster`) or
+  /// previous copy (`::previous-copy`) it is. Null when [rest] — what
+  /// follows `mediaId::offer-media:<account>:` — is not exactly that.
+  static String? _itemKeyInNamespace(String account, String rest) {
+    var mediaId = rest;
+    const previousCopy = '::previous-copy';
+    const poster = ':poster';
+    if (mediaId.endsWith(previousCopy)) {
+      mediaId = mediaId.substring(0, mediaId.length - previousCopy.length);
+    } else if (mediaId.endsWith(poster)) {
+      mediaId = mediaId.substring(0, mediaId.length - poster.length);
+    }
+    if (mediaId.isEmpty || mediaId.contains(':') || mediaId.trim() != mediaId) {
+      return null;
+    }
+    final key = offerMediaCacheKey(ownerId: account, mediaObjectId: mediaId);
+    return key == '$offerMediaCacheKeyPrefix$account:$mediaId' ? key : null;
+  }
+
   /// The media object ids last confirmed for [offerId], in display order.
   ///
   /// Synchronous by design: it is read while building the first frame of Offer
@@ -196,6 +282,32 @@ class OfflineMediaService {
     }
   }
 
+  /// Whether one of [ownerId]'s remembered Offer or Owner media lists names
+  /// [mediaObjectId] (tracker §7AZ, M1d-1). Those lists are written only from
+  /// the Worker's answers for that signed-in account and from uploads the
+  /// server accepted for it, so this is account-scoped evidence that the id
+  /// is that account's own media. Synchronous, read only.
+  bool catalogueNamesMedia({
+    required String ownerId,
+    required String mediaObjectId,
+  }) {
+    final owner = ownerId.trim();
+    final media = mediaObjectId.trim();
+    if (!_isInitialized || owner.isEmpty || media.isEmpty) return false;
+    final prefix = '$_offerMediaCatalogPrefix$owner::';
+    try {
+      for (final key in _localMediaBox.keys) {
+        if (key is! String || !key.startsWith(prefix)) continue;
+        final stored = _localMediaBox.get(key);
+        final ids = stored is Map ? stored['ids'] : null;
+        if (ids is List && ids.contains(media)) return true;
+      }
+    } catch (e) {
+      // Unreadable: no evidence.
+    }
+    return false;
+  }
+
   /// Replaces the remembered media identity for [offerId] wholesale.
   ///
   /// Always a replacement, never a merge: an authoritative `/offer-media`
@@ -215,6 +327,8 @@ class OfflineMediaService {
       await initialize();
       if (!_isInitialized) return;
     }
+    // A late answer for a deleted account recreates nothing (DA-MAP-1).
+    if (_isDeletedAccount(owner)) return;
 
     try {
       await _localMediaBox.put(_offerMediaCatalogKey(owner, offer), {
@@ -338,6 +452,8 @@ class OfflineMediaService {
   }) async {
     final key = cacheKey?.trim();
     if (key == null || key.isEmpty) return null;
+    // A deleted account's media is neither looked up nor fetched (DA-MAP-1).
+    if (_refusesKey(key)) return null;
 
     final existing = getLocalFilePathForMediaId(key);
     if (existing != null && File(existing).existsSync()) return existing;
@@ -349,6 +465,16 @@ class OfflineMediaService {
           ? source
           : null,
     );
+    // The account was deleted while this was fetched: what landed in the
+    // old cache under its exact key goes again, and nothing is mapped.
+    if (_refusesKey(key)) {
+      try {
+        await removeCachedBytes(key);
+      } catch (e) {
+        // Best effort, as in the cleanup itself.
+      }
+      return null;
+    }
     if (path == null || !File(path).existsSync()) return null;
 
     await mapMediaIdToLocalFile(key, path);
@@ -364,6 +490,12 @@ class OfflineMediaService {
   @visibleForTesting
   static Future<String?> Function(String cacheKey, String? url)
       fetchCachedBytes = _fetchBytesFromSharedCache;
+
+  /// The shared image cache's file for a stable identity, if it already holds
+  /// one: read only, never a download (M1c reads what it holds rather than
+  /// fetching the image again).
+  Future<String?> heldInSharedCache(String cacheKey) =>
+      fetchCachedBytes(cacheKey, null);
 
   static Future<String?> _fetchBytesFromSharedCache(
     String cacheKey,
@@ -398,6 +530,11 @@ class OfflineMediaService {
   /// account owning each one is readable from its name alone. That is what
   /// makes an ownership-scoped sweep possible without a catalogue.
   static const String offerMediaDirectoryName = 'offer_media';
+
+  /// Marks a private media folder as excluded from backup where the platform
+  /// needs the app to (iPhone; M0.5). Overridable in tests.
+  @visibleForTesting
+  static ScannerBackupGuard backupGuard = PlatformScannerBackupGuard();
 
   /// Where app-owned media directories are created.
   ///
@@ -506,10 +643,17 @@ class OfflineMediaService {
     } catch (e) {
       failures += 1;
     }
+    try {
+      await removePrivateBytes(cacheKey);
+    } catch (e) {
+      failures += 1;
+    }
 
     if (_isInitialized) {
       try {
         await _urlMappingBox.delete(_mediaIdKey(cacheKey));
+        // M1d-2: the old-cache path a switched mapping kept goes with it.
+        await _urlMappingBox.delete(_mediaIdKey(_previousCopyId(cacheKey)));
       } catch (e) {
         failures += 1;
       }
@@ -586,6 +730,16 @@ class OfflineMediaService {
     var catalogueEntriesRemoved = 0;
     var failures = 0;
 
+    // DA-MAP-1 (D-DAM-3): before anything is read, work still in flight for
+    // this account is refused from here on — so nothing it writes lands
+    // after the sweep below.
+    final account = scoped ? _canonicalAccount(ownerId) : null;
+    if (account != null) {
+      final scope = sessionScope();
+      _deletedAccounts[account] =
+          scope != null && scope.account == account ? scope.session : null;
+    }
+
     if (_isInitialized) {
       try {
         for (final key in _localMediaBox.keys) {
@@ -619,6 +773,39 @@ class OfflineMediaService {
           catalogueEntriesRemoved += 1;
         } catch (e) {
           failures += 1;
+        }
+      }
+
+      // DA-MAP-1 (D-DAM-1/2): a catalogue is not a complete inventory of the
+      // mappings either, so the account's exact namespace in `url_mapping`
+      // is swept too. Each item found there gets the per-item cleanup below
+      // (mapping, previous copy, still frame, private and old-cache entry by
+      // exact key); an entry in the namespace that names no item exactly is
+      // removed on its own, and no file is ever taken by its path.
+      if (account != null) {
+        final strays = <String>[];
+        try {
+          final namespace =
+              '$_mediaIdKeyPrefix$offerMediaCacheKeyPrefix$account:';
+          for (final key in _urlMappingBox.keys.toList()) {
+            if (key is! String || !key.startsWith(namespace)) continue;
+            final item =
+                _itemKeyInNamespace(account, key.substring(namespace.length));
+            if (item != null) {
+              cacheKeys.add(item);
+            } else {
+              strays.add(key);
+            }
+          }
+        } catch (e) {
+          failures += 1;
+        }
+        for (final key in strays) {
+          try {
+            await _urlMappingBox.delete(key);
+          } catch (e) {
+            failures += 1;
+          }
         }
       }
     } else {
@@ -721,6 +908,8 @@ class OfflineMediaService {
       await initialize();
       if (!_isInitialized) return;
     }
+    // Checked right before the write, after every wait (DA-MAP-1).
+    if (_refusesKey(mediaId)) return;
 
     try {
       await _urlMappingBox.put(_mediaIdKey(mediaId), localPath);
@@ -748,6 +937,8 @@ class OfflineMediaService {
     String directoryName = 'profile_media',
   }) async {
     if (mediaId.isEmpty || sourcePath.isEmpty) return;
+    // A deleted account's item is neither copied nor mapped (DA-MAP-1).
+    if (_refusesKey(mediaId)) return;
 
     var mappedPath = sourcePath;
     try {
@@ -758,12 +949,22 @@ class OfflineMediaService {
         if (!await profileDir.exists()) {
           await profileDir.create(recursive: true);
         }
+        // M0.5: private originals stay out of iPhone backups (Android lists
+        // the folder in its backup rules). Best effort; never throws.
+        await backupGuard.exclude(profileDir.path);
+        if (_refusesKey(mediaId)) return;
 
         final safeId = mediaId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
         final dot = sourcePath.lastIndexOf('.');
         final extension =
             dot > sourcePath.lastIndexOf('/') ? sourcePath.substring(dot) : '';
         final copy = await source.copy('${profileDir.path}/$safeId$extension');
+        if (_refusesKey(mediaId)) {
+          // Deleted while copying: the copy this call just made goes; the
+          // picked file is left as it is.
+          await copy.delete();
+          return;
+        }
         mappedPath = copy.path;
       }
     } catch (e) {
@@ -865,6 +1066,66 @@ class OfflineMediaService {
         // Best effort.
       }
     }
+  }
+
+  /// The id under which [cacheKey]'s mapping keeps the path a verified
+  /// private copy replaced (tracker §7AZ, M1d-2). Stored like any mapping
+  /// (`mediaId::…`, a path, never a link), so every sweep of mappings and the
+  /// per-item cleanup remove it too.
+  static String _previousCopyId(String cacheKey) => '$cacheKey::previous-copy';
+
+  /// The old-cache path [cacheKey]'s mapping pointed at before it was
+  /// switched to a private copy, if it was (M1d-2).
+  String? previousCopyPathForMediaId(String? cacheKey) =>
+      cacheKey == null || cacheKey.isEmpty
+          ? null
+          : getLocalFilePathForMediaId(_previousCopyId(cacheKey));
+
+  /// The file this device can draw for [cacheKey] now, synchronously: the
+  /// mapped file while it exists, else — after a switch to a private copy
+  /// that was since evicted or cleared — the old-cache file it replaced,
+  /// while that exists (M1d-2). A switch therefore never hides bytes this
+  /// device still holds. The caller applies its own session and account
+  /// checks, as for the mapping itself.
+  String? usableLocalPathForMediaId(String? cacheKey) {
+    if (cacheKey == null || cacheKey.isEmpty) return null;
+    for (final path in [
+      getLocalFilePathForMediaId(cacheKey),
+      previousCopyPathForMediaId(cacheKey),
+    ]) {
+      if (path != null && path.isNotEmpty && File(path).existsSync()) {
+        return path;
+      }
+    }
+    return null;
+  }
+
+  /// Switches [cacheKey]'s mapping to [replacement] only if it is still
+  /// exactly [expected] (compare-and-set, M1d-2), and keeps [previous] as
+  /// the key's fallback ([usableLocalPathForMediaId]). The comparison and
+  /// the in-memory update happen before this first waits, so no other
+  /// mapping write can come between them. Returns false, changing nothing,
+  /// when the mapping changed meanwhile; throws when the write fails, which
+  /// leaves the stored mapping as it was.
+  Future<bool> replaceMediaIdMapping(
+    String cacheKey, {
+    required String expected,
+    required String replacement,
+    required String previous,
+  }) async {
+    if (!_isInitialized || cacheKey.isEmpty || replacement.isEmpty) {
+      return false;
+    }
+    if (_refusesKey(cacheKey)) return false; // DA-MAP-1
+    final key = _mediaIdKey(cacheKey);
+    if (_urlMappingBox.get(key) != expected) return false;
+    // The fallback first: a write cut short keeps it at worst, never a
+    // switched mapping without its fallback.
+    await _urlMappingBox.putAll({
+      _mediaIdKey(_previousCopyId(cacheKey)): previous,
+      key: replacement,
+    });
+    return true;
   }
 
   /// Local file already held for a stable media identity, if any.

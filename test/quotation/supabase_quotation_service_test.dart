@@ -375,18 +375,27 @@ void main() {
 
     test('the list is live rows only, newest first, header columns only',
         () async {
-      final backend = _Backend((_) => _json([
-            {
-              'id': _quotationId,
-              'owner_id': _uid,
-              'property_title': 'Villa',
-              'office_name': 'Realtig',
-              'version': 2,
-              'pdf_media_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-              'created_at': '2026-10-01T10:00:00+00:00',
-              'updated_at': '2026-10-01T10:00:00+00:00',
-            }
-          ]));
+      // Q-1a: the list is read in pages with an exact count (see
+      // quotation_list_pagination_test.dart), so the answer carries one.
+      final backend = _Backend((_) => http.Response(
+            jsonEncode([
+              {
+                'id': _quotationId,
+                'owner_id': _uid,
+                'property_title': 'Villa',
+                'office_name': 'Realtig',
+                'version': 2,
+                'pdf_media_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                'created_at': '2026-10-01T10:00:00+00:00',
+                'updated_at': '2026-10-01T10:00:00+00:00',
+              }
+            ]),
+            200,
+            headers: {
+              'content-type': 'application/json',
+              'content-range': '0-0/1',
+            },
+          ));
       final service =
           SupabaseQuotationService(client: await _signedIn(backend.client));
 
@@ -395,9 +404,13 @@ void main() {
       final request = backend.requests.single;
       expect(request.url.path, '/rest/v1/quotations');
       expect(request.url.queryParameters['deleted_at'], 'is.null');
+      expect(request.url.queryParameters['owner_id'], 'eq.$_uid');
       // postgrest appends `.nullslast` to a descending order by default.
       expect(
           request.url.queryParameters['order'], startsWith('created_at.desc'));
+      expect(request.url.queryParameters['order'], contains('id.desc'));
+      expect(request.url.queryParameters['limit'], '500');
+      expect(request.headers['Prefer'], contains('count=exact'));
       expect(request.url.queryParameters['select'],
           isNot(contains('quotation_downpayments')),
           reason: 'a card does not need the child tables');
@@ -447,12 +460,20 @@ void main() {
       expect(DateTime.parse(body['deleted_at'] as String).isUtc, isTrue);
     });
 
-    test('an already-deleted Quotation is a success', () async {
-      final backend = _Backend((_) => _json(<Object>[]));
+    // Q-2b (D-Q3): a PATCH that changed no row no longer counts on its own;
+    // one read confirms the row is this account's and already deleted
+    // (quotation_confirmed_delete_test covers every case).
+    test('an already-deleted Quotation is a success once the server says so',
+        () async {
+      final backend = _Backend((request) => _json(request.method == 'PATCH'
+          ? <Object>[]
+          : [
+              {'id': _quotationId}
+            ]));
       final service =
           SupabaseQuotationService(client: await _signedIn(backend.client));
       await service.softDelete(_quotationId); // does not throw
-      expect(backend.requests.single.method, 'PATCH');
+      expect(backend.requests.map((r) => r.method), ['PATCH', 'GET']);
     });
 
     test('a refusal is a permission failure, not a crash', () async {

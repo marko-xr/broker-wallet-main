@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/private_media_cache.dart';
+import 'package:broker_wallet/src/services/private_media_images.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_cache_manager.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
@@ -75,6 +77,13 @@ void main() {
     // The shared image cache cannot be constructed under `flutter test`.
     OfflineMediaService.fetchCachedBytes = (_, __) async => null;
     OfflineMediaService.removeCachedBytes = (_) async {};
+    // M1c: Offer/Owner detail images need the application session of the
+    // key's account, and go through the private image cache.
+    PrivateMediaImages.cache = () => PrivateMediaCache(
+          currentScope: () =>
+              const PrivateMediaScope(account: 'owner-1', session: 's-1'),
+        );
+    OfflineMediaService.removePrivateBytes = (_) async {};
     await AppLocalizations.preloadAllLanguages();
 
     // Prepared here, never inside a testWidgets body: that body runs in a
@@ -233,7 +242,7 @@ void main() {
       expect(photoView.imageProvider, isNot(isA<CachedNetworkImageProvider>()));
     });
 
-    testWidgets('full screen still caches private Offer media by its identity',
+    testWidgets('full screen loads private Offer media by its identity (M1c)',
         (tester) async {
       await tester.pumpWidget(_app(
         const FullScreenMediaViewer(mediaRefs: [_pendingImage]),
@@ -241,9 +250,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
 
       final photoView = tester.widget<PhotoView>(find.byType(PhotoView));
-      expect(photoView.imageProvider, isA<CachedNetworkImageProvider>());
+      expect(photoView.imageProvider, isA<PrivateMediaImageProvider>());
       expect(
-        (photoView.imageProvider as CachedNetworkImageProvider).cacheKey,
+        (photoView.imageProvider as PrivateMediaImageProvider).cacheKey,
         'offer-media:owner-1:media-a',
       );
     });

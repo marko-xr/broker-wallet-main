@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:broker_wallet/src/common/utils/list_week_keys.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
@@ -196,9 +197,10 @@ class _RequestedListViewState extends State<RequestedListView> {
       return dateB.compareTo(dateA); // Newest first
     });
 
+    final weeks = ListWeekKeys(DateTime.now());
     for (final request in sortedRequests) {
       final date = request.createdAt;
-      final weekKey = _getWeekKey(date);
+      final weekKey = weeks.keyOf(date);
 
       if (!grouped.containsKey(weekKey)) {
         grouped[weekKey] = [];
@@ -207,36 +209,6 @@ class _RequestedListViewState extends State<RequestedListView> {
     }
 
     return grouped;
-  }
-
-  String _getWeekKey(DateTime date) {
-    // Get the start of the week (Monday)
-    final weekStart = date.subtract(Duration(days: date.weekday - 1));
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dateOnly = DateTime(date.year, date.month, date.day);
-
-    // Check if it's this week
-    final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
-    final thisWeekEnd = thisWeekStart.add(const Duration(days: 6));
-
-    if (dateOnly.isAfter(thisWeekStart.subtract(const Duration(days: 1))) &&
-        dateOnly.isBefore(thisWeekEnd.add(const Duration(days: 1)))) {
-      return 'this_week';
-    }
-
-    // Check if it's last week
-    final lastWeekStart = thisWeekStart.subtract(const Duration(days: 7));
-    final lastWeekEnd = lastWeekStart.add(const Duration(days: 6));
-
-    if (dateOnly.isAfter(lastWeekStart.subtract(const Duration(days: 1))) &&
-        dateOnly.isBefore(lastWeekEnd.add(const Duration(days: 1)))) {
-      return 'last_week';
-    }
-
-    // For other weeks, use the week start date
-    return '${weekStart.year}-${weekStart.month}-${weekStart.day}';
   }
 
   Widget _buildDateSeparator(String weekKey, ColorScheme colors,

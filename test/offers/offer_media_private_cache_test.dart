@@ -232,6 +232,9 @@ void main() {
   });
 
   setUp(() {
+    // Each test is a fresh run: an account an earlier test deleted is not
+    // still refused (DA-MAP-1 keeps that in process memory only).
+    OfflineMediaService.debugForgetDeletedAccounts();
     support = Directory.systemTemp.createTempSync('m1c_support_');
     temp = Directory.systemTemp.createTempSync('m1c_temp_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

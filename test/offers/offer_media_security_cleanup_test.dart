@@ -77,6 +77,9 @@ void main() {
   });
 
   setUp(() async {
+    // Each test is a fresh run: an account an earlier test deleted is not
+    // still refused (DA-MAP-1 keeps that in process memory only).
+    OfflineMediaService.debugForgetDeletedAccounts();
     _forgotten = <String>[];
     OfflineMediaService.removeCachedBytes = (key) async {
       _forgotten.add(key);

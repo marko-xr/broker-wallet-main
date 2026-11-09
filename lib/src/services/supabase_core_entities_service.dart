@@ -384,14 +384,7 @@ class SupabaseCoreEntitiesService {
     final ownerId = _requireUserId();
     final rows = await _client
         .from('offers')
-        .select('''
-          id, owner_id, offer_type, selected_city, location_text,
-          phone_number, country_code, min_price, max_price, square_footage,
-          notes, property_type, specific_property_type, rooms, bathrooms,
-          pickup_location_text, pickup_latitude, pickup_longitude,
-          pickup_address, legacy_uploaded_file_name, status, created_at,
-          updated_at, offer_areas(area, ordinal)
-        ''')
+        .select(_offerColumns)
         .eq('owner_id', ownerId)
         .eq('id', id)
         .isFilter('deleted_at', null)
@@ -738,6 +731,7 @@ class SupabaseCoreEntitiesService {
             PropertyStatus.fromString(row['status']?.toString() ?? 'available'),
         createdAt: _date(row['created_at']),
         updatedAt: _date(row['updated_at']),
+        listedMediaObjectIds: _readyMediaIds(row['offer_media']),
       );
 
   Future<void> deleteOffer(String id) =>
@@ -773,7 +767,7 @@ class SupabaseCoreEntitiesService {
 
   /// The whole Owners list, read in pages (see [_wholeList]); rows only.
   Future<List<OwnerModel>> _fetchOwners(bool Function() stillWanted) async {
-    final rows = await _wholeList('owners', '*', stillWanted);
+    final rows = await _wholeList('owners', _ownerColumns, stillWanted);
     return rows.map(_ownerFromRow).toList(growable: false);
   }
 
@@ -781,7 +775,7 @@ class SupabaseCoreEntitiesService {
     final ownerId = _requireUserId();
     final rows = await _client
         .from('owners')
-        .select()
+        .select(_ownerColumns)
         .eq('owner_id', ownerId)
         .eq('id', id)
         .isFilter('deleted_at', null)
@@ -807,6 +801,7 @@ class SupabaseCoreEntitiesService {
         mediaUrls: const <String>[],
         createdAt: _date(row['created_at']),
         updatedAt: _date(row['updated_at']),
+        listedMediaObjectIds: _readyMediaIds(row['owner_media']),
       );
 
   Future<void> deleteOwner(String id) =>
@@ -1022,15 +1017,74 @@ class SupabaseCoreEntitiesService {
           status, created_at, updated_at, request_areas(area, ordinal)
         ''';
 
-  /// The same columns as [getOfferMetadata].
+  /// The columns of every Offer read: the list, [getOfferMetadata] and the
+  /// reads by id.
+  ///
+  /// `offer_media(…)` is the Offer's media identity (tracker §7AZ, M2-1): its
+  /// link rows with only what decides which ids count — never an object key,
+  /// a bucket or a link. A plain embed: an Offer with no link rows is still
+  /// returned (with `[]`), and RLS and the session gate apply to the embedded
+  /// rows as to the Offer. Which links count is decided by [_readyMediaIds].
   static const String _offerColumns = '''
           id, owner_id, offer_type, selected_city, location_text,
           phone_number, country_code, min_price, max_price, square_footage,
           notes, property_type, specific_property_type, rooms, bathrooms,
           pickup_location_text, pickup_latitude, pickup_longitude,
           pickup_address, legacy_uploaded_file_name, status, created_at,
-          updated_at, offer_areas(area, ordinal)
+          updated_at, offer_areas(area, ordinal),
+          offer_media(media_id, ordinal, media_objects(status, content_type))
         ''';
+
+  /// The columns of every Owner read: the list, [getOwner] and the reads by
+  /// id — all of the row, and its media identity as for Offers.
+  static const String _ownerColumns = '''
+          *, owner_media(media_id, ordinal, media_objects(status, content_type))
+        ''';
+
+  /// The content types the media Worker lists for a record (its
+  /// `OFFER_MEDIA_TYPES`, HEIC included: listed though no longer uploaded).
+  static const Set<String> _listedMediaTypes = {
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'video/mp4',
+    'video/quicktime',
+    'video/3gpp',
+  };
+
+  /// A `media_objects.id` as the database prints it.
+  static final RegExp _mediaId =
+      RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+
+  /// The record's media identity from its embedded link rows, as the media
+  /// Worker would list it: only `ready` media of a listed type, each id once,
+  /// by `ordinal` (then id, for a stable order). Anything malformed — a link
+  /// that is not a map, an id that is not a canonical UUID, a missing or
+  /// negative ordinal, a missing media row — is left out. Identity only: it
+  /// is never a reason to show, fetch or keep anything.
+  static List<String> _readyMediaIds(Object? links) {
+    if (links is! List) return const <String>[];
+    final found = <(int, String)>[];
+    final seen = <String>{};
+    for (final link in links) {
+      if (link is! Map) continue;
+      final id = link['media_id'];
+      final ordinal = link['ordinal'];
+      final media = link['media_objects'];
+      if (id is! String || !_mediaId.hasMatch(id)) continue;
+      if (ordinal is! int || ordinal < 0) continue;
+      if (media is! Map ||
+          media['status'] != 'ready' ||
+          !_listedMediaTypes.contains(media['content_type'])) {
+        continue;
+      }
+      if (seen.add(id)) found.add((ordinal, id));
+    }
+    found.sort(
+        (a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+    return List<String>.unmodifiable([for (final f in found) f.$2]);
+  }
 
   /// The rows of [table] with these [ids] that this account owns and has not
   /// deleted — the same filters as the single-record reads — in
@@ -1094,7 +1148,7 @@ class SupabaseCoreEntitiesService {
   }
 
   Future<List<OwnerModel>> getOwnersByIds(Iterable<String> ids) =>
-      _rowsByIds('owners', '*', ids, _ownerFromRow);
+      _rowsByIds('owners', _ownerColumns, ids, _ownerFromRow);
 
   Future<List<OfficeModel>> getOfficesByIds(Iterable<String> ids) =>
       _rowsByIds('offices', '*', ids, _officeFromRow);

@@ -37,6 +37,12 @@ class OfferModel {
   /// (id, url) match.
   final List<String> mediaObjectIds;
 
+  /// The ids of the Offer's `ready` media in gallery order, as the Offer read
+  /// itself returned them (tracker §7AZ, M2-1): identity only — no link, and
+  /// not aligned with [mediaUrls]. Empty when the read carried none. Nothing
+  /// displays from it yet.
+  final List<String> listedMediaObjectIds;
+
   OfferModel({
     this.id,
     required this.userId,
@@ -65,6 +71,7 @@ class OfferModel {
     required this.updatedAt,
     required this.mediaUrls,
     this.mediaObjectIds = const <String>[],
+    this.listedMediaObjectIds = const <String>[],
   });
 
   // Copy with method for updates
@@ -97,6 +104,7 @@ class OfferModel {
     DateTime? updatedAt,
     List<String>? mediaUrls,
     List<String>? mediaObjectIds,
+    List<String>? listedMediaObjectIds,
   }) {
     return OfferModel(
       id: id ?? this.id,
@@ -126,6 +134,7 @@ class OfferModel {
       updatedAt: updatedAt ?? this.updatedAt,
       mediaUrls: mediaUrls ?? this.mediaUrls,
       mediaObjectIds: mediaObjectIds ?? this.mediaObjectIds,
+      listedMediaObjectIds: listedMediaObjectIds ?? this.listedMediaObjectIds,
     );
   }
 }

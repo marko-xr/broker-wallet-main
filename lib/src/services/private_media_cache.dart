@@ -286,11 +286,22 @@ class PrivateMediaCache {
     String key,
     File source, {
     required PrivateMediaScope origin,
+  }) async =>
+      (await adoptCopy(key, source, origin: origin)).$1;
+
+  /// [adopt], also handing back the verified copy when the outcome is
+  /// [PrivateMediaAdoption.adopted] — the file M1d-2 switches the mapping to.
+  Future<(PrivateMediaAdoption, File?)> adoptCopy(
+    String key,
+    File source, {
+    required PrivateMediaScope origin,
   }) async {
-    if (_scopeFor(key) != origin) return PrivateMediaAdoption.notAllowed;
+    if (_scopeFor(key) != origin) {
+      return (PrivateMediaAdoption.notAllowed, null);
+    }
     final flightKey = '${origin.session}\n$key';
     if (_adopting.containsKey(key) || _inFlight.containsKey(flightKey)) {
-      return PrivateMediaAdoption.inProgress;
+      return (PrivateMediaAdoption.inProgress, null);
     }
     final copy = Completer<File?>();
     _adopting[key] = copy.future;
@@ -302,7 +313,7 @@ class PrivateMediaCache {
       _adopting.remove(key);
       copy.complete(outcome == PrivateMediaAdoption.adopted ? file : null);
     }
-    return outcome;
+    return (outcome, outcome == PrivateMediaAdoption.adopted ? file : null);
   }
 
   /// Removes the copy of [key], e.g. once its item was removed or access to

@@ -564,6 +564,8 @@ class OfflineMediaService {
     if (_isInitialized) {
       try {
         await _urlMappingBox.delete(_mediaIdKey(cacheKey));
+        // M1d-2: the old-cache path a switched mapping kept goes with it.
+        await _urlMappingBox.delete(_mediaIdKey(_previousCopyId(cacheKey)));
       } catch (e) {
         failures += 1;
       }
@@ -922,6 +924,65 @@ class OfflineMediaService {
         // Best effort.
       }
     }
+  }
+
+  /// The id under which [cacheKey]'s mapping keeps the path a verified
+  /// private copy replaced (tracker §7AZ, M1d-2). Stored like any mapping
+  /// (`mediaId::…`, a path, never a link), so every sweep of mappings and the
+  /// per-item cleanup remove it too.
+  static String _previousCopyId(String cacheKey) => '$cacheKey::previous-copy';
+
+  /// The old-cache path [cacheKey]'s mapping pointed at before it was
+  /// switched to a private copy, if it was (M1d-2).
+  String? previousCopyPathForMediaId(String? cacheKey) =>
+      cacheKey == null || cacheKey.isEmpty
+          ? null
+          : getLocalFilePathForMediaId(_previousCopyId(cacheKey));
+
+  /// The file this device can draw for [cacheKey] now, synchronously: the
+  /// mapped file while it exists, else — after a switch to a private copy
+  /// that was since evicted or cleared — the old-cache file it replaced,
+  /// while that exists (M1d-2). A switch therefore never hides bytes this
+  /// device still holds. The caller applies its own session and account
+  /// checks, as for the mapping itself.
+  String? usableLocalPathForMediaId(String? cacheKey) {
+    if (cacheKey == null || cacheKey.isEmpty) return null;
+    for (final path in [
+      getLocalFilePathForMediaId(cacheKey),
+      previousCopyPathForMediaId(cacheKey),
+    ]) {
+      if (path != null && path.isNotEmpty && File(path).existsSync()) {
+        return path;
+      }
+    }
+    return null;
+  }
+
+  /// Switches [cacheKey]'s mapping to [replacement] only if it is still
+  /// exactly [expected] (compare-and-set, M1d-2), and keeps [previous] as
+  /// the key's fallback ([usableLocalPathForMediaId]). The comparison and
+  /// the in-memory update happen before this first waits, so no other
+  /// mapping write can come between them. Returns false, changing nothing,
+  /// when the mapping changed meanwhile; throws when the write fails, which
+  /// leaves the stored mapping as it was.
+  Future<bool> replaceMediaIdMapping(
+    String cacheKey, {
+    required String expected,
+    required String replacement,
+    required String previous,
+  }) async {
+    if (!_isInitialized || cacheKey.isEmpty || replacement.isEmpty) {
+      return false;
+    }
+    final key = _mediaIdKey(cacheKey);
+    if (_urlMappingBox.get(key) != expected) return false;
+    // The fallback first: a write cut short keeps it at worst, never a
+    // switched mapping without its fallback.
+    await _urlMappingBox.putAll({
+      _mediaIdKey(_previousCopyId(cacheKey)): previous,
+      key: replacement,
+    });
+    return true;
   }
 
   /// Local file already held for a stable media identity, if any.

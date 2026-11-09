@@ -284,7 +284,11 @@ void main() {
         expect(transport.urls, isEmpty, reason: 'no download');
         expect(old.readAsBytesSync(), _png, reason: 'old entry kept');
         expect(old.lastModifiedSync(), modified);
-        expect(mapped(key), old.path, reason: 'mapping unchanged (M1d-2)');
+        // M1d-2: the mapping now names the verified copy, keeping the old
+        // path as its fallback.
+        expect(mapped(key), copy.path);
+        expect(OfflineMediaService.instance.previousCopyPathForMediaId(key),
+            old.path);
       });
     }
 
@@ -764,15 +768,16 @@ void main() {
       final media = _mediaId();
       final key = _key(_a, media);
       await trust(_a, media);
-      final old = oldCopy(key, _png);
+      oldCopy(key, _png);
       await PrivateMediaImages.load(key);
       await settle();
+      final copy = mapped(key); // M1d-2 switched the mapping to it
       await cache.dispose();
       cache = open();
       PrivateMediaImages.debugForgetMigrations(); // a new process
       steps.clear();
 
-      expect((await PrivateMediaImages.load(key))!.path, old.path);
+      expect((await PrivateMediaImages.load(key))!.path, copy);
       await settle();
       expect(outcomes, ['adopted', 'alreadyHeld']);
       expect(steps, isEmpty);
@@ -802,8 +807,9 @@ void main() {
 
   // ---------------------------------------------------------------------
   group('nothing else changes', () {
-    test('the old entry, url_mapping and catalogue stay exactly as they were',
-        () async {
+    test(
+        'the old entry and catalogue stay as they were; the mapping only '
+        'switches to the verified copy (M1d-2)', () async {
       final media = _mediaId();
       final other = _mediaId();
       final key = _key(_a, media);
@@ -821,7 +827,9 @@ void main() {
       await settle();
 
       expect(outcomes, ['adopted']);
-      expect(mapped(key), mappingWhenShown);
+      expect(mapped(key), (await cache.cached(key))!.path);
+      expect(OfflineMediaService.instance.previousCopyPathForMediaId(key),
+          mappingWhenShown);
       expect(
           OfflineMediaService.instance
               .readOfferMediaCatalog(ownerId: _a, offerId: record),
@@ -861,8 +869,9 @@ void main() {
           reason: 'the index holds the pseudo-URL');
     });
 
-    testWidgets('the gallery and the viewer still paint the old copy',
-        (tester) async {
+    testWidgets(
+        'the gallery and the viewer paint the same image, now from the '
+        'verified copy (M1d-2)', (tester) async {
       final media = _mediaId();
       final key = _key(_a, media);
       late File old;
@@ -876,6 +885,9 @@ void main() {
         await settle();
       });
       expect(outcomes, ['adopted']);
+      final copy = mapped(key)!; // the switched mapping
+      expect(copy, isNot(old.path));
+      expect(File(copy).readAsBytesSync(), old.readAsBytesSync());
       // As the Worker's answer gives it: the gallery shows only items with a
       // link or a local file.
       final refs = [
@@ -909,14 +921,14 @@ void main() {
           await settle();
         });
         await tester.pump();
-        expect(paintedFile(), old.path, reason: 'pass $pass');
+        expect(paintedFile(), copy, reason: 'pass $pass');
       }
       await tester.runAsync(() async {
         await tester.pumpWidget(app(FullScreenMediaViewer(mediaRefs: refs)));
         await Future<void>.delayed(const Duration(milliseconds: 100));
       });
       final view = tester.widget<PhotoView>(find.byType(PhotoView));
-      expect((view.imageProvider as FileImage).file.path, old.path);
+      expect((view.imageProvider as FileImage).file.path, copy);
       await tester.runAsync(() async {
         await tester.pumpWidget(const SizedBox()); // the screen closes
         await settle();

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -642,14 +641,11 @@ class SupabaseCoreEntitiesService {
     );
   }
 
-  /// The local file holding [cacheKey]'s bytes, if this device still has it.
-  String? _localPathFor(String? cacheKey) {
-    if (cacheKey == null) return null;
-    final path =
-        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
-    if (path == null || path.isEmpty) return null;
-    return File(path).existsSync() ? path : null;
-  }
+  /// The local file holding [cacheKey]'s bytes, if this device still has it:
+  /// the mapped file, or — when a private copy it was switched to is gone —
+  /// the old-cache file it replaced (tracker §7AZ, M1d-2).
+  String? _localPathFor(String? cacheKey) =>
+      OfflineMediaService.instance.usableLocalPathForMediaId(cacheKey);
 
   /// Persists the durable identity of [refs] for this account.
   ///

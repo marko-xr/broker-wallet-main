@@ -20,15 +20,24 @@
 /// per item and with no network (tracker §7AZ, M1d-1, D-M1d-1..6) — only when
 /// the key is exactly `offer-media:<session account>:<media id>` and the
 /// media id is trusted: named by that account's media catalogue, or resolved
-/// by the Worker in this run as an image. The display never waits for it;
-/// the previous cache's entry, `url_mapping` and the catalogue are left as
-/// they are, so what is shown does not change (the mapping switch is M1d-2).
+/// by the Worker in this run as an image. The display never waits for it,
+/// and the previous cache's entry and the catalogue are left as they are.
+///
+/// Once the copy is verified, the key's `url_mapping` entry is switched to it
+/// (tracker §7AZ, M1d-2, D-M1d-3): by compare-and-set, only from the exact
+/// value captured when the image was shown — the previous cache's file, or a
+/// copy that is gone — only while the session that showed it is current, and
+/// only when the copy's bytes equal that file's (SHA-256 and size). The
+/// replaced path is kept as the key's fallback, so if the private copy is
+/// later evicted the previous cache's file is shown again (and re-copied):
+/// a switch never hides bytes this device holds.
 library;
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
@@ -50,14 +59,14 @@ abstract final class PrivateMediaImages {
   static Future<File?> Function(String cacheKey, String? signedUrl)? debugLoad;
 
   /// The file already mapped for [cacheKey], for the first frame: only when
-  /// the key is the current session's account's and the file exists.
+  /// the key is the current session's account's and the file exists — or,
+  /// when the private copy the mapping was switched to is gone, the previous
+  /// cache's file it replaced (M1d-2).
   static File? heldNow(String cacheKey) {
     if (!cache().canRead(cacheKey)) return null;
     final path =
-        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
-    if (path == null || path.isEmpty) return null;
-    final file = File(path);
-    return file.existsSync() ? file : null;
+        OfflineMediaService.instance.usableLocalPathForMediaId(cacheKey);
+    return path == null ? null : File(path);
   }
 
   /// The image's file, by the order above; null when it cannot be had now
@@ -71,7 +80,12 @@ abstract final class PrivateMediaImages {
       final origin = cache().scopeFor(cacheKey);
       final mapped = heldNow(cacheKey);
       if (mapped != null) {
-        _copyLater(cacheKey, mapped, origin, fromMapping: true);
+        // Shown from the fallback: the private copy is gone, so it is copied
+        // again even if this run already settled it.
+        final fallback = mapped.path !=
+            OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
+        _copyLater(cacheKey, mapped, origin,
+            fromMapping: true, again: fallback);
         return mapped;
       }
       final store = cache();
@@ -117,6 +131,28 @@ abstract final class PrivateMediaImages {
   @visibleForTesting
   static void Function(String cacheKey, String outcome)? debugOnMigration;
 
+  /// Reports how each mapping switch ended (`switched`, `changed`, `differs`,
+  /// `notAllowed`, `missing`, `notPrevious`, `failed`); tests only.
+  @visibleForTesting
+  static void Function(String cacheKey, String outcome)? debugOnMapping;
+
+  /// Runs right before the session check and compare-and-set; tests only.
+  @visibleForTesting
+  static Future<void> Function(String cacheKey, File copy)?
+      debugBeforeMappingSwitch;
+
+  /// The compare-and-set itself; replaced in tests to make the write fail.
+  @visibleForTesting
+  static Future<bool> Function(
+          String cacheKey, String expected, String copy, String previous)
+      switchMapping = defaultSwitchMapping;
+
+  @visibleForTesting
+  static Future<bool> defaultSwitchMapping(
+          String cacheKey, String expected, String copy, String previous) =>
+      OfflineMediaService.instance.replaceMediaIdMapping(cacheKey,
+          expected: expected, replacement: copy, previous: previous);
+
   /// Completes once no copy is running.
   @visibleForTesting
   static Future<void> debugMigrationsSettled() async {
@@ -130,20 +166,25 @@ abstract final class PrivateMediaImages {
   static void debugForgetMigrations() => _settled.clear();
 
   /// Starts the copy of [shown] into the private cache, unless it is settled
-  /// or already running. Never waits and never throws.
+  /// (and not to be done [again]) or already running. Never waits and never
+  /// throws. The mapping is captured now, when the image is shown: the switch
+  /// only ever replaces exactly this value.
   static void _copyLater(
     String cacheKey,
     File shown,
     PrivateMediaScope? origin, {
     required bool fromMapping,
+    bool again = false,
   }) {
     if (origin == null) return;
     final id = '${origin.session}\n$cacheKey';
-    if (_settled.contains(id) || _copies.containsKey(id)) return;
+    if ((_settled.contains(id) && !again) || _copies.containsKey(id)) return;
+    final captured =
+        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
     _copies[id] = () async {
       var outcome = 'failed';
       try {
-        outcome = await _copy(cacheKey, shown, origin, fromMapping);
+        outcome = await _copy(cacheKey, shown, origin, fromMapping, captured);
       } catch (_) {
         // Nothing to undo: the shown file is untouched.
       } finally {
@@ -159,24 +200,76 @@ abstract final class PrivateMediaImages {
     File shown,
     PrivateMediaScope origin,
     bool fromMapping,
+    String? captured,
   ) async {
     final store = cache();
     if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
     if (!_trusted(cacheKey, origin)) return 'untrusted';
-    if (await store.cached(cacheKey) != null) return 'alreadyHeld';
+    var copy = await store.cached(cacheKey);
     if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
+    final held = copy != null;
+    // Already the mapped file: nothing to copy or switch.
+    if (copy != null && copy.path == captured) return 'alreadyHeld';
     var source = shown;
     if (fromMapping) {
       // A mapping may name an adopted original or a private copy: only the
-      // previous cache's own entry for this exact key is copied.
+      // previous cache's own entry for this exact key is copied — when it is
+      // what was shown, or what was shown is gone (a damaged private copy
+      // the lookup above just dropped).
       final previous = await _previousCache(cacheKey);
-      if (previous == null || previous.path != shown.path) {
-        return 'notPrevious';
-      }
+      final isPrevious = previous != null &&
+          (previous.path == shown.path || !await shown.exists());
+      if (!isPrevious) return held ? 'alreadyHeld' : 'notPrevious';
       if (store.scopeFor(cacheKey) != origin) return 'notAllowed';
       source = previous;
     }
-    return (await store.adopt(cacheKey, source, origin: origin)).name;
+    var outcome = PrivateMediaAdoption.alreadyHeld;
+    if (copy == null) {
+      (outcome, copy) = await store.adoptCopy(cacheKey, source, origin: origin);
+      if (copy == null) return outcome.name;
+    }
+    // Computed first: a null-aware call would skip evaluating its arguments.
+    final switched = await _switch(cacheKey, origin, captured, source, copy);
+    debugOnMapping?.call(cacheKey, switched);
+    return outcome.name;
+  }
+
+  /// Points [cacheKey]'s mapping at [copy] instead of [captured], keeping
+  /// [source] as its fallback (M1d-2). Only from the previous cache's file
+  /// that was shown, or from a copy that is gone; only when [copy] holds
+  /// exactly [source]'s bytes; only while [origin] is current, checked with
+  /// no wait before the compare-and-set. Anything else leaves the mapping as
+  /// it is. Deletes nothing.
+  static Future<String> _switch(
+    String cacheKey,
+    PrivateMediaScope origin,
+    String? captured,
+    File source,
+    File copy,
+  ) async {
+    try {
+      if (captured == null ||
+          (captured != source.path && File(captured).existsSync())) {
+        return 'notPrevious';
+      }
+      if (!await _sameBytes(source, copy)) return 'differs';
+      await debugBeforeMappingSwitch?.call(cacheKey, copy);
+      if (cache().scopeFor(cacheKey) != origin) return 'notAllowed';
+      if (!copy.existsSync()) return 'missing';
+      final switched =
+          await switchMapping(cacheKey, captured, copy.path, source.path);
+      return switched ? 'switched' : 'changed';
+    } catch (_) {
+      return 'failed';
+    }
+  }
+
+  static Future<bool> _sameBytes(File a, File b) async {
+    if (!await a.exists() || !await b.exists()) return false;
+    if (await a.length() != await b.length()) return false;
+    final digests = await Future.wait(
+        [sha256.bind(a.openRead()).first, sha256.bind(b.openRead()).first]);
+    return digests[0] == digests[1];
   }
 
   /// Whether [cacheKey] is exactly the current account's key of a media id

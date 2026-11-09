@@ -3330,5 +3330,14 @@
   "toolkitCloudOverLimit": "Some documents are over your account storage limit and stay on this phone",
   "toolkitCloudAttention": "Some documents could not be saved to your account and stay on this phone",  "toolkitCloudTryAgain": "Try again",
   "toolkitDocumentUnavailable": "This document could not be opened right now. Check your connection and try again.",
-  "toolkitLibraryUnavailable": "Your documents could not be loaded. Check your connection and try again."
+  "toolkitLibraryUnavailable": "Your documents could not be loaded. Check your connection and try again.",
+  "offerDetailsAvailableForRent": "Available for rent",
+  "offerDetailsAvailableForSale": "Available for sale",
+  "offerDetailsCurrency": "AED",
+  "offerDetailsBedrooms": "Bedrooms",
+  "offerDetailsArea": "Area",
+  "offerDetailsActions": "Offer actions",
+  "offerDetailsDescription": "Description",
+  "offerDetailsMapTitle": "Location on map",
+  "offerDetailsViewLarger": "View larger"
 }

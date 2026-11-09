@@ -179,6 +179,10 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
   final Function(int)? onPageChanged;
   final int? initialIndex;
   final bool showControls;
+
+  /// Offer Details reference layout: the counter also opens the full gallery,
+  /// replacing the separate legacy View All overlay. Other callers are unchanged.
+  final bool compactPresentation;
   final bool autoPlay;
   final String? fallbackSvgPath; // For entities without media
   final VoidCallback? onRetry;
@@ -206,6 +210,7 @@ class OptimizedMediaGalleryWidget extends StatefulWidget {
     this.onPageChanged,
     this.initialIndex,
     this.showControls = true,
+    this.compactPresentation = false,
     this.autoPlay = false,
     this.fallbackSvgPath,
     this.onRetry,
@@ -529,7 +534,8 @@ class _OptimizedMediaGalleryWidgetState
         if (widget.showControls && _mediaItems.length > 1)
           _buildPageIndicator(context),
         // Add "View All" button for easy access to full-screen gallery
-        if (_mediaItems.length > 1) _buildViewAllButton(context),
+        if (_mediaItems.length > 1 && !widget.compactPresentation)
+          _buildViewAllButton(context),
         // Add media counter overlay
         _buildMediaCounter(context),
       ],
@@ -976,6 +982,34 @@ class _OptimizedMediaGalleryWidgetState
   }
 
   Widget _buildMediaCounter(BuildContext context) {
+    if (widget.compactPresentation) {
+      final colors = Theme.of(context).colorScheme;
+      return Positioned(
+        right: 8,
+        bottom: 8,
+        child: Material(
+          color: colors.scrim.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: () => _openFullScreenViewer(context),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.image_outlined, size: 13, color: colors.onPrimary),
+                const SizedBox(width: 5),
+                Text('${_currentIndex + 1}/${_mediaItems.length}',
+                    textDirection: TextDirection.ltr,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: colors.onPrimary)),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
     final double bottomOffset =
         widget.showControls && _mediaItems.length > 1 ? 14 : 24;
 

@@ -3259,5 +3259,14 @@
   "toolkitCloudOverLimit": "بعض المستندات تتجاوز حد التخزين في حسابك وتبقى على هذا الهاتف",
   "toolkitCloudAttention": "تعذر حفظ بعض المستندات في حسابك وتبقى على هذا الهاتف",  "toolkitCloudTryAgain": "حاول مرة أخرى",
   "toolkitDocumentUnavailable": "تعذر فتح هذا المستند الآن. تحقق من الاتصال وحاول مرة أخرى.",
-  "toolkitLibraryUnavailable": "تعذر تحميل مستنداتك. تحقق من الاتصال وحاول مرة أخرى."
+  "toolkitLibraryUnavailable": "تعذر تحميل مستنداتك. تحقق من الاتصال وحاول مرة أخرى.",
+  "offerDetailsAvailableForRent": "متاح للإيجار",
+  "offerDetailsAvailableForSale": "متاح للبيع",
+  "offerDetailsCurrency": "AED",
+  "offerDetailsBedrooms": "غرف النوم",
+  "offerDetailsArea": "المساحة",
+  "offerDetailsActions": "خيارات العرض",
+  "offerDetailsDescription": "الوصف",
+  "offerDetailsMapTitle": "الموقع على الخريطة",
+  "offerDetailsViewLarger": "عرض أكبر"
 }

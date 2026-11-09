@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
@@ -14,6 +16,7 @@ import 'package:broker_wallet/src/viewmodels/AddScreens/add_offers_viewmodel.dar
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_offers_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/ViewAdd/add_offers_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/offers_view_details.dart';
+import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/offers_list_view.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
@@ -23,8 +26,10 @@ import 'package:broker_wallet/src/Views/Widgets/media_upload_widget.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
 import 'package:broker_wallet/src/viewmodels/plan_attachment_form.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 
 import '../plan_attachment/fake_plan_transport.dart';
 import 'r2_test_fakes.dart';
@@ -157,11 +162,272 @@ Future<void> _visible(
   expectNoLayoutException(tester, scenario);
 }
 
+late Directory _mediaFixture;
+late String _mediaPhoto;
+
 void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
     await prepareResponsiveAssets();
+    // Load icon fonts for the optional visual previews.
+    await (FontLoader('MaterialIcons')
+          ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
+        .load();
+    await (FontLoader('packages/font_awesome_flutter/FontAwesomeBrands')
+          ..addFont(rootBundle.load(
+              'packages/font_awesome_flutter/lib/fonts/Font-Awesome-7-Brands-Regular-400.otf')))
+        .load();
+    _mediaFixture = Directory.systemTemp.createTempSync('offer-details-ui-');
+    final image = File('${_mediaFixture.path}/photo.png');
+    image.writeAsBytesSync(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE'
+        'hQGAhKmMIQAAAABJRU5ErkJggg=='));
+    _mediaPhoto = image.path;
   });
+
+  tearDownAll(() {
+    _mediaFixture.deleteSync(recursive: true);
+  });
+
+  testWidgets('Offer thumbnails change the gallery page in both directions',
+      (tester) async {
+    const scenario = ResponsiveCase(Size(393, 852), locale: Locale('ar'));
+    final media = List.generate(
+        2,
+        (index) => OfferMediaRef(
+              mediaObjectId: 'ui-photo-$index',
+              cacheKey: null,
+              localFilePath: _mediaPhoto,
+            ));
+    await pumpResponsive(tester, scenario,
+        settle: false,
+        home: withR2ScreenProviders(OffersDetailsView(
+          offer: _offer(),
+          initialOfferIsResolved: true,
+          offerService: _OfflineOfferService(),
+          planTransport: FakePlanTransport(),
+          readCachedMedia: (_) => media,
+          resolveMedia: ({required offerId, required ownerId}) async =>
+              OfferMediaResolution(
+                  offerId: offerId, ownerId: ownerId, items: media),
+        )));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('1/2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('offer-thumbnail-ui-photo-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('2/2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('offer-thumbnail-ui-photo-0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('1/2'), findsOneWidget);
+    await tester.tap(find.text('1/2'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(FullScreenMediaViewer), findsOneWidget,
+        reason: 'The compact photo counter must retain full-gallery access');
+    expectNoLayoutException(tester, scenario);
+  });
+
+  for (final language in ['ar', 'en']) {
+    testWidgets(
+        'Offer reference price stays on one line and actions remain accessible $language',
+        (tester) async {
+      final scenario = ResponsiveCase(const Size(393, 852),
+          locale: Locale(language),
+          safeArea: const EdgeInsets.only(top: 24, bottom: 16));
+      final data = _offer().copyWith(
+          minPrice: '50000',
+          maxPrice: '60000',
+          squareFootage: '6000',
+          specificPropertyType: 'Villa',
+          selectedCity: 'Ajman',
+          selectedAreas: ['Al Yasmeen'],
+          location: '',
+          notes: 'واسعة');
+      final photos = List.generate(
+          5,
+          (index) => OfferMediaRef(
+              mediaObjectId: 'reference-photo-$index',
+              cacheKey: null,
+              localFilePath: File('assets/images/building.png').absolute.path));
+      await pumpResponsive(tester, scenario,
+          settle: false,
+          home: RepaintBoundary(
+            key: const ValueKey('offer-ui-review'),
+            child: withR2ScreenProviders(OffersDetailsView(
+              offer: data,
+              initialOfferIsResolved: true,
+              offerService: _OfflineOfferService(),
+              planTransport: FakePlanTransport(),
+              readCachedMedia: (_) => photos,
+              resolveMedia: ({required offerId, required ownerId}) async =>
+                  OfferMediaResolution(
+                      offerId: offerId, ownerId: ownerId, items: photos),
+            )),
+          ));
+      await tester.runAsync(() async {
+        await precacheImage(
+            FileImage(File(File('assets/images/building.png').absolute.path)),
+            tester.element(find.byType(OffersDetailsView)));
+      });
+      await tester.pump(const Duration(seconds: 2));
+      for (var frame = 0; frame < 15; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final price = find.text('AED 50,000 - 60,000');
+      expect(price, findsOneWidget);
+      expect(tester.widget<Text>(price).maxLines, 1);
+      expect(tester.getRect(price).height, lessThan(32));
+      expect(find.text('View All'), findsNothing);
+      // The owner restored the app font; reference-font pixel heights no
+      // longer apply. Retain font inheritance, price and action checks.
+      final appText =
+          Theme.of(tester.element(find.byType(OffersDetailsView))).textTheme;
+      expect(tester.widget<Text>(price).style?.fontFamily,
+          appText.titleLarge?.fontFamily);
+      expect(find.byIcon(Icons.phone_rounded).hitTestable(), findsOneWidget);
+      expectNoLayoutException(tester, scenario);
+      const capture = String.fromEnvironment('OFFER_UI_CAPTURE_DIR');
+      if (capture.isNotEmpty) {
+        await expectLater(
+            find.byKey(const ValueKey('offer-ui-review')),
+            matchesGoldenFile(
+                Uri.file('$capture/offer-details-$language.png')));
+      }
+      final actions =
+          find.byTooltip(language == 'ar' ? 'خيارات العرض' : 'Offer actions');
+      await tester.ensureVisible(actions);
+      await tester.tap(actions);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(language == 'ar' ? 'تعديل' : 'Edit'), findsOneWidget);
+      expect(find.text(language == 'ar' ? 'حذف العرض' : 'Delete Offer'),
+          findsOneWidget);
+    });
+  }
+
+  for (final dark in [false, true]) {
+    for (final textScale in [1.0, 1.8]) {
+      testWidgets(
+          'Offer detail spacing matches EN/LTR and AR/RTL dark=$dark scale=$textScale',
+          (tester) async {
+        double? englishHeight;
+        for (final language in ['en', 'ar']) {
+          final scenario = ResponsiveCase(const Size(393, 852),
+              locale: Locale(language), dark: dark, textScale: textScale);
+          final favorites = OptimisticFavoritesService(
+              favoriteService: QuietFavoriteService());
+          addTearDown(favorites.dispose);
+          await pumpResponsive(tester, scenario,
+              home: withR2ScreenProviders(
+                  OffersDetailsView(
+                    offer: _offer().copyWith(
+                        selectedAreas: ['Marina'], location: 'Marina'),
+                    initialOfferIsResolved: true,
+                    offerService: _OfflineOfferService(),
+                    planTransport: FakePlanTransport(),
+                  ),
+                  favorites: favorites));
+          await tester.scrollUntilVisible(
+              find.byKey(const ValueKey('offer-details-card')), 150,
+              scrollable: find.byType(Scrollable).first);
+          final rows = find.byWidgetPredicate((widget) =>
+              widget is InkWell &&
+              widget.key is ValueKey<String> &&
+              (widget.key as ValueKey<String>)
+                  .value
+                  .startsWith('offer-detail-row-'));
+          expect(rows, findsNWidgets(5));
+          final height = tester.getSize(rows.first).height;
+          expect(height,
+              greaterThanOrEqualTo(kMinInteractiveDimension * textScale));
+          for (var index = 1; index < 5; index++) {
+            expect(
+                tester.getSize(rows.at(index)).height, closeTo(height, 0.01));
+          }
+          if (language == 'en') {
+            englishHeight = height;
+          } else {
+            expect(height, closeTo(englishHeight!, 0.01),
+                reason:
+                    'Short Arabic content must retain the same row spacing as English');
+          }
+          final rowContext = tester.element(rows.first);
+          final direction =
+              language == 'ar' ? TextDirection.rtl : TextDirection.ltr;
+          expect(Directionality.of(rowContext), direction);
+          final texts =
+              find.descendant(of: rows.first, matching: find.byType(Text));
+          final labelX = tester.getCenter(texts.first).dx;
+          final valueX = tester.getCenter(texts.last).dx;
+          expect(language == 'ar' ? labelX > valueX : labelX < valueX, isTrue);
+          final phone =
+              find.descendant(of: rows.at(3), matching: find.byType(Text)).last;
+          expect(tester.widget<Text>(phone).textDirection, TextDirection.ltr);
+          expect(tester.widget<Text>(phone).textAlign,
+              language == 'ar' ? TextAlign.left : TextAlign.right);
+          final theme = Theme.of(rowContext);
+          expect(theme.brightness, dark ? Brightness.dark : Brightness.light);
+          final card = tester.widget<Container>(
+              find.byKey(const ValueKey('offer-details-card')));
+          expect((card.decoration as BoxDecoration).color,
+              theme.colorScheme.surfaceContainerLowest);
+          final originalColors =
+              Theme.of(tester.element(find.byType(OffersDetailsView)))
+                  .colorScheme;
+          expect(theme.colorScheme, originalColors,
+              reason: 'The layout must not replace the existing app palette');
+          Finder favoriteButton(IconData icon) => find.ancestor(
+              of: find.byIcon(icon), matching: find.byType(IconButton));
+          expect(
+              tester
+                  .widget<IconButton>(favoriteButton(Icons.favorite_border))
+                  .color,
+              originalColors.onSurface);
+          await favorites.toggleOfferFavorite(_offerId);
+          await tester.pump();
+          expect(
+              tester.widget<IconButton>(favoriteButton(Icons.favorite)).color,
+              originalColors.primary);
+          await favorites.toggleOfferFavorite(_offerId);
+          await tester.pump();
+          expect(
+              tester
+                  .widget<IconButton>(favoriteButton(Icons.favorite_border))
+                  .color,
+              originalColors.onSurface);
+          expect(
+              find.text(AppLocalizations.of(rowContext).translate('apartment')),
+              findsNothing,
+              reason:
+                  'The media frame must not repeat the property-type label');
+          final larger =
+              find.byKey(const ValueKey('offer-details-view-larger'));
+          await tester.ensureVisible(larger);
+          await tester.pump();
+          final buttonRect = tester.getRect(larger);
+          final mapFinder = find.byKey(const ValueKey('offer-details-map'));
+          final mapRect = tester.getRect(mapFinder);
+          final mapCard = tester.widget<Container>(mapFinder);
+          final border = (mapCard.decoration as BoxDecoration)
+              .border!
+              .dimensions
+              .resolve(direction);
+          expect(
+              language == 'ar' ? buttonRect.left : buttonRect.right,
+              closeTo(
+                  language == 'ar'
+                      ? mapRect.left + 10 + border.left
+                      : mapRect.right - 10 - border.right,
+                  0.01));
+          expectNoLayoutException(tester, scenario);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        }
+      });
+    }
+  }
 
   for (final scenario in _matrix) {
     testWidgets('Offer add form $scenario', (tester) async {
@@ -235,6 +501,30 @@ void main() {
             planTransport: transport,
           )));
       expect(find.byType(OffersDetailsView), findsOneWidget);
+      await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('offer-details-card')), 150,
+          scrollable: find.byType(Scrollable).first);
+      final rows = find.byWidgetPredicate((widget) =>
+          widget is InkWell &&
+          widget.key is ValueKey<String> &&
+          (widget.key as ValueKey<String>)
+              .value
+              .startsWith('offer-detail-row-'));
+      expect(rows, findsNWidgets(5));
+      final rowHeight = tester.getSize(rows.first).height;
+      for (var index = 1; index < 5; index++) {
+        expect(tester.getSize(rows.at(index)).height, closeTo(rowHeight, 0.01));
+      }
+      expect(
+          find.text(detailsScenario.locale.languageCode == 'ar'
+              ? 'الملاحظات'
+              : 'Notes'),
+          findsOneWidget);
+      final contacts = find.ancestor(
+        of: find.byIcon(Icons.phone_rounded),
+        matching: find.byType(OutlinedButton),
+      );
+      expect(contacts.hitTestable(), findsOneWidget);
       expectNoLayoutException(tester, detailsScenario);
       for (var section = 0; section < 5; section++) {
         await tester.drag(
@@ -249,6 +539,8 @@ void main() {
       await tester.ensureVisible(openPlan);
       await tester.pump();
       expect(openPlan.hitTestable(), findsOneWidget);
+      expect(contacts.hitTestable(), findsOneWidget,
+          reason: 'Call must stay reachable after scrolling to the Plan');
       expect(transport.calls.where((call) => call == 'fetch').length, 1);
     });
   }

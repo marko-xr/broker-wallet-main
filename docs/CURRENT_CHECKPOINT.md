@@ -16500,3 +16500,200 @@ NOW: inspect the app currently running on the iPhone and confirm its initial
 screen appears and stays open; reopen once from the Home Screen.
 NEXT: after startup acceptance, record the owner result and smoke-test login
 and Home on the same release build.
+
+
+### Offer details reference UI refresh (2026-11-07)
+
+Owner authorized replacing only Offer Details presentation using the supplied
+Arabic property-details image, excluding unused designer-only fields (including
+floor level). Existing offer data and behavior remain the source of truth.
+
+Updated `lib/src/views/Screens/ViewDetails/offers_view_details.dart`: centered
+localized header; rounded media hero with offer/status badges; selectable image
+and video thumbnails; property/location and price summary; rooms/bathrooms/area
+strip; detail rows; notes; separate plan card; existing map/unavailable state;
+fixed WhatsApp/Call bar. Status opens the existing selector from the hero.
+Edit/delete remain accessible in the details card. Favorite/share, copy-phone,
+media retry/upload actions, video/fullscreen sharing, plan access and maps use
+the existing handlers and services. No floor/year/owner sample values, decorative
+leaves, stock listing data or new backend behavior were introduced. Colors and
+text styles come from the existing theme; English/Arabic and RTL are retained.
+
+Validation: targeted Flutter analyze PASS; 113 scoped tests PASS covering the
+Offer responsive matrix, routes, details load coordinator, media loading and
+plan source guards. Added thumbnail-to-gallery navigation coverage and fixed
+Call-bar reachability checks before/after scrolling to the separate Plan.
+Initial narrow/large-text fallback and media-error overflows were corrected;
+Retry remains reachable in the existing large-Arabic-text failure case.
+Dart format check and git diff --check PASS. This is CODE_PROVEN only;
+reference-image visual parity, external Call/WhatsApp/Maps launches, real media
+and all actions still require real-device acceptance. Not VERIFIED_RUNTIME.
+Pre-existing iOS/macOS native changes and earlier checkpoint notes were
+preserved. No commit, deployment or migration.
+
+NOW: hot reload/restart the app on the physical device and open an existing
+Offer with photos/video, notes and a Plan; compare its Arabic layout against
+the supplied reference and check the thumbnail and fixed contact controls.
+NEXT: verify English/RTL, large text, status/edit/delete dialogs, favorite/share,
+phone copy, Call/WhatsApp, Plan opening and map opening on the same device;
+record the actual results before marking this checkpoint VERIFIED_RUNTIME.
+
+
+### Offer Details reference fidelity correction (2026-11-07)
+
+Owner rejected the first implementation using real iPhone screenshots: its
+serif Arabic fallback, teal palette, heavy outlines, wrapped price, tall rows,
+map panel and solid-circle WhatsApp glyph did not match the supplied reference.
+The previous 113-test result demonstrated code/layout checks only; it did NOT
+prove visual acceptance. Reference visual acceptance remains pending.
+
+Corrected only Offer Details and the resources needed for that screen:
+- Added a screen-scoped ThemeData derived from the existing app theme, with
+  deliberate dark-green reference tokens, compact text sizes and faint rules.
+  Other screens retain their existing colors, typography and layouts.
+- Bundled Noto Sans Arabic regular/bold plus its OFL license, used only inside
+  this screen; existing Noto Sans supplies Latin fallback. This removes the
+  iPhone serif fallback. A full app restart/rebuild is needed for new fonts.
+- Matched circular header controls, hero corner radius/proportions, opposite
+  badge placement, five-thumbnail sizing, one-line grouped AED prices, shallow
+  stats strip, white cards, compact detail rows and the bottom contact buttons.
+- Replaced the tinted raster WhatsApp circle with the existing Font Awesome
+  outlined WhatsApp glyph. Video thumbnails reuse OfferVideoPoster so available
+  still frames are shown instead of only a play symbol.
+- Edit/delete stay in an explicit details-card actions menu. Status remains
+  tappable on the hero. The optional compact gallery counter opens the existing
+  fullscreen viewer; other gallery callers keep their original presentation.
+- Reduced the live map to the reference's shallow panel, retained real map
+  navigation/coordinates, reused the existing offer home-marker asset, and
+  removed the redundant map address block and native location/compass chrome.
+  An unavailable location still reports its real state. No stock map or fake
+  property data was substituted. No unused floor, year, owner or annual-period
+  fields were added; all existing Broker Wallet data remains available.
+
+Visual QA: rendered Arabic and English widget previews with bundled text/icon
+fonts and representative fixture data, inspected them, corrected an outer-theme
+lookup in detail rows and tightened measured card heights against the reference.
+Preview PNGs: build/offer-ui-review/offer-details-{ar,en}.png (local, gitignored;
+fixture media is not a production listing and does not establish runtime parity).
+Added assertions for a single-line price, compact stats/details heights,
+edit/delete menu access and fullscreen access through the compact counter.
+
+Validation: 138 scoped tests PASS (responsive Offer cases with actual fonts,
+routes, details loading, media loading, plan source guards, video posters,
+playback and lifecycle). Targeted analyzer PASS. No backend/security change,
+commit, migration or deployment. Existing unrelated native edits were preserved.
+Status: CODE_PROVEN; visual/device acceptance NOT VERIFIED_RUNTIME.
+
+NOW: fully stop and rerun the app so the new bundled fonts are loaded, then
+open the same Offer shown in the owner's screenshots and compare the updated
+Arabic screen with the reference.
+NEXT: record the owner's visual result and verify contacts, status, edit/delete,
+sharing, Plan and map actions on the physical device; resolve any remaining
+screen-specific discrepancy before declaring runtime acceptance.
+
+
+### Offer Details — restore original app font (2026-11-07)
+
+Owner accepted the updated design direction ("ok good") and explicitly asked
+for the previous font style. OfferDetailsStyle now inherits the original
+app-theme font family and platform fallbacks for Arabic/English. Reference
+colors, compact sizes/weights, spacing, card layout and all actions remain.
+Removed the screen-only Arabic font assets/registration and test font loading
+introduced by the preceding correction; other existing bundled fonts remain.
+This supersedes the preceding new-font decision and restart instructions.
+
+Validation: targeted analyzer PASS; 10 existing Offer Details responsive/load
+cases PASS; 2 EN/AR price/action checks PASS, including original font-family
+inheritance. Replaced custom-font pixel-height assumptions with the requested
+font-inheritance assertion; the restored font naturally has different metrics.
+Formatting and git diff --check PASS. No commit/deploy/backend changes.
+Not a new VERIFIED_RUNTIME claim; original-font device appearance is pending.
+
+NOW: hot reload/restart and reopen Offer Details to see the original font.
+NEXT: confirm the restored Arabic/English font appearance on the device.
+
+
+### Offer Details — Notes label and uniform detail rows (2026-11-07)
+
+Owner requested the original Notes wording and matching spacing/heights inside
+Property Details. Restored the existing localized `notes` label (Notes /
+الملاحظات). The five detail rows now share the tallest row's intrinsic height,
+keeping their spacing uniform while allowing long values and large text to
+wrap without truncation. Original app font, new screen styling and existing
+data/actions remain. No other screens or backend changed.
+
+Validation: targeted analyzer PASS; 12 Offer Details/EN-AR price-action tests
+PASS, with equal-height and Notes-label assertions across all eight responsive
+cases. The landscape case scrolls the lazy card into view before measuring.
+Formatting and git diff --check PASS. Device appearance remains pending;
+not VERIFIED_RUNTIME. No commit/deploy.
+
+NOW: hot reload and open Offer Details to review Notes and the equal row heights.
+NEXT: confirm spacing on the device with an Offer containing long area/location
+values in Arabic and English.
+
+
+### Offer Details — EN/AR spacing parity and theme/direction checks (2026-11-07)
+
+Owner reported that the prior spacing appeared in English but not Arabic.
+The earlier IntrinsicHeight change only equalized rows within a locale; row
+height still depended entirely on that locale's content. Short Arabic values
+could therefore produce tighter rows. The prior equal-height assertions did
+not test parity between languages and did not establish device acceptance.
+
+Kept uniform, expanding rows and added a shared Material minimum row height
+(kMinInteractiveDimension, 48 logical pixels at normal text scale) plus 8-pixel
+vertical padding. Minimum height grows with enlarged text. Long values remain
+fully visible; no fixed clipping height is imposed. Phone values remain LTR,
+with their alignment based on the surrounding LTR/RTL direction. Notes remains
+localized, and the original app font and approved screen colors are retained.
+Also changed only the compact Offer media counter's background to the theme's
+scrim color: using onSurface made it pale behind white text in dark mode.
+
+Validation: targeted analyzer PASS; 16 targeted tests PASS. New paired EN/LTR
+and AR/RTL checks use the same viewport/content in light/dark themes and at
+1.0/1.8 text scale, asserting matching short-content row heights, minimum
+spacing, mirrored label/value placement, LTR phone rendering/alignment and
+inherited card theme colors. Existing eight responsive detail cases, Notes,
+price/actions and media loading/retry checks also PASS. Formatting and git
+diff --check PASS. CODE_PROVEN only; device retest remains pending. No commit,
+deployment or backend changes; no changes to other screens.
+
+NOW: hot reload and compare the same Offer in English/LTR and Arabic/RTL.
+NEXT: confirm spacing and readability in light/dark mode and enlarged text on
+the physical device, then record the actual runtime result.
+
+
+### Offer Details — remove duplicate media badge, corner link, original colors (2026-11-07)
+
+Owner requested removal of the repeated property-type icon/text from the media
+frame, corner alignment of the map's View larger link, and restoration of the
+original favorite/app colors. Owner also requested an explanation of edit/delete
+placement without adding or moving those actions.
+
+Removed only the duplicate property-type media badge; status remains tappable
+and property data remains below. View larger now aligns to the map card's
+outer directional corner (right in EN/LTR, left in AR/RTL), with wrapping
+supported. Fixed header action coloring so selected favorite uses the original
+app primary color and unselected uses onSurface. Removed the reference-specific
+palette constants/ColorScheme overrides from OfferDetailsStyle; the screen now
+inherits the existing app ColorScheme in both themes. Status tint is derived
+from that scheme. Reference layout/spacing and original font remain.
+
+Edit/delete were already in the three-dot actions menu beside Property Details
+from the preceding redesign, relocated to keep the card compact. Explained that
+relocation to the owner. Their placement/handlers were not changed in this turn;
+no duplicate or additional edit/delete controls were added.
+
+Validation: targeted analyzer PASS; 16 targeted tests PASS. Paired EN/AR,
+light/dark, normal/large-text checks assert full app-palette inheritance,
+favorite off/on/off theme colors, no standalone property-type badge text and
+exact View larger corner alignment including the existing border inset.
+Existing details/Notes/spacing, price/action and media-loading checks remain PASS.
+Formatting and git diff --check PASS. CODE_PROVEN; device verification pending.
+No commit, deployment, backend or unrelated screen changes.
+
+NOW: hot reload and check the media frame, favorite toggle and map header in
+both languages and themes.
+NEXT: record the owner's device result; await explicit direction before any
+further edit/delete placement change.

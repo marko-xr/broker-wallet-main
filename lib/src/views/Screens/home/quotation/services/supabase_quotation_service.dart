@@ -14,6 +14,9 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.d
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/list_session_check.dart';
+import 'package:broker_wallet/src/services/r2_offer_media_upload_service.dart';
+import 'package:broker_wallet/src/services/supabase_core_entities_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Why a Quotation operation failed. A fixed category: never SQL, provider
@@ -117,6 +120,15 @@ class SupabaseQuotationService implements QuotationRemote {
   /// Resolved on use, so constructing this never touches Supabase before it
   /// is initialized.
   SupabaseClient get _client => _customClient ?? Supabase.instance.client;
+
+  /// The entity lists' paged reader (P4), on this same client, made on first
+  /// use. Only its whole-list read is used; its media helpers are never.
+  SupabaseCoreEntitiesService get _pages =>
+      _pagesOnce ??= SupabaseCoreEntitiesService(
+        client: _client,
+        offerMedia: R2OfferMediaUploadService(supabaseClient: _client),
+      );
+  SupabaseCoreEntitiesService? _pagesOnce;
 
   void _requireSession() {
     final user = _client.auth.currentUser;
@@ -234,15 +246,32 @@ class SupabaseQuotationService implements QuotationRemote {
   }
 
   @override
-  Future<List<QuotationModel>> listQuotations() async {
+  Future<List<QuotationModel>> listQuotations() => _listQuotations(() => true);
+
+  /// Every live Quotation of the signed-in account, newest first: read whole
+  /// in pages of 500 by `created_at` then `id`, as the entity lists are (Q-1a;
+  /// before, one request was cut short at the hosted row cap without a word).
+  /// Nothing is returned in part. An empty answer is taken only once the
+  /// session is confirmed current, since a superseded session is answered
+  /// with no rows. [stillWanted] stops the read between pages.
+  Future<List<QuotationModel>> _listQuotations(
+      bool Function() stillWanted) async {
     _requireSession();
     final accessToken = _client.auth.currentSession?.accessToken;
+    final session =
+        AppSessionCoordinator.sessionId(_client.auth.currentSession);
     try {
-      final rows = await _client
-          .from('quotations')
-          .select(QuotationSupabaseMapper.listColumns)
-          .isFilter('deleted_at', null)
-          .order('created_at', ascending: false);
+      final rows = await _pages.readWholeOwnedList(
+        'quotations',
+        QuotationSupabaseMapper.listColumns,
+        stillWanted: stillWanted,
+      );
+      if (rows.isEmpty) {
+        final check = ListSessionCheck.confirmFor(session);
+        if (check != null && !await check) {
+          throw const ListSessionNotCurrent();
+        }
+      }
       return rows
           .map((row) =>
               QuotationSupabaseMapper.headerFromRow(Map<String, dynamic>.from(row)))
@@ -255,10 +284,13 @@ class SupabaseQuotationService implements QuotationRemote {
     }
   }
 
-  /// The rows now, then again after every core-entity mutation in this
-  /// process (create, update, media change, delete). A failed re-read is
-  /// delivered as an error event and the stream keeps listening; a failed
-  /// first read ends the stream. Reads run one at a time.
+  /// The rows now, then again after every Quotation mutation in this process
+  /// (create, update, media change, delete) and after any mutation that does
+  /// not say what it changed. A Request, Offer, Owner, Office, Broker or
+  /// Watchman change cannot alter a Quotation row (no join, foreign key or
+  /// trigger links them), so it no longer re-reads the list (Q-1b). A failed
+  /// re-read is delivered as an error event and the stream keeps listening; a
+  /// failed first read ends the stream. Reads run one at a time.
   @override
   Stream<List<QuotationModel>> watchQuotations() {
     late final StreamController<List<QuotationModel>> controller;
@@ -282,7 +314,8 @@ class SupabaseQuotationService implements QuotationRemote {
       do {
         readAgain = false;
         try {
-          final rows = await listQuotations();
+          // A screen that has closed reads no further page.
+          final rows = await _listQuotations(() => controller.hasListener);
           if (!controller.hasListener) return;
           delivered = true;
           controller.add(rows);
@@ -302,7 +335,8 @@ class SupabaseQuotationService implements QuotationRemote {
     controller = StreamController<List<QuotationModel>>(
       onListen: () {
         mutations =
-            CoreEntityMutationNotifier.changes.listen((_) => unawaited(read()));
+            CoreEntityMutationNotifier.changesTo(CoreEntityKind.quotation)
+                .listen((_) => unawaited(read()));
         unawaited(read());
       },
       onCancel: stopListening,
@@ -310,25 +344,51 @@ class SupabaseQuotationService implements QuotationRemote {
     return controller.stream;
   }
 
+  /// Soft-deletes the Quotation and returns only once the server has
+  /// confirmed it (Q-2b, as the entity lists since P3.1a).
+  ///
+  /// PostgREST answers an update that changed no row with success — for a
+  /// missing id, another account's row or a session the database no longer
+  /// accepts alike — so success alone proves nothing. The update returns the
+  /// id it changed: that is the confirmation. When none came back, one read
+  /// tells this account's already-deleted row (done) from anything else,
+  /// which fails with [QuotationFailure.notFound] and asks the existing
+  /// session check, so a replaced session is signed out as usual.
   @override
   Future<void> softDelete(String quotationId) async {
     _requireSession();
     final accessToken = _client.auth.currentSession?.accessToken;
+    final List<dynamic> changed;
+    final List<dynamic> deleted;
     try {
       // The only column a client may change; the row's own live-row policy
-      // decides whether this account may. Already deleted is a success.
-      await _client
+      // decides whether this account may.
+      changed = await _client
           .from('quotations')
           .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', quotationId)
           .isFilter('deleted_at', null)
           .select('id');
+      if (changed.isNotEmpty) return;
+      // Already deleted is a success: the owner may read a deleted row.
+      deleted = await _client
+          .from('quotations')
+          .select('id')
+          .eq('id', quotationId)
+          .not('deleted_at', 'is', null);
     } catch (error) {
       if (accessToken != null) {
         AppSessionCoordinator.reportBackendError(error, accessToken: accessToken);
       }
       throw _translate(error);
     }
+    if (deleted.isNotEmpty) return;
+    final check =
+        ListSessionCheck.confirmFor(ListSessionCheck.currentSession());
+    if (check != null) {
+      unawaited(check.then<void>((_) {}, onError: (Object _) {}));
+    }
+    throw const QuotationException(QuotationFailure.notFound);
   }
 
   // -------------------------------------------------------------------------

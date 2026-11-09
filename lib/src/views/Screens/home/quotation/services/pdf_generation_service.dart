@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'dart:convert';
@@ -240,11 +240,9 @@ class PdfGenerationService {
       ),
     );
 
-    // Save PDF locally first
-    final output = await getApplicationDocumentsDirectory();
-    final fileName =
-        'quotation_${quotation.id ?? DateTime.now().millisecondsSinceEpoch}.pdf';
-    final file = File('${output.path}/$fileName');
+    // Save PDF locally first, in the account's backup-excluded work folder
+    // (Q-2c-1), never in the documents folder itself.
+    final file = await QuotationPdfFiles().workFileFor(quotation);
     final bytes = await pdf.save();
     try {
       await file.writeAsBytes(bytes);

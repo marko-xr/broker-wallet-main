@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
@@ -38,8 +39,45 @@ class QuotationListViewModel extends ChangeNotifier {
   Stream<List<QuotationModel>>? get quotationsStream => _quotationsStream;
 
   void _initializeStream() {
-    _quotationsStream = _quotationService.getUserQuotations();
+    // Q-1a: a failed re-read must not replace quotations already on screen
+    // with the load-error state (a StreamBuilder drops its data on an error
+    // event). Before the first list a failure still reaches the screen as
+    // before; after it, the shown list stays — as the six entity lists do —
+    // and the next successful read (or an authoritative empty list) replaces
+    // it.
+    var delivered = false;
+    // Q-2b: the saved copy first, then the server's list (D-Q5: a failure
+    // after the saved copy is said once, as for any shown list).
+    final service = _quotationService;
+    _quotationsStream = service.watchUserQuotationsLocalFirst().transform(
+          StreamTransformer<List<QuotationModel>,
+              List<QuotationModel>>.fromHandlers(
+            handleData: (quotations, sink) {
+              delivered = true;
+              _refreshFailureReported = false;
+              sink.add(quotations);
+            },
+            handleError: (error, stackTrace, sink) {
+              if (!delivered) {
+                sink.addError(error, stackTrace);
+                return;
+              }
+              // The shown list stays; the person is told once per run of
+              // failures (see [onRefreshFailed]).
+              if (!_refreshFailureReported) {
+                _refreshFailureReported = onRefreshFailed?.call() ?? false;
+              }
+            },
+          ),
+        );
   }
+
+  /// Called when re-reading the list fails while quotations are shown. The
+  /// screen says so, in the screen's existing way, when it is the one on top
+  /// and returns true; false (not shown) leaves the next failure to say it.
+  /// Not called again until a read succeeds.
+  bool Function()? onRefreshFailed;
+  bool _refreshFailureReported = false;
 
   // Refresh quotations
   Future<void> refreshQuotations() async {
@@ -52,6 +90,10 @@ class QuotationListViewModel extends ChangeNotifier {
   /// Throws when it cannot be had.
   Future<File> resolvePdf(QuotationModel quotation) =>
       _quotationService.resolvePdfFile(quotation);
+
+  /// Ends what [resolvePdf] opened once it is no longer shown: a temporary
+  /// plain copy of an encrypted PDF is removed (Q-2c-1b).
+  Future<void> releasePdf(File file) => _quotationService.releasePdfFile(file);
 
   /// [resolvePdf] for sharing: the same private local copy, but any failure is
   /// a [ShareFailure] carrying only a category, so no provider text, link or

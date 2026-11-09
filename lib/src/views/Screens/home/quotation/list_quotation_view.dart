@@ -31,7 +31,11 @@ class _QuotationListViewState extends State<QuotationListView> {
     final texts = Theme.of(context).textTheme;
 
     return ChangeNotifierProvider(
-      create: (_) => widget.viewModel ?? QuotationListViewModel(),
+      create: (providerContext) {
+        final vm = widget.viewModel ?? QuotationListViewModel();
+        vm.onRefreshFailed = () => _refreshFailed(providerContext);
+        return vm;
+      },
       child: Consumer<QuotationListViewModel>(
         builder: (context, vm, _) {
           return Scaffold(
@@ -331,8 +335,11 @@ class _QuotationListViewState extends State<QuotationListView> {
         '${loc.translate('quotation')} - ${quotation.propertyTitle.isEmpty ? loc.translate('untitled') : quotation.propertyTitle}';
     try {
       final file = await vm.resolvePdf(quotation);
-      if (!mounted) return;
-      Navigator.of(context).push(
+      if (!mounted) {
+        await vm.releasePdf(file);
+        return;
+      }
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => PdfViewerScreen(
             localFile: file,
@@ -340,6 +347,8 @@ class _QuotationListViewState extends State<QuotationListView> {
           ),
         ),
       );
+      // The viewer has closed: a temporary plain copy goes (Q-2c-1b).
+      await vm.releasePdf(file);
     } catch (_) {
       if (mounted) {
         _showToast(loc.translate('quotationPdfUnavailable'), Colors.red);
@@ -367,6 +376,19 @@ class _QuotationListViewState extends State<QuotationListView> {
         fetchPdf: () => vm.resolvePdfForShare(quotation),
       ),
     );
+  }
+
+  /// A re-read failed while quotations are shown: they stay, and the screen
+  /// says so with its existing toast and wording — only while it is the
+  /// screen on top (re-reads also follow changes made on other screens).
+  bool _refreshFailed(BuildContext context) {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    _showToast(
+        AppLocalizations.of(context).translate('quotationListLoadFailed'),
+        Colors.red);
+    return true;
   }
 
   void _showToast(String message, Color bgColor) {

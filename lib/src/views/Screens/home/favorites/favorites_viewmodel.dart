@@ -51,6 +51,12 @@ class FavoritesViewModel extends ChangeNotifier {
   List<FavoriteItem> _cachedFavorites = [];
   bool _isLoading = false;
   bool _isRefreshing = false;
+
+  // Set when the favorites could not be read whole. The metadata read never
+  // answers a failure with an empty list (FU-FAV-META-EMPTY), so a failed
+  // read leaves what is shown as it is; with nothing to show, the screen's
+  // error state appears instead of "no favorites". Cleared by the next
+  // complete answer.
   String? _error;
   bool _disposed = false;
   bool _cacheInitialized = false;
@@ -131,6 +137,8 @@ class FavoritesViewModel extends ChangeNotifier {
     _optimisticFavoritesService?.removeListener(_onOptimisticFavoritesChanged);
     _refreshThrottleTimer?.cancel();
     _disposed = true;
+    // A metadata read still in progress asks for no further page.
+    _favoriteService.cancelMetadataReads();
     super.dispose();
   }
 
@@ -173,6 +181,7 @@ class FavoritesViewModel extends ChangeNotifier {
           mutationSnapshot: mutationSnapshot,
         );
         _allFavorites = reconciled;
+        _error = null;
         _cachedFavorites = reconciled;
         _applyFilter();
         _safeNotifyListeners();
@@ -190,6 +199,7 @@ class FavoritesViewModel extends ChangeNotifier {
           mutationSnapshot: mutationSnapshot,
         );
         _allFavorites = reconciled;
+        _error = null;
         _cachedFavorites = reconciled;
         _applyFilter();
 
@@ -426,6 +436,7 @@ class FavoritesViewModel extends ChangeNotifier {
           mutationSnapshot: mutationSnapshot,
         );
         _allFavorites = reconciled;
+        _error = null;
         _cachedFavorites = reconciled;
         _applyFilter();
         _safeNotifyListeners();
@@ -443,6 +454,7 @@ class FavoritesViewModel extends ChangeNotifier {
           mutationSnapshot: mutationSnapshot,
         );
         _allFavorites = reconciled;
+        _error = null;
         _cachedFavorites = reconciled; // Also update cached for display
         _applyFilter();
 
@@ -593,6 +605,7 @@ class FavoritesViewModel extends ChangeNotifier {
           mutationSnapshot: mutationSnapshot,
         );
         _allFavorites = reconciled;
+        _error = null;
         _applyFilter();
 
         // Update optimistic service state to keep it in sync
@@ -945,8 +958,8 @@ class FavoritesViewModel extends ChangeNotifier {
       // Update filtered favorites
       _applyFilter();
 
-      // Update cache
-      await _favoriteService.cacheFavorites(
+      // Update cache (never creates the encrypted copy; see the method)
+      await _favoriteService.cacheFavoritesAfterRemoval(
         _allFavorites,
         expectedGeneration: _creationGeneration,
       );

@@ -30,6 +30,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:broker_wallet/src/services/media_pick_recovery.dart';
 import 'src/services/offline_image_service.dart';
 import 'src/services/offline_media_service.dart';
+import 'src/services/private_media_backup_exclusions.dart';
 import 'src/services/supabase_bootstrap_service.dart';
 import 'src/config/supabase_config.dart';
 import 'dart:async';
@@ -95,6 +96,11 @@ Future<void> initializeAppServices() async {
   } catch (e) {
     // OfflineMediaService init failed (log removed)
   }
+
+  // M0.5: on iPhone, mark the private media folders and indexes that exist
+  // now as excluded from backup (Android lists them in its backup rules).
+  // Non-blocking and best effort; nothing is moved, cleared or deleted.
+  unawaited(PrivateMediaBackupExclusions().excludeExisting());
 
   // Initialize count cache service for instant count display
   try {

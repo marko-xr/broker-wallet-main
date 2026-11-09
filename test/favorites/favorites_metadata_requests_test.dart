@@ -40,13 +40,18 @@ class _Backend {
             headers: {'content-type': 'application/json'}, request: request);
       }
       final n = _tables.values.toList().indexOf(table) + 1;
+      // As PostgREST answers a first page asked for with count=exact (P4.4):
+      // newest first, with the exact count in Content-Range.
       return http.Response(
           jsonEncode([
             {'target_id': 'id-$n-b', 'added_at': '2026-11-0${n}T10:00:00Z'},
             {'target_id': 'id-$n-a', 'added_at': '2026-10-0${n}T10:00:00Z'},
           ]),
           200,
-          headers: {'content-type': 'application/json'},
+          headers: {
+            'content-type': 'application/json',
+            'content-range': '0-1/2',
+          },
           request: request);
     }),
     authOptions: const sb.AuthClientOptions(autoRefreshToken: false),
@@ -64,8 +69,9 @@ void main() {
   });
 
   test(
-      'the six lists are asked for together, each with the same filter and '
-      'order as before', () async {
+      'the six lists are asked for together, each with the same owner filter '
+      '(P4.4: in keyset pages, see favorites_metadata_pagination_test)',
+      () async {
     final favorites = await service.getAllFavoritesWithMetadata();
 
     expect(backend.requests, hasLength(6));
@@ -77,7 +83,8 @@ void main() {
       expect(r.url.queryParameters, {
         'select': 'target_id,added_at',
         'owner_id': 'eq.$_uid',
-        'order': 'added_at.desc.nullslast',
+        'order': 'added_at.desc.nullslast,target_id.desc.nullslast',
+        'limit': '500',
       });
     }
 
@@ -92,9 +99,11 @@ void main() {
     }
   });
 
-  test('one list that cannot be read still fails the whole read, as before',
-      () async {
+  test(
+      'one list that cannot be read still fails the whole read — now as an '
+      'error, not an empty answer (FU-FAV-META-EMPTY, P4.4)', () async {
     backend.failing.add('favorite_owners');
-    expect(await service.getAllFavoritesWithMetadata(), isEmpty);
+    await expectLater(
+        service.getAllFavoritesWithMetadata(), throwsA(isA<Exception>()));
   });
 }

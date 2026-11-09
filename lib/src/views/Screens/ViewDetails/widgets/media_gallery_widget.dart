@@ -5,8 +5,10 @@ import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.d
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/private_media_images.dart';
 import 'package:broker_wallet/src/services/video_player_resource_manager.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
+import 'package:broker_wallet/src/views/Widgets/private_media_image.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -366,10 +368,16 @@ class _OptimizedMediaGalleryWidgetState
     final cacheKey = mediaItem.cacheKey;
     if (cacheKey == null) return false;
     if (mediaItem.type == MediaType.image) {
-      unawaited(OfflineMediaService.instance.ensureMediaIdCached(
-        cacheKey: cacheKey,
-        url: mediaItem.url,
-      ));
+      if (widget.mediaRefs != null) {
+        // Offer/Owner details (M1c): the same lookup the image itself uses,
+        // so the two share one download through the private cache.
+        unawaited(PrivateMediaImages.load(cacheKey, signedUrl: mediaItem.url));
+      } else {
+        unawaited(OfflineMediaService.instance.ensureMediaIdCached(
+          cacheKey: cacheKey,
+          url: mediaItem.url,
+        ));
+      }
     }
     return true;
   }
@@ -652,68 +660,80 @@ class _OptimizedMediaGalleryWidgetState
     BuildContext context, {
     int? cacheWidth,
   }) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: OfflineMediaService.instance.buildOfflineAwareImage(
-        imageUrl: mediaItem.url,
-        cacheKey: mediaItem.cacheKey,
-        fit: BoxFit.cover,
-        cacheWidth: cacheWidth,
-        placeholder: widget.imagePlaceholder ??
-            Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
+    final placeholder = widget.imagePlaceholder ??
+        Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Theme.of(context).colorScheme.primary,
                 ),
               ),
             ),
-        errorWidget: Builder(
-          builder: (errorContext) => Container(
-            color: Theme.of(errorContext).colorScheme.errorContainer,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.broken_image,
-                    size: 48,
-                    color: Theme.of(errorContext).colorScheme.onErrorContainer,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    AppLocalizations.of(errorContext)
-                        .translate('failedToLoadImage'),
-                    textAlign: TextAlign.center,
-                    style:
-                        Theme.of(errorContext).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(errorContext)
-                                  .colorScheme
-                                  .onErrorContainer,
-                            ),
-                  ),
-                  if (widget.onRetry != null) ...[
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: widget.onRetry,
-                      child: Text(
-                        AppLocalizations.of(errorContext).translate('retry'),
-                      ),
-                    ),
-                  ],
-                ],
+          ),
+        );
+    final errorWidget = Builder(
+      builder: (errorContext) => Container(
+        color: Theme.of(errorContext).colorScheme.errorContainer,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.broken_image,
+                size: 48,
+                color: Theme.of(errorContext).colorScheme.onErrorContainer,
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                AppLocalizations.of(errorContext)
+                    .translate('failedToLoadImage'),
+                textAlign: TextAlign.center,
+                style: Theme.of(errorContext).textTheme.bodyMedium?.copyWith(
+                      color:
+                          Theme.of(errorContext).colorScheme.onErrorContainer,
+                    ),
+              ),
+              if (widget.onRetry != null) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: widget.onRetry,
+                  child: Text(
+                    AppLocalizations.of(errorContext).translate('retry'),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
+    );
+    final cacheKey = mediaItem.cacheKey;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      // Offer/Owner details (M1c): the private cache, by stable identity.
+      // Anything without one keeps the earlier path.
+      child: widget.mediaRefs != null && cacheKey != null
+          ? PrivateMediaImage(
+              cacheKey: cacheKey,
+              signedUrl: mediaItem.url,
+              fit: BoxFit.cover,
+              cacheWidth: cacheWidth,
+              placeholder: placeholder,
+              errorWidget: errorWidget,
+            )
+          : OfflineMediaService.instance.buildOfflineAwareImage(
+              imageUrl: mediaItem.url,
+              cacheKey: cacheKey,
+              fit: BoxFit.cover,
+              cacheWidth: cacheWidth,
+              placeholder: placeholder,
+              errorWidget: errorWidget,
+            ),
     );
   }
 

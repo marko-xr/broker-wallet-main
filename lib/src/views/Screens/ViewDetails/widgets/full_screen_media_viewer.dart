@@ -4,10 +4,10 @@ import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_galler
 import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/private_media_images.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_media_upload_status.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
@@ -602,14 +602,13 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     }
   }
 
-  /// Prefers bytes this device already holds, then the shared disk cache
-  /// keyed by the item's stable identity, and only then the network.
+  /// Prefers bytes this device already holds, then the private image cache
+  /// by the item's stable identity, and only then the network (M1c: see
+  /// [PrivateMediaImages]).
   ///
-  /// This applies to private Offer media only — the items that carry a stable
-  /// [MediaItem.cacheKey]. Everything else, Owner media included, keeps the
-  /// plain `NetworkImage` it has always used: caching it was never needed for
-  /// the Offer loading-delay correction, and changing an unrelated screen's
-  /// image pipeline does not belong in that change.
+  /// This applies to private Offer and Owner media only — the items that
+  /// carry a stable [MediaItem.cacheKey]. Everything else keeps the plain
+  /// `NetworkImage` it has always used.
   ImageProvider _imageProviderFor(MediaItem mediaItem) {
     // An Offer item still uploading is drawn from its queued copy.
     final pendingPath = mediaItem.localFilePath;
@@ -621,13 +620,9 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
     final cacheKey = mediaItem.cacheKey;
     if (cacheKey == null) return NetworkImage(mediaItem.url);
 
-    final localPath =
-        OfflineMediaService.instance.getLocalFilePathForMediaId(cacheKey);
-    if (localPath != null && localPath.isNotEmpty) {
-      final file = File(localPath);
-      if (file.existsSync()) return FileImage(file);
-    }
-    return CachedNetworkImageProvider(mediaItem.url, cacheKey: cacheKey);
+    final held = PrivateMediaImages.heldNow(cacheKey);
+    if (held != null) return FileImage(held);
+    return PrivateMediaImageProvider(cacheKey, signedUrl: mediaItem.url);
   }
 
   Widget _buildImageViewer(MediaItem mediaItem) {

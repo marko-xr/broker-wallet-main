@@ -16469,3 +16469,34 @@ and this checkpoint note only.
 
 NOW: commit the scoped divider changes. NEXT: on device, verify the final
 flex 2 date separators in all six lists in Arabic and English.
+
+
+### iOS release startup crash — missing bundled Firebase configuration (2026-11-04)
+
+Owner reported immediate exit after `flutter run --release -d
+00008020-001E719C0C42002E`. Reproduced against the installed app on the connected
+iPhone XS Max using `devicectl` console: uncaught `com.firebase.core` exception,
+`FirebaseApp.configure()` could not find a valid GoogleService-Info.plist;
+process terminated with signal 6 before Flutter startup.
+
+The existing `ios/Runner/GoogleService-Info.plist` was absent from the built app
+and from Runner's Xcode resource entries. Added its file reference, Runner group
+entry and Copy Bundle Resources build entry in
+`ios/Runner.xcodeproj/project.pbxproj`. Preserved native Firebase initialization
+and all pre-existing local CocoaPods/SPM configuration changes. No UI, auth,
+dependency or backend changes; no commit/deployment.
+
+Verification: project plist syntax PASS; `flutter build ios --release --no-pub`
+PASS; bundled Firebase plist decoded contents equal source PASS; git diff
+--check PASS. Installed rebuilt release on the same physical iPhone and launched
+with console attached. Original Firebase exception did not recur during the
+20-second observation; console command reached its deliberate timeout, and a
+subsequent device process listing confirmed Runner PID 37860 remained running.
+This verifies process survival for the observed startup window only. Visible
+screen correctness, login and broader iOS features remain NOT VERIFIED; no full
+checkpoint VERIFIED_RUNTIME claim.
+
+NOW: inspect the app currently running on the iPhone and confirm its initial
+screen appears and stays open; reopen once from the Home Screen.
+NEXT: after startup acceptance, record the owner result and smoke-test login
+and Home on the same release build.

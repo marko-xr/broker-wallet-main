@@ -16697,3 +16697,49 @@ NOW: hot reload and check the media frame, favorite toggle and map header in
 both languages and themes.
 NEXT: record the owner's device result; await explicit direction before any
 further edit/delete placement change.
+
+
+### Branch synchronization and preserved Offer Details work (2026-11-09)
+
+Owner authorized Git management/commits and a separate details-screen branch,
+with no discarded work, deleted files or feature edits. GitHub Desktop's pull
+was blocked by uncommitted Mac changes overlapping incoming work.
+
+Fetched origin without pruning. origin/iOS-branch and
+origin/perf/phase-1-startup-baseline both pointed to 45d51b0; local iOS-branch
+was at 585c4dd, behind by 20 commits. Preserved existing work as:
+- 17f9df8 on iOS-branch: existing Mac iOS/macOS configuration and the existing
+  startup-fix checkpoint note (including previously untracked Podfiles/locks).
+- 5181bd5 on codex/update-the-details-screen: existing Offer Details UI,
+  localization, shared-gallery presentation, styles, tests and checkpoint notes.
+- codex/backup-before-sync-2026-11-09 retains the full pre-merge Mac snapshot
+  at 5181bd5. An additional file/patch/SHA256 backup is saved at
+  /private/tmp/broker-wallet-before-branch-sync-20261109-ftunto5y.
+
+Merged origin/iOS-branch into iOS-branch (b8e3afb), then merged iOS-branch into
+codex/update-the-details-screen (36d6eb8). Both merges completed automatically;
+no manual source edits or conflict-side selection were needed. The only file
+modified by both sides, media_gallery_widget.dart, retains the complete incoming
+private-media changes and local compact-gallery UI changes. All 20 original
+local files were byte-identical after committing, and 19 stayed byte-identical
+after merging (the shared gallery is the expected combined exception).
+Reverse-application checks of both complete change sets passed before this
+bookkeeping note. Both branches contain all 20 incoming commits. UI changes are
+separate from iOS-branch, which retains the Mac setup and is ahead of origin by
+two preservation/merge commits. No reset, discarded stash, force push or file
+deletion occurred. No remote branches were changed; nothing was pushed.
+
+Verification: targeted analyzer PASS; 17 focused Offer UI/layout checks PASS.
+An additional incoming offer_media_private_cache_test.dart run failed on its
+first test with "Bad state: databaseFactory not initialized" in the Mac test
+cache-manager/sqflite setup and did not complete; stopped the run. The involved
+private cache/image sources and that test are byte-identical to the fetched
+remote branch. No unrelated test/environment fix was made, per owner's scope.
+Git integrity/change-preservation checks PASS. This is Git integration/code
+verification only, not VERIFIED_RUNTIME or a new production/security PASS.
+
+NOW: continue in codex/update-the-details-screen (the selected local branch)
+with the incoming Windows work and preserved Mac/UI changes available together.
+NEXT: review/run the combined app on the device; publish the new UI branch and
+push local iOS-branch only when the owner requests remote updates. Investigate
+the incoming Mac SQLite test setup separately if further test validation is wanted.

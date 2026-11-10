@@ -282,6 +282,31 @@ class OfflineMediaService {
     }
   }
 
+  /// Whether this device remembers a media list for [offerId] at all — an
+  /// entry, even an empty one (the Worker's answer that there is no media),
+  /// as opposed to none ever written (tracker §7AZ, M2-3b, D-M2-3-1). True
+  /// whenever it cannot be told (not initialized, unreadable), so a caller
+  /// never treats an unknown as "no entry". Synchronous, read only.
+  bool hasOfferMediaCatalog({
+    required String? ownerId,
+    required String? offerId,
+  }) {
+    final owner = ownerId?.trim();
+    final offer = offerId?.trim();
+    if (!_isInitialized ||
+        owner == null ||
+        owner.isEmpty ||
+        offer == null ||
+        offer.isEmpty) {
+      return true;
+    }
+    try {
+      return _localMediaBox.containsKey(_offerMediaCatalogKey(owner, offer));
+    } catch (e) {
+      return true;
+    }
+  }
+
   /// Whether one of [ownerId]'s remembered Offer or Owner media lists names
   /// [mediaObjectId] (tracker §7AZ, M1d-1). Those lists are written only from
   /// the Worker's answers for that signed-in account and from uploads the

@@ -259,6 +259,27 @@ class OfferMediaResolution {
   bool get isEmpty => items.isEmpty;
 }
 
+/// [current] with the items of [found] it lacks, in [found]'s order, keeping
+/// [current]'s own objects (so nothing already drawn is rebuilt); null when
+/// [found] adds nothing. For a details screen's read-only local lookup
+/// (tracker §7AZ, M2-3b) — never for an authoritative resolution, which
+/// replaces the media wholesale ([applyOfferMedia]).
+List<OfferMediaRef>? mergeHeldMedia(
+  List<OfferMediaRef> current,
+  List<OfferMediaRef> found,
+) {
+  final have = {for (final item in current) item.mediaObjectId: item};
+  if (found.every((item) => have.containsKey(item.mediaObjectId))) {
+    return null;
+  }
+  final listed = {for (final item in found) item.mediaObjectId};
+  return <OfferMediaRef>[
+    for (final item in found) have[item.mediaObjectId] ?? item,
+    for (final item in current)
+      if (!listed.contains(item.mediaObjectId)) item,
+  ];
+}
+
 /// Merges an authoritative media resolution into an Offer row.
 ///
 /// Media is always replaced as a unit — an empty resolution clears the Offer's

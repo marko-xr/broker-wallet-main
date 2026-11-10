@@ -20,6 +20,7 @@ import 'media_parent.dart';
 import 'offer_media_cache_identity.dart';
 import 'offer_media_url_cache.dart';
 import 'offline_media_service.dart';
+import 'private_media_images.dart';
 import 'r2_offer_media_upload_service.dart';
 
 /// Supabase CRUD adapter for the six core Broker Wallet entity tables.
@@ -451,6 +452,112 @@ class SupabaseCoreEntitiesService {
       ));
     }
     return refs;
+  }
+
+  /// What this device holds for [recordId] by its saved list's media identity
+  /// [ids] (`listedMediaObjectIds`, tracker §7AZ, M2-3b) — for Offer and Owner
+  /// records alike. Synchronous, with no network, for the first frame.
+  ///
+  /// Used only when the device has no catalogue entry for the record at all:
+  /// an entry, even an empty one, is a Worker answer this device received and
+  /// wins (D-M2-3-1, D-M2-3-3) — the saved ids are never merged with it. Only
+  /// for a record of the signed-in account ([ownerId]), only keys its
+  /// authorized session may read, and only items whose bytes are on disk:
+  /// never a link, never a placeholder for bytes not held. Empty [ids] — an
+  /// older saved list, a copy that does not keep them, or an invalid field —
+  /// prove nothing and give nothing.
+  List<OfferMediaRef> listedRecordMedia(
+    String recordId, {
+    required String ownerId,
+    required List<String> ids,
+  }) {
+    final owner = _listedOwner(recordId, ownerId, ids);
+    if (owner == null) return const <OfferMediaRef>[];
+    return <OfferMediaRef>[
+      for (final id in ids)
+        if (_heldNowRef(owner, id) case final ref?) ref,
+    ];
+  }
+
+  /// The items of [recordId] this device holds, found with no network: those
+  /// [listedRecordMedia] or the catalogue seed draw at once, and those whose
+  /// bytes are in the private image cache with no mapping (M2-3b, D-M2-3-2).
+  ///
+  /// Follows the catalogue when the device has an entry for the record, else
+  /// the saved [ids] under the same conditions as [listedRecordMedia]; keeps
+  /// that order. Read only: no download, no signed link, no mapping or
+  /// catalogue write (the image itself records its mapping when it is shown,
+  /// as before). Returns nothing once the account or its session changed
+  /// while it waited.
+  Future<List<OfferMediaRef>> discoverHeldRecordMedia(
+    String recordId, {
+    required String ownerId,
+    required List<String> ids,
+  }) async {
+    final owner = currentOwnerId?.trim();
+    if (owner == null || owner.isEmpty || ownerId.trim() != owner) {
+      return const <OfferMediaRef>[];
+    }
+    final offline = OfflineMediaService.instance;
+    final List<String> order;
+    if (offline.hasOfferMediaCatalog(ownerId: owner, offerId: recordId)) {
+      order = offline.readOfferMediaCatalog(ownerId: owner, offerId: recordId);
+    } else {
+      order = _listedOwner(recordId, ownerId, ids) == null ? const [] : ids;
+    }
+    if (order.isEmpty) return const <OfferMediaRef>[];
+
+    final found = <OfferMediaRef>[];
+    for (final id in order) {
+      final now = _heldNowRef(owner, id);
+      if (now != null) {
+        found.add(now);
+        continue;
+      }
+      final key = offerMediaCacheKey(ownerId: owner, mediaObjectId: id);
+      if (key == null || !PrivateMediaImages.canRead(key)) continue;
+      final file = await PrivateMediaImages.heldInPrivateCache(key);
+      if (currentOwnerId != owner || !PrivateMediaImages.canRead(key)) {
+        return const <OfferMediaRef>[];
+      }
+      if (file == null) continue;
+      found.add(OfferMediaRef(
+        mediaObjectId: id,
+        cacheKey: key,
+        localFilePath: file.path,
+      ));
+    }
+    return found;
+  }
+
+  /// The signed-in account when [ids] may be used for [recordId]: a record of
+  /// that account, with saved ids, and no catalogue entry on this device.
+  String? _listedOwner(String recordId, String ownerId, List<String> ids) {
+    final owner = currentOwnerId?.trim();
+    if (owner == null || owner.isEmpty || ownerId.trim() != owner) return null;
+    if (recordId.trim().isEmpty || ids.isEmpty) return null;
+    if (OfflineMediaService.instance
+        .hasOfferMediaCatalog(ownerId: owner, offerId: recordId)) {
+      return null;
+    }
+    return owner;
+  }
+
+  /// [id]'s item when its bytes (or a video's still frame) are on disk now
+  /// and the authorized session may read its key; null otherwise.
+  OfferMediaRef? _heldNowRef(String owner, String id) {
+    final key = offerMediaCacheKey(ownerId: owner, mediaObjectId: id);
+    if (key == null || !PrivateMediaImages.canRead(key)) return null;
+    final path = _localPathFor(key);
+    final poster = _localPathFor(offerMediaPosterKey(key));
+    if (path == null && poster == null) return null;
+    return OfferMediaRef(
+      mediaObjectId: id,
+      cacheKey: key,
+      localFilePath: path,
+      isVideo: path == null,
+      posterPath: poster,
+    );
   }
 
   /// Resolves the current confirmed private media for an Offer.

@@ -49,6 +49,12 @@ class OffersDetailsView extends StatefulWidget {
 
   /// This device's queued uploads for an Offer id, read synchronously.
   final PendingOfferMediaReader? readPendingMedia;
+
+  /// Held media by the saved list's media identity, and the read-only lookup
+  /// of held bytes (tracker §7AZ, M2-3b). Default to [offerService]'s only
+  /// when [readCachedMedia] is not replaced either.
+  final ListedOfferMediaReader? readListedMedia;
+  final HeldOfferMediaDiscovery? discoverHeldMedia;
   final OfferService? offerService;
   final PlanAttachmentTransport? planTransport;
 
@@ -60,6 +66,8 @@ class OffersDetailsView extends StatefulWidget {
     this.resolveMedia,
     this.readCachedMedia,
     this.readPendingMedia,
+    this.readListedMedia,
+    this.discoverHeldMedia,
     this.offerService,
     this.planTransport,
   });
@@ -167,6 +175,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       readCachedMedia: widget.readCachedMedia ?? _offerService.cachedOfferMedia,
       readPendingMedia:
           widget.readPendingMedia ?? _offerService.pendingOfferMedia,
+      readListedMedia: widget.readListedMedia ??
+          (widget.readCachedMedia == null
+              ? _offerService.listedOfferMedia
+              : null),
+      discoverHeldMedia: widget.discoverHeldMedia ??
+          (widget.readCachedMedia == null
+              ? _offerService.discoverHeldOfferMedia
+              : null),
       onChanged: _handleLoadChanged,
     );
   }

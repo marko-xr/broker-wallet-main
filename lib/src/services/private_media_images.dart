@@ -69,6 +69,23 @@ abstract final class PrivateMediaImages {
     return path == null ? null : File(path);
   }
 
+  /// Whether [cacheKey] may be read now: the current authorized session's
+  /// account's key (tracker §7AZ, M2-3b). Touches no storage.
+  static bool canRead(String cacheKey) => cache().canRead(cacheKey);
+
+  /// The private cache's copy of [cacheKey], read only: no mapping, no link,
+  /// no download, no previous cache, no copy (tracker §7AZ, M2-3b). Null when
+  /// there is none or the key is not the current session's account's.
+  static Future<File?> heldInPrivateCache(String cacheKey) async {
+    try {
+      final store = cache();
+      if (!store.canRead(cacheKey)) return null;
+      return await store.cached(cacheKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// The image's file, by the order above; null when it cannot be had now
   /// (no session for its account, offline with no copy, no link, a failed
   /// fetch). Never throws, and never removes anything.

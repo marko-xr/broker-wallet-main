@@ -271,6 +271,40 @@ class OwnerService implements PrivateMediaStore {
     return _supabase.cachedOwnerMedia(recordId);
   }
 
+  /// What this device holds for the Owner record [recordId] by the saved
+  /// list's media identity [ids], when it has no catalogue entry for it
+  /// (tracker §7AZ, M2-3b; see
+  /// [SupabaseCoreEntitiesService.listedRecordMedia]). Never throws.
+  List<OfferMediaRef> listedMedia(
+    String recordId, {
+    required String ownerId,
+    required List<String> ids,
+  }) {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    try {
+      return _supabase.listedRecordMedia(recordId, ownerId: ownerId, ids: ids);
+    } catch (_) {
+      return const <OfferMediaRef>[];
+    }
+  }
+
+  /// The Owner record's items this device holds, found with no network —
+  /// including bytes in the private cache with no mapping (M2-3b; see
+  /// [SupabaseCoreEntitiesService.discoverHeldRecordMedia]). Never throws.
+  Future<List<OfferMediaRef>> discoverHeldMedia(
+    String recordId, {
+    required String ownerId,
+    required List<String> ids,
+  }) async {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    try {
+      return await _supabase.discoverHeldRecordMedia(recordId,
+          ownerId: ownerId, ids: ids);
+    } catch (_) {
+      return const <OfferMediaRef>[];
+    }
+  }
+
   /// The Owner record's current confirmed media with fresh signed links.
   /// Null on the Firebase backend, which has no separate media stage.
   @override

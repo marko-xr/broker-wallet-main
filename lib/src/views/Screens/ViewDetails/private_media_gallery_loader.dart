@@ -1,6 +1,21 @@
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/private_media_store.dart';
 
+/// What this device holds for a record by its saved list's media identity
+/// [ids], read synchronously (tracker §7AZ, M2-3b).
+typedef ListedRecordMediaReader = List<OfferMediaRef> Function(
+  String recordId, {
+  required String ownerId,
+  required List<String> ids,
+});
+
+/// The record's held items, found with no network and no write (M2-3b).
+typedef HeldRecordMediaDiscovery = Future<List<OfferMediaRef>> Function(
+  String recordId, {
+  required String ownerId,
+  required List<String> ids,
+});
+
 /// Loads one record's private media for a details screen — used by Owner
 /// Details — in the order it can produce pixels, as Offer Details does
 /// (see `OfferDetailsLoadCoordinator`, whose media half this mirrors):
@@ -22,14 +37,28 @@ class PrivateMediaGalleryLoader {
     required String recordId,
     required PrivateMediaStore store,
     required void Function() onChanged,
+    String recordOwnerId = '',
+    List<String> listedMediaObjectIds = const <String>[],
+    ListedRecordMediaReader? readListedMedia,
+    HeldRecordMediaDiscovery? discoverHeldMedia,
   })  : _recordId = recordId.trim(),
         _store = store,
+        _recordOwnerId = recordOwnerId.trim(),
+        _listedIds = listedMediaObjectIds,
+        _readListedMedia = readListedMedia,
+        _discoverHeldMedia = discoverHeldMedia,
         _onChanged = onChanged {
     _seedFromLocalMedia();
   }
 
   final String _recordId;
   final PrivateMediaStore _store;
+
+  /// The record's account and its saved list's media identity (M2-3b).
+  final String _recordOwnerId;
+  final List<String> _listedIds;
+  final ListedRecordMediaReader? _readListedMedia;
+  final HeldRecordMediaDiscovery? _discoverHeldMedia;
   void Function()? _onChanged;
 
   List<OfferMediaRef> _mediaItems = const <OfferMediaRef>[];
@@ -84,6 +113,34 @@ class PrivateMediaGalleryLoader {
     } catch (_) {
       // A cold local cache is not an error; the network path still runs.
     }
+
+    // M2-3b (tracker §7AZ): as Offer Details — the saved ids only with
+    // nothing from the catalogue (the reader decides there is no entry), then
+    // one read-only lookup for held bytes the first frame could not reach.
+    final listed = _readListedMedia;
+    if (_mediaItems.isEmpty && listed != null && _listedIds.isNotEmpty) {
+      try {
+        final held =
+            listed(_recordId, ownerId: _recordOwnerId, ids: _listedIds);
+        if (held.isNotEmpty) _mediaItems = held;
+      } catch (_) {}
+    }
+    final discover = _discoverHeldMedia;
+    if (discover == null) return;
+    final Future<List<OfferMediaRef>> lookup;
+    try {
+      lookup = discover(_recordId, ownerId: _recordOwnerId, ids: _listedIds);
+    } catch (_) {
+      return;
+    }
+    lookup.then((found) {
+      // An older local lookup never undoes a Worker answer or a revocation.
+      if (_disposed || _mediaIsAuthoritative || _accessRevoked) return;
+      final merged = mergeHeldMedia(_mediaItems, found);
+      if (merged == null) return;
+      _mediaItems = merged;
+      _notify();
+    }, onError: (Object _) {});
   }
 
   Future<void> load() async {

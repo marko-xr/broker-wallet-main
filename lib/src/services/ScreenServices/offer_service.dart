@@ -292,6 +292,39 @@ class OfferService {
     return _supabase.cachedOfferMedia(offerId);
   }
 
+  /// What this device holds for [offerId] by the saved list's media identity
+  /// [ids], when it has no catalogue entry for it (tracker §7AZ, M2-3b; see
+  /// [SupabaseCoreEntitiesService.listedRecordMedia]). Never throws.
+  List<OfferMediaRef> listedOfferMedia(
+    String offerId, {
+    required String ownerId,
+    required List<String> ids,
+  }) {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    try {
+      return _supabase.listedRecordMedia(offerId, ownerId: ownerId, ids: ids);
+    } catch (_) {
+      return const <OfferMediaRef>[];
+    }
+  }
+
+  /// The Offer's items this device holds, found with no network — including
+  /// bytes in the private cache with no mapping (M2-3b; see
+  /// [SupabaseCoreEntitiesService.discoverHeldRecordMedia]). Never throws.
+  Future<List<OfferMediaRef>> discoverHeldOfferMedia(
+    String offerId, {
+    required String ownerId,
+    required List<String> ids,
+  }) async {
+    if (!SupabaseConfig.useSupabaseAuth) return const <OfferMediaRef>[];
+    try {
+      return await _supabase.discoverHeldRecordMedia(offerId,
+          ownerId: ownerId, ids: ids);
+    } catch (_) {
+      return const <OfferMediaRef>[];
+    }
+  }
+
   /// Resolves only private media for an Offer whose core row has already been
   /// authorized, without re-reading the Offer row.
   ///

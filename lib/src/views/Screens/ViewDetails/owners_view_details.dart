@@ -158,6 +158,12 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       recordId: id,
       store: _ownerService,
       onChanged: _handleMediaChanged,
+      // M2-3b (tracker §7AZ): the saved list's media identity, then a
+      // read-only lookup of held bytes; the service applies every rule.
+      recordOwnerId: _currentOwner.userId,
+      listedMediaObjectIds: _currentOwner.listedMediaObjectIds,
+      readListedMedia: _ownerService.listedMedia,
+      discoverHeldMedia: _ownerService.discoverHeldMedia,
     );
   }
 

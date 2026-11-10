@@ -8,6 +8,21 @@ typedef OfferMediaResolver = Future<OfferMediaResolution?> Function({
 });
 typedef CachedOfferMediaReader = List<OfferMediaRef> Function(String offerId);
 
+/// What this device holds for an Offer by its saved list's media identity
+/// [ids], read synchronously (tracker §7AZ, M2-3b).
+typedef ListedOfferMediaReader = List<OfferMediaRef> Function(
+  String offerId, {
+  required String ownerId,
+  required List<String> ids,
+});
+
+/// The Offer's held items, found with no network and no write (M2-3b).
+typedef HeldOfferMediaDiscovery = Future<List<OfferMediaRef>> Function(
+  String offerId, {
+  required String ownerId,
+  required List<String> ids,
+});
+
 /// This device's upload-queue items for an Offer, read synchronously.
 typedef PendingOfferMediaReader = List<OfferMediaRef> Function(String offerId);
 
@@ -39,12 +54,16 @@ class OfferDetailsLoadCoordinator {
     required void Function() onChanged,
     CachedOfferMediaReader? readCachedMedia,
     PendingOfferMediaReader? readPendingMedia,
+    ListedOfferMediaReader? readListedMedia,
+    HeldOfferMediaDiscovery? discoverHeldMedia,
   })  : _offer = initialOffer,
         _metadataResolved = initialMetadataResolved,
         _loadMetadata = loadMetadata,
         _resolveMedia = resolveMedia,
         _readCachedMedia = readCachedMedia,
         _readPendingMedia = readPendingMedia,
+        _readListedMedia = readListedMedia,
+        _discoverHeldMedia = discoverHeldMedia,
         _onChanged = onChanged {
     _seedFromLocalMedia();
   }
@@ -53,6 +72,8 @@ class OfferDetailsLoadCoordinator {
   final OfferMediaResolver _resolveMedia;
   final CachedOfferMediaReader? _readCachedMedia;
   final PendingOfferMediaReader? _readPendingMedia;
+  final ListedOfferMediaReader? _readListedMedia;
+  final HeldOfferMediaDiscovery? _discoverHeldMedia;
   void Function()? _onChanged;
 
   OfferModel _offer;
@@ -147,6 +168,47 @@ class OfferDetailsLoadCoordinator {
     } catch (_) {
       // A cold local cache is not an error; the network path still runs.
     }
+
+    // M2-3b (tracker §7AZ): with nothing from the catalogue, the saved list's
+    // media identity — used only when the device has no catalogue entry at
+    // all, which the reader decides. Empty saved ids prove nothing.
+    final ownerId = _offer.userId.trim();
+    final ids = _offer.listedMediaObjectIds;
+    final listed = _readListedMedia;
+    if (_mediaItems.isEmpty && listed != null && ids.isNotEmpty) {
+      try {
+        final held = listed(offerId, ownerId: ownerId, ids: ids);
+        if (held.isNotEmpty) _mediaItems = held;
+      } catch (_) {}
+    }
+    _startHeldMediaLookup(offerId, ownerId, ids);
+  }
+
+  /// Adds the held items the first frame could not reach (bytes in the
+  /// private cache with no mapping), once, with one notification — only
+  /// while no authoritative answer, no revocation and no disposal happened:
+  /// an older local lookup never undoes a Worker answer (M2-3b).
+  void _startHeldMediaLookup(String offerId, String ownerId, List<String> ids) {
+    final discover = _discoverHeldMedia;
+    if (discover == null) return;
+    final Future<List<OfferMediaRef>> lookup;
+    try {
+      lookup = discover(offerId, ownerId: ownerId, ids: ids);
+    } catch (_) {
+      return;
+    }
+    lookup.then((found) {
+      if (_disposed ||
+          _mediaIsAuthoritative ||
+          _mediaAccessRevoked ||
+          _offer.id?.trim() != offerId) {
+        return;
+      }
+      final merged = mergeHeldMedia(_mediaItems, found);
+      if (merged == null) return;
+      _mediaItems = merged;
+      _notify();
+    }, onError: (Object _) {});
   }
 
   /// Media refs for an Offer model that already carries resolved URLs, so a

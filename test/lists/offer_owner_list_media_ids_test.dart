@@ -589,8 +589,7 @@ void main() {
           [_media(1)]);
     });
 
-    test('the saved lists do not keep the identity yet (that is M2-2)',
-        () async {
+    test('the saved lists keep the identity (M2-2)', () async {
       final root = Directory.systemTemp.createTempSync('m2_1_cache_');
       addTearDown(() async {
         await Hive.close();
@@ -631,8 +630,8 @@ void main() {
       await offers.write(_alice, [offer]);
       final readOffer = (await offers.read(_alice))!.single;
       expect(readOffer.id, offer.id);
-      expect(readOffer.listedMediaObjectIds, isEmpty,
-          reason: 'not written: the saved payload is unchanged in M2-1');
+      expect(readOffer.listedMediaObjectIds, [_media(1)],
+          reason: 'saved inside the authenticated payload since M2-2');
       final owner = OwnerModel(
         id: _owners.id(1),
         userId: _alice,
@@ -655,7 +654,7 @@ void main() {
       await owners.write(_alice, [owner]);
       final readOwner = (await owners.read(_alice))!.single;
       expect(readOwner.id, owner.id);
-      expect(readOwner.listedMediaObjectIds, isEmpty);
+      expect(readOwner.listedMediaObjectIds, [_media(1)]);
     });
   });
 

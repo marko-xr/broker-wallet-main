@@ -388,7 +388,9 @@ void main() {
         'media.example.test',
         'mediaUrl',
         'media-object-1',
-        'mediaObjectIds'
+        // As a JSON key: the ids aligned with signed links are never stored
+        // (the trusted `listedMediaObjectIds` identity is, since M2-2).
+        '"mediaObjectIds"'
       ]) {
         expect(stored.contains(part), isFalse, reason: '"$part" stored');
       }

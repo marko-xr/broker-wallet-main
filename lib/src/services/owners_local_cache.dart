@@ -16,10 +16,12 @@ class SecureOwnersCacheKeyStore extends SecureAccountCacheKeyStore {
 ///
 /// The box and key belong to the signed-in account (its Supabase user id);
 /// each saved record's `userId` must be that account. Only the fields the
-/// list reads are kept. Media is never part of it: the list read carries no
-/// media (no signed URL, no media id), so nothing here can hold a signed R2
-/// link or media bytes — Owner media keeps going through the existing
-/// on-device media cache and authorized reads.
+/// list reads are kept. Media itself is never part of it — no signed URL, no
+/// path, no bytes. Each record keeps only its trusted media identity,
+/// `listedMediaObjectIds` (tracker §7AZ, M2-2): canonical lower-case UUIDs
+/// in gallery order, inside the same authenticated payload. Owner media
+/// keeps going through the existing on-device media cache and authorized
+/// reads.
 class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
   const OwnersLocalCache({
     AccountCacheKeyStore keyStore = const SecureOwnersCacheKeyStore(),
@@ -44,6 +46,24 @@ class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
 
   static String _accountOf(OwnerModel o) => o.userId;
 
+  static final RegExp _mediaId =
+      RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+
+  /// A record's media identity as it is saved and read: every entry a
+  /// canonical lower-case UUID, each once, in the given order — otherwise
+  /// `[]` for that record alone. Never throws, so a wrong field can never
+  /// make the rest of the list unreadable.
+  static List<String> _mediaIds(Object? ids) {
+    if (ids is! List) return const <String>[];
+    final seen = <String>{};
+    for (final id in ids) {
+      if (id is! String || !_mediaId.hasMatch(id) || !seen.add(id)) {
+        return const <String>[];
+      }
+    }
+    return List<String>.unmodifiable(ids);
+  }
+
   static Map<String, Object?> _encode(OwnerModel o) => {
         'id': o.id,
         'userId': o.userId,
@@ -60,6 +80,7 @@ class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
         'uploadedFileName': o.uploadedFileName,
         'createdAt': o.createdAt.toUtc().toIso8601String(),
         'updatedAt': o.updatedAt.toUtc().toIso8601String(),
+        'listedMediaObjectIds': _mediaIds(o.listedMediaObjectIds),
       };
 
   static OwnerModel _decode(Map<String, dynamic> m) => OwnerModel(
@@ -76,10 +97,12 @@ class OwnersLocalCache extends EncryptedAccountListCache<OwnerModel> {
         pickUpLongitude: (m['pickUpLongitude'] as num?)?.toDouble(),
         pickUpAddress: m['pickUpAddress'] as String,
         uploadedFileName: m['uploadedFileName'] as String?,
-        // As the server list read: no media in the list.
+        // As the server list read: no media links in the list.
         mediaUrl: null,
         mediaUrls: const <String>[],
         createdAt: DateTime.parse(m['createdAt'] as String).toLocal(),
         updatedAt: DateTime.parse(m['updatedAt'] as String).toLocal(),
+        // Absent in a list saved before M2-2: [] (identity unknown).
+        listedMediaObjectIds: _mediaIds(m['listedMediaObjectIds']),
       );
 }

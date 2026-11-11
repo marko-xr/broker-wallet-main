@@ -1030,13 +1030,24 @@ class FavoritesViewModel extends ChangeNotifier {
       if (offer == null) continue;
       // Private media is picked by kind (the first photo, else a video's
       // still frame); an Offer with plain URLs keeps its first URL.
-      final media = FavoriteCardMedia.fromOffer(offer);
+      var media = FavoriteCardMedia.fromOffer(offer);
+      // The Worker listed private media but its links are no longer in
+      // memory: the card is what this device holds of those items, never a
+      // signed link (tracker §7AZ, M3b-3, D-M3b3-1).
+      if (media == null && offer.mediaObjectIds.isNotEmpty) {
+        media = await _heldOfferCardMedia(offer);
+        if (!_isCurrentForAccount) return;
+      }
       favorites.add(FavoriteItem(
         id: metadata.itemId,
         type: 'offers',
         title: _getOfferTitle(offer),
         subtitle: _getOfferSubtitle(offer),
-        imageUrl: media == null && offer.mediaUrls.isNotEmpty
+        // Only plain URLs (an Offer with no private media ids): the private
+        // media's links are signed per read and never become an image key.
+        imageUrl: media == null &&
+                offer.mediaObjectIds.isEmpty &&
+                offer.mediaUrls.isNotEmpty
             ? offer.mediaUrls.first
             : null,
         media: media,
@@ -1044,6 +1055,32 @@ class FavoritesViewModel extends ChangeNotifier {
         originalData: offer,
       ));
     }
+  }
+
+  /// The card of an Offer whose media the Worker has just listed: the first
+  /// photo (else a video's still frame) this device holds of exactly those
+  /// items, in the Worker's order — through the mapping, its previous copy or
+  /// the private image cache, read only, for the signed-in account and its
+  /// authorized session. No network, no link; null (the card's icon) when
+  /// nothing is held. The device's catalogue may be older than this answer,
+  /// so an item the Worker no longer lists is never shown.
+  Future<FavoriteCardMedia?> _heldOfferCardMedia(OfferModel offer) async {
+    final recordId = offer.id?.trim() ?? '';
+    final accountId = _offerService.currentOwnerId?.trim() ?? '';
+    if (recordId.isEmpty || accountId.isEmpty || accountId != offer.userId) {
+      return null;
+    }
+    final listed = offer.mediaObjectIds;
+    final found = await _offerService.discoverHeldOfferMedia(
+      recordId,
+      ownerId: accountId,
+      ids: listed,
+    );
+    final held = {for (final ref in found) ref.mediaObjectId: ref};
+    return FavoriteCardMedia.pick([
+      for (final id in listed)
+        if (held[id] case final ref?) ref,
+    ]);
   }
 
   Future<void> _loadRequestsWithMetadata(List<FavoriteMetadata> requestMetadata,

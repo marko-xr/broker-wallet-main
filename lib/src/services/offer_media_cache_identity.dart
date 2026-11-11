@@ -23,16 +23,27 @@ enum OfferMediaFailureKind {
   /// The Worker answered authoritatively that this authenticated account has
   /// no such Offer — it was deleted, or it is not owned by this account.
   ///
-  /// The Worker's `/offer-media` route reaches this only after its ownership
+  /// Only a 404 carrying the route's own not-found code (`offer_not_found`,
+  /// `owner_not_found`) is this: the Worker sends it only after its ownership
   /// query has *succeeded* and returned no row; an upstream failure answers
   /// 502 instead. It is therefore a trustworthy revocation signal.
   accessDenied,
 
-  /// The access token was missing, malformed or expired.
+  /// The session was refused: the access token was missing, malformed or
+  /// expired (401), or the session was refused, a superseded one included
+  /// (any 403).
   ///
   /// A session problem, never proof that access to the Offer was revoked, so
   /// it must not delete anything.
   unauthenticated,
+
+  /// An answer that proves nothing about the media (tracker §7AZ, Option C,
+  /// D-FOMF-3/4): a 404 without the route's own not-found code, another 4xx,
+  /// or a 200 that is not the complete, well-formed media list.
+  ///
+  /// Nothing is removed, and it is not permission to show held media in
+  /// place of an answer.
+  inconclusive,
 
   /// Offline, a timeout, an upstream failure, or an unexpected status.
   ///

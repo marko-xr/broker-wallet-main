@@ -635,7 +635,12 @@ class SupabaseCoreEntitiesService {
     try {
       mediaItems = await media.getOfferMedia(id);
     } on R2OfferMediaHttpException catch (error) {
-      throw await _classifyMediaFailure(error, id, sessionOwnerId);
+      throw await _classifyMediaFailure(media, error, id, sessionOwnerId);
+    } on R2OfferMediaContractException {
+      // A 200 that is not the complete media list proves nothing: nothing is
+      // reconciled from it (tracker §7AZ, Option C, D-FOMF-4).
+      _debugLog('offer.media', 'media answer incomplete');
+      throw const OfferMediaException(OfferMediaFailureKind.inconclusive);
     } catch (_) {
       // Offline, a timeout, or anything else that establishes nothing about
       // this account's access. Locally held media is left exactly as it is.
@@ -684,24 +689,34 @@ class SupabaseCoreEntitiesService {
   /// on, and removes locally held bytes only when access is actually proven
   /// gone.
   ///
-  /// The Worker answers 404 for "no such Offer for this account" only after
-  /// its ownership query has succeeded and returned no row; an upstream
-  /// failure answers 502 instead. A 401 means the access token was rejected,
-  /// which is a session problem and never proof that access to this Offer was
-  /// revoked, so it deletes nothing.
+  /// The Worker answers a 404 with the route's own not-found code
+  /// (`offer_not_found`, `owner_not_found`) only after its ownership query has
+  /// succeeded and returned no row; an upstream failure answers 502 instead.
+  /// That is the only answer here that removes anything (tracker §7AZ,
+  /// Option C, D-FOMF-2/3):
+  ///  * 401 and any 403 — a superseded session included — are about the
+  ///    session, never the record: `unauthenticated`, nothing removed;
+  ///  * any other 4xx — a 404 without the route's code among them — proves
+  ///    nothing: `inconclusive`, nothing removed;
+  ///  * anything else (5xx, an unexpected status): `transient`.
   ///
   /// An expired signed R2 URL cannot reach this code at all: that 403 is
   /// raised by R2 while the image itself is being fetched, on the cache
   /// manager's path, never on this Worker API call.
   Future<OfferMediaException> _classifyMediaFailure(
+    R2OfferMediaUploadService media,
     R2OfferMediaHttpException error,
     String offerId,
     String ownerId,
   ) async {
-    if (error.isUnauthenticated) {
+    if (error.isSessionRefused) {
       return const OfferMediaException(OfferMediaFailureKind.unauthenticated);
     }
-    if (!error.isAccessDenied) {
+    if (!media.provesRecordGone(error)) {
+      if (error.statusCode >= 400 && error.statusCode < 500) {
+        _debugLog('offer.media', 'media answer inconclusive');
+        return const OfferMediaException(OfferMediaFailureKind.inconclusive);
+      }
       return const OfferMediaException(OfferMediaFailureKind.transient);
     }
     if (_client.auth.currentUser?.id != ownerId) {

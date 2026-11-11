@@ -291,6 +291,20 @@ void main() {
         expect(_ids(screen.items), [_m(1), _m(2)]);
       });
 
+      // Option C (D-FOMF-3/4): an answer that proves nothing is not a
+      // revocation; what the screen already shows stays.
+      test('an inconclusive Worker answer keeps the local images', () async {
+        s.listed = [_held(_m(1))];
+        final screen = open(s, [_m(1)]);
+        final loading = screen.load();
+        s.worker.completeError(
+            const OfferMediaException(OfferMediaFailureKind.inconclusive));
+        await loading;
+        s.discovery.complete([_held(_m(1))]);
+        await pumpEventQueue();
+        expect(_ids(screen.items), [_m(1)]);
+      });
+
       test('a Worker answer replaces everything; a later lookup is ignored',
           () async {
         s.listed = [_held(_m(1))];

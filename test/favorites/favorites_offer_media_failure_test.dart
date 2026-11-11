@@ -13,10 +13,10 @@
 // shows nothing held (D-FOMF-2, D-FOMF-3). A successful answer, even an
 // empty one, is the authority as before.
 //
-// Option C is NOT part of this checkpoint: the shared media client still
-// treats a 403 `session_superseded`, a 404 without its not-found code and a
-// 200 without a media list as it did (tests below record that, marked
-// OPTION C OPEN), so D-FOMF-2/3/4 are not resolved here.
+// Option C (offer_media_error_classification_test) makes the shared media
+// client remove nothing on a 403 `session_superseded`, a 404 without its
+// route's not-found code or a 200 without a complete media list; the tests
+// below check that Favorites shows nothing held for them either.
 //
 // The real entity and media services run on a recording HTTP stand-in; Hive,
 // files and the private image cache are real; the session scope is
@@ -747,8 +747,8 @@ void main() {
     });
 
     test(
-        'a 403 session_superseded: nothing held is shown (OPTION C OPEN: the '
-        'shared client still removes this record\'s media)', () async {
+        'a 403 session_superseded: nothing held is shown, and nothing is '
+        'removed (Option C, D-FOMF-2)', () async {
       final m = _mediaId();
       await mapped(m);
       final id = offer([(m, 'image')]);
@@ -757,13 +757,14 @@ void main() {
       final (shown, _, offers) = await refresh(id, _savedCard(id, m));
       expect(shown.media, isNull);
       expect(offers.lookups, 0);
-      expect(catalogued(id), isEmpty,
-          reason: 'recorded as is: D-FOMF-2 is fixed only by Option C');
+      expect(catalogued(id), [m], reason: 'a session refusal removes nothing');
+      expect(OfflineMediaService.instance.getLocalFilePathForMediaId(_key(m)),
+          isNotNull);
     });
 
     test(
-        'a 404 without its code: nothing held is shown (OPTION C OPEN: still '
-        'treated as a revocation by the shared client)', () async {
+        'a 404 without its code: nothing held is shown, and nothing is '
+        'removed (Option C, D-FOMF-3)', () async {
       final m = _mediaId();
       await mapped(m);
       final id = offer([(m, 'image')]);
@@ -772,13 +773,14 @@ void main() {
       final (shown, _, offers) = await refresh(id, _savedCard(id, m));
       expect(shown.media, isNull, reason: 'inconclusive is not permission');
       expect(offers.lookups, 0);
-      expect(catalogued(id), isEmpty,
-          reason: 'recorded as is: D-FOMF-3 is fixed only by Option C');
+      expect(catalogued(id), [m], reason: 'inconclusive removes nothing');
+      expect(OfflineMediaService.instance.getLocalFilePathForMediaId(_key(m)),
+          isNotNull);
     });
 
     test(
-        'a 200 with no media list (OPTION C OPEN: still read as "none" by '
-        'the shared client)', () async {
+        'a 200 with no media list: not the complete set, nothing held is '
+        'shown and nothing is removed (Option C, D-FOMF-4)', () async {
       final m = _mediaId();
       await mapped(m);
       final id = offer([(m, 'image')]);
@@ -788,8 +790,10 @@ void main() {
       expect(shown.media, isNull);
       expect(saved.media, isNull);
       expect(offers.lookups, 0);
-      // Recorded as is: D-FOMF-4 is fixed only by Option C.
-      await _until(() => catalogued(id).isEmpty);
+      await pumpEventQueue();
+      expect(catalogued(id), [m], reason: 'a malformed answer removes nothing');
+      expect(OfflineMediaService.instance.getLocalFilePathForMediaId(_key(m)),
+          isNotNull);
     });
   });
 

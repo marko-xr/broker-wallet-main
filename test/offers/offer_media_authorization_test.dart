@@ -4,9 +4,11 @@ import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
+import 'package:broker_wallet/src/services/media_parent.dart';
 import 'package:broker_wallet/src/services/r2_offer_media_upload_service.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/offer_details_load_coordinator.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
 
 /// Covers telling a revoked grant apart from a bad connection.
 ///
@@ -66,30 +68,54 @@ OfferDetailsLoadCoordinator _coordinator({
     );
 
 void main() {
+  // Option C (tracker §7AZ, D-FOMF-2/3/4): only a 404 with the route's own
+  // not-found code is authoritative. The full matrix, with real storage, is in
+  // offer_media_error_classification_test.dart.
   group('Worker status classification', () {
-    test('404 is the authoritative "no such Offer for this account"', () {
-      // assertOwnsOffer reaches 404 only after its ownership query succeeded
-      // and returned no row; an upstream failure answers 502 instead.
-      final error = R2OfferMediaHttpException(404);
-      expect(error.isAccessDenied, isTrue);
+    final offers = R2OfferMediaUploadService(
+      supabaseClient: SupabaseClient(
+          'https://unit-test.supabase.co', 'unit-test-publishable-key'),
+      parent: MediaParent.offer,
+    );
+
+    test('only a 404 with offer_not_found proves "no such Offer"', () {
+      // assertOwnsParent sends that code only after its ownership query
+      // succeeded and returned no row; an upstream failure answers 502.
+      final error = R2OfferMediaHttpException(404, code: 'offer_not_found');
+      expect(offers.provesRecordGone(error), isTrue);
       expect(error.isUnauthenticated, isFalse);
+      expect(error.isSessionRefused, isFalse);
     });
 
-    test('403 is also treated as a definitive rejection', () {
-      expect(R2OfferMediaHttpException(403).isAccessDenied, isTrue);
+    test('a 404 without that code proves nothing', () {
+      for (final code in [null, 'owner_not_found', 'media_not_found']) {
+        expect(
+            offers.provesRecordGone(R2OfferMediaHttpException(404, code: code)),
+            isFalse,
+            reason: '$code');
+      }
+    });
+
+    test('a 403 is about the session, never a revocation', () {
+      for (final code in ['session_superseded', null]) {
+        final error = R2OfferMediaHttpException(403, code: code);
+        expect(offers.provesRecordGone(error), isFalse, reason: '$code');
+        expect(error.isSessionRefused, isTrue, reason: '$code');
+      }
     });
 
     test('401 is a session problem, never proof of revocation', () {
       final error = R2OfferMediaHttpException(401);
       expect(error.isUnauthenticated, isTrue);
-      expect(error.isAccessDenied, isFalse,
+      expect(error.isSessionRefused, isTrue);
+      expect(offers.provesRecordGone(error), isFalse,
           reason: 'a rejected token must never delete private media');
     });
 
     test('server failures establish nothing about access', () {
       for (final status in [500, 502, 503, 504]) {
         final error = R2OfferMediaHttpException(status);
-        expect(error.isAccessDenied, isFalse, reason: 'status $status');
+        expect(offers.provesRecordGone(error), isFalse, reason: '$status');
         expect(error.isUnauthenticated, isFalse, reason: 'status $status');
       }
     });
@@ -175,6 +201,21 @@ void main() {
       final coordinator = _coordinator(
         onResolve: () async => throw const OfferMediaException(
           OfferMediaFailureKind.unauthenticated,
+        ),
+      );
+
+      await coordinator.load();
+
+      expect(coordinator.mediaAccessRevoked, isFalse);
+      expect(coordinator.mediaLoadFailed, isTrue);
+      expect(coordinator.hasRenderableMedia, isTrue);
+    });
+
+    test('an inconclusive answer keeps held media and is not a revocation',
+        () async {
+      final coordinator = _coordinator(
+        onResolve: () async => throw const OfferMediaException(
+          OfferMediaFailureKind.inconclusive,
         ),
       );
 

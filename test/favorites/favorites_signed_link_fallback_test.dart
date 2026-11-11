@@ -156,7 +156,14 @@ class _Backend {
           '';
       final code = status[id];
       if (code != null) {
-        return http.Response('{"code":"denied"}', code,
+        // The Worker's own codes: a 404 for an Offer it found no row for, a
+        // 403 for a superseded session (Option C reads them by route).
+        final body = switch (code) {
+          404 => '{"code":"offer_not_found"}',
+          403 => '{"code":"session_superseded"}',
+          _ => '{"code":"denied"}',
+        };
+        return http.Response(body, code,
             headers: {'content-type': 'application/json'}, request: request);
       }
       final items = [
@@ -715,11 +722,15 @@ void main() {
         expect(card.media, isNull, reason: '$code');
         expect(card.imageUrl, isNull, reason: '$code');
         expect(offers.lookups, 0, reason: '$code: nothing to bring back');
+        // Option C: only the 404 (offer_not_found) is a revocation; the 403
+        // (session_superseded) is about the session and removes nothing.
         expect(
             OfflineMediaService.instance
                 .readOfferMediaCatalog(ownerId: _uid, offerId: id),
-            isEmpty,
-            reason: '$code: the revocation emptied the catalogue');
+            code == 404 ? isEmpty : [m],
+            reason: code == 404
+                ? '404: the revocation emptied the catalogue'
+                : '403: a session refusal removes nothing');
       }
     });
 

@@ -998,6 +998,7 @@
 | D-58 | M3b-2 (§7AZ) | بنسخة تحوي M3b-2: فتح تفاصيل Offer وOwner بصور offline (بلا كتالوج) ثم Search بلا شبكة؛ ثم Search بشبكة لسجلات صورها في الكاش الخاص فقط؛ ثم تمرير سريع لقائمة طويلة؛ ثم حذف صورة من سجل على جهاز آخر وفتح Search؛ ثم تبديل الحساب/إزاحة الجلسة؛ وSmart Map للسجلات نفسها | بطاقات Search تعرض الصور المحفوظة offline بلا طلب Worker؛ لا تنزيل لمجرد البحث؛ لا صورة لحساب آخر أو بلا جلسة؛ الصورة المحذوفة تختفي بعد إجابة Worker لها (لا تُعاد)؛ Map كما كان؛ زمن الإطار الأول مقبول | PENDING (DEFERRED) |
 | D-59 | M3b-3b (§7AZ) | بنسخة تحوي M3b-3b: فتح Favorites بعدة Offers وOwners بصور (محفوظة وغير محفوظة)؛ إعادة الفتح مرات؛ ثم Favorites بلا شبكة؛ ثم تبديل الحساب أثناء التحميل؛ وOffer صورته الأولى فيديو | الصور تظهر كما قبل؛ لا تضخّم في كاش الصور القديم مع كل فتح؛ offline تبقى الصور المحفوظة؛ لا صورة لحساب آخر؛ الفيديو يظهر بملصقه ولا يُنزَّل؛ نداءات Worker كما قبل | PENDING (DEFERRED) |
 | D-60 | FU-FAV-OFFER-MEDIA-FAILURE الخيار B (§7AZ) | بنسخة تحوي الخيار B: Favorites بصور Offers محفوظة؛ تشغيل وضع الطيران أثناء التحديث (أو شبكة ضعيفة)؛ ثم إغلاق التطبيق وفتح Favorites offline؛ ثم إعادة الشبكة؛ ثم حذف صورة Offer من جهاز آخر وفتح Favorites | الصور المحفوظة لا تتحوّل إلى أيقونات عند فشل الشبكة وتبقى offline بعد إعادة الفتح؛ مع الشبكة تتحدّث كما قبل؛ الصورة المحذوفة تختفي ولا تعود؛ لا صورة لحساب آخر | PENDING (DEFERRED) |
+| D-61 | الخيار C (§7BB) | بنسخة تحوي الخيار C: فتح تفاصيل Offer/Owner وFavorites وSearch بصور محفوظة؛ ثم الدخول بالحساب نفسه على جهاز آخر (إزاحة — **بموافقة منفصلة فقط**، لا جلسة ثانية للحساب A دونها) ثم إعادة الدخول على Samsung؛ ثم حذف Offer من جهاز آخر وفتحه | بعد الإزاحة لا تُعرض الصور، وبعد إعادة الدخول تظهر الصور المحفوظة دون تنزيل جديد (لم تُحذف)؛ Offer المحذوف تختفي صوره من الجهاز | PENDING (DEFERRED) |
 
 ---
 
@@ -4858,6 +4859,155 @@ memo يُصاب فقط للكائن نفسه والمفتاح نفسه؛ كائ�
 **مخاطر الخيار C الباقية (OPEN — أولوية عالية):** الخدمة المشتركة (`R2OfferMediaHttpException.isAccessDenied` + `_classifyMediaFailure` + `getOfferMedia`) ما زالت: تحذف وسائط السجل من الجهاز عند 403 `session_superseded` (D-FOMF-2) وعند 404 بلا `code` (D-FOMF-3)، وتعامل 200 بلا `media`/عناصر ناقصة كمجموعة كاملة فتحذف (D-FOMF-4) — في **كل الأسطح** (التفاصيل، المعرض، Search، Favorites، Owners). الخيار B يمنع **العرض** بعد هذه الحالات في Favorites فقط، ولا يمنع الحذف.
 
 **الحالة:** **FU-FAV-OFFER-MEDIA-FAILURE (الخيار B) = CODE_PROVEN, LOCAL_TESTED, REAL_DEVICE_UNVERIFIED** (34/34 جديدة، 14/14 طفرات، 4,380 انحدار + 5 تاريخية مُثبتة)؛ **غير مودع**؛ **FU-FAV-OFFER-MEDIA-FAILURE يبقى OPEN حتى مراجعة ودفع الخيار B ثم إغلاق الخيار C.** **الخيار C (FU-MEDIA-CLASSIFICATION) OPEN، HIGH PRIORITY، NOT STARTED.** M3c NOT STARTED؛ M1d-3 DEFERRED؛ M3b-1/M3b-2/M3b-3b محفوظة؛ FU-M3-MAP، FU-M23B-FLAKE، D-57، D-58، D-59، P4.3-ACCEPT-NONEMPTY، D-DAM-4/5، مسارات iOS، التلف بنفس الحجم، إخفاقات Map/Auth/Delete Account التاريخية، القبول المستضاف بين الحسابات، M4/M5، Smart Map، Toolkit، أداء القوائم السبع على Samsung، O0–O7 — **مفتوحة**. **NOW:** موافقة المالك على الـ commit. **STOP.**
+
+**تحديث لاحق:** الخيار B أُودع `4e765c41d1f82cdf687e8871cc26d5fdc1a6cd27` (الأب `94b5ea4`)، 6 ملفات بالضبط، ودفعه المالك (`origin` = `4e765c4`، مُتحقَّق 2026-11-11). الخيار C ما زال **OPEN، HIGH PRIORITY، NOT STARTED** (لا عمل جارٍ).
+
+## 7BA) APP-FLOW / OFFLINE-FIRST COMPLETE GAP AUDIT — 2026-11-11 (قراءة مصدر وتصميم فقط؛ لا تغيير كود؛ ينتظر قرارات المالك)
+
+**Git (مُتحقَّق):** الفرع `perf/phase-1-startup-baseline`؛ HEAD = `origin` = `4e765c4`؛ الفهرس فارغ؛ لا ملفات غير متتبَّعة؛ أربعة stashes سليمة (`d2ed21b`، `d2aa563`، `10cd41f`، `d9853b1`)؛ ملفات plugin الثلاثة بنهايات أسطر فقط ولم تُلمس. لا عمل جارٍ على الخيار C.
+
+### A) الأهداف الأصلية والحالة (من هذا المتتبّع + المصدر)
+| البرنامج | الهدف | الحالة |
+|---|---|---|
+| P1 | بدء التشغيل وأول شاشة مفيدة | REAL_DEVICE_VERIFIED لنسخة `f686b80` online فقط (§7I: Cold TTFF median 623 ms، TTUS cold median 1053 ms، Profile، Samsung S24 Ultra)؛ **لا قياس offline ولا للنسخ الأحدث** |
+| P2 | قوائم الكيانات الست local-first مشفّرة | CODE_PROVEN + اختبار جهاز محدود لنسخ قديمة؛ D-35 وD-9 PENDING؛ **تُعرض فقط بعد اعتماد الخادم للجلسة في هذه العملية** |
+| P3 | الاستعلامات، Home، الأمن، Favorites | CODE_PROVEN؛ أعداد Home الحيّة online |
+| P4 | ترقيم 500، Search local-first، القوائم الكبيرة | CODE_PROVEN؛ **P4.3-ACCEPT-NONEMPTY OPEN**؛ P4.7c-2 (isolate) مؤجّل |
+| Q1/Q2 | Quotations: ترقيم، قائمة مشفّرة، خزنة PDF | CODE_PROVEN؛ D-55..D-57 PENDING |
+| M0/M1 | كاش وسائط خاص، ترحيل آمن | CODE_PROVEN؛ M1d-3 DEFERRED |
+| M2 | هوية وسائط محفوظة + تفاصيل offline | M2-1 HOSTED+REAL_DEVICE (نطاق H-M2-1 فقط)؛ M2-2/M2-3 CODE_PROVEN؛ FU-M23B-FLAKE OPEN |
+| M3 | وسائط Favorites/Search | M3b-1/2/3b CODE_PROVEN؛ D-58/D-59 PENDING؛ M3c NOT STARTED؛ FU-M3-MAP OPEN |
+| FU-FAV (B) | الإبقاء على وسائط محفوظة عند فشل مؤقت | CODE_PROVEN (`4e765c4`)؛ D-60 PENDING |
+| الخيار C | تصنيف الأخطاء المدمّر في الخدمة المشتركة | **NOT STARTED — P0** |
+| P5 | قبول أداء الجهاز الحقيقي | NOT STARTED (قائمة D المجمّعة) |
+| O0–O7 | كتابة offline دائمة ومزامنة | NOT STARTED (معماري منفصل) |
+
+### B) التدفق الحالي: البدء حتى Home (من المصدر)
+`main.dart`: `Hive.initFlutter` ⇒ `SharedPreferences` ⇒ **`await SupabaseBootstrapService.initialize()`** (`Supabase.initialize(...).timeout(10s)`؛ الجلسة في `SupabaseSecureStorage`؛ SDK `supabase_flutter 2.17.2`/`gotrue 2.27.2`: `SupabaseAuth` يستعيد الجلسة المحفوظة **محلياً** بـ `setInitialSession` بلا شبكة، `recoverSession` كسول) ⇒ فتح صناديق Hive ⇒ `OfflineMediaService`/`CountCacheService` ⇒ `runApp`. `SupabaseAuthRepository._startIdentityPipeline` (`supabase_auth_repository.dart:182–211`): لا جلسة ⇒ هوية null ⇒ `/sign-in`؛ جلسة استعادة كلمة المرور ⇒ تُنشر (شاشة الاستعادة فقط)؛ **وإلا `_authorizeAndPublish(restored, claim: false)`** ⇒ `AppSessionCoordinator.authorize` ⇒ RPC **`is_current_app_session`** (`app_session_coordinator.dart:104–127`). الاعتماد **في الذاكرة فقط** (`_authorizedId`) ولا يُحفظ أبداً. الموجّه (`app.dart:245`) يبقي `AuthStatus.unknown` على `/` ⇒ `AuthWrapper`: Splash، أو شاشة Retry حين `isSessionCheckUnavailable`.
+
+### C) سبب «تعذّر التحقق من تسجيل الدخول» عند البدء offline (مُؤكَّد من المصدر — تصميم fail-closed مقصود ومسجّل منذ P2.1، D-9)
+النص = مفتاح `appSessionCheckFailed` (`app_ar.arb:6`) تعرضه `auth_wrapper.dart:26–46` حين `AuthViewModel.isSessionCheckUnavailable`. يُضبط من `SupabaseAuthRepository._authorizeAndPublish` (`:281–300`): أي استثناء من RPC الجلسة لجلسة مستعادة (`claim: false`) **لا يحتوي `session_superseded`** ⇒ `sessionCheckUnavailableEvents.add(true)` + `AuthFailure(appSessionUnavailable)` و**الهوية لا تُنشر** (التعليق: «A restored session with no network remains cached for a retry, but its app identity is never published until the server confirms it»). الجلسة **لا تُحذف**؛ Retry يعيد RPC. **ما يمنع الوصول:** (1) الموجّه لا يخرج من `/`؛ (2) `PrivateMediaCache.applicationScope()` يتطلب `coordinator.isAuthorized` ⇒ لا قراءة لأي صورة خاصة؛ (3) `ListSessionCheck.confirmFor` يتطلب `validateNow` (شبكة) لتأكيد «القائمة فارغة». **البيانات المشفّرة نفسها مقروءة محلياً** (مفاتيح الحساب في التخزين الآمن)، فالمانع سياسة الجلسة لا توفّر البيانات.
+
+### D) السيناريوهات (من المصدر؛ ما يحتاج تشغيلاً مذكور)
+| # | السيناريو | السلوك اليوم |
+|---|---|---|
+| 1 | لم يسجّل قط، بلا شبكة | هوية null ⇒ `/sign-in` فوراً (لا شبكة لازمة) |
+| 2 | مسجّل، بدء بارد online | RPC `true` ⇒ Home؛ RPC `false` ⇒ `supersede` ⇒ خروج محلي + إشعار |
+| 3 | مسجّل، الشبكة مقطوعة قبل البدء | **Retry** (C)؛ لا Home ولا بيانات محفوظة |
+| 4 | مسجّل، بدء دافئ offline (العملية حيّة ومعتمدة) | يبقى معتمداً: `validateNow` عند الاستئناف يفشل بصمت (`:187`)، قناة Realtime تتجاهل الخطأ (`:139`) ⇒ القوائم المحلية تعمل |
+| 5–6 | Android قتل العملية / إعادة تشغيل الجهاز offline | = بدء بارد ⇒ **Retry** |
+| 7 | access token منتهٍ offline | بارد ⇒ Retry؛ دافئ ⇒ يبقى معتمداً في الذاكرة (لا فحص انتهاء محلي)؛ تجديد SDK offline — **غير مُتحقَّق تشغيلاً** |
+| 8 | refresh token موجود والخادم غير قابل للوصول | = 3 |
+| 9–10 | Wi-Fi بلا إنترنت، DNS، مهلة، captive portal، تعطّل الخادم | استثناء ⇒ Retry؛ **لا مهلة تطبيقية على RPC الجلسة** (F-7) ⇒ قد يطول Splash حتى مهلة المنصة — **غير مُقاس** |
+| 11 | الشبكة تنقطع وهو على Home | يبقى؛ القوائم تحتفظ بالمحفوظ (P2.5b) |
+| 12 | العودة بعد انقطاع طويل | الاستئناف ⇒ `validateNow`؛ `false` ⇒ إزاحة وخروج |
+| 13 | أُزيحت الجلسة على جهاز آخر أثناء الانقطاع | بارد ⇒ Retry ثم عند الشبكة إزاحة؛ دافئ ⇒ **يواصل عرض المحفوظ حتى الاتصال** (إلغاء متأخر — قائم) |
+| 14 | حُذف الحساب عن بعد أثناء الانقطاع | عند الاتصال: إن رفض الخادم التجديد بخطأ Auth لا يحتوي `session_superseded` ⇒ **قد يظهر «تحقّق من اتصالك» بدل الخروج** (المسار يعامل كل خطأ غير الإزاحة كـ«غير متاح») — **غير مُتحقَّق**؛ يعتمد على سلوك gotrue (قد يصدر `signedOut`) |
+| 15 | استعادة كلمة مرور / حجر حذف | الاستعادة تُنشر بلا RPC (شاشة الاستعادة فقط)؛ الحجر يُبقي `unknown` |
+| 16 | مفتاح تشفير مفقود/تالف | القوائم fail-closed (D-2/D-3): لا نسخة تُعرض، تُقرأ من الخادم |
+| 17 | بيانات حساب آخر | مفاتيح وصناديق لكل حساب + HMAC بالحساب ⇒ تُرفض |
+| 18 | خروج صريح ثم انقطاع | لا جلسة ⇒ `/sign-in`؛ الدخول يحتاج شبكة |
+
+### E) خيارات التخويل offline (لا تنفيذ؛ قرار أمني للمالك)
+- **S0 (الحالي، صارم):** لا عرض لأي بيانات حتى يؤكد الخادم في هذه العملية أن الجلسة هي الجلسة النشطة للحساب. يضمن: إلغاء/إزاحة/حذف فوري عند البدء. لا يضمن: أي وصول offline بارد.
+- **S1 (مُستحسن للدراسة): عقد offline محدود للقراءة فقط.** بعد كل نجاح RPC يُحفظ في التخزين الآمن (Keystore/Keychain) سجلّ `{uid, session_id, authorizedAt}` مرتبط بالحساب. عند بدء بارد **وفشل شبكة فقط** (لا رفض Auth، لا `false`، لا إزاحة، لا استعادة/حجر، لا خروج صريح، نفس `uid` و`session_id` للجلسة المستعادة، داخل نافذة يحددها المالك) ⇒ حالة `offlineReadOnly` منفصلة عن `authorized`: Home والقوائم والبحث والمفضلة والتفاصيل والـ PDF المحفوظة **للقراءة فقط**؛ لا كتابة ولا رفع ولا طلب Worker ولا تحديث؛ شعار واضح. عند الاتصال: RPC إلزامي؛ `false` ⇒ إزاحة وخروج ومسح الذاكرة؛ `true` ⇒ عادي. يضمن: لا بيانات جديدة بلا خادم؛ لا حساب آخر؛ الحالة لا تُنشأ من بيانات محفوظة وحدها. **لا يضمن:** الإلغاء/الإزاحة/الحذف عن بعد أثناء الانقطاع يتأخر حتى الاتصال أو انتهاء النافذة؛ التلاعب بالساعة يمكن الحدّ منه (رفض الساعة الراجعة عن آخر وقت رُئي، حدّ أقصى مطلق) لا منعه؛ جهاز مفقود مفتوح يكشف المحفوظ داخل النافذة.
+- **S2:** واجهة offline مقيّدة منفصلة («المحفوظ») — نفس قيود S1 + تغيير واجهة محمي (موافقة UI).
+- **S3:** S1 + عامل فتح محلي (بصمة/PIN) — يحمي الجهاز المفقود؛ يحتاج اعتمادية جديدة (غير مسموح الآن).
+**التعارض الصريح:** «الإلغاء الفوري من الخادم» و«الفتح offline» لا يجتمعان؛ أي خيار غير S0 يغيّر عقد Single Active Device المسجّل (DECISIONS 2026-10-05) ويحتاج قرار المالك.
+
+### F) مصفوفة الشاشات (المصدر؛ «بارد offline» = بعد اعتماد افتراضي، لأن البوابة تمنع كل شيء اليوم)
+| الشاشة | المحفوظ | بارد offline اليوم | دافئ offline | بعد إعادة التشغيل | العودة | الوسائط | الكتابة offline |
+|---|---|---|---|---|---|---|---|
+| Home وأعداده | أعداد `CountCacheService` (SharedPreferences لكل حساب)؛ آخر المضاف من القوائم | Retry | يعمل من المحفوظ | Retry | تحديث | — | لا |
+| القوائم الست | v2 مشفّر + HMAC لكل حساب، `offline_lists`، مستثنى من النسخ | Retry | local-first، `[]` لا يُعرض فارغاً بلا تأكيد | Retry | P2.5b | معرّفات Offer/Owner (M2-2) | لا (O0–O7) |
+| Quotations | قائمة مشفّرة (12 حقلاً) + خزنة PDF EtM | Retry | القائمة + فتح PDF محفوظ | Retry | تحديث | — | لا (التعديل يحتاج الخادم) |
+| Search | يقرأ القوائم الست المحفوظة | Retry | يعمل + صور محفوظة بلا Worker (M3b-2) | Retry | إعادة فهرسة | محلّل Search | — |
+| Favorites | v2 مشفّر `{"k","v"}` | Retry | المحفوظ + الخيار B | Retry | نداء Worker لكل سجل (M3c) | خاص | الإضافة/الحذف تحتاج الخادم |
+| تفاصيل Offer/Owner | من القائمة المحفوظة + كتالوج + mapping + `::previous-copy` + كاش خاص | Retry | نص + صور محفوظة (M2-3) | Retry | Worker يصالح | فيديو: ملصق فقط؛ التشغيل يبحث بالرابط `getVideoFile(url)` ⇒ عملياً online | لا |
+| Profile | لقطة `cached_profile_snapshot_v1` (SharedPreferences، نص، بلا رابط) | Retry | يعمل | Retry | تحديث | الصورة عبر الكاش القديم (M4) | لا |
+| Smart Map | **لا شيء مستمر**: `MapDataCacheService` في الذاكرة 5 د؛ `DefaultMapLocationSource.load` يقرأ تيارات الخادم (`map_location_source.dart:66–73`) | Retry | علامات من الذاكرة إن وُجدت، وإلا لا شيء | لا علامات | تحميل | قوالب الخريطة online فقط | — |
+| Toolkit | آخر قائمة وثائق ناجحة + الملفات في مجلد الحساب (مستثنى من النسخ، غير مشفّر من التطبيق) | Retry | الأدوات المحلية + الوثائق المحفوظة | Retry | مزامنة | — | الأدوات المحلية نعم؛ الرفع لا |
+| الرفع | `OfferMediaUploadQueue` (Hive، إعادة محاولة تلقائية) | — | يُنتظر | يُستأنف | يكمل | — | **الوحيد الدائم** |
+
+### G) جرد التخزين المحلي (مختصر؛ التفاصيل في أقسامها)
+القوائم الست، Favorites، Quotations: Hive v2 مشفّر + HMAC لكل حساب، مفاتيح آمنة، مستثنى من النسخ، تُحذف في Delete Account؛ خزنة PDF: EtM لكل ملف بمفتاح الحساب. الكتالوج (`local_media`) و`url_mapping`: Hive نصي (معرّفات ومسارات، بلا روابط)، مستثنى من النسخ. الكاش الخاص `bwPrivateMedia` (مجلد الدعم، 200 ملف/30 يوماً، فهرس بعنوان زائف): **البايتات غير مشفّرة**. الكاش القديم `DefaultCacheManager` (مجلد مؤقت قابل للإخلاء، فهرسه التاريخي يحمل روابط موقّعة). Profile media و`local_profile`؛ الملصقات تحت `cacheKey:poster`؛ لا فيديو كامل محفوظ. Toolkit: مجلد الحساب. SharedPreferences: أعداد Home (لكل حساب)، لقطة الملف الشخصي (نص)، علامة الاستعادة. جلسة Supabase: `SupabaseSecureStorage`. اعتماد الجلسة: **ذاكرة فقط**.
+
+### H) التحميل والأداء (ما يثبته المصدر/القياس؛ لا قياس جديد)
+- البدء: `runApp` بعد `Supabase.initialize` (مهلة 10 ث) وفتح صناديق Hive؛ Home ينتظر RPC الجلسة بلا مهلة تطبيقية (F-7) ثم قراءة profiles (مهلة 15 ث). قياس P1 online فقط ولنسخة قديمة؛ التباين 2.4–18 ث في §7H غير مفسَّر.
+- القوائم: فك التشفير وHMAC على الـ isolate الرئيسي (P4.7c)؛ إعادة الاستخدام عند التحقق المطابق؛ القوائم الكبيرة على Samsung **غير مُقاسة**.
+- Favorites: نداء Worker لكل Offer/Owner عند كل فتح (M3c).
+- Smart Map: يعيد قراءة أربع قوائم من الخادم بعد 5 د أو أي تعديل.
+- الصور المصغّرة بـ `cacheWidth` 600 في البطاقات (M3b-1)؛ الصورة الشخصية بدقة كاملة (M0، M4).
+- لا قياس Samsung لأي تغيير بعد P2.1 — D-35، D-57..D-60.
+
+### I) عيوب مُؤكَّدة مقابل مخاطر غير مُتحقَّقة
+**مُؤكَّدة من المصدر:** (1) لا فتح بارد offline (تصميم مقصود؛ فجوة منتج)؛ (2) الخيار C: حذف وسائط محلية عند 403 `session_superseded` و404 بلا `code` و200 بلا `media`؛ (3) Smart Map بلا بيانات مستمرة؛ (4) تشغيل الفيديو offline يبحث بالرابط الموقّع؛ (5) نداءات Worker لكل سجل في Favorites؛ (6) `_authorizeAndPublish` يجمع كل خطأ غير الإزاحة في «غير متاح»؛ (7) لا مهلة تطبيقية لـ RPC الجلسة. **غير مُتحقَّقة (تحتاج اختباراً/جهازاً):** سلوك gotrue عند رفض التجديد (السيناريو 14)؛ captive portal؛ أزمنة Samsung الحالية؛ إخلاء الكاش المؤقت؛ فك القوائم الكبيرة؛ iOS.
+
+### J) خريطة الطريق (حسب الأولوية والاعتماد)
+- **P0 — فقدان بيانات:** الخيار C (تصنيف الخدمة المشتركة: 403 `session_superseded` = جلسة لا إلغاء؛ 404 بلا `code` = غير حاسم؛ 200 مشوّه = مؤقت) — مستقل عن الجلسة، ضيّق، يحمي كل الأسطح.
+- **P1 — فجوة Offline-First حرجة:** OFF-0 (قرارات المالك) ⇒ OFF-1 (تصنيف فشل الشبكة مقابل رفض Auth في `_authorizeAndPublish` + مهلة RPC fail-closed، بلا تغيير سياسة) ⇒ OFF-2 (عقد القراءة فقط S1 إن وافق المالك: البوابة، `applicationScope`، `ListSessionCheck`، الشعار، منع الكتابة) ⇒ D-9 يتغيّر.
+- **P1 (منفصلة):** Smart Map offline (checkpoint Map مستقل)؛ تشغيل الفيديو المحفوظ (M5)؛ صورة الملف الشخصي (M4).
+- **P2 — أداء:** قياس Samsung الموحّد (D-35، D-57..D-60، P5)؛ isolate للقوائم الكبيرة (P4.7c-2) عند الحاجة المقاسة؛ M3c.
+- **P3:** M1d-3 بعد جرد المستهلكين؛ FU-M3-MAP؛ تشفير بايتات الصور ولقطة الملف الشخصي ووثائق Toolkit (قرار)؛ O0–O7.
+
+### K) تصميم OFF (الحاجز الأول) — مختصر
+الحالات: `unauthenticated` | `verifying` | `authorized` (الخادم، هذه العملية) | **`offlineReadOnly`** (جديد، S1) | `sessionCheckUnavailable` (Retry) | `superseded` | `recovery` | `quarantine`. الانتقال إلى `offlineReadOnly` فقط إذا: استثناء شبكة مُصنَّف (`SocketException`/`ClientException`/`TimeoutException`/DNS) — لا `AuthException`، لا رد `false`، لا `session_superseded`؛ عقد آمن موجود لنفس `uid`+`session_id`؛ داخل النافذة؛ الساعة غير راجعة عن آخر وقت رُئي؛ لا علامة استعادة/حجر/خروج. القراءة: القوائم المشفّرة، Favorites، Quotations، PDF الخزنة، الصور المحفوظة (`applicationScope` يقبل `offlineReadOnly` للقراءة فقط)؛ لا Worker، لا كتابة، لا رفع، `[]` لا يُعرض فارغاً. الاتصال: RPC فوراً؛ النتائج تحكم. الخروج/Delete Account/الإزاحة: حذف العقد أولاً. **الملفات المحتملة:** `supabase_auth_repository.dart`، `app_session_coordinator.dart`، ملف جديد للعقد في `lib/src/services/`، `auth_viewmodel.dart`، `private_media_cache.dart` (`applicationScope`)، `list_session_check.dart`، `auth_wrapper.dart`/Home (شعار — موافقة UI)، `deleted_account_local_data_cleaner.dart`. **الرجوع:** commit واحد؛ العقد يُتجاهل عند غيابه ⇒ سلوك S0. **اختبارات:** السيناريوهات 1–18 بتصنيف أخطاء حتمي، عقد منتهٍ/ساعة راجعة/uid آخر/session آخر/استعادة/حجر/خروج، الكتابة مرفوضة، الوسائط للقراءة فقط، العودة بإزاحة. **قبول الجهاز:** وضع الطيران قبل البدء البارد، قتل العملية، إعادة التشغيل، إزاحة من جهاز ثانٍ (بموافقة منفصلة؛ لا جلسة ثانية للحساب A دون إذن).
+
+### L) قرارات المالك المطلوبة (لا اختيار تلقائي)
+- **D-OFF-1:** هل يُسمح بالفتح البارد offline لحساب مُعتمَد سابقاً؟ (S0 يبقى / S1 / S2 / S3)
+- **D-OFF-2:** مدة النافذة منذ آخر تأكيد خادم (مثلاً 24 س / 72 س / 7 أيام) والحد الأقصى المطلق.
+- **D-OFF-3:** نطاق القراءة offline (القوائم، Favorites، Search، التفاصيل، Quotations/PDF، الصور، Toolkit المحفوظ، Profile).
+- **D-OFF-4:** قبول خطر الإلغاء/الحذف/الإزاحة المتأخر أثناء الانقطاع والجهاز المفقود.
+- **D-OFF-5:** نص الشعار/الحالة offline (تغيير UI محمي).
+- **D-OFF-6:** ترتيب التنفيذ: الخيار C أولاً (موصى به) ثم OFF-1 ثم OFF-2.
+
+### M) خطة التحقق
+محلية حتمية (unit/widget): البدء online/offline، الدافئ، موت العملية (إعادة بناء الخدمات)، token منتهٍ، عودة الشبكة، إزاحة قبل/بعد الاتصال، خروج، استعادة، حجر الحذف، تبديل الحساب، مفتاح مفقود/تالف، قوائم بلا صور محفوظة، صور بلا mapping، تحديث فاشل بعد نجاح، حذف مُؤكَّد، حدود 500، العربية/الإنجليزية وRTL. مستضافة (بموافقة): P4.3، تصنيف أخطاء Worker. جهاز: القائمة D + سيناريوهات OFF، Android وiOS، Profile/Release. لا كتابة في production، لا جلسة ثانية للحساب A، لا تسجيل رموز.
+
+**الحالة:** **APP-FLOW AUDIT = DONE (SOURCE-TRACED)؛ لا تنفيذ.** Offline-First **غير مكتمل**: الفتح البارد offline محجوب بتصميم مقصود، والخيار C P0 مفتوح. كل البنود المفتوحة السابقة باقية (الخيار C، FU-FAV-OFFER-MEDIA-FAILURE، FU-M3-MAP، FU-M23B-FLAKE، D-9، D-35، D-57..D-60، P4.3-ACCEPT-NONEMPTY، D-DAM-4/5، مسارات iOS، التلف بنفس الحجم، إخفاقات Map/Auth/Delete Account التاريخية، M3c، M1d-3، M4/M5، Smart Map، Toolkit، O0–O7). **STOP:** قرارات D-OFF-1..6.
+
+## 7BB) الخيار C — لا حذف لوسائط محفوظة إلا بدليل مرجعي من Worker — 2026-11-11 (CODE_PROVEN؛ غير مودع)
+
+**الموافقة:** المالك وافق على الخيار C كنقطة P0 (تطبيق D-FOMF-2/3/4). **مراجعة المجلس (بطلب المالك):** خمسة مستشارين مستقلين + خمس مراجعات مجهولة + حَكَم؛ لم يُطلب قرار مالك جديد. التعديلات التي تبنّاها: (1) 200 بـ JSON بلا قائمة كاملة = `inconclusive` لا `transient` (Worker الصحيح لا يرسله أبداً، فهو عيب نشر متكرر — العرض عبر الخيار B كان سيُظهر وسائط أسقطها الخادم بلا نهاية)؛ (2) رمز not-found **لكل مسار** (`owner_not_found` على مسار Offer = غير حاسم)؛ (3) 200 غير JSON يبقى `transient` (بوابة/وكيل؛ سلوك الخيار B المعتمد). **حقائق تحقّق منها المصدر:** فحص SAD في `verifySupabaseTokenAndGetUserId` يسبق `assertOwnsParent`، واستعلام الملكية بـ `SUPABASE_SECRET_KEY` (service role، بلا RLS) ⇒ لا 404 مرجعي كاذب لجلسة مُزاحة؛ كل عنصر 200 يُدفع بـ `mediaObjectId` + `url` (فشل التوقيع/نوع غير معروف ⇒ 500)؛ المفتاح الأساسي `(offer_id, media_id)`/`(owner_record_id, media_id)` ⇒ لا تكرار؛ العناصر المعلّقة غير المقبولة ليست في الكتالوج ⇒ الحذف يمسّ نسخاً قابلة لإعادة الجلب فقط.
+
+**Git قبل التعديل:** HEAD = `origin` = `4e765c4`؛ الفهرس فارغ؛ أربعة stashes سليمة؛ §7BA (106 أسطر) محفوظ؛ ملفات plugin لم تُلمس.
+
+**السبب الجذري (مُؤكَّد):** `R2OfferMediaHttpException.isAccessDenied` = أي 403 أو 404 ⇒ `_classifyMediaFailure` ⇒ `_forgetOfferMediaLocally` ⇒ `reconcileOfferMediaCatalog([])` ⇒ `forgetOfferMediaItems` (الأصل المُتبنّى + الكاش القديم + الكاش الخاص + الـ mapping و`::previous-copy`)؛ و`getOfferMedia` يعيد `[]` حين لا قائمة `media` ويتخطّى العناصر الناقصة بصمت ⇒ مصالحة تحذف ما لم يُذكر. حارس `currentUser?.id != ownerId` لا يكشف إزاحة الحساب نفسه.
+
+**التنفيذ (3 ملفات إنتاج، +86/−17):**
+- `r2_offer_media_upload_service.dart`: حُذف `isAccessDenied`؛ `isSessionRefused` = 401 أو أي 403؛ `provesRecordGone(error)` = 404 **و** رمز هذا المسار (`offer_not_found` لـ Offer، `owner_not_found` لـ Owner)؛ `R2OfferMediaContractException` جديد؛ `getOfferMedia` يرفض الإجابة **كاملة** إن غابت قائمة `media` أو كان أي عنصر ليس كائناً أو بلا معرّف/رابط غير فارغ أو مكرّر المعرّف؛ `expiresInSeconds` الغائب يبقى الافتراضي.
+- `offer_media_cache_identity.dart`: نوع فشل جديد **`inconclusive`** (لا حذف، ولا إذن عرض محفوظ بدل إجابة).
+- `supabase_core_entities_service.dart`: `_classifyMediaFailure(media, …)`: `isSessionRefused` ⇒ `unauthenticated`؛ `provesRecordGone` + الحساب نفسه ⇒ `_forgetOfferMediaLocally` + `accessDenied` (بلا تغيير)؛ أي 4xx آخر ⇒ `inconclusive`؛ غير ذلك ⇒ `transient`؛ `R2OfferMediaContractException` ⇒ `inconclusive`. سجلّ تشخيصي بفئة ثابتة بلا معرّفات (`media answer inconclusive`/`incomplete`).
+- **بلا تغيير:** Auth/SAD، Worker، SQL/RLS، `offline_media_service`، الكاش الخاص، الصيغ، الشاشات (التفاصيل والمعرض يمسحان فقط عند `accessDenied`، وغيره يُبقي المعروض المحكوم بـ `canRead`)، الخيار B (`refused` لكل غير `transient`)، Search، Map، Quotations، Toolkit.
+
+**دلالات الإجابات بعد التغيير:**
+| الإجابة | حذف/مصالحة | الخيار B يعرض المحفوظ | النوع |
+|---|---|---|---|
+| 401، أي 403 (`session_superseded` أو بلا رمز) | لا | لا | `unauthenticated` |
+| 404 برمز المسار نفسه | **نعم** (`_forgetOfferMediaLocally`) | لا | `accessDenied` |
+| 404 بلا رمز / برمز المسار الآخر / برمز مجهول؛ 400؛ 4xx آخر | لا | لا | `inconclusive` |
+| JSON 200 بلا قائمة / null / ليست قائمة / أي عنصر غير صالح / مكرّر | لا | لا | `inconclusive` |
+| 500، 502، 503، مهلة، لا اتصال، 200 غير JSON | لا | نعم | `transient` |
+| 200 صالح (حتى `[]`) | **مصالحة** (يُحذف غير المذكور) | — | نجاح |
+
+**الاختبارات (كُتبت أولاً):** جديد `test/offers/offer_media_error_classification_test.dart` (62: مصفوفة لكل مسار Offer/Owner بخدمات حقيقية + Hive + ملفات + كاش خاص، Worker مُعدّ؛ اختبارات العميل؛ تسلسل «غير حاسم ثم `[]` صالح ⇒ زال كل شيء حتى `::previous-copy` ولا تعيده المعرّفات المحفوظة»؛ ملفات حساب آخر لا تُمس؛ الجلسة المُزاحة لا تقرأ ولا تجلب والجلسة التالية تجد البايتات؛ تبدّل الحساب/الخروج/Delete Account أثناء الطلب). **على الكود غير المعدّل:** ثلاثة ملفات لا تُجمَّع (API غير موجود) و**3 اختبارات في Favorites تفشل سلوكياً** (403 `session_superseded` و404 بلا رمز و200 بلا قائمة **أفرغت الكتالوج**؛ `build/optc-red.log`). **عُدّلت عمداً** لأنها كانت تثبت العقد القديم: `offer_media_authorization_test` (مجموعة التصنيف + حالة `inconclusive` للمنسّق)، `offline_details_media_seed_test` (+حالة `inconclusive`)، `favorites_offer_media_failure_test` (علامات «OPTION C OPEN» ⇒ لا حذف)، `favorites_signed_link_fallback_test` (Worker المزيّف يرسل الرموز الحقيقية؛ 403 لا يحذف)، `search_card_saved_media_services_test` (404 برمز المسار يحذف؛ 403 `session_superseded` مع إلغاء SAD لا يعرض ولا يحذف). بعد التعديل: الملفات العشرة المعنية **335/335 PASS**.
+
+**الطفرات: 14/14 قُتلت سلوكياً** (كل ملف أُعيد مطابقاً بـ SHA-256؛ `build/optc-mutants*.log`؛ علامة «compile/load» في أربع تشغيلات كانت مطابقة نص في المخرجات، أُعيد فحصها بشرط صارم: 13 بلا علامة، وC14 فشلت فيه بالضبط اختبارات 401 الأربعة): 403 كإلغاء؛ أي 404 كإلغاء؛ رمز المسار الآخر مقبول؛ 200 بلا قائمة كـ «لا وسائط»؛ عنصر غير كائن يُتخطّى؛ عنصر بلا معرّف/رابط يُتخطّى؛ تكرار مقبول؛ قائمة ناقصة كـ `transient`؛ `[]` صالح لا يصالح؛ 404 مرجعي لا يحذف؛ إسقاط فحص الحساب قبل الحذف؛ إسقاط فحص الحساب بعد الإجابة الصالحة؛ 4xx غير حاسم كـ `transient`؛ 401 ليس رفض جلسة.
+
+**الانحدار:** 131 ملفاً ⇒ 4,439 PASS، 12 FAIL: **5 تاريخية** (Map ×3، Delete Account ×2 — تفشل بالشكل نفسه مع ملفات الخيار C الثلاثة من HEAD، `build/optc-head-failures.log`)؛ **6 اختبارات قديمة تثبت العقد القديم** (عُدّلت عمداً أعلاه)؛ **1 من اختباراتي** (انتظار غير كافٍ للمصالحة غير المنتظَرة تحت الحمل — صار انتظاراً محدوداً للشرط)؛ و`offer_owner_list_media_ids_test` «measurements» تجاوز مهلة 30 ث **تحت حمل المجموعة فقط** (يمرّ منفرداً ≈10 ث على الكود المعدّل، ويمرّ مع HEAD) ⇒ ملاحظة توقيت، لا انحدار. إعادة تشغيل الملفات المعنية: 335/335. `flutter analyze` (9 ملفات): No issues؛ التنسيق بلا انحراف جديد (`r2_offer_media_upload_service` بانحراف HEAD نفسه، 3)؛ CRLF موحّد؛ `git diff --check` نظيف؛ المناطق المحمية مطابقة لـ HEAD.
+
+**العدّادات (Windows test VM — ليست Samsung):** كل إجابة: طلب Worker واحد، بلا إعادة محاولة، 0 تنزيل، 0 رابط جديد؛ الحذف يحدث **فقط** في صفّين (404 برمز المسار؛ 200 صالح يُسقط عناصر)، و0 في الصفوف الـ 21 الأخرى لكل مسار؛ الصف المرجعي يحذف مفتاحي السجل فقط ويترك نسخة حساب آخر للمعرّف نفسه.
+
+**الحدود الباقية (مُعلنة):** الحذف بات يحتاج إجابة سليمة — نشر يرسل دائماً 200 مشوّهاً أو 404 بلا رمز يترك السجل بلا مصالحة (البايتات باقية، لا تُعرض عبر الخيار B) حتى إصلاحه؛ **بوابة إطلاق: تأكيد أن Worker الإنتاج يرسل `offer_not_found`/`owner_not_found`** (موجودة في المصدر منذ `8e43c6f` 2026-09-28، لكن **HOSTED_UNVERIFIED**)؛ عقد Worker مُثبت بقراءة المصدر فقط (لا `node --test`)؛ 403 بلا رمز في staging ليس مسار الإنتاج؛ لا حدّ زمني لبقاء بايتات بعد إجابات غير حاسمة؛ **تفسير مُسجَّل:** «لا عرض» في D-FOMF-2 = لا عرض محفوظ عبر الخيار B، والصورة المعروضة أصلاً في التفاصيل بعد 401/403 بلا رمز تبقى حتى يلغيها SAD/`canRead`؛ تشغيل المصالحة غير منتظَر (قائم)؛ D-DAM-4/5.
+
+**مراجعة أمنية نهائية قبل الـ commit (2026-11-11، بطلب المالك):**
+- **تصحيح حساب الانحدار الواسع (131 ملفاً: 4,439 PASS، 12 FAIL — لم يكن ناجحاً بالكامل):** الفئات **لا تتداخل** ومجموعها 12: (أ) **5 تاريخية**: `delete_account_test` «Deletion job migration… (setUpAll)»، `delete_account_ui_test` «a completed deletion ends on the logged-out entry…»، `map_opening_test` ×2 (AfterRouteTransition)، `map_ux_phase1_test` «every form exists in both languages…» — تفشل بالشكل نفسه مع HEAD. (ب) **5 حالات اختبار قديمة تثبت العقد القديم** (لا 6 كما ذُكر سابقاً — «6» كان خلطاً بعدد ملفات الاختبار المعدّلة): `favorites_signed_link_fallback_test` «a Worker 403 or 404 shows nothing held» ×1، و`search_card_saved_media_services_test` «a Worker 403/404: nothing held comes back afterwards» ×4 (offer/owner × 403/404) — صُحّحت عمداً. (ج) **1 انتظار مبكر في اختباري**: `offer route a valid empty list removes what the device held`. (د) **1 مهلة**: `offer_owner_list_media_ids_test` «measurements…» تجاوز 30 ث تحت حمل المجموعة؛ يمرّ منفرداً (≈10 ث) على الكود المعدّل ومع HEAD؛ **سببه غير مُثبت** ⇒ قيد بيئة اختبار مُسجَّل (FU-TEST-LOAD-TIMEOUT)، لا يُرفض. ملفات Option C الأخرى (authorization، seed، failure) عُدّلت **قبل** التشغيل الواسع فلم تظهر فيه.
+- **مُكتشف في المراجعة واختبار عُدّل (لا عيب إنتاجي):** `a valid list with no stated lifetime…` كان ينتظر الخطوة الأولى فقط (الكتالوج) فانتهى والحذف المجدول جارٍ ⇒ `MissingPluginException` بعد التفكيك في تشغيل مجمّع؛ صار ينتظر اكتمال الحذف. و`after Delete Account cleanup…`: ثبت من المصدر أن حارس DA-MAP-1 (`_isDeletedAccount` في `writeOfferMediaCatalog`) يرفض حتى كتابة الكتالوج ⇒ الإجابة المتأخرة لا تعيد شيئاً، ولا معرّفات — صار الاختبار يؤكد ذلك (أقوى).
+- **فجوة «مجدول مقابل مكتمل» سُدّت بحارس حتمي:** مسار الفشل ينتظر الحذف قبل الإجابة، والحذف الوحيد غير المنتظَر هو مصالحة 200 صالح بعد فحص الحساب؛ أُضيف اختباران نصيان (`what may remove media, by construction`) يثبتان ذلك بنيوياً، وطفرة **C15** (حذف غير منتظَر عند `inconclusive`) **قُتلت** (الحارس + 11 حالة سلوكية) ⇒ **15/15 طفرات**.
+- **النهائي على المصدر الحالي بالضبط:** الملفات العشرة المعنية **337/337 PASS في ثلاثة تشغيلات متتالية** (64 في الملف الجديد)؛ `flutter analyze` (9 ملفات): No issues؛ لا انحراف تنسيق جديد؛ CRLF؛ `git diff --check` نظيف؛ لا أسرار (ذِكر اسم المتغير `SUPABASE_SECRET_KEY` في هذا المتتبّع وصفٌ لا قيمة).
+- **بوابة الإطلاق: HOSTED_WORKER_CONTRACT_UNVERIFIED.** المصدر: `MEDIA_PARENTS.offer` (`offers`، `offerId`) ⇒ `offer_not_found`؛ `MEDIA_PARENTS.owner` (`owners`، `ownerRecordId`) ⇒ `owner_not_found` — يطابق ربط العميل لكل مسار. التطابق في المصدر **ليس قبولاً مستضافاً**؛ لا تُغلق البوابة إلا بتحقق آمن منفصل معتمد.
+
+**الحالة:** **الخيار C = SOURCE_VERIFIED, CODE_PROVEN, LOCAL_TESTED, HOSTED_WORKER_CONTRACT_UNVERIFIED, REAL_DEVICE_UNVERIFIED** (64 جديدة + 337/337 ×3 في الملفات المعنية، 15/15 طفرات، الانحدار الواسع 4,439 PASS / 12 FAIL مُصنَّفة أعلاه)؛ **غير مودع**؛ Samsung **D-61 DEFERRED**. D-FOMF-2/3/4 **مُنفَّذة في الكود** — لا تُغلق حتى المراجعة والدفع وتأكيد رموز Worker المستضاف. **FU-FAV-OFFER-MEDIA-FAILURE يبقى OPEN** حتى ذلك. خريطة الطريق: **OFF-1 (P1) التالي**؛ D-OFF-1..6 قرارات معلّقة؛ OFF-2 غير معتمد ولم يبدأ؛ M3c اختياري لم يبدأ؛ M1d-3 DEFERRED؛ M4/M5، Smart Map، Toolkit، O0–O7 منفصلة. باقية مفتوحة: P4.3-ACCEPT-NONEMPTY، D-57..D-61، D-DAM-4/5، FU-M23B-FLAKE، FU-M3-MAP، الإخفاقات التاريخية، مسارات iOS، التلف بنفس الحجم. **NOW:** موافقة المالك على الـ commit. **STOP.**
 
 ---
 

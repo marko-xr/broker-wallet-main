@@ -95,6 +95,14 @@ void main() {
   var workerMedia = <String>[];
   var workerOffline = false;
 
+  /// The body of a non-200 answer (Option C: only a 404 with the route's own
+  /// not-found code proves the record gone).
+  var workerBody = '{"error":"denied"}';
+
+  /// The Single Active Device gate de-authorizes the session as the Worker
+  /// refuses it (a 403 `session_superseded`).
+  var supersedeOnRefusal = false;
+
   late sb.SupabaseClient client;
   late SupabaseCoreEntitiesService core;
   late OfferService offers;
@@ -198,6 +206,8 @@ void main() {
     workerStatus = 200;
     workerMedia = <String>[];
     workerOffline = false;
+    workerBody = '{"error":"denied"}';
+    supersedeOnRefusal = false;
     client = sb.SupabaseClient(
       'https://unit-test.supabase.co',
       'unit-test-publishable-key',
@@ -216,7 +226,8 @@ void main() {
             workerCalls.add(request);
             if (workerOffline) throw const SocketException('offline');
             if (workerStatus != 200) {
-              return http.Response('{"error":"denied"}', workerStatus);
+              if (supersedeOnRefusal) scope = null;
+              return http.Response(workerBody, workerStatus);
             }
             return http.Response(
                 jsonEncode({
@@ -370,8 +381,12 @@ void main() {
         }
       });
 
-      for (final status in [403, 404]) {
-        test('a Worker $status: nothing held comes back afterwards', () async {
+      // Option C (D-FOMF-2/3): only a 404 with the route's own not-found
+      // code proves the record gone; a 403 is about the session.
+      {
+        test(
+            'a Worker 404 with the route\'s not-found code: nothing held '
+            'comes back afterwards', () async {
           final record = _id();
           final v = _id(), p = _id();
           // Only a video frame and a private photo of another id are held:
@@ -380,7 +395,13 @@ void main() {
           await OfflineMediaService.instance
               .mapMediaIdToLocalFile(offerMediaPosterKey(_key(v)), poster.path);
           await privateOnly(p);
-          workerStatus = status;
+          workerStatus = 404;
+          workerBody = jsonEncode({
+            'error': 'x',
+            'code': kind == CardMediaKind.offer
+                ? 'offer_not_found'
+                : 'owner_not_found',
+          });
           final resolver = search();
           expect(
               resolver.current(kind, record, listedIds: [v])?.isVideo, isTrue);
@@ -396,6 +417,33 @@ void main() {
           expect(
               await search().resolve(kind, record, listedIds: [v, p]), isNull,
               reason: 'a new Search screen: the emptied catalogue still wins');
+        });
+
+        test(
+            'a Worker 403 session_superseded: nothing held is shown and '
+            'nothing is removed', () async {
+          final record = _id();
+          final v = _id(), p = _id();
+          final poster = file('poster-$v.png');
+          await OfflineMediaService.instance
+              .mapMediaIdToLocalFile(offerMediaPosterKey(_key(v)), poster.path);
+          await privateOnly(p);
+          workerStatus = 403;
+          workerBody = '{"error":"x","code":"session_superseded"}';
+          supersedeOnRefusal = true;
+          final resolver = search();
+          final media = await resolver.resolve(kind, record, listedIds: [v]);
+          expect(media, isNull, reason: 'the superseded session reads nothing');
+          expect(workerCalls, hasLength(1));
+          expect(hasCatalogue(record), isFalse, reason: 'nothing reconciled');
+          expect(
+              OfflineMediaService.instance
+                  .getLocalFilePathForMediaId(offerMediaPosterKey(_key(v))),
+              isNotNull,
+              reason: 'the still frame is kept');
+          scope = const PrivateMediaScope(account: _a, session: 'session-2');
+          expect(await cache.cached(_key(p)), isNotNull,
+              reason: 'the next authorized session finds the bytes kept');
         });
       }
 

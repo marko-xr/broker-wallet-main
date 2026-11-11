@@ -156,6 +156,19 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
   /// Which records' media this instance reaches.
   final MediaParent parent;
 
+  /// Whether [error] proves the record gone for this account: a 404 with
+  /// this route's own not-found code, which the Worker sends only after its
+  /// ownership query ran for the current session and found no row. Any other
+  /// 404 (no code, another route's code, an unknown one), any 403 and any
+  /// other status proves nothing (tracker §7AZ, Option C, D-FOMF-3).
+  bool provesRecordGone(R2OfferMediaHttpException error) =>
+      error.statusCode == 404 &&
+      error.code ==
+          switch (parent) {
+            MediaParent.offer => 'offer_not_found',
+            MediaParent.owner => 'owner_not_found',
+          };
+
   static const int maxImageBytes = OfferMediaPolicy.maxImageBytes;
   static const int maxVideoBytes = OfferMediaPolicy.maxVideoBytes;
   static Set<String> get supportedContentTypes =>
@@ -411,7 +424,9 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
 
     final payload = _decodeObject(response.body);
     final rawMedia = payload['media'];
-    if (rawMedia is! List) return const [];
+    // Not the complete list: it proves nothing, so it is never read as
+    // "no media" (Option C, D-FOMF-4).
+    if (rawMedia is! List) throw const R2OfferMediaContractException();
     final lifetimeSeconds = _optionalInt(payload, 'expiresInSeconds');
     // Measured from when the request was sent, so the estimate can only err
     // on the early side.
@@ -419,12 +434,23 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
         ? _defaultReadUrlLifetime
         : Duration(seconds: lifetimeSeconds));
 
+    // Any entry that is not a whole item makes the list incomplete: it is
+    // refused whole rather than read as a smaller set (Option C, D-FOMF-4).
     final items = <R2OfferMediaItem>[];
+    final seen = <String>{};
     for (final entry in rawMedia) {
-      if (entry is! Map<String, dynamic>) continue;
+      if (entry is! Map<String, dynamic>) {
+        throw const R2OfferMediaContractException();
+      }
       final mediaObjectId = _optionalString(entry, 'mediaObjectId');
       final url = _optionalString(entry, 'url');
-      if (mediaObjectId == null || url == null) continue;
+      if (mediaObjectId == null ||
+          mediaObjectId.isEmpty ||
+          url == null ||
+          url.isEmpty ||
+          !seen.add(mediaObjectId)) {
+        throw const R2OfferMediaContractException();
+      }
       items.add(R2OfferMediaItem(
         mediaObjectId: mediaObjectId,
         role: _optionalString(entry, 'role') ?? 'gallery',
@@ -604,11 +630,28 @@ class R2OfferMediaHttpException extends R2UploadException {
   final int statusCode;
   final String? code;
 
-  /// The Worker reached this only after its ownership query succeeded and
-  /// returned no row (an upstream failure answers 502), so it is trustworthy.
-  bool get isAccessDenied => statusCode == 404 || statusCode == 403;
-
   bool get isUnauthenticated => statusCode == 401;
+
+  /// The session was refused: 401, or any 403 (the Worker's only 403 on its
+  /// media routes is `session_superseded`, raised before any ownership
+  /// check). A fact about the session, never about the record, so it never
+  /// proves media gone (tracker §7AZ, Option C, D-FOMF-2). Whether a 404
+  /// proves the record gone depends on its route:
+  /// [R2OfferMediaUploadService.provesRecordGone].
+  bool get isSessionRefused => statusCode == 401 || statusCode == 403;
+}
+
+/// A 200 from the media Worker that is not the complete, well-formed media
+/// list — no `media` list, or an entry that is not an object, lacks a
+/// non-empty id or link, or repeats an id (tracker §7AZ, Option C, D-FOMF-4).
+///
+/// It proves nothing about the record's media, so nothing is reconciled from
+/// it; the Worker itself never sends one (it lists only ready items, each
+/// with its id and a link, or fails whole).
+class R2OfferMediaContractException extends R2UploadException {
+  const R2OfferMediaContractException()
+      : super('Offer media service returned an incomplete media list.',
+            cause: 'contract');
 }
 
 /// A file refused as Offer media for a reason the user can act on, from the

@@ -502,7 +502,11 @@ void main() {
       final source = _squash(_read(card));
       expect(source.contains('final SearchCardMediaResolver? mediaResolver;'),
           isTrue);
-      expect(source.contains('_media = resolver.current(kind, id);'), isTrue,
+      // M3b-2: the card also hands over the record's saved media ids.
+      expect(
+          source
+              .contains('_media = resolver.current(kind, id, listedIds: ids);'),
+          isTrue,
           reason: 'what is known is drawn on the first frame');
       expect(
           source
@@ -555,9 +559,10 @@ void main() {
           source.contains('_corpus = _engine.index(data); '
               'cardMedia.invalidate();'),
           isTrue);
+      // M3b-2: Search builds its resolver with the saved-ids lookup on.
       expect(
-          source.contains(
-              'SearchCardMediaResolver(source: DefaultSearchCardMediaSource())'),
+          source.contains('final media = DefaultSearchCardMediaSource(); '
+              'return SearchCardMediaResolver(source: media, heldMedia: media);'),
           isTrue);
     });
 

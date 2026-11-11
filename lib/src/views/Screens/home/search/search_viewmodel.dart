@@ -87,10 +87,16 @@ class SearchViewModel extends ChangeNotifier {
   })  : _dataSource = dataSource ?? DefaultSearchDataSource(),
         _engine = engine ?? SearchEngine(),
         _clock = clock ?? DateTime.now,
-        cardMedia = cardMedia ??
-            SearchCardMediaResolver(source: DefaultSearchCardMediaSource()) {
+        cardMedia = cardMedia ?? _searchCardMedia() {
     _dataChanges = (dataChanges ?? CoreEntityMutationNotifier.changes)
         .listen((_) => _dataVersion++);
+  }
+
+  /// Search's card resolver, with the saved-ids lookup switched on (tracker
+  /// §7AZ, M3b-2). Smart Map builds its own resolver without it.
+  static SearchCardMediaResolver _searchCardMedia() {
+    final media = DefaultSearchCardMediaSource();
+    return SearchCardMediaResolver(source: media, heldMedia: media);
   }
 
   /// How long typing must pause before a search runs.

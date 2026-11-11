@@ -7,6 +7,7 @@ import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/search_viewmodel.dart';
 import 'package:broker_wallet/src/utils/text_highlighter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
@@ -122,9 +123,20 @@ class _SearchResultCardState extends State<SearchResultCard>
     }
     if (oldWidget.result.id != widget.result.id ||
         oldWidget.result.type != widget.result.type ||
-        oldWidget.mediaResolver != widget.mediaResolver) {
+        oldWidget.mediaResolver != widget.mediaResolver ||
+        !listEquals(
+            _savedMediaIds(oldWidget.result), _savedMediaIds(widget.result))) {
       _bindMedia();
     }
+  }
+
+  /// The saved list's media ids of an Offer or Owner result (tracker §7AZ,
+  /// M3b-2); empty — unknown — for any other record.
+  static List<String> _savedMediaIds(SearchResult result) {
+    final data = result.data;
+    if (data is OfferModel) return data.listedMediaObjectIds;
+    if (data is OwnerModel) return data.listedMediaObjectIds;
+    return const <String>[];
   }
 
   /// Only Offers and Owners have private photos and videos.
@@ -153,12 +165,14 @@ class _SearchResultCardState extends State<SearchResultCard>
       return;
     }
     final id = widget.result.id;
-    _media = resolver.current(kind, id);
+    final ids = _savedMediaIds(widget.result);
+    _media = resolver.current(kind, id, listedIds: ids);
     unawaited(resolver
         .resolve(
       kind,
       id,
       isWanted: () => mounted && request == _mediaRequest,
+      listedIds: ids,
     )
         .then((media) {
       if (!mounted || request != _mediaRequest) return;

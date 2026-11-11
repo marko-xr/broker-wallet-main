@@ -7,7 +7,14 @@ import 'search_card_media.dart';
 /// The app's own media: what the Offer and Owner services hold on this device,
 /// and what the media Worker lists for a record. Both services reach Supabase
 /// only when first asked, so building this costs nothing.
-class DefaultSearchCardMediaSource implements SearchCardMediaSource {
+///
+/// Its saved-ids lookup ([SearchCardHeldMedia]) is used only by a resolver
+/// given it as `heldMedia` (Search, tracker §7AZ, M3b-2): the services'
+/// read-only M2-3 helpers, which follow the catalogue when the record has an
+/// entry, check the account and its authorized session, and never download or
+/// write anything.
+class DefaultSearchCardMediaSource
+    implements SearchCardMediaSource, SearchCardHeldMedia {
   DefaultSearchCardMediaSource({OfferService? offers, OwnerService? owners})
       : _offersGiven = offers,
         _ownersGiven = owners;
@@ -28,6 +35,38 @@ class DefaultSearchCardMediaSource implements SearchCardMediaSource {
         return _offers.cachedOfferMedia(recordId);
       case CardMediaKind.owner:
         return _owners.cachedMedia(recordId);
+    }
+  }
+
+  @override
+  List<OfferMediaRef> listed(
+    CardMediaKind kind,
+    String recordId,
+    String accountId,
+    List<String> ids,
+  ) {
+    switch (kind) {
+      case CardMediaKind.offer:
+        return _offers.listedOfferMedia(recordId, ownerId: accountId, ids: ids);
+      case CardMediaKind.owner:
+        return _owners.listedMedia(recordId, ownerId: accountId, ids: ids);
+    }
+  }
+
+  @override
+  Future<List<OfferMediaRef>> discover(
+    CardMediaKind kind,
+    String recordId,
+    String accountId,
+    List<String> ids,
+  ) {
+    switch (kind) {
+      case CardMediaKind.offer:
+        return _offers.discoverHeldOfferMedia(recordId,
+            ownerId: accountId, ids: ids);
+      case CardMediaKind.owner:
+        return _owners.discoverHeldMedia(recordId,
+            ownerId: accountId, ids: ids);
     }
   }
 

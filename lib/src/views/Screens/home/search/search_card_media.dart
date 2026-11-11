@@ -27,6 +27,31 @@ abstract interface class SearchCardMediaSource {
   );
 }
 
+/// What this device holds for a record by its saved list's media identity
+/// (`listedMediaObjectIds`) — Search's own setting (tracker §7AZ, M3b-2).
+///
+/// Both are read only: no network, no download, no mapping or catalogue
+/// write. Both follow the record's catalogue entry when the device has one
+/// (even an empty one) and use the saved [ids] only when it has none; they
+/// give nothing for another account or without its authorized session.
+abstract interface class SearchCardHeldMedia {
+  /// What is on the device now by the saved [ids], for the first frame.
+  List<OfferMediaRef> listed(
+    CardMediaKind kind,
+    String recordId,
+    String accountId,
+    List<String> ids,
+  );
+
+  /// The same, also finding bytes held only in the private image cache.
+  Future<List<OfferMediaRef>> discover(
+    CardMediaKind kind,
+    String recordId,
+    String accountId,
+    List<String> ids,
+  );
+}
+
 /// The photo (or video frame) a Search result card shows for an Offer or an
 /// Owner, chosen the way Favorites chooses it: the first photo; if the record
 /// has only videos, the first video's still frame; never a video link drawn as
@@ -45,18 +70,32 @@ abstract interface class SearchCardMediaSource {
 ///  * a record whose photo this device already holds is never asked about;
 ///  * a failure only means the card keeps what the device holds (or its icon),
 ///    and the same record is not asked again for [failedFor].
+///
+/// With [heldMedia] (Search only; off by default, so Smart Map's resolver is
+/// unchanged — tracker §7AZ, M3b-2, D-M3-3), what "the device holds" also
+/// covers the record's saved ids (`listedIds`), used only when the record has
+/// no catalogue entry, and bytes held only in the private image cache, found
+/// by a read-only lookup before the Worker is asked. A photo found that way is
+/// shown without asking the Worker, so it says nothing new about whether the
+/// server still lists it (the same as a catalogue photo today); it is never
+/// remembered as a Worker answer.
 class SearchCardMediaResolver {
   SearchCardMediaResolver({
     required SearchCardMediaSource source,
+    SearchCardHeldMedia? heldMedia,
     this.maxConcurrent = 3,
     this.validFor = const Duration(minutes: 5),
     this.failedFor = const Duration(seconds: 30),
     DateTime Function()? clock,
   })  : assert(maxConcurrent > 0),
         _source = source,
+        _heldMedia = heldMedia,
         _clock = clock ?? DateTime.now;
 
   final SearchCardMediaSource _source;
+
+  /// Search's saved-ids lookup; null keeps the resolver as it was before M3b-2.
+  final SearchCardHeldMedia? _heldMedia;
 
   /// How many records are asked about at the same time.
   final int maxConcurrent;
@@ -78,13 +117,18 @@ class SearchCardMediaResolver {
   int _epoch = 0;
 
   /// What the card can draw right now, with no network: the server's answer
-  /// from earlier, otherwise what this device holds.
-  FavoriteCardMedia? current(CardMediaKind kind, String recordId) {
+  /// from earlier, otherwise what this device holds — with the Search setting,
+  /// also by the record's saved [listedIds] when it has no catalogue entry.
+  FavoriteCardMedia? current(
+    CardMediaKind kind,
+    String recordId, {
+    List<String> listedIds = const <String>[],
+  }) {
     final id = recordId.trim();
     if (id.isEmpty) return null;
     final answer = _freshAnswer(_key(kind, id));
     if (answer != null && !answer.failed) return answer.media;
-    return _held(kind, id);
+    return _held(kind, id, listedIds);
   }
 
   /// The media the card should show for the record, asking the server when this
@@ -94,10 +138,14 @@ class SearchCardMediaResolver {
   ///
   /// [isWanted] is asked when the record's turn comes: a request whose cards
   /// are all gone (scrolled away, disposed) is dropped without any network.
+  ///
+  /// [listedIds] are the record's saved media ids, used only with the Search
+  /// setting; empty means unknown, never "no media".
   Future<FavoriteCardMedia?> resolve(
     CardMediaKind kind,
     String recordId, {
     bool Function()? isWanted,
+    List<String> listedIds = const <String>[],
   }) {
     final id = recordId.trim();
     final account = _source.accountId?.trim() ?? '';
@@ -109,13 +157,13 @@ class SearchCardMediaResolver {
     final answer = _freshAnswer(key);
     if (answer != null) {
       return Future<FavoriteCardMedia?>.value(
-        answer.failed ? _held(kind, id) : answer.media,
+        answer.failed ? _held(kind, id, listedIds) : answer.media,
       );
     }
 
     // The device already holds a photo: that is the card's picture, and there
     // is nothing to ask.
-    final held = _held(kind, id);
+    final held = _held(kind, id, listedIds);
     if (held != null && !held.isVideo) {
       return Future<FavoriteCardMedia?>.value(held);
     }
@@ -127,7 +175,7 @@ class SearchCardMediaResolver {
     }
     final created = _Job(isWanted ?? _always);
     _jobs[key] = created;
-    created.result = _run(kind, id, account, key, created);
+    created.result = _run(kind, id, account, key, created, listedIds);
     return created.result;
   }
 
@@ -155,9 +203,45 @@ class SearchCardMediaResolver {
     return answer;
   }
 
-  FavoriteCardMedia? _held(CardMediaKind kind, String id) {
+  FavoriteCardMedia? _held(
+    CardMediaKind kind,
+    String id,
+    List<String> listedIds,
+  ) {
+    final List<OfferMediaRef> catalogued;
     try {
-      return FavoriteCardMedia.pick(_source.cached(kind, id));
+      catalogued = _source.cached(kind, id);
+    } catch (_) {
+      return null;
+    }
+    // What the catalogue holds is the card's picture. The saved ids are read
+    // only when it holds nothing, and give nothing for a record with an entry
+    // at all (even an empty one), so the two are never merged.
+    if (catalogued.isNotEmpty) return FavoriteCardMedia.pick(catalogued);
+    final lookup = _heldMedia;
+    if (lookup == null || listedIds.isEmpty) return null;
+    final account = _source.accountId?.trim() ?? '';
+    if (account.isEmpty) return null;
+    try {
+      return FavoriteCardMedia.pick(
+          lookup.listed(kind, id, account, listedIds));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The first photo (or video frame) the read-only lookup finds; null when it
+  /// finds nothing or fails.
+  Future<FavoriteCardMedia?> _discover(
+    SearchCardHeldMedia lookup,
+    CardMediaKind kind,
+    String id,
+    String account,
+    List<String> listedIds,
+  ) async {
+    try {
+      return FavoriteCardMedia.pick(
+          await lookup.discover(kind, id, account, listedIds));
     } catch (_) {
       return null;
     }
@@ -169,6 +253,7 @@ class SearchCardMediaResolver {
     String account,
     String key,
     _Job job,
+    List<String> listedIds,
   ) async {
     final epoch = _epoch;
     await _acquire();
@@ -177,6 +262,16 @@ class SearchCardMediaResolver {
       if (!job.isWanted) return null;
       // The account changed while waiting: this answer is for nobody now.
       if ((_source.accountId?.trim() ?? '') != account) return null;
+
+      // Search looks on the device first, in this same slot. A photo found
+      // there is shown with nothing signed, and is not kept as an answer.
+      final lookup = _heldMedia;
+      if (lookup != null) {
+        final found = await _discover(lookup, kind, id, account, listedIds);
+        if ((_source.accountId?.trim() ?? '') != account) return null;
+        if (found != null && !found.isVideo) return found;
+        if (!job.isWanted) return null;
+      }
 
       FavoriteCardMedia? media;
       var failed = false;
@@ -188,7 +283,9 @@ class SearchCardMediaResolver {
             : FavoriteCardMedia.pick(resolution.items);
       } catch (_) {
         failed = true;
-        media = _held(kind, id);
+        // Read again after the failure: a 403/404 has emptied the catalogue,
+        // so nothing held before the request comes back.
+        media = _held(kind, id, listedIds);
       }
 
       // Another account signed in meanwhile: this answer is for nobody now.

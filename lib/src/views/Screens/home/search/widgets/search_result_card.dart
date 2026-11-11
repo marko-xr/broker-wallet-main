@@ -1096,6 +1096,7 @@ class _ImageOrFallbackState extends State<_ImageOrFallback> {
         signedUrl: media.signedUrl,
         posterPath: media.posterPath,
         fallback: _GradientIcon(type: widget.type, typeIcon: widget.typeIcon),
+        privateCache: true,
       );
     }
 

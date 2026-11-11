@@ -599,6 +599,13 @@ void main() {
       // A video shows its still frame with a play mark, never as a photo.
       expect(source.contains('return OfferVideoPoster('), isTrue);
       expect(source.contains('Icons.play_circle_fill_rounded'), isTrue);
+      // M3b-1: a caller that opts in draws the photo through the private
+      // image path and keeps nothing in the shared cache (tracker §7AZ).
+      expect(source.contains('if (widget.privateCache) return;'), isTrue);
+      expect(
+          source.contains('child: PrivateMediaImage( '
+              'cacheKey: widget.cacheKey, signedUrl: widget.signedUrl,'),
+          isTrue);
     });
 
     test(
@@ -623,6 +630,9 @@ void main() {
             'dart:async',
             'package:broker_wallet/src/services/offline_media_service.dart',
             'package:broker_wallet/src/views/Widgets/offer_video_poster.dart',
+            // M3b-1: the private image path, which Favorites and Search opt
+            // into (Smart Map does not).
+            'package:broker_wallet/src/views/Widgets/private_media_image.dart',
             'package:flutter/material.dart',
           ]);
     });

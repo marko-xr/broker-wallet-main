@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/views/Widgets/offer_video_poster.dart';
+import 'package:broker_wallet/src/views/Widgets/private_media_image.dart';
 import 'package:flutter/material.dart';
 
 /// The picture on a list card whose media is private (an Offer's or an
@@ -25,7 +26,17 @@ class PrivateCardMedia extends StatefulWidget {
     required this.fallback,
     this.signedUrl,
     this.posterPath,
+    this.privateCache = false,
   });
+
+  /// Draws a photo through the account-scoped private image cache
+  /// ([PrivateMediaImage], tracker §7AZ, M3b-1) instead of the shared image
+  /// cache: only for the current authorized session's account, bytes held
+  /// first (the mapping and its M1d-2 fallback, then the private cache), a
+  /// fetch with [signedUrl] only when nothing is held, and never the link as
+  /// what is stored. Off unless a caller asks for it — Favorites and Search
+  /// do; Smart Map keeps the shared cache (D-M3-1(b)). Videos are unaffected.
+  final bool privateCache;
 
   /// The media's stable, account-scoped identity.
   final String cacheKey;
@@ -66,6 +77,8 @@ class _PrivateCardMediaState extends State<PrivateCardMedia> {
   /// so the next open draws it before any link exists. The same call the
   /// details gallery makes.
   void _keepPhotoOnDevice() {
+    // The private image keeps its own copy; nothing goes to the shared cache.
+    if (widget.privateCache) return;
     final url = widget.signedUrl;
     if (widget.isVideo || url == null || url.isEmpty) return;
     unawaited(OfflineMediaService.instance.ensureMediaIdCached(
@@ -92,6 +105,20 @@ class _PrivateCardMediaState extends State<PrivateCardMedia> {
             color: Colors.white,
             size: 40,
           ),
+        ),
+      );
+    }
+    if (widget.privateCache) {
+      // The private image path (M3b-1), filling the card as the shared one
+      // does, decoded at the card width.
+      return SizedBox.expand(
+        child: PrivateMediaImage(
+          cacheKey: widget.cacheKey,
+          signedUrl: widget.signedUrl,
+          fit: BoxFit.cover,
+          cacheWidth: 600,
+          placeholder: widget.fallback,
+          errorWidget: widget.fallback,
         ),
       );
     }

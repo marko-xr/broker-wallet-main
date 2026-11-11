@@ -23,6 +23,22 @@ import 'offline_media_service.dart';
 import 'private_media_images.dart';
 import 'r2_offer_media_upload_service.dart';
 
+/// How the media of an Offer read for display went (tracker §7AZ,
+/// FU-FAV-OFFER-MEDIA-FAILURE, Option B): an Offer without media because its
+/// media could not be read is not an Offer the Worker said has none.
+enum DisplayMediaOutcome {
+  /// The Worker answered: the Offer carries exactly what it listed, even none.
+  resolved,
+
+  /// The read failed for a temporary reason (no answer, no connection, a
+  /// server error, an unreadable body); nothing was learned about the media.
+  transient,
+
+  /// The read was refused (the session, or access to the record): nothing
+  /// held may be shown for it.
+  refused,
+}
+
 /// Supabase CRUD adapter for the six core Broker Wallet entity tables.
 ///
 /// Every operation runs with the current authenticated Supabase session. RLS is
@@ -800,15 +816,35 @@ class SupabaseCoreEntitiesService {
   /// historical best-effort contract: metadata still returns if media
   /// resolution fails. Offer Details uses the strict split methods above so
   /// it can present a localized, recoverable media error instead.
+  ///
+  /// How the media read went is kept with the Offer returned
+  /// ([displayMediaOutcomeOf]), so a caller never has to read "no media"
+  /// into an Offer whose media could not be read (tracker §7AZ,
+  /// FU-FAV-OFFER-MEDIA-FAILURE, Option B).
   Future<OfferModel?> _withDisplayMedia(OfferModel offer) async {
     try {
-      return await resolveOfferMediaFor(offer);
-    } catch (_) {
+      final resolved = await resolveOfferMediaFor(offer);
+      _displayMediaOutcomes[resolved] = DisplayMediaOutcome.resolved;
+      return resolved;
+    } catch (error) {
       if (_client.auth.currentUser?.id != offer.userId) return null;
       _debugLog('offer.media', 'media fetch failed for display');
+      _displayMediaOutcomes[offer] = error is OfferMediaException &&
+              error.kind == OfferMediaFailureKind.transient
+          ? DisplayMediaOutcome.transient
+          : DisplayMediaOutcome.refused;
       return offer;
     }
   }
+
+  static final Expando<DisplayMediaOutcome> _displayMediaOutcomes =
+      Expando<DisplayMediaOutcome>('displayMediaOutcome');
+
+  /// How the media of [offer] — an Offer this service returned from
+  /// [getOffer] or [getOffersByIds] — was read; null for any other Offer.
+  /// Kept with that exact object, never on disk.
+  static DisplayMediaOutcome? displayMediaOutcomeOf(OfferModel offer) =>
+      _displayMediaOutcomes[offer];
 
   OfferModel _offerFromRow(Map<String, dynamic> row) => OfferModel(
         id: row['id']?.toString(),

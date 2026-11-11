@@ -269,6 +269,12 @@ class OfferService {
   }) =>
       _supabase.getOffersByIds(offerIds, stop: stop);
 
+  /// How the media of [offer], as [getOffersByIds] returned it, was read
+  /// (FU-FAV-OFFER-MEDIA-FAILURE, Option B); null for an Offer from anywhere
+  /// else. Reads nothing and creates nothing.
+  DisplayMediaOutcome? displayMediaOutcomeOf(OfferModel offer) =>
+      SupabaseCoreEntitiesService.displayMediaOutcomeOf(offer);
+
   /// Reads the authoritative Offer fields without waiting for private-media
   /// URL signing. Firebase's legacy document already carries its stable media
   /// URLs, so its existing single read remains unchanged.

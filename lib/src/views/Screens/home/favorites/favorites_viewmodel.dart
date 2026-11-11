@@ -16,6 +16,10 @@ import '../../../../services/ScreenServices/office_service.dart';
 import '../../../../services/ScreenServices/broker_service.dart';
 import '../../../../services/ScreenServices/watchmen_service.dart';
 import '../../../../services/bounded_tasks.dart';
+import '../../../../services/offer_media_cache_identity.dart'
+    show offerMediaCacheKeyPrefix;
+import '../../../../services/supabase_core_entities_service.dart'
+    show DisplayMediaOutcome;
 import '../../../../services/optimistic_favorites_service.dart';
 import '../../../../common/localization/localization_delegate.dart';
 import 'dart:async';
@@ -1031,6 +1035,17 @@ class FavoritesViewModel extends ChangeNotifier {
       // Private media is picked by kind (the first photo, else a video's
       // still frame); an Offer with plain URLs keeps its first URL.
       var media = FavoriteCardMedia.fromOffer(offer);
+      // The media read failed for a temporary reason: nothing was learned
+      // about the media, so the card keeps what this device holds instead of
+      // reading the failure as "no media" (tracker §7AZ,
+      // FU-FAV-OFFER-MEDIA-FAILURE, Option B, D-FOMF-1). A refused read
+      // shows nothing held.
+      if (media == null &&
+          _offerService.displayMediaOutcomeOf(offer) ==
+              DisplayMediaOutcome.transient) {
+        media = await _heldOfferCardMediaAfterFailure(offer);
+        if (!_isCurrentForAccount) return;
+      }
       // The Worker listed private media but its links are no longer in
       // memory: the card is what this device holds of those items, never a
       // signed link (tracker §7AZ, M3b-3, D-M3b3-1).
@@ -1081,6 +1096,46 @@ class FavoritesViewModel extends ChangeNotifier {
       for (final id in listed)
         if (held[id] case final ref?) ref,
     ]);
+  }
+
+  /// The card of an Offer whose media read failed for a temporary reason
+  /// (FU-FAV-OFFER-MEDIA-FAILURE, Option B, D-FOMF-1): the first photo (else a
+  /// video's still frame) this device holds for it, found with no network,
+  /// no link and no download, for the signed-in account and its authorized
+  /// session. Which items: the device's catalogue entry for the record when
+  /// it has one (even an empty one); otherwise the ids this same read listed;
+  /// otherwise — the read listed none, which proves nothing — the item this
+  /// account's card was showing. Null (the card's icon) when nothing is held.
+  Future<FavoriteCardMedia?> _heldOfferCardMediaAfterFailure(
+      OfferModel offer) async {
+    final recordId = offer.id?.trim() ?? '';
+    final accountId = _offerService.currentOwnerId?.trim() ?? '';
+    if (recordId.isEmpty || accountId.isEmpty || accountId != offer.userId) {
+      return null;
+    }
+    final listed = offer.listedMediaObjectIds;
+    final shown =
+        listed.isEmpty ? _shownOfferMediaId(recordId, accountId) : null;
+    final found = await _offerService.discoverHeldOfferMedia(
+      recordId,
+      ownerId: accountId,
+      ids: listed.isNotEmpty ? listed : [if (shown != null) shown],
+    );
+    return FavoriteCardMedia.pick(found);
+  }
+
+  /// The media id of the card this screen shows for the Offer [recordId] —
+  /// its saved copy or its last answer — when that card is [accountId]'s.
+  String? _shownOfferMediaId(String recordId, String accountId) {
+    final prefix = '$offerMediaCacheKeyPrefix$accountId:';
+    for (final item in [..._allFavorites, ..._cachedFavorites]) {
+      if (item.type != 'offers' || item.id != recordId) continue;
+      final key = item.media?.cacheKey;
+      if (key == null || !key.startsWith(prefix)) return null;
+      final id = key.substring(prefix.length);
+      return id.isEmpty || id.contains(':') ? null : id;
+    }
+    return null;
   }
 
   Future<void> _loadRequestsWithMetadata(List<FavoriteMetadata> requestMetadata,

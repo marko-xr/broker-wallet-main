@@ -723,9 +723,12 @@ void main() {
       }
     });
 
+    // FU-FAV-OFFER-MEDIA-FAILURE, Option B: a temporary failure now looks on
+    // the device (favorites_offer_media_failure_test). With no saved card, no
+    // catalogue and no listed ids nothing is known to look for: the icon.
     test(
-        'FU-FAV-OFFER-MEDIA-FAILURE (open, unchanged): an ordinary Worker '
-        'failure shows the icon and saves no card key', () async {
+        'an ordinary Worker failure with nothing known about the media: one '
+        'read-only lookup, the icon, no card key', () async {
       final m = _mediaId();
       await mapped(m);
       final id = offer([(m, 'image')]);
@@ -741,9 +744,9 @@ void main() {
         expect(vm.favorites.single.imageUrl, isNull);
         vm.dispose();
       });
-      expect(offers.lookups, 0);
-      expect(favorites.saved.last.single.media, isNull,
-          reason: 'the existing behaviour, recorded, not changed here');
+      expect(offers.lookups, 1);
+      expect(offers.lookupIds.single, isEmpty);
+      expect(favorites.saved.last.single.media, isNull);
     });
   });
 

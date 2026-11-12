@@ -96,6 +96,7 @@ import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
+import 'package:broker_wallet/src/widgets/brand_splash/brand_splash_gate.dart';
 
 // ===== Global navigator key (kept global for dialogs/global nav helpers) =====
 final GlobalKey<NavigatorState> rootNavigatorKey =
@@ -167,12 +168,42 @@ class _MyAppState extends State<MyApp> {
           builder: (context, child) {
             return Directionality(
               textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
-              child: SafeArea(
-                top: false,
-                bottom: true,
-                left: false,
-                right: false,
-                child: child ?? const SizedBox.shrink(),
+              child: Selector2<AuthViewModel, PasswordRecoveryViewModel, ({
+                AuthStatus status,
+                bool sessionCheckUnavailable,
+                bool passwordRecoveryActive,
+              })>(
+                selector: (_, auth, recovery) => (
+                  status: auth.status,
+                  sessionCheckUnavailable: auth.isSessionCheckUnavailable,
+                  passwordRecoveryActive:
+                      auth.isPasswordRecoveryActive || recovery.holdsRoute,
+                ),
+                builder: (context, startup, app) => BrandSplashRouteBuilder(
+                  listenable: _router.routerDelegate,
+                  builder: (context, app) {
+                    final loc = AppLocalizations.of(context);
+                    return BrandSplashGate(
+                      stage: startupSplashStage(
+                        _router.routerDelegate.currentConfiguration,
+                        status: startup.status,
+                        sessionCheckUnavailable: startup.sessionCheckUnavailable,
+                        passwordRecoveryActive: startup.passwordRecoveryActive,
+                      ),
+                      title: loc.translate('appName'),
+                      tagline: loc.translate('appTagline'),
+                      child: app!,
+                    );
+                  },
+                  child: app,
+                ),
+                child: SafeArea(
+                  top: false,
+                  bottom: true,
+                  left: false,
+                  right: false,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             );
           },
@@ -180,6 +211,36 @@ class _MyAppState extends State<MyApp> {
       },
     );
   }
+}
+
+/// Determines what the launch overlay can reveal from the router's accepted
+/// configuration. It never navigates or grants access to a route.
+@visibleForTesting
+BrandSplashStage startupSplashStage(
+  RouteMatchList configuration, {
+  required AuthStatus status,
+  required bool sessionCheckUnavailable,
+  required bool passwordRecoveryActive,
+}) {
+  if (configuration.isError) return BrandSplashStage.destination;
+  if (configuration.isEmpty) return BrandSplashStage.waiting;
+  final path = configuration.uri.path;
+  if (resolveAuthRedirect(
+        status,
+        path,
+        passwordRecoveryActive: passwordRecoveryActive,
+      ) !=
+      null) {
+    // The auth or recovery notifier may update before the router applies its
+    // new match. Keep that stale destination covered until the redirect lands.
+    return BrandSplashStage.waiting;
+  }
+  if (path == '/') {
+    return sessionCheckUnavailable
+        ? BrandSplashStage.showRetry
+        : BrandSplashStage.waiting;
+  }
+  return BrandSplashStage.destination;
 }
 
 /// Routes that require an authenticated session.

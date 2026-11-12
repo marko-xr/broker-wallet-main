@@ -1,0 +1,12 @@
+# Generate with dart run flutter_native_splash:create.
+# The white background and 203 dp logo canvas match the first Flutter frame.
+flutter_native_splash:
+  android: true
+  ios: true
+  web: false
+  color: "#FFFFFF"
+  image: assets/splash/splash_blueprint.png
+  android_12:
+    color: "#FFFFFF"
+    # A 4x canvas sized for the system mask, without an icon background.
+    image: assets/splash/splash_blueprint_android12.png

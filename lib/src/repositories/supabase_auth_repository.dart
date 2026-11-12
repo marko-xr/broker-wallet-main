@@ -8,7 +8,9 @@ import 'package:broker_wallet/src/services/account_deletion_service.dart'
     show AccountExistence, AccountExistenceProbe;
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
+import 'package:broker_wallet/src/services/app_session_check_outcome.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -23,7 +25,8 @@ class SupabaseAuthRepository
         EmailChangeCapability,
         PasswordCapability,
         AccountExistenceProbe,
-        AppSessionEvents {
+        AppSessionEvents,
+        AppSessionCheckProgress {
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
@@ -39,7 +42,50 @@ class SupabaseAuthRepository
         (_) {}, onError: (Object _) {},
       ));
     },
+    onCheckSlow: _showSessionCheckRetry,
+    onCheckProgress: (running) {
+      if (!_sessionCheckProgressController.isClosed) {
+        _sessionCheckProgressController.add(running);
+      }
+    },
   );
+  final StreamController<bool> _sessionCheckProgressController =
+      StreamController<bool>.broadcast();
+  @override
+  Stream<bool> get sessionCheckInProgressEvents =>
+      _sessionCheckProgressController.stream;
+
+  /// While Retry is shown: a hint that the network is back (or the app came
+  /// to the foreground) asks for one check. A hint is not proof of anything;
+  /// the check joins one that is already running.
+  StreamSubscription<void>? _recheckHints;
+
+  void _showSessionCheckRetry() {
+    final session = _client.auth.currentSession;
+    if (session == null ||
+        isPasswordRecoveryActive ||
+        _appSession.isAuthorized(session)) {
+      return;
+    }
+    _sessionCheckUnavailableController.add(true);
+    _listenForRecheckHints();
+  }
+
+  void _listenForRecheckHints() {
+    _recheckHints ??= ListRefreshSignals.instance.hints.listen((_) {
+      unawaited(retryAppSessionValidation().then<void>(
+        (_) {},
+        onError: (Object _) {},
+      ));
+    });
+  }
+
+  void _stopRecheckHints() {
+    final hints = _recheckHints;
+    _recheckHints = null;
+    if (hints != null) unawaited(hints.cancel());
+  }
+
   // Deliver accessRevoked synchronously so the view model closes protected
   // state before the local Auth sign-out begins.
   final StreamController<AppSessionSupersededPhase> _supersededController =
@@ -205,7 +251,19 @@ class SupabaseAuthRepository
 
     _supabaseAuthSubscription = _client.auth.onAuthStateChange.listen(
       _handleAuthState,
-      onError: _identityController.addError,
+      onError: (Object error, StackTrace stackTrace) {
+        // The SDK's own type for "the server was not reached, or answered
+        // 5xx" while refreshing. It keeps the session and carries nothing
+        // about authorization, so it must not read as a sign-out while that
+        // session is still stored; the session check decides. Every other
+        // error is passed on as before, and a sign-out is an event, not an
+        // error, so it is never held back here.
+        if (error is AuthRetryableFetchException &&
+            _client.auth.currentSession != null) {
+          return;
+        }
+        _identityController.addError(error, stackTrace);
+      },
     );
   }
 
@@ -250,9 +308,11 @@ class SupabaseAuthRepository
 
     final session = state.session;
     if (session == null) {
+      _stopRecheckHints();
       _appSession.clear();
       _publishIdentity(null);
     } else if (started != null || isPasswordRecoveryActive) {
+      _stopRecheckHints();
       _appSession.clear();
       _publishIdentity(user);
     } else if (state.event == AuthChangeEvent.signedIn) {
@@ -282,6 +342,7 @@ class SupabaseAuthRepository
     try {
       final allowed = await _appSession.authorize(session, claim: claim);
       if (allowed && _appSession.isAuthorized(session)) {
+        _stopRecheckHints();
         _sessionCheckUnavailableController.add(false);
         _publishIdentity(session.user);
         return true;
@@ -293,7 +354,13 @@ class SupabaseAuthRepository
       if (!claim && !displaced) {
         // A restored session with no network remains cached for a retry, but
         // its app identity is never published until the server confirms it.
-        _sessionCheckUnavailableController.add(true);
+        // A failure that belongs to a session that has since gone or changed
+        // raises nothing.
+        if (AppSessionCoordinator.sessionId(_client.auth.currentSession) ==
+            AppSessionCoordinator.sessionId(session)) {
+          _sessionCheckUnavailableController.add(true);
+          _listenForRecheckHints();
+        }
         throw AuthFailure(
           code: AuthFailureCode.appSessionUnavailable,
           message: 'Application session verification is unavailable.',
@@ -369,9 +436,11 @@ class SupabaseAuthRepository
   /// the repository is a process-lifetime singleton in production and this
   /// exists so tests can tear the pipeline down deterministically.
   Future<void> dispose() async {
+    _stopRecheckHints();
     await _appSession.dispose();
     await _supersededController.close();
     await _sessionCheckUnavailableController.close();
+    await _sessionCheckProgressController.close();
     await _supabaseAuthSubscription?.cancel();
     _supabaseAuthSubscription = null;
     _pipelineStarted = false;

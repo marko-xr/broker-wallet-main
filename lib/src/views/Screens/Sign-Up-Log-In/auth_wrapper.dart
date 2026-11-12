@@ -24,6 +24,9 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthViewModel>();
     if (!auth.isSessionCheckUnavailable) return const SplashScreen();
+    // While a check runs, Retry could only wait for it: one indicator takes
+    // the icon's place and the button keeps its label but is locked.
+    final checking = auth.isSessionCheckInProgress;
     final loc = AppLocalizations.of(context);
     return Scaffold(
       body: Center(
@@ -32,7 +35,14 @@ class AuthWrapper extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.wifi_off, color: Theme.of(context).colorScheme.onSurface),
+              if (checking)
+                const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(Icons.wifi_off,
+                    color: Theme.of(context).colorScheme.onSurface),
               const SizedBox(height: 16),
               Text(
                 loc.translate('appSessionCheckFailed'),
@@ -41,7 +51,7 @@ class AuthWrapper extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: auth.retryAppSessionValidation,
+                onPressed: checking ? null : auth.retryAppSessionValidation,
                 child: Text(loc.translate('retry')),
               ),
             ],

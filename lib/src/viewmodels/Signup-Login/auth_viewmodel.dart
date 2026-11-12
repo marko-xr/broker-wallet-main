@@ -14,6 +14,8 @@ import 'package:broker_wallet/src/services/account_deletion_service.dart'
         AccountExistence,
         AccountExistenceProbe;
 import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
+import 'package:broker_wallet/src/services/app_session_check_outcome.dart'
+    show AppSessionCheckProgress;
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
@@ -163,6 +165,8 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   StreamSubscription<UserModel?>? _authSubscription;
   StreamSubscription<AppSessionSupersededPhase>? _sessionSupersededSubscription;
   StreamSubscription<bool>? _sessionCheckUnavailableSubscription;
+  StreamSubscription<bool>? _sessionCheckProgressSubscription;
+  bool _sessionCheckInProgress = false;
   bool _sessionSupersededNotice = false;
   bool _sessionSupersededSignOutCompleted = false;
   bool _sessionSupersededHandledForCurrentSession = false;
@@ -253,6 +257,16 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
           notifyListeners();
         });
       }
+      if (repository is AppSessionCheckProgress) {
+        final AppSessionCheckProgress progress =
+            repository as AppSessionCheckProgress;
+        _sessionCheckProgressSubscription =
+            progress.sessionCheckInProgressEvents.listen((running) {
+          if (_sessionCheckInProgress == running) return;
+          _sessionCheckInProgress = running;
+          notifyListeners();
+        });
+      }
       _initializeAuth();
     }
   }
@@ -327,6 +341,10 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
   bool get wasCurrentSignInSuperseded =>
       _sessionSupersededHandledForCurrentSession;
   bool get isSessionCheckUnavailable => _sessionCheckUnavailable;
+
+  /// True while a restored-session check is running; Retry then can only
+  /// wait for it.
+  bool get isSessionCheckInProgress => _sessionCheckInProgress;
   Future<void> retryAppSessionValidation() async {
     final repository = _authRepository;
     if (repository is! AppSessionEvents) return;
@@ -1605,6 +1623,7 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
     _disposed = true;
     _sessionSupersededSubscription?.cancel();
     _sessionCheckUnavailableSubscription?.cancel();
+    _sessionCheckProgressSubscription?.cancel();
     _authSubscription?.cancel();
     _userStreamSubscription?.cancel();
     super.dispose();

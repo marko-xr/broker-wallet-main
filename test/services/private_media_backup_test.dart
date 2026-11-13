@@ -74,6 +74,16 @@ const _m1b = [
   ('file', 'bwPrivateMedia.db-shm'),
 ];
 
+/// What OFF-2b-1 adds (domain, path): the offline pass's own secure-storage
+/// namespace and (OFF-2b-1b) its Android charge journal folder, checked in
+/// offline_session_lease_test.dart (A8).
+const _off2b1 = [
+  ('sharedpref', 'bw_offline_pass.xml'),
+  ('sharedpref', 'FlutterSecureKeyStorage:bw_offline_pass.xml'),
+  ('sharedpref', 'FlutterSecureStorageConfiguration:bw_offline_pass.xml'),
+  ('file', 'offline_pass'),
+];
+
 List<String> _sections(String xml, String tag) => [
       for (final m
           in RegExp('<$tag>(.*?)</$tag>', dotAll: true).allMatches(xml))
@@ -90,10 +100,13 @@ void main() {
   group('Android backup rules', () {
     void expectRules(String section, String where) {
       final rules = _excludes(section);
-      for (final rule in [..._earlier, ..._added, ..._m1b]) {
+      for (final rule in [..._earlier, ..._added, ..._m1b, ..._off2b1]) {
         expect(rules, contains(rule), reason: '$where: $rule');
       }
-      expect(rules, hasLength(_earlier.length + _added.length + _m1b.length),
+      expect(
+          rules,
+          hasLength(
+              _earlier.length + _added.length + _m1b.length + _off2b1.length),
           reason: '$where: nothing else added or broadened');
     }
 

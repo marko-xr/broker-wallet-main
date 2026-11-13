@@ -84,4 +84,17 @@
          account's encrypted copy (in offline_lists) is in place. -->
     <exclude domain="root" path="app_flutter/cached_favorites.hive" />
     <exclude domain="root" path="app_flutter/cached_favorites.lock" />
+    <!-- Offline pass (OFF-2b-1): the three preference files of
+         flutter_secure_storage's bw_offline_pass namespace (the encrypted
+         record, its wrapped key and its algorithm markers). A restore onto the
+         same installed app could bring back older offline accounting (starts,
+         use), so they never leave the phone. The Supabase session lives in the
+         default namespace (FlutterSecureStorage*.xml), which is not listed. -->
+    <exclude domain="sharedpref" path="bw_offline_pass.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage:bw_offline_pass.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:bw_offline_pass.xml" />
+    <!-- Offline pass charge journal (OFF-2b-1b): files/offline_pass, the
+         fsynced record of every offline start and use reservation. A restore
+         could bring back older accounting, so it never leaves the phone. -->
+    <exclude domain="file" path="offline_pass" />
 </full-backup-content>

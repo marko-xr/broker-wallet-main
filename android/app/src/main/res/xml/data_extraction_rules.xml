@@ -50,6 +50,21 @@
   signed links), with SQLite's files beside it. Its bytes are in the cache
   directory, which is never backed up.
 -->
+<!--
+  Offline pass (OFF-2b-1): the three preference files of flutter_secure_storage's
+  bw_offline_pass namespace (bw_offline_pass.xml, the encrypted record;
+  FlutterSecureKeyStorage:bw_offline_pass.xml, its wrapped key;
+  FlutterSecureStorageConfiguration:bw_offline_pass.xml, its algorithm
+  markers). A restore onto the same installed app could bring back older
+  offline accounting, so neither cloud backup nor a device transfer carries
+  them. The Supabase session lives in the default namespace
+  (FlutterSecureStorage*.xml), which is not listed.
+-->
+<!--
+  Offline pass charge journal (OFF-2b-1b): files/offline_pass
+  (getApplicationSupportDirectory), the fsynced record of every offline start
+  and use reservation. Neither cloud backup nor a device transfer carries it.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -79,6 +94,10 @@
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />
+        <exclude domain="sharedpref" path="bw_offline_pass.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:bw_offline_pass.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:bw_offline_pass.xml" />
+        <exclude domain="file" path="offline_pass" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" path="app_flutter/offer_media" />
@@ -108,5 +127,9 @@
         <exclude domain="file" path="mlkit_docscan_ui_client" />
         <exclude domain="root" path="app_flutter/cached_favorites.hive" />
         <exclude domain="root" path="app_flutter/cached_favorites.lock" />
+        <exclude domain="sharedpref" path="bw_offline_pass.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:bw_offline_pass.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:bw_offline_pass.xml" />
+        <exclude domain="file" path="offline_pass" />
     </device-transfer>
 </data-extraction-rules>

@@ -16469,3 +16469,37 @@ and this checkpoint note only.
 
 NOW: commit the scoped divider changes. NEXT: on device, verify the final
 flex 2 date separators in all six lists in Arabic and English.
+
+## White animated launch screen (2026-11-12)
+
+Branch: `anmation-splash-screen`, from `perf/phase-1-startup-baseline` at
+`39fbd3d`. The existing performance tracker edits were saved separately in
+`c63ff42`. The supplied launch kit stays intact and untracked as reference.
+
+The native white outline and Flutter painter use the same centered 203 dp
+logo canvas at normal phone sizes. Flutter fills in the roof, wallet, clasp
+and windows from the supplied artwork, then shows the existing localized
+name and tagline. Android day and night use the same artwork; iOS uses the
+launch storyboard and asset catalog. No alternate green assets were added
+to the app. The only new direct package is the development generator.
+
+The launch overlay waits for the router's accepted destination and checks it
+against the existing redirect policy before opening. The existing retry
+screen is actionable as soon as it is selected, and reduced motion skips the
+animated reveal. Startup ordering, AuthWrapper, authentication, Single
+Active Device and the router redirect policy were not changed.
+
+Status: CODE_PROVEN, not VERIFIED_RUNTIME. `flutter pub get --offline`,
+native generation and resource checks, targeted `flutter analyze --no-pub`
+and 117 targeted Flutter tests passed. The tests cover the router hand-off,
+Retry, reduced motion, recovery and session validation. Android normal
+themes and iOS non-splash settings were checked against the starting
+revision. No Android APK, iOS app or device installation was made here.
+
+NOW: owner runs a fresh Android build on Samsung (release or profile for
+representative timing), force stops it, then launches from the icon.
+NEXT: check the hand-off and lack of a second splash for a signed-out and
+restored session; check Retry offline, recovery and session displacement,
+Arabic/English, both themes, and reduced motion. Verify an older supported
+Android version and cold launch on iOS after a fresh install. Record the
+device outcome before marking the checkpoint VERIFIED_RUNTIME.

@@ -110,5 +110,7 @@
     <!-- Enable embedded views for Google Maps -->
     <key>io.flutter.embedded_views_preview</key>
     <true/>
+    <key>UIStatusBarHidden</key>
+    <false/>
 </dict>
 </plist>

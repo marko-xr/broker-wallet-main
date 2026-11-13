@@ -15,6 +15,9 @@ class AppSessionCoordinator with WidgetsBindingObserver {
     this.onResumeWhileUnverified,
     this.onCheckSlow,
     this.onCheckProgress,
+    this.onConfirmed,
+    this.confirmationEpoch,
+    this.onCredentialsRejected,
     this.softDeadline = defaultSoftDeadline,
     this.hardDeadline = defaultHardDeadline,
     @visibleForTesting Stopwatch Function()? stopwatch,
@@ -40,6 +43,20 @@ class AppSessionCoordinator with WidgetsBindingObserver {
 
   /// A restored-session check started (true) or ended (false).
   final void Function(bool running)? onCheckProgress;
+
+  /// OFF-2b-3: called with the exact session whose check the server answered
+  /// with a current `true` (a restored-session check or [validateNow]); never
+  /// for a sign-in claim. The offline pass is issued only from here.
+  /// [startedEpoch] is what [confirmationEpoch] returned when that check
+  /// started, so a confirmation that outlived an invalidation can be refused.
+  final void Function(Session session, int? startedEpoch)? onConfirmed;
+
+  /// OFF-2b-3: read when a check starts (see [onConfirmed]).
+  final int Function()? confirmationEpoch;
+
+  /// OFF-2b-3 correction D: [validateNow] got an authoritative 401/403 for
+  /// the live session. Awaited before the error is rethrown unchanged.
+  final Future<void> Function()? onCredentialsRejected;
   final Duration softDeadline;
   final Duration hardDeadline;
   final Stopwatch Function() _stopwatch;
@@ -135,7 +152,8 @@ class AppSessionCoordinator with WidgetsBindingObserver {
   /// at [hardDeadline], or when the session it belongs to goes away.
   Future<bool> _check(Session session, String id) {
     _detachLive();
-    final attempt = _Check(id, session.user.id, _stopwatch()..start());
+    final attempt = _Check(id, session.user.id, _stopwatch()..start(), session,
+        confirmationEpoch?.call());
     _live = attempt;
     attempt.soft = Timer(softDeadline, () {
       if (identical(_live, attempt) &&
@@ -187,6 +205,7 @@ class AppSessionCoordinator with WidgetsBindingObserver {
         _superseded = false;
         _authorizedId = id;
         _watchOwnRow(attempt.userId, id);
+        onConfirmed?.call(attempt.session, attempt.epoch);
         _finish(attempt, value: true);
       case AppSessionCheckOutcome.refused:
         _finish(attempt, value: false);
@@ -270,10 +289,26 @@ class AppSessionCoordinator with WidgetsBindingObserver {
     final session = client.auth.currentSession;
     if (session == null || !isAuthorized(session)) return false;
     final id = _authorizedId;
-    final answer = await client.rpc('is_current_app_session');
+    final epoch = confirmationEpoch?.call();
+    final Object? answer;
+    try {
+      answer = await client.rpc('is_current_app_session');
+    } catch (error) {
+      // OFF-2b-3 correction D: a token the server refused ends offline access
+      // (only while it is still the live session's). Timeouts, captive
+      // portals and 5xx are not refusals. OFF-1 behaviour is unchanged: the
+      // error still reaches the caller.
+      if (classifySessionCheckError(error) ==
+              AppSessionCheckOutcome.credentialsRejected &&
+          sessionId(client.auth.currentSession) == id) {
+        await onCredentialsRejected?.call();
+      }
+      rethrow;
+    }
     if (sessionId(client.auth.currentSession) != id) return false;
     switch (classifySessionCheckAnswer(answer)) {
       case AppSessionCheckOutcome.confirmed:
+        onConfirmed?.call(session, epoch);
         return true;
       case AppSessionCheckOutcome.refused:
         supersede();
@@ -353,10 +388,16 @@ class AppSessionCoordinator with WidgetsBindingObserver {
 }
 
 class _Check {
-  _Check(this.sessionId, this.userId, this.age);
+  _Check(this.sessionId, this.userId, this.age, this.session, this.epoch);
 
   final String sessionId;
   final String userId;
+
+  /// The session whose token this check sent (what a confirmation is for).
+  final Session session;
+
+  /// The offline pass epoch when this check started (OFF-2b-3).
+  final int? epoch;
 
   /// Monotonic time since the check started.
   final Stopwatch age;

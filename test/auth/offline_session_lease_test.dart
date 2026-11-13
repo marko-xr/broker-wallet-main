@@ -381,8 +381,11 @@ void main() {
       expect(await store.read(), isNull);
     });
 
-    test('A6 dormant: nothing in lib/ uses the lease yet (no Home, no router)',
-        () {
+    // OFF-2b-3: the lease's one user is the pass lifecycle; that Home and the
+    // router still admit nothing is asserted by offline_pass_lifecycle_test Z.
+    test(
+        'A6 dormant: only the OFF-2b-3 lifecycle uses the lease (no Home, '
+        'no router)', () {
       final users = Directory('lib')
           .listSync(recursive: true)
           .whereType<File>()
@@ -391,9 +394,9 @@ void main() {
               .replaceAll(r'\', '/')
               .endsWith('lib/src/services/offline_session_lease.dart'))
           .where((f) => f.readAsStringSync().contains('offline_session_lease'))
-          .map((f) => f.path)
+          .map((f) => f.path.replaceAll(r'\', '/'))
           .toList();
-      expect(users, isEmpty);
+      expect(users, ['lib/src/services/offline_pass_lifecycle.dart']);
     });
 
     test('A7 the lease writes no log and makes no network call', () {

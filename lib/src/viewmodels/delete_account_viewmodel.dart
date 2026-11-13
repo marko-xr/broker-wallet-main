@@ -2,12 +2,23 @@ import 'package:flutter/foundation.dart';
 
 import 'package:broker_wallet/src/services/account_deletion_service.dart';
 import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
 
 /// The pending-deletion marker, behind a seam so tests can observe it.
 class AccountDeletionMarkers {
   const AccountDeletionMarkers();
 
-  Future<void> remember(String uid) => AccountDeletionStateStore.remember(uid);
+  /// OFF-2b-3: offline access for [uid] is revoked (and the account latched)
+  /// before the deletion even starts. Throws, writing nothing, when that
+  /// cannot be made safe: the deletion must then not start.
+  Future<void> remember(String uid) async {
+    final revocation = await OfflinePassLifecycle.shared
+        .invalidate(OfflinePassInvalidation.accountDeletion, uid: uid);
+    if (!revocation.safe) {
+      throw StateError('offline access could not be revoked');
+    }
+    await AccountDeletionStateStore.remember(uid);
+  }
 
   Future<void> forgetIfOwnedBy(String uid) =>
       AccountDeletionStateStore.forgetIfOwnedBy(uid);
@@ -153,7 +164,14 @@ class DeleteAccountViewModel extends ChangeNotifier {
     // Written before the request, so a success whose response never arrives —
     // including one the app does not survive — is settled on the next session
     // start instead of leaving a deleted account presented as signed in.
-    await _markers.remember(ownerUid);
+    try {
+      await _markers.remember(ownerUid);
+    } catch (_) {
+      // Nothing was sent: the account still exists and can be retried.
+      _step = DeleteAccountStep.confirm;
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.unknown));
+      return false;
+    }
 
     AccountDeletionFailureCode? failure;
     try {

@@ -180,6 +180,87 @@ enum OfflinePassDenial {
   /// The Android charge journal is missing, revoked, malformed, or does not
   /// match the pass (OFF-2b-1b). Pass and journal deleted.
   accountingInvalid,
+
+  /// OFF-2b-3 correction A: the pass is older than the latest revocation, it
+  /// predates revocation markers, or the marker is missing (an iOS reinstall
+  /// keeps the Keychain record but not the app's files). Pass deleted.
+  revoked,
+}
+
+/// OFF-2b-3 correction A (tracker §7BD-20): the durable revocation counter.
+///
+/// A plain file, written and flushed with dart:io only — never through the
+/// secure-storage plugin, so a hung or failing Keystore/Keychain cannot
+/// delay or undo a revocation. Each revocation stores a higher number; a pass
+/// records the number current when it was issued and is usable only while it
+/// still equals the stored one. Nothing ever lowers or clears it.
+abstract interface class OfflinePassRevocationMarker {
+  /// The stored number, or null when there is no marker. Throws when the
+  /// marker exists but cannot be read or is malformed.
+  Future<int?> read();
+
+  /// Stores [revocation]; completes only after the data is flushed (fsync),
+  /// and throws on any failure.
+  Future<void> write(int revocation);
+}
+
+/// `getApplicationSupportDirectory()/offline_pass/revoked_v1`: one ASCII line
+/// `{"v":1,"r":N}`. Android: app-private `files/`, excluded from backup and
+/// device transfer with the journal (`<exclude domain="file"
+/// path="offline_pass" />`). iOS: Application Support, which a same-device
+/// backup restore brings back together with the Keychain record (accepted
+/// residual R-OFF2-IOS-RESTORE); a reinstall removes it while the Keychain
+/// record survives, which the lease treats as revoked.
+///
+/// Written in place (truncate, write, flush): a write cut by a crash or power
+/// loss leaves a short or empty file, which reads as malformed and refuses
+/// the pass. On iOS, flush is `fsync`, not `F_FULLFSYNC`.
+class FileOfflinePassRevocationMarker implements OfflinePassRevocationMarker {
+  FileOfflinePassRevocationMarker({
+    Future<Directory> Function()? directory,
+    Future<RandomAccessFile> Function(File file, FileMode mode)? open,
+  })  : _directory = directory ?? getApplicationSupportDirectory,
+        _open = open ?? _openFile;
+
+  static const directoryName = FileOfflineChargeJournal.directoryName;
+  static const fileName = 'revoked_v1';
+  static final _line = RegExp(r'^\{"v":1,"r":(\d{1,15})\}\n$');
+
+  final Future<Directory> Function() _directory;
+  final Future<RandomAccessFile> Function(File file, FileMode mode) _open;
+
+  static Future<RandomAccessFile> _openFile(File file, FileMode mode) =>
+      file.open(mode: mode);
+
+  Future<File> _file() async {
+    final root = await _directory();
+    final sep = Platform.pathSeparator;
+    return File('${root.path}$sep$directoryName$sep$fileName');
+  }
+
+  @override
+  Future<int?> read() async {
+    final file = await _file();
+    if (!await file.exists()) return null;
+    final match = _line.firstMatch(latin1.decode(await file.readAsBytes()));
+    if (match == null) {
+      throw const FormatException('malformed offline pass revocation marker');
+    }
+    return int.parse(match.group(1)!);
+  }
+
+  @override
+  Future<void> write(int revocation) async {
+    final file = await _file();
+    await file.parent.create(recursive: true);
+    final raf = await _open(file, FileMode.writeOnly); // truncates
+    try {
+      await raf.writeFrom(latin1.encode('{"v":1,"r":$revocation}\n'));
+      await raf.flush();
+    } finally {
+      await raf.close();
+    }
+  }
 }
 
 /// The Android charge journal (OFF-2b-1b): an append-only record of every
@@ -460,6 +541,7 @@ class _PassRecord {
     required this.highestMs,
     required this.usedMs,
     required this.starts,
+    this.revocation,
   });
 
   final String uid;
@@ -477,7 +559,12 @@ class _PassRecord {
   /// Offline cold starts granted so far.
   final int starts;
 
+  /// OFF-2b-3: the revocation number current when the pass was issued; null
+  /// for a lease without a revocation marker (the v1 format, unchanged).
+  final int? revocation;
+
   static const _keys = {'v', 'uid', 'sid', 'a', 'h', 'u', 'n'};
+  static const _keysV2 = {..._keys, 'r'};
 
   _PassRecord copyWith({int? highestMs, int? usedMs, int? starts}) =>
       _PassRecord(
@@ -487,16 +574,18 @@ class _PassRecord {
         highestMs: highestMs ?? this.highestMs,
         usedMs: usedMs ?? this.usedMs,
         starts: starts ?? this.starts,
+        revocation: revocation,
       );
 
   String encode() => jsonEncode({
-        'v': 1,
+        'v': revocation == null ? 1 : 2,
         'uid': uid,
         'sid': sid,
         'a': anchorMs,
         'h': highestMs,
         'u': usedMs,
         'n': starts,
+        if (revocation != null) 'r': revocation,
       });
 
   /// Strict: exactly the known keys, the right types and ranges.
@@ -508,12 +597,16 @@ class _PassRecord {
       return null;
     }
     if (body is! Map<String, Object?>) return null;
-    if (body.length != _keys.length || !body.keys.toSet().containsAll(_keys)) {
+    final v = body['v'];
+    final keys = v == 2 ? _keysV2 : _keys;
+    if (body.length != keys.length || !body.keys.toSet().containsAll(keys)) {
       return null;
     }
-    final v = body['v'], uid = body['uid'], sid = body['sid'];
+    final uid = body['uid'], sid = body['sid'];
     final a = body['a'], h = body['h'], u = body['u'], n = body['n'];
-    if (v != 1) return null;
+    final r = body['r'];
+    if (v != 1 && v != 2) return null;
+    if (v == 2 && (r is! int || r < 0)) return null;
     if (uid is! String || !_uuid.hasMatch(uid)) return null;
     if (sid is! String || !_uuid.hasMatch(sid)) return null;
     if (a is! int || h is! int || u is! int || n is! int) return null;
@@ -521,7 +614,13 @@ class _PassRecord {
     if (u < 0 || u > OfflinePassLimits.usage.inMilliseconds) return null;
     if (n < 0 || n > OfflinePassLimits.coldStarts) return null;
     return _PassRecord(
-        uid: uid, sid: sid, anchorMs: a, highestMs: h, usedMs: u, starts: n);
+        uid: uid,
+        sid: sid,
+        anchorMs: a,
+        highestMs: h,
+        usedMs: u,
+        starts: n,
+        revocation: r as int?);
   }
 }
 
@@ -624,10 +723,12 @@ class OfflineSessionLease {
     DateTime Function()? wallClock,
     OfflineMonotonicClock Function()? startMonotonic,
     OfflineChargeJournal? chargeJournal,
+    OfflinePassRevocationMarker? revocationMarker,
   })  : _store = store,
         _wallClock = wallClock ?? DateTime.now,
         _startMonotonic = startMonotonic ?? _StopwatchClock.new,
-        _journal = chargeJournal;
+        _journal = chargeJournal,
+        _marker = revocationMarker;
 
   final OfflinePassStore _store;
 
@@ -636,6 +737,10 @@ class OfflineSessionLease {
   /// the larger of its values and the record's is what counts. Null on iOS,
   /// whose Keychain writes are synchronous.
   final OfflineChargeJournal? _journal;
+
+  /// OFF-2b-3 correction A: the durable revocation counter (every platform in
+  /// the app; null only in tests of the pre-marker behaviour).
+  final OfflinePassRevocationMarker? _marker;
   final DateTime Function() _wallClock;
   final OfflineMonotonicClock Function() _startMonotonic;
 
@@ -644,6 +749,71 @@ class OfflineSessionLease {
 
   /// Set when a required delete failed: no offline use in this process.
   bool _blocked = false;
+
+  /// True while no offline use is allowed in this process: after a failed
+  /// delete or any revocation, until an authoritative issue succeeds.
+  bool get isBlocked => _blocked;
+
+  /// Bumped synchronously by every [revokeNow]. An [issue] that began under
+  /// an older generation never leaves a usable pass.
+  int _generation = 0;
+
+  /// Highest revocation number this process has seen or written.
+  int _knownRevocation = 0;
+
+  /// Marker reads and writes, in order, apart from the secure-storage queue.
+  Future<void> _markerTail = Future.value();
+
+  Future<T> _markerSerial<T>(Future<T> Function() body) {
+    final run = _markerTail.then((_) => body());
+    _markerTail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// OFF-2b-3 correction A: revokes every existing pass NOW, without waiting
+  /// for the secure-storage queue. At once (synchronously): this process
+  /// refuses offline use and ends any running offline pass, and every issue
+  /// already started becomes stale. Then a higher revocation number is
+  /// written and flushed to the marker; true only when it was read back.
+  /// False (fail closed: the in-memory block stays) without a marker or on
+  /// any marker failure — the caller must then wait for [invalidate].
+  Future<bool> revokeNow() {
+    _generation++;
+    _blocked = true;
+    _endActive(OfflinePassDenial.invalidated);
+    final marker = _marker;
+    if (marker == null) return Future.value(false);
+    return _markerSerial(() async {
+      try {
+        final current = await marker.read() ?? 0;
+        final next =
+            (current > _knownRevocation ? current : _knownRevocation) + 1;
+        await marker.write(next);
+        if (await marker.read() != next) return false;
+        _knownRevocation = next;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    });
+  }
+
+  /// The current revocation number, creating (and flushing) the marker at 0
+  /// when there is none yet; null on any failure.
+  Future<int?> _currentRevocation(OfflinePassRevocationMarker marker) =>
+      _markerSerial(() async {
+        try {
+          final stored = await marker.read();
+          if (stored == null) {
+            await marker.write(0);
+            return await marker.read() == 0 ? 0 : null;
+          }
+          if (stored > _knownRevocation) _knownRevocation = stored;
+          return stored;
+        } catch (_) {
+          return null;
+        }
+      });
 
   int get _nowMs => _wallClock().toUtc().millisecondsSinceEpoch;
   static final _tolMs = OfflinePassLimits.clockTolerance.inMilliseconds;
@@ -661,42 +831,58 @@ class OfflineSessionLease {
   /// calls this). A fresh record: new anchor, no use, no starts. False, with
   /// no pass left, when it cannot be stored reliably or the phone clock does
   /// not agree with the server time.
-  Future<bool> issue(AuthoritativeConfirmation confirmation) =>
-      _serial(() async {
-        _endActive(OfflinePassDenial.replaced);
-        final now = _nowMs;
-        final anchor = confirmation.issuedAt.millisecondsSinceEpoch;
-        if (anchor > now + _tolMs || now >= anchor + _windowMs) {
+  Future<bool> issue(AuthoritativeConfirmation confirmation) {
+    // Taken now: a revocation after this call makes this issue stale.
+    final generation = _generation;
+    return _serial(() async {
+      _endActive(OfflinePassDenial.replaced);
+      final now = _nowMs;
+      final anchor = confirmation.issuedAt.millisecondsSinceEpoch;
+      if (anchor > now + _tolMs || now >= anchor + _windowMs) {
+        await _delete();
+        return false;
+      }
+      // The marker exists (durably) before any record names its number.
+      int? revocation;
+      final marker = _marker;
+      if (marker != null) {
+        revocation = await _currentRevocation(marker);
+        if (revocation == null || generation != _generation) {
           await _delete();
           return false;
         }
-        final record = _PassRecord(
-          uid: confirmation.userId,
-          sid: confirmation.sessionId,
-          anchorMs: anchor,
-          highestMs: now > anchor ? now : anchor,
-          usedMs: 0,
-          starts: 0,
-        );
-        // The only place a journal is ever started: an authoritative
-        // confirmation. Journal first, so a record never exists without it.
-        final journal = _journal;
-        if (journal != null) {
-          try {
-            await journal.create(
-                _journalLine(_journalBind(record), 0, 0, 0, record.highestMs));
-          } catch (_) {
-            await _delete();
-            return false;
-          }
+      }
+      final record = _PassRecord(
+        uid: confirmation.userId,
+        sid: confirmation.sessionId,
+        anchorMs: anchor,
+        highestMs: now > anchor ? now : anchor,
+        usedMs: 0,
+        starts: 0,
+        revocation: revocation,
+      );
+      // The only place a journal is ever started: an authoritative
+      // confirmation. Journal first, so a record never exists without it.
+      final journal = _journal;
+      if (journal != null) {
+        try {
+          await journal.create(
+              _journalLine(_journalBind(record), 0, 0, 0, record.highestMs));
+        } catch (_) {
+          await _delete();
+          return false;
         }
-        if (await _persist(record)) {
-          _blocked = false;
-          return true;
-        }
-        await _delete();
-        return false;
-      });
+      }
+      // A revocation that began while this was written wins: the record
+      // goes (and its number is already older than the marker's).
+      if (await _persist(record) && generation == _generation) {
+        _blocked = false;
+        return true;
+      }
+      await _delete();
+      return false;
+    });
+  }
 
   /// Decides whether this cold start may open offline. A grant has already
   /// stored one more start and a use reservation.
@@ -759,6 +945,20 @@ class OfflineSessionLease {
         }
         if (stored.uid != binding.$1 || stored.sid != binding.$2) {
           return _deny(OfflinePassDenial.sessionMismatch, delete: true);
+        }
+
+        // OFF-2b-3: only a pass issued under the current revocation number.
+        final marker = _marker;
+        if (marker != null) {
+          final int? current;
+          try {
+            current = await _markerSerial(marker.read);
+          } catch (_) {
+            return _deny(OfflinePassDenial.storageFailure, delete: true);
+          }
+          if (current == null || stored.revocation != current) {
+            return _deny(OfflinePassDenial.revoked, delete: true);
+          }
         }
 
         // Android: the journal is the durable truth; the record may have lost

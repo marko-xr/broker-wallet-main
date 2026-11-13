@@ -11,9 +11,12 @@ import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/account_deletion_service.dart';
 import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
+import 'package:broker_wallet/src/services/offline_session_lease.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport;
 import 'package:flutter_test/flutter_test.dart';
@@ -200,7 +203,10 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     AccountDeletionStateStore.resetForTesting();
+    // OFF-2b-3: the cleaner revokes the offline pass of the deleted account.
+    FlutterSecureStorage.setMockInitialValues({});
   });
+  tearDown(() => OfflinePassLifecycle.debugShared = null);
 
   group('Account deletion reconciliation quarantine', () {
     test(
@@ -435,6 +441,10 @@ void main() {
   testWidgets(
       '3. Home is never built while a marked session is reconciled, and the '
       'app lands on the logged-out entry', (tester) async {
+    // OFF-2b-3: a lifecycle built inside this test's fake-async zone (the
+    // process-wide one would run its work, and its bound timer, elsewhere).
+    OfflinePassLifecycle.debugShared = OfflinePassLifecycle(
+        OfflineSessionLease(store: SecureOfflinePassStore()));
     final h = _Harness(restored: _user(_alice), marker: _alice);
     h.repository.pendingProbe = Completer<AccountExistence>();
     h.start();

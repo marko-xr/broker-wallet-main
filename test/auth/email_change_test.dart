@@ -6,8 +6,11 @@ import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/supabase_auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
+import 'package:broker_wallet/src/services/offline_session_lease.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/email_change_viewmodel.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -204,7 +207,16 @@ Future<void> _settle() =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // OFF-2b-3: one offline pass lifecycle per test, over the in-memory
+    // secure storage platform. The process-wide one would chain its work
+    // through futures born in an earlier test's (finished) fake-async zone.
+    FlutterSecureStorage.setMockInitialValues({});
+    OfflinePassLifecycle.debugShared = OfflinePassLifecycle(
+        OfflineSessionLease(store: SecureOfflinePassStore()));
+  });
+  tearDown(() => OfflinePassLifecycle.debugShared = null);
 
   group('Supabase email change repository', () {
     test('targets only the live account and retains the confirmed email',

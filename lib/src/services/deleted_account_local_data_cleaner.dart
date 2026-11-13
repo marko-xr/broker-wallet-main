@@ -6,6 +6,7 @@ import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport, OfflineMediaService;
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
@@ -128,6 +129,16 @@ class DeletedAccountLocalDataCleaner {
   }) async {
     if (deletedUid.isEmpty) return const OfferMediaCleanupReport.empty();
 
+    // OFF-2b-3: a deleted account never keeps offline access — only while it
+    // was the signed-in account. Otherwise any pass belongs to the account
+    // signed in since, whose sign-in already revoked the deleted one's.
+    if (wasSignedInAccount) {
+      await _step(
+        () => OfflinePassLifecycle.shared.invalidate(
+            OfflinePassInvalidation.accountDeletion,
+            uid: deletedUid),
+      );
+    }
     await _step(
       () =>
           OfflineAuthService.instance.clearProfileSnapshotIfOwnedBy(deletedUid),

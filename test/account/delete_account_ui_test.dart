@@ -10,12 +10,15 @@ import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/account_deletion_service.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
+import 'package:broker_wallet/src/services/offline_session_lease.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/delete_account_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'
     show OfferMediaCleanupReport;
 import 'package:flutter_test/flutter_test.dart';
@@ -152,6 +155,13 @@ FilledButton _deleteButton(WidgetTester tester) => tester.widget<FilledButton>(
       ),
     );
 
+/// OFF-2b-3: a fresh offline pass lifecycle, built inside the running test.
+/// The lease chains its work through futures, and a future keeps the zone it
+/// was born in: one made in setUp (real zone) or in an earlier test's
+/// fake-async zone would never run inside this test's fake-async zone.
+void _freshOfflinePass() => OfflinePassLifecycle.debugShared =
+    OfflinePassLifecycle(OfflineSessionLease(store: SecureOfflinePassStore()));
+
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   final toasts = <String>[];
@@ -188,10 +198,14 @@ void main() {
   setUp(() {
     toasts.clear();
     SharedPreferences.setMockInitialValues({});
+    // OFF-2b-3: the offline pass store lives in flutter_secure_storage.
+    FlutterSecureStorage.setMockInitialValues({});
   });
+  tearDown(() => OfflinePassLifecycle.debugShared = null);
 
   testWidgets('the first step explains what is deleted and deletes nothing',
       (tester) async {
+    _freshOfflinePass();
     final gateway = _Gateway();
     final vm = DeleteAccountViewModel(gateway: gateway, session: _Session());
     addTearDown(vm.dispose);
@@ -224,6 +238,7 @@ void main() {
   testWidgets(
       'the final button stays disabled until a password is entered and the '
       'deletion is acknowledged', (tester) async {
+    _freshOfflinePass();
     final gateway = _Gateway();
     final vm = DeleteAccountViewModel(gateway: gateway, session: _Session());
     addTearDown(vm.dispose);
@@ -247,6 +262,7 @@ void main() {
 
   testWidgets('a wrong password shows a localized message and clears the field',
       (tester) async {
+    _freshOfflinePass();
     final gateway = _Gateway()
       ..failWith = const AccountDeletionFailure(
         AccountDeletionFailureCode.reauthenticationFailed,
@@ -271,6 +287,7 @@ void main() {
 
   testWidgets('while deleting, nothing can be changed, repeated or dismissed',
       (tester) async {
+    _freshOfflinePass();
     final gateway = _Gateway()..hold = Completer<void>();
     final vm = DeleteAccountViewModel(gateway: gateway, session: _Session());
     addTearDown(vm.dispose);
@@ -309,6 +326,7 @@ void main() {
   testWidgets(
       'a server failure shows a fixed localized message, never raw text',
       (tester) async {
+    _freshOfflinePass();
     final gateway = _Gateway()
       ..failWith = const AccountDeletionFailure(
         AccountDeletionFailureCode.mediaCleanupFailed,
@@ -337,6 +355,7 @@ void main() {
     testWidgets(
         'renders both steps in ${variant.locale.languageCode} / '
         '${variant.theme.name} without overflow', (tester) async {
+      _freshOfflinePass();
       final vm =
           DeleteAccountViewModel(gateway: _Gateway(), session: _Session());
       addTearDown(vm.dispose);
@@ -372,6 +391,7 @@ void main() {
   testWidgets(
       'a completed deletion ends on the logged-out entry and never shows Home',
       (tester) async {
+    _freshOfflinePass();
     final repo = _AuthRepository();
     final authVM = AuthViewModel(
       authRepository: repo,

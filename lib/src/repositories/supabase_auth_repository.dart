@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/services/app_session_check_outcome.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,9 +35,24 @@ class SupabaseAuthRepository
         _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+
+  /// OFF-2b-3: the process's one offline pass lifecycle (and lease).
+  final OfflinePassLifecycle _offlinePass = OfflinePassLifecycle.shared;
+
   late final AppSessionCoordinator _appSession = AppSessionCoordinator(
     _client,
     onSuperseded: () => unawaited(_endSupersededSession()),
+    // Only an authoritative check confirmation issues the pass (never the
+    // sign-in claim), for that exact session while it is still current.
+    onConfirmed: (session, startedEpoch) => unawaited(_offlinePass
+        .confirmed(session,
+            startedEpoch: startedEpoch,
+            currentSession: () => _client.auth.currentSession)
+        .then<void>((_) {}, onError: (Object _) {})),
+    confirmationEpoch: () => _offlinePass.epoch,
+    onCredentialsRejected: () => _offlinePass
+        .invalidate(OfflinePassInvalidation.credentialsRejected)
+        .then<void>((_) {}),
     onResumeWhileUnverified: () {
       unawaited(retryAppSessionValidation().then<void>(
         (_) {}, onError: (Object _) {},
@@ -282,6 +298,27 @@ class SupabaseAuthRepository
     // first let `AuthViewModel` reach `authenticated`, and the router reach
     // Home, a microtask before anything could say the session was a recovery.
     PasswordRecoverySession? started;
+    // OFF-2b-3: these end offline access before anything else happens. The
+    // lease runs its operations in order, so a later issue cannot overtake.
+    final endsOfflineAccess = switch (state.event) {
+      AuthChangeEvent.passwordRecovery =>
+        OfflinePassInvalidation.passwordRecovery,
+      AuthChangeEvent.signedIn => OfflinePassInvalidation.newSignIn,
+      AuthChangeEvent.signedOut => OfflinePassInvalidation.signedOut,
+      _ => state.session == null ? OfflinePassInvalidation.signedOut : null,
+    };
+    if (endsOfflineAccess != null) {
+      // A recovery session is latched (no pass for it in this process).
+      final recovering =
+          endsOfflineAccess == OfflinePassInvalidation.passwordRecovery
+              ? state.session
+              : null;
+      unawaited(_offlinePass
+          .invalidate(endsOfflineAccess,
+              uid: recovering?.user.id,
+              sid: AppSessionCoordinator.sessionId(recovering))
+          .then<void>((_) {}, onError: (Object _) {}));
+    }
     switch (state.event) {
       case AuthChangeEvent.passwordRecovery:
         // Supabase emits this only after it has exchanged a `type=recovery`
@@ -349,6 +386,13 @@ class SupabaseAuthRepository
       }
       return false;
     } catch (error) {
+      // OFF-2b-3: a token the server refused (401/403) ends offline access; a
+      // later network failure can never turn it back into a pass.
+      if (classifySessionCheckError(error) ==
+          AppSessionCheckOutcome.credentialsRejected) {
+        await _offlinePass
+            .invalidate(OfflinePassInvalidation.credentialsRejected);
+      }
       final displaced = error.toString().contains('session_superseded');
       if (displaced) _appSession.supersede();
       if (!claim && !displaced) {
@@ -395,14 +439,25 @@ class SupabaseAuthRepository
     if (_endingSuperseded) return;
     _endingSuperseded = true;
     _supersededController.add(AppSessionSupersededPhase.accessRevoked);
+    // OFF-2b-3: no offline access for a displaced session, before sign-out.
+    // Bounded once the revocation is durable; the local sign-out (the safer
+    // step) follows either way.
+    final displaced = _client.auth.currentSession;
+    await _offlinePass.invalidate(OfflinePassInvalidation.superseded,
+        uid: displaced?.user.id,
+        sid: AppSessionCoordinator.sessionId(displaced));
     try {
       await _client.auth.signOut(scope: SignOutScope.local);
     } catch (error) {
-      _identityController.addError(error);
+      if (!_identityController.isClosed) _identityController.addError(error);
     } finally {
       _appSession.clear();
       _publishIdentity(null);
-      _supersededController.add(AppSessionSupersededPhase.localSignOutCompleted);
+      // The awaits above leave room for a test-only dispose().
+      if (!_supersededController.isClosed) {
+        _supersededController
+            .add(AppSessionSupersededPhase.localSignOutCompleted);
+      }
       _endingSuperseded = false;
     }
   }
@@ -786,6 +841,14 @@ class SupabaseAuthRepository
     if (kDebugMode) {
       print('🚀 Supabase logout started');
     }
+    // OFF-2b-3: offline access ends first, even with no network. Nothing
+    // below runs before the revocation is durable (or, failing that, the
+    // pass is deleted or its delete has failed).
+    final ending = _client.auth.currentSession;
+    final revocation = await _offlinePass.invalidate(
+        OfflinePassInvalidation.signOut,
+        uid: ending?.user.id,
+        sid: AppSessionCoordinator.sessionId(ending));
 
     try {
       Object? releaseFailure;
@@ -823,6 +886,14 @@ class SupabaseAuthRepository
     }
 
     await OfflineAuthService.instance.clearAuthCache();
+
+    if (!revocation.safe) {
+      // The session is ended locally, but an old offline pass may remain.
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Signed out locally, but offline access could not be revoked.',
+      );
+    }
 
     if (kDebugMode) {
       print('✅ Supabase logout completed');

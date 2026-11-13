@@ -16,6 +16,8 @@ import 'package:broker_wallet/src/repositories/supabase_auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/account_deletion_state_store.dart';
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
+import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
+import 'package:broker_wallet/src/services/offline_session_lease.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/auth_wrapper.dart';
@@ -23,6 +25,7 @@ import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/session_supersede
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -200,6 +203,7 @@ class _App {
     if (session != null) {
       await client.auth.setInitialSession(jsonEncode(session));
     }
+    _freshOfflinePass();
     repository =
         SupabaseAuthRepository(userRepository: _Profiles(), client: client);
     auth =
@@ -326,6 +330,13 @@ void _expectRetry(WidgetTester tester, {required bool waiting}) {
   }
 }
 
+/// OFF-2b-3: a fresh offline pass lifecycle, built inside the running test.
+/// The lease chains its work through futures, and a future keeps the zone it
+/// was born in: one made in setUp (real zone) or in an earlier test's
+/// fake-async zone would never run inside this test's fake-async zone.
+void _freshOfflinePass() => OfflinePassLifecycle.debugShared =
+    OfflinePassLifecycle(OfflineSessionLease(store: SecureOfflinePassStore()));
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -335,7 +346,10 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({_snapshotKey: _snapshot});
+    // OFF-2b-3: the offline pass store lives in flutter_secure_storage.
+    FlutterSecureStorage.setMockInitialValues({});
   });
+  tearDown(() => OfflinePassLifecycle.debugShared = null);
 
   Future<bool> snapshotKept() async =>
       (await SharedPreferences.getInstance()).getString(_snapshotKey) ==

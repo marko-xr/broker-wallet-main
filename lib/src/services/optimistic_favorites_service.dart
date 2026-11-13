@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../Views/Screens/home/favorites/favorites_service.dart';
+import 'app_access_policy.dart';
 
 /// Optimistic favorites manager with offline support and error rollback
 class OptimisticFavoritesService extends ChangeNotifier {
@@ -128,6 +129,9 @@ class OptimisticFavoritesService extends ChangeNotifier {
 
   /// Optimistically toggle favorite with rollback on error
   Future<bool> toggleFavorite(String itemId, String type) async {
+    // OFF-2b-2: offline read-only refuses before any optimistic change, and
+    // nothing is queued for later (no offline write queue).
+    AppAccessPolicy.ensureOnline('favorite change');
     final key = _getKey(itemId, type);
     final currentState = _optimisticState[key] ?? false;
     final newState = !currentState;
@@ -218,6 +222,8 @@ class OptimisticFavoritesService extends ChangeNotifier {
 
   /// Sync offline queue when network returns
   Future<void> syncOfflineQueue() async {
+    // OFF-2b-2: connectivity alone is not authority; never replay offline.
+    if (!AppAccessPolicy.isOnline) return;
     if (!_isOnline || _offlineQueue.isEmpty) return;
 
     final queueCopy = Set<String>.from(_offlineQueue);

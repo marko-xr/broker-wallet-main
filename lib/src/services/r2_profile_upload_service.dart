@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'app_session_coordinator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,7 +47,7 @@ class R2ProfileUploadService {
   R2ProfileUploadService({
     http.Client? httpClient,
     SupabaseClient? supabaseClient,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = AppAccessPolicy.guard(httpClient ?? http.Client()),
         _supabase = supabaseClient ?? Supabase.instance.client;
 
   static const int maxImageBytes = 10 * 1024 * 1024;

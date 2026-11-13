@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_diagnostics.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_cloud_repository.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_download_service.dart';
@@ -339,6 +340,9 @@ class DefaultToolkitCloudLibrary implements ToolkitCloudLibrary {
   }
 
   Future<void> _syncDue() async {
+    // OFF-2b-2: no upload, rename or delete is attempted offline read-only;
+    // the journal keeps every entry as it is (no attempt is spent).
+    if (!AppAccessPolicy.isOnline) return;
     await _ensureLoaded();
     if (_disposed) return;
     if (_syncing) {

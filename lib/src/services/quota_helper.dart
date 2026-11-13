@@ -1,3 +1,4 @@
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,10 @@ class QuotaHelper {
     String?
         toolName, // Optional: for toolkit features like "Scanner", "Signature", etc.
   }) async {
+    // OFF-2b-2: offline read-only the legacy quota is not read (no Firestore
+    // request); the answer is the one it already gives when it cannot read:
+    // allowed, so the local tools keep working.
+    if (!AppAccessPolicy.isOnline) return true;
     const freeLimit = 3; // FREE users can add 3 items per section
 
     try {

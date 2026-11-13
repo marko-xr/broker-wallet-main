@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/services/share/share_preparer.dart';
 
@@ -39,7 +40,8 @@ class ShareMediaFetcher {
     this.maxVideoBytes = defaultMaxVideoBytes,
   })  : _localPath = localPath,
         _cachedLink = cachedLink,
-        _clientFactory = clientFactory ?? http.Client.new;
+        _clientFactory =
+            (() => AppAccessPolicy.guard((clientFactory ?? http.Client.new)()));
 
   /// The most a photo or a video may be: the app's own upload limits
   /// (10 MB and 100 MB) with room for files an older version accepted.

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/widgets.dart';
 
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
 
 /// Records that a signed document was saved. One call is one signed document
@@ -45,6 +46,9 @@ class LegacyFirestoreSignatureUsageGate implements SignatureUsageGate {
 
   @override
   Future<void> recordSignedDocument(String userId) async {
+    // OFF-2b-2: no legacy counter write is ever started (or queued by the
+    // Firestore SDK) offline read-only; the tool itself works as before.
+    if (!AppAccessPolicy.isOnline) return;
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).set({
         'counts': {section: FieldValue.increment(1)},

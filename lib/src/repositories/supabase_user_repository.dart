@@ -1,6 +1,7 @@
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Resolves the short-lived signed read URL for a canonical profile media id.
@@ -116,11 +117,13 @@ class SupabaseUserRepository
 
   @override
   Stream<UserModel?> getUserStream(String uid) {
-    return _client
+    // OFF-2b-2: decided when listened to — offline, no Realtime subscription
+    // is opened and no event is applied from the switch on.
+    return AppAccessPolicy.onlineOnly(() => _client
         .from(_table)
         .stream(primaryKey: const ['id'])
         .eq('id', uid)
-        .map((rows) => rows.isEmpty ? null : _fromProfile(rows.first));
+        .map((rows) => rows.isEmpty ? null : _fromProfile(rows.first)));
   }
 
   @override

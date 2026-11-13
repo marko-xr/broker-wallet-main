@@ -52,8 +52,10 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:broker_wallet/src/services/image_signature_detector.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
@@ -126,7 +128,8 @@ class PrivateMediaCache {
         _debugRepository = debugRepository {
     _service = _PrivateMediaFileService(
       currentScope: currentScope,
-      transport: transport ?? HttpFileService(),
+      transport: transport ??
+          HttpFileService(httpClient: AppAccessPolicy.guard(http.Client())),
       timeout: timeout,
     );
   }

@@ -1,5 +1,6 @@
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:broker_wallet/src/services/list_session_check.dart';
@@ -513,15 +514,18 @@ class FavoriteService {
       return Stream.value([]);
     }
 
-    return sb.Supabase.instance.client
+    // OFF-2b-2: decided when listened to — offline, no Realtime subscription
+    // is opened and no event can overwrite the held Favorites.
+    final owner = _activeUserId!;
+    return AppAccessPolicy.onlineOnly(() => sb.Supabase.instance.client
         .from(_supabaseTable(type))
         .stream(primaryKey: const ['owner_id', 'target_id'])
-        .eq('owner_id', _activeUserId!)
+        .eq('owner_id', owner)
         .order('added_at', ascending: false)
         .map((rows) => rows
             .map((row) => row['target_id']?.toString() ?? '')
             .where((id) => id.isNotEmpty)
-            .toList(growable: false));
+            .toList(growable: false)));
   }
 
   /// Which records the signed-in account has as favorites, with the time each

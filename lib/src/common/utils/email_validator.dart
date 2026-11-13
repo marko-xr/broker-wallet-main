@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 
 class EmailValidator {
   // Basic regex validation
@@ -44,7 +44,7 @@ class EmailValidator {
   static Future<bool> verifyEmailExists(String email) async {
     try {
       // Using a free email validation API
-      final response = await http.get(
+      final response = await AppAccessPolicy.shared.get(
         Uri.parse('https://api.eva.pingutil.com/email?email=$email'),
       );
 

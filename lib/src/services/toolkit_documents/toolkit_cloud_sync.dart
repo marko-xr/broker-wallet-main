@@ -25,6 +25,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_library.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_diagnostics.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_models.dart';
@@ -324,6 +325,8 @@ class ToolkitCloudSync {
     // passed run without the user doing anything, and asks the account again.
     _timer = Timer.periodic(_syncInterval, (_) {
       if (_disposed) return;
+      // OFF-2b-2: nothing is asked of the account offline read-only.
+      if (!AppAccessPolicy.isOnline) return;
       unawaited(_library.syncDue());
       requestSync();
     });

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'app_session_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -170,7 +172,7 @@ class WorkerAccountDeletionGateway implements AccountDeletionGateway {
   WorkerAccountDeletionGateway({
     http.Client? httpClient,
     AccountDeletionCredentials? Function()? readCredentials,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = AppAccessPolicy.guard(httpClient ?? http.Client()),
         _readCredentials = readCredentials ?? _liveSupabaseCredentials;
 
   /// Deletion removes media and then the account, so it is allowed longer than

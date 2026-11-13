@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:broker_wallet/src/config/r2_config.dart';
@@ -35,7 +37,7 @@ class R2ToolkitDocumentService implements ToolkitDocumentTransport {
     SupabaseClient? supabaseClient,
     String? workerUrl,
     String? stagingKey,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = AppAccessPolicy.guard(httpClient ?? http.Client()),
         _customSupabase = supabaseClient,
         _workerUrl = workerUrl,
         _stagingKey = stagingKey;

@@ -6,7 +6,7 @@ import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/services/share/share_preparer.dart'
     show ShareAttachmentKind;
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
@@ -257,8 +257,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   Future<File?> _downloadPdfToCache(String url) async {
     try {
-      final res =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
+      final res = await AppAccessPolicy.shared
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 60));
       if (res.statusCode != 200) return null;
 
       final dir = await getTemporaryDirectory();

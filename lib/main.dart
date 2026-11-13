@@ -1,7 +1,9 @@
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/home/search/widgets/image_cache_manager.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/count_cache_service.dart';
+import 'package:http/http.dart' as http;
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/services/offline_data_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
@@ -231,7 +233,13 @@ void _initializeAnalyticsServiceAsync() {
   });
 }
 
-void main() async {
+// OFF-2b-2: the whole app (binding, services, runApp) runs in one zone whose
+// http.Client() and top-level http calls go through the access policy. This
+// is a second layer: the Supabase client and every HTTP-owning service are
+// also guarded explicitly.
+void main() => http.runWithClient(_main, AppAccessPolicy.newZoneClient);
+
+Future<void> _main() async {
   // Ensure all services are initialized before running the app
   await initializeAppServices();
 

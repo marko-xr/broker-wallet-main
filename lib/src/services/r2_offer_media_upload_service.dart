@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'app_session_coordinator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -150,7 +152,7 @@ class R2OfferMediaUploadService implements OfferMediaTransport {
     http.Client? httpClient,
     SupabaseClient? supabaseClient,
     this.parent = MediaParent.offer,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = AppAccessPolicy.guard(httpClient ?? http.Client()),
         _supabase = supabaseClient ?? Supabase.instance.client;
 
   /// Which records' media this instance reaches.

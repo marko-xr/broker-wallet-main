@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import 'app_access_policy.dart';
+import 'realtime_access_guard.dart';
 
 import 'account_deletion_state_store.dart';
 import 'auth_callback_coordinator.dart';
@@ -19,6 +22,9 @@ abstract final class SupabaseBootstrapService {
 
   static bool get isInitialized => _initialized;
 
+  /// OFF-2b-2: the Realtime teardown run on entering offline read-only.
+  static RealtimeOfflineTeardown? realtimeTeardown;
+
   static SupabaseClient? get client =>
       _initialized ? Supabase.instance.client : null;
 
@@ -27,9 +33,19 @@ abstract final class SupabaseBootstrapService {
     if (!SupabaseConfig.isConfigured) return false;
 
     try {
+      // OFF-2b-2: every Supabase REST, RPC, auth, storage and functions request
+      // goes through the access policy (explicitly, not only through the zone
+      // in main()), and so does every Realtime connection (its transport).
+      AppAccessPolicy.configureSupabaseOrigin(Uri.parse(SupabaseConfig.url));
       await Supabase.initialize(
         url: SupabaseConfig.url,
         publishableKey: SupabaseConfig.publishableKey,
+        httpClient: AppAccessPolicy.guard(http.Client()),
+        // Realtime is a WebSocket the HTTP guard cannot see: its transport is
+        // the SDK default behind the policy (no connection while offline).
+        realtimeClientOptions: RealtimeClientOptions(
+          transport: guardRealtimeTransport(sdkDefaultRealtimeTransport()),
+        ),
         authOptions: FlutterAuthClientOptions(
           localStorage: SupabaseSecureStorage(),
           // Automatic URI detection stays ON: Supabase remains the only thing
@@ -42,6 +58,11 @@ abstract final class SupabaseBootstrapService {
         ),
       ).timeout(const Duration(seconds: 10));
       _initialized = true;
+      // On every switch to offline read-only: close the socket, then drop the
+      // channels; the outcome is recorded (OFF-2b-4 reads it).
+      realtimeTeardown?.detach();
+      realtimeTeardown =
+          RealtimeOfflineTeardown.forClient(Supabase.instance.client)..attach();
       // Must complete before the auth pipeline publishes its first identity.
       // A recovery session restored from storage announces itself as an
       // ordinary `initialSession`, so this is the only thing that can tell the

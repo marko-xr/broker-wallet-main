@@ -1,5 +1,6 @@
 import 'package:broker_wallet/src/data/models/notification_model.dart';
 import 'package:broker_wallet/src/repositories/notification_repository.dart';
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// RLS-backed in-app notifications. Push delivery/device registration remains
@@ -45,14 +46,16 @@ class SupabaseNotificationRepository implements NotificationRepository {
     String userId, {
     int limit = 20,
   }) {
-    _requireUser(userId);
-    return _client
+    // OFF-2b-2: decided when listened to — offline, no Realtime subscription
+    // is opened and no event is applied from the switch on.
+    if (AppAccessPolicy.isOnline) _requireUser(userId);
+    return AppAccessPolicy.onlineOnly(() => _client
         .from('notifications')
         .stream(primaryKey: const ['id'])
         .eq('recipient_id', userId)
         .order('created_at', ascending: false)
         .limit(limit)
-        .map((rows) => rows.map(_fromRow).toList(growable: false));
+        .map((rows) => rows.map(_fromRow).toList(growable: false)));
   }
 
   @override

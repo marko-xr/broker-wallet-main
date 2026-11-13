@@ -27,6 +27,8 @@ import 'package:broker_wallet/src/services/list_session_check.dart';
 import 'package:broker_wallet/src/services/quotations_local_cache.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:uuid/uuid.dart';
 
 class QuotationService {
@@ -47,7 +49,7 @@ class QuotationService {
           remote ?? SupabaseQuotationService(),
           mediaTransport ?? R2QuotationMediaService(),
           pdfCache ?? QuotationPdfCache(),
-          httpClient ?? http.Client(),
+          AppAccessPolicy.guard(httpClient ?? http.Client()),
           uuid ?? const Uuid(),
           localCache,
           currentUserId,

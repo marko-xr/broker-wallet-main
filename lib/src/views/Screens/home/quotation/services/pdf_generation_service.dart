@@ -3,7 +3,7 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.d
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:http/http.dart' as http;
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -980,7 +980,7 @@ class PdfGenerationService {
 
       // Handle regular HTTP/HTTPS URLs (a short-lived signed link for a logo
       // bound on the server, used immediately and never stored)
-      final response = await http.get(Uri.parse(url));
+      final response = await AppAccessPolicy.shared.get(Uri.parse(url));
       if (response.statusCode == 200) {
         return pw.MemoryImage(response.bodyBytes);
       } else {

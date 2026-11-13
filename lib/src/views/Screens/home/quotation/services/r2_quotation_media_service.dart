@@ -20,6 +20,8 @@ import 'package:broker_wallet/src/config/r2_config.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The two private-media slots of a Quotation.
@@ -227,7 +229,7 @@ class R2QuotationMediaService implements QuotationMediaTransport {
   R2QuotationMediaService({
     http.Client? httpClient,
     SupabaseClient? supabaseClient,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = AppAccessPolicy.guard(httpClient ?? http.Client()),
         _customSupabase = supabaseClient;
 
   final http.Client _http;

@@ -16503,3 +16503,132 @@ restored session; check Retry offline, recovery and session displacement,
 Arabic/English, both themes, and reduced motion. Verify an older supported
 Android version and cold launch on iOS after a fresh install. Record the
 device outcome before marking the checkpoint VERIFIED_RUNTIME.
+
+### Owner recording, 2026-11-14: "the first part takes too long"
+
+Measured from the owner's screen recording (30 fps, two cold launches on the
+Samsung, build mode not stated) by frame differencing, so each figure is
+accurate to about one frame:
+
+| Phase | Launch 1 | Launch 2 |
+| --- | --- | --- |
+| Icon tap to launch window | ~0.2 s | ~0.15 s |
+| Static outline (native image until the first Flutter motion) | ~1.45 s | ~1.5 s |
+| Flutter fill, roof to name | ~1.3 s | ~1.5 s |
+| UI freezes inside the fill (frames with no change) | ~0.25 s in 3 runs at +0.55 s to +0.95 s | ~0.3 s in 3 runs at +0.23 s to +0.63 s |
+| Logo at rest, waiting for the destination | ~0.3 s | ~0.1 s |
+| Iris to Home | ~0.2 s | ~0.2 s |
+
+Reading: the "first part" the owner sees is the native outline, which is
+static by design until Flutter's first frame. Nothing in the splash code runs
+during it; it is engine start plus everything `main()` awaits before `runApp`
+(the P1 tracker measured that chain at a cold median of 623 ms in a profile
+build at `f686b80`, §7I, so 1.5 s points to a debug build or to growth since
+then, NOT MEASURED). On top of it, the first reveal used the ease-in `_easeDraw`
+curve and was only 3% open after 50 ms and 17% after 100 ms, so the first
+tenth of a second of Flutter looked like more of the same pause. The freezes
+start at a different point of the fill in each launch (strap stage in one,
+roof stage in the other) and about 0.3 s to 0.6 s after the first frame, which
+fits UI-thread work triggered by an asynchronous startup event (most likely the
+session check answer, the redirect to `/home` and Home's first build under the
+overlay) rather than a fixed stage of the painter or shader compilation
+(Flutter 3.47, Impeller). Cause NOT PROVEN; it needs a profile-mode timeline.
+
+Change: `brandSplashRoofReveal` (the roof and chimney, the first thing that
+moves) now uses the decelerating `_easeEnter` curve: 19% open at 50 ms, 54% at
+100 ms, unchanged end at 460 ms. No other timing, the native assets, startup
+ordering, AuthWrapper or the router were touched. `test/app/brand_splash_test.dart`
+gains a unit test for this; the file's 5 tests pass, scoped `flutter analyze`
+is clean, `dart format` check is clean.
+
+#### Measured on the Samsung, 2026-11-15 (owner approved the trace)
+
+The installed app was a debug build: `dumpsys package` showed `DEBUGGABLE`
+and the on-phone `base.apk` was byte-for-byte the size of
+`build/app/outputs/flutter-apk/app-debug.apk`. A profile APK of this working
+tree (same debug certificate `6dcf85…9f61`, checked with apksigner) was
+installed in place with `adb install -r`; `firstInstallTime` and the data
+directory were kept. The phone now runs that PROFILE build.
+
+Plain cold starts of the profile build, `am start -W`, five samples:
+620, 629, 572, 585, 581 ms (median 585), in line with §7I's 623 ms.
+
+Two cold starts traced through the engine's own startup tracing (intent
+extras `trace-startup`, `endless-trace-buffer`, `enable-dart-profiling`,
+`profile-startup`; timeline read with `getVMTimeline`), times from
+`FlutterEngineMainEnter`, run 1 / run 2:
+
+| Stage | run 1 | run 2 |
+| --- | ---: | ---: |
+| Engine start to Dart `main` (`SetupDefaultFontManager` 147 ms in run 1 only) | 178 | 31 |
+| Framework initialization | 68 | 60 |
+| `main()` before `runApp`, total | 143 | 102 |
+| of which `SupabaseBootstrapService.initialize` | 105 | 43 |
+| of which `SharedPreferences.getInstance` | 7 | 38 |
+| of which the four upload / profile Hive boxes | 24 | 17 |
+| of which offline data, offline media, count cache | 6 | 2 |
+| `runApp` to first frame built | 11 | 11 |
+| First frame rasterized at | 413 | 208 |
+| Splash `stage-destination` after the first frame | +8 | +5 |
+| Splash `exit-start` after the first frame | +1511 | +1515 |
+| Splash `dismissed` after `exit-start` | +465 | +464 |
+
+UI thread during the whole splash: about 120 frames, longest UI-thread
+section 9.3 ms (the first BUILD and LAYOUT), longest gap between frames 49 ms
+(run 1) and 33 ms (run 2). Raster thread: one 47 ms (run 1) / 35 ms (run 2)
+frame when the app name is first drawn (`CreateGlyphAtlas`). The 0.3 s freeze
+in the owner's recording does not occur in the profile build; it was debug-mode
+JIT work. Home is already the router's destination a few milliseconds after
+the first frame, so nothing network-bound delays the reveal: after the first
+frame the opening is exactly the 1.5 s intro plus the 0.46 s iris.
+
+Reading: in a profile or release build the owner will see roughly 0.6 s of
+static outline (process and engine start, of which Dart code before `runApp`
+is 0.10 to 0.14 s), then a smooth 2 s opening. Reordering the pre-`runApp`
+chain could recover at most about 50 ms (overlapping the Supabase init with
+Hive and preferences) and is NOT justified by these numbers; the only large
+knobs left are design choices, the intro and iris lengths. The tracker entry
+is §7BE.
+
+Kept in code: `_mark` timeline instants in `main.dart` and `bw.splash.*`
+instants in the gate (dart:developer, no-ops in release, no identifiers), so
+the next profile trace needs no new instrumentation.
+
+#### Animated native outline, 2026-11-15 (owner: "the outline shows too long")
+
+The owner's goal is the outline phase at about a third of its length. In a
+profile build that phase is ~0.5 s of process and engine start that no app
+code shortens, so instead the phase now animates. On Android 12+ the launch
+icon is an animated vector: `drawable/splash_outline.xml` strokes the ten logo
+paths from `brand_logo_data.dart` with the painter's blueprint colour and
+width, in a 288 dp / 1152-unit canvas with the logo in an 812 px box offset
+170 px, the exact layout of `android12splash.png` (measured: identical
+565×487 px bounding box). `drawable/splash_outline_anim.xml` draws each path
+in with `trimPathEnd` over 510 ms, roof first, then the eaves, wallet, strap,
+button and the four panes. `values-v31` and `values-night-v31` LaunchTheme now
+point `windowSplashScreenAnimatedIcon` at it with
+`windowSplashScreenAnimationDuration` 510. The system still removes the launch
+screen at the first Flutter frame, whose outline is identical, so the fill
+continues from a finished outline; a cold start that paints its first frame
+before 510 ms simply completes the outline at that instant. Android 11 and
+older keep the static `splash.png`; iOS keeps its static storyboard. The PNGs
+stay in place, and a `flutter_native_splash:create` run would overwrite these
+theme entries back to the PNG.
+
+Verified here only by `aapt2 compile` + `link` against android-35 (the ten
+inline animators resolve; no attribute errors). Not built and not launched:
+the owner asked to keep test runs to a minimum. The profile build installed at
+03:18 does NOT contain this change.
+
+Owner result, 2026-11-15: built `flutter build apk --profile`, installed with
+`adb install -r`, launched from the icon on the Samsung: "the result is very
+good". The animated outline, the hand-off and the fill are therefore
+REAL_DEVICE_VERIFIED on Android 17 / profile for the signed-in cold start.
+Release plays the same native animation (AOT like profile); debug reaches its
+first frame about a second later, so the outline rests after drawing and the
+fill shows debug-only hitches, which is not a splash defect.
+
+NOW: commit decision for the splash curve, the timeline markers and the
+animated launch icon. NEXT: the remaining items of this checkpoint's device
+list (signed-out and restored sessions, Retry offline, recovery, displacement,
+both languages and themes, reduced motion, older Android, iOS cold launch).

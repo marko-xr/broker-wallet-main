@@ -5598,6 +5598,49 @@ R-OFF2-REVOKE (إلغاء/إزاحة/حذف عن بعد يتأخر ≤ W)؛ R-OF
 **الحالة (2026-11-14):** **OFF-2b-3 = CODE_COMPLETE / LOCAL_TESTED / LIFECYCLE INTEGRATED (مسارات المصادقة الحية) / ADMISSION UNUSED / REAL_DEVICE_UNVERIFIED (غير مودع).** لا قبول offline، لا Home offline، لا GoRouter، لا Splash. D-9 ساري؛ D-63 PENDING. **NOW:** مراجعة المالك وقراره بالـ commit. **NEXT:** OFF-2b-4 بموافقة منفصلة. **STOP:** لا staging/commit/push، لا جهاز، لا خادم مستضاف. **قبول Offline-First الكامل لم يتحقق.**
 ---
 
+## 7BE) P1 — شاشة التشغيل المتحركة: أين يذهب الوقت قبل أول حركة — 2026-11-15 (MEASURED؛ Profile؛ Samsung S24 Ultra؛ تغيير كود صغير غير مودع)
+
+**Git (مُتحقَّق):** الفرع `perf/phase-1-startup-baseline`؛ HEAD = `7c85dee` (دمج `anmation-splash-screen`)؛ غير مودع: `lib/main.dart` (علامات Timeline)، `lib/src/widgets/brand_splash/brand_splash_gate.dart` (منحنى أول كشف + علامات)، `test/app/brand_splash_test.dart`، `docs/CURRENT_CHECKPOINT.md`، هذا الملف. ملفات registrant المولَّدة لم تتغير.
+
+**الشكوى:** «الجزء الأول من حركة الأيقونة يأخذ وقتاً أطول مما ينبغي». تسجيل المالك (30 fps، إطلاقان باردان) قيس بفرق الإطارات: مخطط ثابت ~1.5 ث قبل أول حركة، ثم تعبئة 1.3–1.5 ث فيها تجمّد ~0.3 ث عند مرحلة مختلفة في كل إطلاق، ثم Iris ~0.2 ث.
+
+**إثبات نوع النسخة:** النسخة المثبتة كانت DEBUG (`dumpsys package`: `DEBUGGABLE`؛ `base.apk` المسحوب مطابق بالحجم بايتاً لـ `app-debug.apk`). التجمّد والـ 1.5 ث **ليسا دليل أداء** (§7E, §7H).
+
+**ما نُفّذ على الجهاز (بموافقة المالك على التتبّع):** بناء `app-profile.apk` من شجرة العمل هذه (الشهادة نفسها `6dcf85…9f61` بـ apksigner) وتثبيته في مكانه بـ `adb install -r` (`firstInstallTime` ومجلد البيانات محفوظان). **الهاتف الآن على نسخة PROFILE.** لا حذف، لا مسح بيانات، لا تسجيل خروج.
+
+**القياس 1 — `am start -W` بارد ×5 (Profile، بلا تتبّع):** 620، 629، 572، 585، 581 ms؛ الوسيط **585** (يطابق §7I: 623).
+
+**القياس 2 — تتبّع بدء ×2** (extras: `trace-startup`، `endless-trace-buffer`، `enable-dart-profiling`، `profile-startup`؛ قراءة `getVMTimeline` عبر VM service)؛ الأزمنة من `FlutterEngineMainEnter`، التشغيل 1 / 2:
+
+| المرحلة | 1 | 2 |
+| --- | ---: | ---: |
+| المحرّك → `main` في Dart (`SetupDefaultFontManager` 147 ms في الأول فقط) | 178 | 31 |
+| Framework initialization | 68 | 60 |
+| `main()` قبل `runApp` (إجمالي) | 143 | 102 |
+| منها `SupabaseBootstrapService.initialize` | 105 | 43 |
+| منها `SharedPreferences.getInstance` | 7 | 38 |
+| منها صناديق Hive الأربعة (رفع/ملف شخصي) | 24 | 17 |
+| منها offline-data + offline-media + count-cache | 6 | 2 |
+| `runApp` → أول إطار مبني | 11 | 11 |
+| أول إطار مرسوم عند | 413 | 208 |
+| Splash: `stage-destination` بعد أول إطار | +8 | +5 |
+| Splash: `exit-start` بعد أول إطار | +1511 | +1515 |
+| Splash: `dismissed` بعد `exit-start` | +465 | +464 |
+
+**خيط UI طوال الـ Splash:** ~120 إطاراً؛ أطول مقطع متزامن 9.3 ms (أول BUILD+LAYOUT)؛ أكبر فجوة بين إطارين 49 / 33 ms. خيط Raster: إطار واحد 47 / 35 ms عند أول رسم لاسم التطبيق (`CreateGlyphAtlas`). **تجمّد 0.3 ث غير موجود في Profile** ⇒ كان JIT/debug فقط. Home هو وجهة الموجّه بعد أول إطار بمللي ثوانٍ (لا انتظار شبكة قبل الكشف): بعد أول إطار، الافتتاح = intro 1.5 ث + iris 0.46 ث بالضبط.
+
+**القراءة:** في Profile/Release يرى المالك ~0.6 ث مخططاً ثابتاً (بدء العملية والمحرّك؛ كود Dart قبل `runApp` منه 0.10–0.14 ث فقط) ثم ~2 ث افتتاح سلس. إعادة ترتيب سلسلة ما قبل `runApp` تعيد ≤ ~50 ms (تداخل Supabase مع Hive/prefs) ⇒ **غير مبرَّرة بهذه الأرقام ولم تُنفَّذ**. المقابض الكبيرة الوحيدة تصميمية: طول intro وطول iris.
+
+**تغيير الكود:** (1) `brandSplashRoofReveal` يستخدم `_easeEnter` بدل `_easeDraw`: أول كشف 19% عند 50 ms و54% عند 100 ms بدل 3% و17% (نهاية 460 ms كما هي)؛ اختبار وحدة جديد. (2) علامات `developer.Timeline.instantSync` (`bw.startup.*` في `main.dart`، `bw.splash.*` في البوابة): لا أثر في Release ولا معرّفات. `flutter test` للملف (5/5)، `flutter analyze` محدود، `dart format` check، `git diff --check`: كلها نظيفة.
+
+**غير مقيس:** Release (توقيع release يحتاج `key.properties` غير موجود)، iOS، البدء البارد offline، `getCpuSamples` أعاد ~200 عيّنة فقط في 9 ث (غير مفسَّر؛ لم يُعتمد عليه).
+
+**إضافة 2026-11-15 (طلب المالك: مرحلة المخطط أطول مما ينبغي):** بما أن ~0.5 ث قبل أول إطار هي بدء العملية والمحرّك ولا يختصرها كود التطبيق، أصبحت المرحلة نفسها متحركة على Android 12+: أيقونة التشغيل `animated-vector` (`drawable/splash_outline.xml` + `splash_outline_anim.xml`) ترسم مسارات الشعار العشرة بـ `trimPathEnd` خلال 510 ms (السقف أولاً)، بالتخطيط البكسلي نفسه لـ `android12splash.png` (صندوق 812 px بإزاحة 170 في لوحة 1152؛ مربع الإحاطة المقيس 565×487 متطابق) ولون/عرض خط `_SplashPainter`؛ `values-v31` و`values-night-v31` يشيران إليها مع `windowSplashScreenAnimationDuration` 510. أول إطار Flutter يرسم المخطط الكامل نفسه فيستمر منه. تحقق محلي بـ `aapt2 compile`+`link` فقط (android-35)؛ **لم يُبنَ ولم يُطلق** (المالك طلب أقل اختبارات). نسخة Profile المثبتة 03:18 **لا** تحوي هذا التغيير. إعادة تشغيل `flutter_native_splash:create` تعيد المرجع إلى PNG.
+
+**نتيجة المالك 2026-11-15:** بنى Profile وثبّت بـ `adb install -r` وأطلق من الأيقونة: «النتيجة جيدة جداً» ⇒ المخطط المتحرك والتسليم والتعبئة **REAL_DEVICE_VERIFIED** (Profile، Android 17، بدء بارد مسجَّل الدخول). Release يشغّل الحركة الأصلية نفسها (AOT)؛ Debug يصل لأول إطار بعد ~1 ث إضافية فيرتاح المخطط بعد رسمه (ليس عيباً في الـ Splash). **NOW:** قرار الـ commit. **NEXT:** بقية قائمة الجهاز في checkpoint الـ Splash. **STOP:** لا تغيير في ترتيب البدء، لا AuthWrapper، لا موجّه.
+
+---
+
 ## 8) مراجع الاستمرار
 
 - `AGENTS.md` (القيود الملزمة للمشروع).

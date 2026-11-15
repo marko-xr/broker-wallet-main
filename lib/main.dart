@@ -36,6 +36,11 @@ import 'src/services/private_media_backup_exclusions.dart';
 import 'src/services/supabase_bootstrap_service.dart';
 import 'src/config/supabase_config.dart';
 import 'dart:async';
+import 'dart:developer' as developer;
+
+/// Startup timeline marker for profile-mode tracing (P1). A no-op in release
+/// builds; carries no identifiers.
+void _mark(String stage) => developer.Timeline.instantSync('bw.startup.$stage');
 
 // Non-blocking language preloading - runs in background
 void _preloadLanguagesAsync() {
@@ -52,6 +57,7 @@ void _preloadLanguagesAsync() {
 
 Future<void> initializeAppServices() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _mark('binding');
   usePathUrlStrategy();
 
   // Initialize offline image error handling
@@ -65,7 +71,9 @@ Future<void> initializeAppServices() async {
   _preloadLanguagesAsync();
 
   await Hive.initFlutter();
+  _mark('hive-init');
   await SharedPreferences.getInstance();
+  _mark('prefs');
 
   // Android may hand back an Offer/Owner photo or video picked just before it
   // stopped the app. Routed now, before any picker can open, to the form it
@@ -75,6 +83,7 @@ Future<void> initializeAppServices() async {
   // Initialize Supabase using production defaults, with optional --dart-define
   // overrides for staging/testing.
   await SupabaseBootstrapService.initialize();
+  _mark('supabase');
 
   // Initialize caches with timeouts and error handling - don't block startup
   _initializeCachesAsync();
@@ -86,11 +95,13 @@ Future<void> initializeAppServices() async {
   // Initialize Hive boxes for fast profile upload service
   await Hive.openBox('pending_profile_uploads');
   await Hive.openBox('local_profile');
+  _mark('upload-boxes');
 
   // Initialize offline data service for saved items
   try {
     await OfflineDataService.instance.initialize();
   } catch (e) {}
+  _mark('offline-data');
 
   // Initialize offline media service for media caching
   try {
@@ -98,6 +109,7 @@ Future<void> initializeAppServices() async {
   } catch (e) {
     // OfflineMediaService init failed (log removed)
   }
+  _mark('offline-media');
 
   // M0.5: on iPhone, mark the private media folders and indexes that exist
   // now as excluded from backup (Android lists them in its backup rules).
@@ -110,6 +122,7 @@ Future<void> initializeAppServices() async {
   } catch (e) {
     // CountCacheService init failed (log removed)
   }
+  _mark('count-cache');
 
   // Register the Favorites cache model's adapter once, globally — this is a
   // type-level registration and does not depend on which box (or which
@@ -242,6 +255,7 @@ void main() => http.runWithClient(_main, AppAccessPolicy.newZoneClient);
 Future<void> _main() async {
   // Ensure all services are initialized before running the app
   await initializeAppServices();
+  _mark('services');
 
   // Create instances of ViewModels that need to load persistent state
   final localeViewModel = LocaleViewModel();
@@ -257,6 +271,7 @@ Future<void> _main() async {
   } catch (e) {
     // FastUploadViewModel init failed (log removed)
   }
+  _mark('run-app');
 
   runApp(
     MultiProvider(

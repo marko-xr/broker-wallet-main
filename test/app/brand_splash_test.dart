@@ -186,4 +186,19 @@ void main() {
     expect(find.bySemanticsLabel(_brand), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  test('the roof reveal moves within the first animated frames', () {
+    // Flutter's first frame is identical to the native launch image, so the
+    // whole native wait already reads as a pause on the outline. The first
+    // reveal must not add a slow ease-in to that pause.
+    expect(brandSplashRoofReveal(50), greaterThanOrEqualTo(0.15));
+    expect(brandSplashRoofReveal(100), greaterThanOrEqualTo(0.5));
+    expect(brandSplashRoofReveal(460), 1.0);
+    double last = 0;
+    for (double ms = 0; ms <= 500; ms += 10) {
+      final value = brandSplashRoofReveal(ms);
+      expect(value, greaterThanOrEqualTo(last));
+      last = value;
+    }
+  });
 }

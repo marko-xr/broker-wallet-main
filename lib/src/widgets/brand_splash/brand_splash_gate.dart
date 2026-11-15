@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -173,6 +174,8 @@ class _BrandSplashGateState extends State<BrandSplashGate>
     super.didUpdateWidget(oldWidget);
     if (_done || oldWidget.stage == widget.stage) return;
     if (widget.stage == BrandSplashStage.waiting) _exit.reset();
+    // Profile-mode timeline markers (no-ops in release, no identifiers).
+    developer.Timeline.instantSync('bw.splash.stage-${widget.stage.name}');
     _scheduleSync();
   }
 
@@ -196,6 +199,7 @@ class _BrandSplashGateState extends State<BrandSplashGate>
       _intro.value = 1;
       _stopHint();
     } else if (!_intro.isCompleted && !_intro.isAnimating) {
+      developer.Timeline.instantSync('bw.splash.intro-start');
       _intro.forward();
     }
 
@@ -204,6 +208,7 @@ class _BrandSplashGateState extends State<BrandSplashGate>
       if (_reduceMotion) {
         _dismiss();
       } else if (_intro.isCompleted && !_exit.isAnimating) {
+        developer.Timeline.instantSync('bw.splash.exit-start');
         _exit.forward();
       }
     } else if (!_reduceMotion && _intro.isCompleted && _hint.isDismissed) {
@@ -227,6 +232,7 @@ class _BrandSplashGateState extends State<BrandSplashGate>
 
   void _dismiss() {
     if (_done) return;
+    developer.Timeline.instantSync('bw.splash.dismissed');
     _stopHint();
     _intro.stop();
     _exit.stop();
@@ -355,6 +361,14 @@ const Cubic _easeIris = Cubic(0.5, 0, 0.2, 1);
 /// Progress of [t] through the window [a]..[b], clamped to 0..1.
 double _p(double t, double a, double b) =>
     ((t - a) / (b - a)).clamp(0.0, 1.0).toDouble();
+
+/// Reveal of the roof and chimney, the first thing that moves, [ms] into the
+/// intro. Flutter's first frame is identical to the native launch image, so
+/// everything before it already reads as a pause on the outline; this reveal
+/// must be visibly under way within the first few animated frames rather than
+/// easing in from nothing.
+@visibleForTesting
+double brandSplashRoofReveal(double ms) => _easeEnter.transform(_p(ms, 0, 460));
 
 Color _fade(Color color, double opacity) =>
     color.withValues(alpha: color.a * opacity);
@@ -665,7 +679,7 @@ class _SplashPainter extends CustomPainter {
     }
 
     // Roof and chimney: revealed outward from the ridge.
-    final double roof = _easeDraw.transform(_p(t, 0, 460));
+    final double roof = brandSplashRoofReveal(t);
     if (roof > 0) {
       canvas.save();
       canvas.clipPath(

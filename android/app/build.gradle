@@ -10,6 +10,18 @@ def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+// Release signing needs android/key.properties (git-ignored) naming the
+// upload keystore; see https://docs.flutter.dev/deployment/android#signing-the-app.
+// Without it, AGP fails `validateSigningRelease`. Fall back to the debug key so
+// local release builds still work, and say so loudly: such an APK or bundle
+// must never be uploaded to a store.
+def hasReleaseKeystore = keystoreProperties['storeFile'] != null
+if (!hasReleaseKeystore) {
+    // logger.quiet: flutter runs Gradle with -q, which hides warn-level output.
+    logger.quiet("WARNING: android/key.properties with storeFile not found. " +
+        "Release builds are signed with the DEBUG key for local testing only " +
+        "and must not be uploaded to a store.")
+}
 
 android {
     namespace = "com.example.broker_wallet"
@@ -25,9 +37,12 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += ["-Xsuppress-version-warnings"]
+    // kotlinOptions is the deprecated DSL; compilerOptions is its replacement.
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+            freeCompilerArgs.add("-Xsuppress-version-warnings")
+        }
     }
 
     defaultConfig {
@@ -56,7 +71,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             shrinkResources false
         }

@@ -243,16 +243,6 @@ BrandSplashStage startupSplashStage(
   return BrandSplashStage.destination;
 }
 
-/// Routes that require an authenticated session.
-const _protectedRoutes = <String>{
-  '/home',
-  '/search',
-  '/favorites',
-  '/profile',
-  '/offers-details',
-  '/offers-details-by-id',
-};
-
 /// Logged-out entry screens.
 const _authRoutes = <String>{
   '/welcome',
@@ -268,6 +258,51 @@ const _selfRoutedFlows = <String>{
   '/email-verification',
   '/phone-otp',
 };
+
+/// Routes reviewed as reachable without a session. Empty: adding one is an
+/// owner decision (AUTH-ROUTE-1, tracker §7BF).
+const _publicRoutes = <String>{};
+
+/// Who may be on a route (AUTH-ROUTE-1, tracker §7BF).
+///
+/// Only the exempt classes are listed, by exact path; every other path —
+/// declared now or later, matched or not, nested or parameterized — is
+/// [protected]. A route needs no entry here to be protected.
+enum RouteAccess {
+  /// `/`: the bootstrap gate.
+  bootstrap,
+
+  /// Welcome, Sign In and Sign Up: for signed-out users.
+  authEntry,
+
+  /// Email and phone verification: they route themselves.
+  verification,
+
+  /// The password-recovery destination.
+  recovery,
+
+  /// Reachable without a session (none today; see [_publicRoutes]).
+  public,
+
+  /// Requires an authorized session.
+  protected,
+}
+
+/// Classifies [path] by exact match after dropping trailing slashes, so a
+/// near-miss of an exempt route (`/sign-in/x`, `/welcome-old`) is protected.
+@visibleForTesting
+RouteAccess routeAccessFor(String path) {
+  var p = path.isEmpty ? '/' : path;
+  while (p.length > 1 && p.endsWith('/')) {
+    p = p.substring(0, p.length - 1);
+  }
+  if (p == '/') return RouteAccess.bootstrap;
+  if (_authRoutes.contains(p)) return RouteAccess.authEntry;
+  if (_selfRoutedFlows.contains(p)) return RouteAccess.verification;
+  if (p == _resetPasswordRoute) return RouteAccess.recovery;
+  if (_publicRoutes.contains(p)) return RouteAccess.public;
+  return RouteAccess.protected;
+}
 
 /// The single authentication navigation authority.
 ///
@@ -298,53 +333,42 @@ String? resolveAuthRedirect(
   // and from the auth event itself — so deferring it to the bootstrap gate is
   // what let Home appear for a moment on a real device. While a recovery is
   // unresolved there is exactly one reachable screen.
+  final access = routeAccessFor(currentPath);
   if (passwordRecoveryActive) {
-    return currentPath == _resetPasswordRoute ? null : _resetPasswordRoute;
+    return access == RouteAccess.recovery ? null : _resetPasswordRoute;
   }
 
   // Bootstrap must resolve before any application or auth route is selected.
   if (status == AuthStatus.unknown) {
-    return currentPath == '/' ? null : '/';
+    return access == RouteAccess.bootstrap ? null : '/';
   }
 
-  // Without an active recovery the reset screen is not a place anyone may be.
-  // This is what stops it being opened as ordinary authenticated navigation.
-  // A finished or cancelled recovery always lands on Sign In rather than
-  // Welcome or Home: the password just changed, so the next step is to use it.
-  if (currentPath == _resetPasswordRoute) {
-    return status == AuthStatus.authenticated ? '/home' : '/sign-in';
-  }
-
-  // These flows manage their own routing.
-  if (_selfRoutedFlows.contains(currentPath)) {
-    return null;
-  }
-
+  // AUTH-ROUTE-1: protected by default. The authorization input is the
+  // resolved session today; OFF-2b-4 adds a valid offline admission as a
+  // second way to be authorized here, never a weaker one.
   final isAuthenticated = status == AuthStatus.authenticated;
 
-  final isProtected = _protectedRoutes.any(
-    (route) => currentPath == route || currentPath.startsWith('$route/'),
-  );
-
-  if (!isAuthenticated && isProtected) {
-    return '/welcome';
-  }
-
-  // Authenticated users never sit on an auth screen. This is also what carries
-  // them off `/sign-in` once the session resolves after a successful login.
-  if (isAuthenticated && _authRoutes.contains(currentPath)) {
-    return '/home';
-  }
-
-  if (currentPath == '/') {
+  return switch (access) {
+    // Without an active recovery the reset screen is not a place anyone may
+    // be. This is what stops it being opened as ordinary authenticated
+    // navigation. A finished or cancelled recovery always lands on Sign In
+    // rather than Welcome or Home: the password just changed, so the next
+    // step is to use it.
+    RouteAccess.recovery => isAuthenticated ? '/home' : '/sign-in',
+    // These flows manage their own routing.
+    RouteAccess.verification => null,
     // The root path is the bootstrap gate only. Once bootstrap has resolved,
     // this redirect is the single authority that leaves it — AuthWrapper no
     // longer navigates, so both outcomes must be sent onward from here or the
     // app would remain on the splash gate indefinitely.
-    return isAuthenticated ? '/home' : '/welcome';
-  }
-
-  return null;
+    RouteAccess.bootstrap => isAuthenticated ? '/home' : '/welcome',
+    // Authenticated users never sit on an auth screen. This is also what
+    // carries them off `/sign-in` once the session resolves after a login.
+    RouteAccess.authEntry => isAuthenticated ? '/home' : null,
+    RouteAccess.public => null,
+    // Every other route, including one added later or not matched at all.
+    RouteAccess.protected => isAuthenticated ? null : '/welcome',
+  };
 }
 
 /// Stable location for an Offer Details route.
@@ -387,6 +411,15 @@ Widget buildOfferDetailsByIdRoute(
   }
   return OfferDetailsLoader(offerId: offerId);
 }
+
+/// The app's real router, so a test can see every declared route. Nothing is
+/// built until a page is shown.
+@visibleForTesting
+GoRouter createAppRouterForTesting(
+  AuthViewModel authViewModel,
+  PasswordRecoveryViewModel passwordRecoveryViewModel,
+) =>
+    _createRouter(authViewModel, passwordRecoveryViewModel);
 
 GoRouter _createRouter(
   AuthViewModel authViewModel,

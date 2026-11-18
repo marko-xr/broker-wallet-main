@@ -37,6 +37,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../plan_attachment/fake_plan_transport.dart';
 import 'r2_test_fakes.dart';
+import 'r5_details_expectations.dart';
 import 'responsive_harness.dart';
 
 const _owner = 'layout-owner';
@@ -294,6 +295,7 @@ void main() {
             planTransport: transport,
           )));
       expect(find.byType(OwnersDetailsView), findsOneWidget);
+      expectPinnedDetailsControls(tester);
       expectNoLayoutException(tester, detailsScenario);
       for (var section = 0; section < 5; section++) {
         await tester.drag(
@@ -308,6 +310,7 @@ void main() {
       await tester.ensureVisible(openPlan);
       await tester.pump();
       expect(openPlan.hitTestable(), findsOneWidget);
+      expectPinnedDetailsControls(tester);
       expect(transport.calls.where((call) => call == 'fetch').length, 1);
       expect(transport.fetched.single, (PlanParent.owner, _recordId));
     });
@@ -566,9 +569,12 @@ void main() {
             planTransport: FakePlanTransport(),
             relatedItemsService: _OfflineRelated(),
           )));
-      await tester.tap(find.byIcon(Icons.delete_outline));
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      final menu = find.byKey(const ValueKey('details-actions'));
+      if (menu.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(menu, 120,
+            scrollable: find.byType(Scrollable).first);
+      }
+      await openDetailsDeleteConfirmation(tester);
       expectNoLayoutException(tester, scenario);
       final cancel = find.descendant(
           of: find.byType(AlertDialog),
@@ -718,6 +724,7 @@ void main() {
         isFalse);
     await tester.drag(find.byType(PageView), const Offset(240, 0));
     await tester.pump(const Duration(seconds: 1));
+    expect(find.text('2/2'), findsOneWidget);
     expectNoLayoutException(tester, scenario);
     tester.view.physicalSize = const Size(1280, 720);
     await tester.pump();

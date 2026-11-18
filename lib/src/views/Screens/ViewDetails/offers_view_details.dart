@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:broker_wallet/src/common/utils/map_coordinates.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/offer_details_load_coordinator.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
@@ -13,16 +14,17 @@ import 'package:broker_wallet/src/services/fast_media_upload_service.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
-import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
     show OfferMediaUploadCompleted;
-import 'package:broker_wallet/src/common/utils/images.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/offer_details_style.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,9 +33,13 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'widgets/details_page.dart' show DetailsHeaderControl;
+import 'widgets/details_media_placeholder.dart';
+import 'widgets/details_section.dart';
 
 class OffersDetailsView extends StatefulWidget {
   final OfferModel offer;
@@ -86,7 +92,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   GoogleMapController? _mapController;
   PageController? _mediaPageController;
-  int _currentMediaIndex = 0;
   final ScrollController _scrollController = ScrollController();
 
   // Services
@@ -241,7 +246,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       _currentOffer = widget.offer;
       _cachedMediaGallery = null;
       _cachedMapWidget = null;
-      _currentMediaIndex = 0;
       _mediaPageController?.dispose();
       _mediaPageController = null;
       _createLoadCoordinator();
@@ -340,6 +344,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   @override
   Widget build(BuildContext context) {
+    return Theme(
+      data: OfferDetailsStyle.theme(Theme.of(context),
+          scale: OfferDetailsStyle.scale(context)),
+      child: Builder(builder: _buildScreen),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
     if (_loadCoordinator.detailsUnavailable) {
@@ -388,6 +400,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
             physics: const BouncingScrollPhysics(),
             slivers: [
               _buildModernAppBar(context),
+              SliverToBoxAdapter(child: _buildPropertyMedia(context)),
               SliverToBoxAdapter(
                 child: Transform.translate(
                   offset: Offset(0, 40 * _slideAnimation.value),
@@ -401,119 +414,154 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           );
         },
       ),
-      floatingActionButton: _buildAnimatedFAB(context),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: _buildContactBar(context),
     );
   }
 
   Widget _buildModernAppBar(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final isRent = _currentOffer.offerType == 'rent';
-    final isRTL = Directionality.of(context) == ui.TextDirection.rtl;
-    final hasExpandedHeader = _loadCoordinator.hasRenderableMedia ||
-        _loadCoordinator.isLoading ||
-        _loadCoordinator.hasRecoverableFailure ||
-        _loadCoordinator.mediaAccessRevoked;
-
+    final loc = AppLocalizations.of(context);
+    final scale = OfferDetailsStyle.scale(context);
     return SliverAppBar(
-      expandedHeight: (hasExpandedHeader ? 280 : 200) +
-          (MediaQuery.textScalerOf(context).scale(100) - 100),
-      floating: false,
       pinned: true,
-      stretch: true,
+      toolbarHeight: OfferDetailsStyle.toolbarHeight(context, scale),
       backgroundColor: colors.surface,
       surfaceTintColor: colors.surface,
       elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      leadingWidth: kMinInteractiveDimension + 18 * scale,
+      title: Text(loc.translate('propertyDetails'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge),
       leading: Padding(
-        padding: const EdgeInsetsDirectional.only(start: 6, top: 6, bottom: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              decoration: _BackActionDecoration(colors),
-              child: IconButton(
-                icon: Icon(
-                  isRTL ? Icons.arrow_back_ios_new : Icons.arrow_back_ios_new,
-                  color: colors.onSurface,
-                  size: 18,
-                ),
-                onPressed: () => context.pop(),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              child: Consumer<OptimisticFavoritesService>(
-                builder: (context, favoritesService, child) {
-                  if (_currentOffer.id == null) {
-                    return Container(
-                      decoration: _FavoriteActionDecoration(colors),
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: colors.onSurface.withValues(alpha: 0.5),
-                        size: 18,
-                      ),
-                    );
-                  }
+        padding: EdgeInsetsDirectional.only(start: 18 * scale),
+        child: _headerAction(context,
+            tooltip: loc.translate('goBack'),
+            icon: Directionality.of(context) == ui.TextDirection.rtl
+                ? Icons.chevron_right
+                : Icons.chevron_left,
+            onPressed: () => context.pop()),
+      ),
+      actions: [
+        Consumer<OptimisticFavoritesService>(
+          builder: (context, favorites, child) {
+            final selected = _currentOffer.id != null &&
+                favorites.isOfferFavorite(_currentOffer.id!);
+            return _headerAction(context,
+                tooltip: loc.translate('favorites'),
+                icon: selected ? Icons.favorite : Icons.favorite_border,
+                color: selected ? colors.primary : colors.onSurface,
+                onPressed: _currentOffer.id == null ||
+                        favorites.isOfferLoading(_currentOffer.id!)
+                    ? null
+                    : _toggleFavorite);
+          },
+        ),
+        SizedBox(width: 8 * scale),
+        _headerAction(context,
+            tooltip: loc.translate('share'),
+            icon: Icons.share_outlined,
+            onPressed: _showShareDialog),
+        SizedBox(width: 18 * scale),
+      ],
+    );
+  }
 
-                  return OptimizedFavoriteButton(
-                    isFavorite:
-                        favoritesService.isOfferFavorite(_currentOffer.id!),
-                    isLoading:
-                        favoritesService.isOfferLoading(_currentOffer.id!),
-                    onToggle: () => _toggleFavorite(),
-                    size: 18,
-                    activeColor: colors.primary,
-                    inactiveColor: colors.onSurface,
-                    showBackground: true,
-                  );
-                },
-              ),
+  Widget _headerAction(BuildContext context,
+      {required String tooltip,
+      required IconData icon,
+      Color? color,
+      required VoidCallback? onPressed}) {
+    final colors = Theme.of(context).colorScheme;
+    final scale = OfferDetailsStyle.scale(context);
+    return DetailsHeaderControl(
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, size: 21 * scale, textDirection: ui.TextDirection.ltr),
+        color: color ?? colors.onSurface,
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  Widget _buildPropertyMedia(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final scale = OfferDetailsStyle.scale(context);
+    final text = MediaQuery.textScalerOf(context);
+    final isRecoverable = _loadCoordinator.hasRecoverableFailure;
+    final minHeight = isRecoverable ? 240.0 : 160.0;
+    final referenceSize = isRecoverable ? 80.0 : 48.0;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12 * scale, 8, 12 * scale, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18 * scale),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: minHeight +
+                (text.scale(referenceSize) - referenceSize)
+                    .clamp(0, double.infinity),
+          ),
+          child: AspectRatio(
+            aspectRatio: 2.1,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildHeaderBackground(
+                  context,
+                  _currentOffer.offerType == 'rent',
+                  colors,
+                  Theme.of(context).textTheme,
+                ),
+                PositionedDirectional(
+                  top: 8,
+                  start: 8,
+                  end: 8,
+                  child: Align(
+                    alignment: AlignmentDirectional.topStart,
+                    child: _buildStatusBadge(context),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
-      leadingWidth: 90,
-      centerTitle: false,
-      actions: [
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.fromSTEB(3, 6, 6, 6),
-          decoration: _DeleteActionDecoration(colors),
-          child: IconButton(
-            icon: const Icon(
-              Icons.delete_outline,
-              color: Color(0xFFC81E1E),
-              size: 18,
-            ),
-            onPressed: () => _showDeleteConfirmation(),
-            padding: EdgeInsets.zero,
-          ),
-        ),
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.only(end: 6, top: 6, bottom: 6),
-          decoration: _ShareActionDecoration(colors),
-          child: IconButton(
-            icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
-            tooltip: AppLocalizations.of(context).translate('share'),
-            onPressed: _showShareDialog,
-            padding: EdgeInsets.zero,
-          ),
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: RepaintBoundary(
-          child: _buildHeaderBackground(context, isRent, colors, texts),
-        ),
+    );
+  }
+
+  Widget _buildStatusBadge(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final available = _currentOffer.status == PropertyStatus.available;
+    final label = available
+        ? loc.translate(_currentOffer.offerType == 'rent'
+            ? 'offerDetailsAvailableForRent'
+            : 'offerDetailsAvailableForSale')
+        : _getLocalizedStatusLabel();
+    final background = Color.alphaBlend(
+        colors.primary.withValues(alpha: 0.12), colors.surfaceContainerLowest);
+    final foreground = OfferDetailsStyle.accentText(colors, background);
+    return DetailsStatusBadge(
+      key: const ValueKey('offer-details-status'),
+      background: background,
+      onTap: _currentOffer.id == null ? null : _showStatusSelector,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(available ? Icons.circle : _statusIcon(_currentOffer.status),
+              size: available ? 6 : 12, color: foreground),
+          const SizedBox(width: 6),
+          Flexible(
+              child: Text(label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(color: foreground))),
+        ]),
       ),
     );
   }
@@ -654,11 +702,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       mediaRefs: _loadCoordinator.displayItems,
       imagePlaceholder: const MediaLoadingPlaceholder(),
       pageController: _mediaPageController,
-      onPageChanged: (index) {
-        setState(() {
-          _currentMediaIndex = index;
-        });
-      },
       showControls: true,
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/building-property.svg',
@@ -674,355 +717,102 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   Widget _buildGradientHeader(
       BuildContext context, bool isRent, ColorScheme colors, TextTheme texts) {
-    final loc = AppLocalizations.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isRent
-              ? [
-                  colors.primary.withValues(alpha: 0.8),
-                  colors.secondary.withValues(alpha: 0.6),
-                ]
-              : [
-                  colors.tertiary.withValues(alpha: 0.8),
-                  colors.error.withValues(alpha: 0.6),
-                ],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-              ),
-              child: Icon(
-                isRent ? Icons.key_rounded : Icons.sell_rounded,
-                size: 48,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isRent ? loc.translate('rentOffer') : loc.translate('saleOffer'),
-              style: texts.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return const DetailsMediaPlaceholder(asset: SvgIcon.offersSvg);
   }
 
   Widget _buildCompactContent(BuildContext context) {
+    final scale = OfferDetailsStyle.scale(context);
     return RepaintBoundary(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            _buildHeroCard(context),
-            const SizedBox(height: 12),
-            _buildQuickInfoGrid(context),
-            const SizedBox(height: 12),
-            if (_hasValidLatLng(_currentOffer.pickUpLatitude,
-                _currentOffer.pickUpLongitude)) ...[
-              _buildCompactLocationCard(context),
-            ] else ...[
-              // Show the SAME clear placeholder style as Office and Owner
-              RepaintBoundary(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .shadow
-                            .withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .error
-                                  .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.location_off_rounded,
-                              color: Theme.of(context).colorScheme.error,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)
-                                  .translate('offerLocation'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .errorContainer
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.warning_rounded,
-                              color: Theme.of(context).colorScheme.error,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                AppLocalizations.of(context)
-                                    .translate('mapLocationNotAvailable'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onErrorContainer,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            if (_currentOffer.notes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildCompactNotesCard(context),
-            ],
-            // The land / plot plan: its own card, never part of the gallery.
-            _buildPlanCard(),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
+        child: Padding(
+      padding: EdgeInsets.fromLTRB(13 * scale, 14 * scale, 13 * scale, 20),
+      child: Column(children: [
+        _buildHeroCard(context),
+        const SizedBox(height: DetailsSection.spacing),
+        _buildPropertyStats(context),
+        const SizedBox(height: DetailsSection.spacing),
+        _buildDetailsCard(context),
+        if (_currentOffer.notes.isNotEmpty) ...[
+          const SizedBox(height: DetailsSection.spacing),
+          DetailsNotes(notes: _currentOffer.notes),
+        ],
+        _buildPlanCard(),
+        const SizedBox(height: DetailsSection.spacing),
+        _buildCompactLocationCard(context),
+      ]),
+    ));
   }
 
   Widget _buildHeroCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
+    final location = _getLocationText();
+    final property = _getPropertyDisplayText();
+    final title = DetailsSummary(
+      title: property.isEmpty
+          ? AppLocalizations.of(context).translate('propertyTypeNotSpecified')
+          : property,
+      titleMissing: property.isEmpty,
+      subtitle: location.trim().isEmpty ? null : location,
+    );
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth < 328 ||
+          MediaQuery.textScalerOf(context).scale(1) > 1.3) {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              title,
+              const SizedBox(height: 12),
+              _buildPriceDisplay(context),
+            ]);
+      }
+      return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(child: title),
+        const SizedBox(width: 10),
+        Expanded(child: _buildPriceDisplay(context)),
+      ]);
+    });
+  }
+
+  Widget _buildWhatsAppButton(BuildContext context) {
     final loc = AppLocalizations.of(context);
-    final isRent = _currentOffer.offerType == 'rent';
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colors.primaryContainer,
-              colors.primaryContainer.withValues(alpha: 0.7),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: colors.primary.withValues(alpha: 0.1),
-              blurRadius: 20,
-              spreadRadius: 0,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isRent ? colors.primary : colors.tertiary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    isRent
-                        ? loc.translate('forRent')
-                        : loc.translate('forSale'),
-                    style: texts.labelSmall?.copyWith(
-                      color: isRent ? colors.onPrimary : colors.onTertiary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                _buildCallButton(context),
-                _buildWhatsAppButton(context),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Property type and location
-            Row(
-              children: [
-                Icon(
-                  _getPropertyIcon(),
-                  color: colors.onPrimaryContainer,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _getPropertyDisplayText().isNotEmpty
-                        ? _getPropertyDisplayText()
-                        : loc.translate('propertyTypeNotSpecified'),
-                    style: texts.titleLarge?.copyWith(
-                      color: colors.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                Icon(
-                  Icons.location_on_rounded,
-                  color: colors.onPrimaryContainer.withValues(alpha: 0.8),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _getLocationText().isNotEmpty
-                        ? _getLocationText()
-                        : loc.translate('locationNotSpecified'),
-                    style: texts.bodyMedium?.copyWith(
-                      color: _getLocationText().isNotEmpty
-                          ? colors.onPrimaryContainer.withValues(alpha: 0.8)
-                          : colors.onPrimaryContainer.withValues(alpha: 0.6),
-                      fontStyle: _getLocationText().isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Price range
-            _buildPriceDisplay(context),
-
-            const SizedBox(height: 12),
-
-            // Square footage
-            _buildSquareFootageDisplay(context),
-
-            // Property details (rooms, baths) if applicable
-            if (_shouldShowRoomsAndBaths()) ...[
-              const SizedBox(height: 16),
-              _buildPropertyStats(context),
-            ],
-          ],
-        ),
+    final colors = Theme.of(context).colorScheme;
+    return FilledButton.icon(
+      onPressed: DetailsContactActions.normalizePhone(_currentOffer.phoneNumber,
+                  countryCode: _currentOffer.countryCode) ==
+              null
+          ? null
+          : () => _openWhatsApp(
+              _currentOffer.phoneNumber, loc.translate('propertyManager')),
+      icon: FaIcon(FontAwesomeIcons.whatsapp,
+          size: 21 * OfferDetailsStyle.scale(context)),
+      label: Text(loc.translate('whatsapp')),
+      style: FilledButton.styleFrom(
+        backgroundColor: colors.primary,
+        foregroundColor: OfferDetailsStyle.primaryButtonForeground,
+        textStyle: Theme.of(context).textTheme.labelLarge,
+        minimumSize: const Size(0, kMinInteractiveDimension),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       ),
     );
   }
 
-  Widget _buildWhatsAppButton(BuildContext context) {
+  Widget _buildCallButton(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final loc = AppLocalizations.of(context);
-    final hasPhone = _currentOffer.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed: hasPhone
-            ? () => _openWhatsApp(
-                _currentOffer.phoneNumber, loc.translate('propertyManager'))
-            : null,
-        icon: Image.asset(
-          hasPhone ? AppImages.whatsapp : AppImages.whatsAppDisable,
-          width: 34,
-          height: 34,
-          color:
-              hasPhone ? null : colors.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
+    return OutlinedButton.icon(
+      onPressed: DetailsContactActions.normalizePhone(_currentOffer.phoneNumber,
+                  countryCode: _currentOffer.countryCode) ==
+              null
+          ? null
+          : () => _makePhoneCall(_currentOffer.phoneNumber),
+      icon: const Icon(Icons.phone_rounded, size: 18),
+      label: Text(AppLocalizations.of(context).translate('call')),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: OfferDetailsStyle.accentText(colors, colors.surface),
+        textStyle: Theme.of(context).textTheme.labelLarge,
+        minimumSize: const Size(0, kMinInteractiveDimension),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        side: BorderSide(
+            color: colors.primary.withValues(alpha: 0.7), width: 0.8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       ),
     );
   }
@@ -1030,238 +820,89 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   // WhatsApp functionality
   Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
     final loc = AppLocalizations.of(context);
-    try {
-      // Use project's phone helper to produce a dial-friendly string
-      final formattedNumber = PhoneInputService.formatForDial(phoneNumber);
-
-      String template = loc.translate('whatsAppBusinessMessage');
-      if (template.startsWith('** ')) {
-        template =
-            'Hello {managerName}, I would like to discuss business opportunities with your office.';
-      }
-      final messageText = template.replaceAll('{managerName}', managerName);
-      final message = Uri.encodeComponent(messageText);
-
-      // Try direct app URL first
-      final directAppUri = Uri.parse(
-          'https://api.whatsapp.com/send?phone=$formattedNumber&text=%22$message%22');
-
-      if (await canLaunchUrl(directAppUri)) {
-        await launchUrl(
-          directAppUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Fallback to native URI
-      final nativeUri =
-          Uri.parse('https://wa.me/$formattedNumber?text=$message');
-      if (await canLaunchUrl(nativeUri)) {
-        await launchUrl(
-          nativeUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Last fallback to web WhatsApp
-      final webUri = Uri.parse(
-          'https://web.whatsapp.com/send?phone=$formattedNumber&text=$message');
-      await launchUrl(webUri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('WhatsApp error: $e');
-      if (context.mounted) {
-        _showToast(
-          loc.translate('couldNotOpenWhatsApp'),
-          Theme.of(context).colorScheme.error,
-        );
-      }
-    }
-  }
-
-  Widget _buildCallButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final hasPhone = _currentOffer.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed:
-            hasPhone ? () => _makePhoneCall(_currentOffer.phoneNumber) : null,
-        icon: Icon(
-          hasPhone ? Icons.phone_rounded : Icons.phone_disabled_rounded,
-          color: hasPhone
-              ? colors.primary
-              : colors.onSurfaceVariant.withValues(alpha: 0.5),
-          size: 28,
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
-      ),
-    );
+    final errorColor = Theme.of(context).colorScheme.error;
+    final message = loc
+        .translate('whatsAppBusinessMessage')
+        .replaceAll('{managerName}', managerName);
+    final result = await DetailsContactActions.whatsApp(phoneNumber,
+        countryCode: _currentOffer.countryCode, message: message);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'couldNotOpenWhatsApp'),
+        errorColor);
   }
 
   Widget _buildPriceDisplay(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
+    String amount(String raw) {
+      final number = num.tryParse(raw.replaceAll(',', '').trim());
+      return number == null
+          ? raw.trim()
+          : NumberFormat('#,##0.##', 'en').format(number);
+    }
 
-    // Check if both prices are empty
-    final bool hasPricing =
-        _currentOffer.minPrice.isNotEmpty || _currentOffer.maxPrice.isNotEmpty;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: hasPricing
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.errorContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasPricing
-              ? colors.outline.withValues(alpha: 0.1)
-              : colors.error.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            hasPricing ? Icons.payments_rounded : Icons.warning_rounded,
-            color: hasPricing ? colors.primary : colors.error,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasPricing) ...[
-                  // Show price when available
-                  if (_currentOffer.minPrice.isNotEmpty &&
-                      _currentOffer.maxPrice.isNotEmpty) ...[
-                    Text(
-                      '${_currentOffer.minPrice} - ${_currentOffer.maxPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ] else if (_currentOffer.minPrice.isNotEmpty) ...[
-                    Text(
-                      'From ${_currentOffer.minPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ] else if (_currentOffer.maxPrice.isNotEmpty) ...[
-                    Text(
-                      'Up to ${_currentOffer.maxPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ],
-                  Text(
-                    loc.translate('priceRange'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ] else ...[
-                  // Show empty state when no pricing
-                  Text(
-                    loc.translate('priceNotSpecified'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colors.onErrorContainer,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+    final min = amount(_currentOffer.minPrice);
+    final max = amount(_currentOffer.maxPrice);
+    final currency = loc.translate('offerDetailsCurrency');
+    final hasPrice = min.isNotEmpty || max.isNotEmpty;
+    final price = min.isNotEmpty && max.isNotEmpty
+        ? '$currency $min - $max'
+        : min.isNotEmpty
+            ? '${loc.translate('from')} $currency $min'
+            : max.isNotEmpty
+                ? '${loc.translate('upTo')} $currency $max'
+                : loc.translate('priceNotSpecified');
+    final tint = colors.primary.withValues(alpha: 0.045);
+    final background = Color.alphaBlend(tint, colors.surface);
+    final badgeTint = colors.primary.withValues(alpha: 0.08);
+    final priceStyle = texts.titleLarge?.copyWith(
+      color: OfferDetailsStyle.accentText(colors, background),
+      fontWeight: FontWeight.w800,
+      height: 1.1,
     );
-  }
-
-  Widget _buildSquareFootageDisplay(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    final String value = _currentOffer.squareFootage.trim();
-    final bool hasFootage = value.isNotEmpty;
-
+    final wrapPrice = MediaQuery.sizeOf(context).width < 320 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.3;
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: hasFootage
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.errorContainer.withValues(alpha: 0.3),
+        color: tint,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasFootage
-              ? colors.outline.withValues(alpha: 0.1)
-              : colors.error.withValues(alpha: 0.2),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+          decoration: BoxDecoration(
+              color: badgeTint, borderRadius: BorderRadius.circular(20)),
+          child: Text(
+              loc.translate(
+                  _currentOffer.offerType == 'rent' ? 'rent' : 'sale'),
+              style: texts.labelSmall?.copyWith(
+                color: OfferDetailsStyle.accentText(
+                    colors, Color.alphaBlend(badgeTint, background)),
+                height: 1.1,
+              )),
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            hasFootage ? Icons.square_foot : Icons.info_outline,
-            color: hasFootage ? colors.primary : colors.error,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hasFootage
-                      ? '${_formatSquareFootage(value)} ${loc.translate('squareFootageUnit')}'
-                      : loc.translate('squareFootageNotSpecified'),
-                  style: texts.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: hasFootage ? colors.primary : Colors.white,
-                    fontStyle: hasFootage ? FontStyle.normal : FontStyle.italic,
-                  ),
-                ),
-                if (hasFootage)
-                  Text(
-                    loc.translate('squareFootage'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        const SizedBox(height: 3),
+        if (hasPrice && !wrapPrice)
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(price,
+                textDirection: ui.TextDirection.ltr,
+                maxLines: 1,
+                style: priceStyle),
+          )
+        else if (hasPrice)
+          Text(price, textDirection: ui.TextDirection.ltr, style: priceStyle)
+        else
+          Text(price,
+              style:
+                  texts.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
+      ]),
     );
   }
 
@@ -1291,334 +932,261 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final colors = Theme.of(context).colorScheme;
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatItem(
-            Icons.bed_rounded,
-            _currentOffer.rooms.toString(),
-            loc.translate('rooms'),
-            colors,
-            texts,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatItem(
-            Icons.bathtub_rounded,
+    final stats = <Widget>[
+      if (_shouldShowRoomsAndBaths()) ...[
+        _buildStatItem(Icons.bed_outlined, _currentOffer.rooms.toString(),
+            loc.translate('offerDetailsBedrooms'), colors, texts),
+        _buildStatItem(
+            Icons.bathtub_outlined,
             _currentOffer.bathrooms.toString(),
             loc.translate('bathrooms'),
             colors,
-            texts,
-          ),
-        ),
+            texts),
       ],
+      _buildStatItem(
+          Icons.square_foot,
+          _currentOffer.squareFootage.trim().isEmpty
+              ? loc.translate('squareFootageNotSpecified')
+              : '${_formatSquareFootage(_currentOffer.squareFootage)} ${loc.translate('squareFootageUnit')}',
+          loc.translate('offerDetailsArea'),
+          colors,
+          texts),
+    ];
+    return Container(
+      key: const ValueKey('offer-details-stats'),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(
+            color: colors.onSurface.withValues(alpha: 0.08), width: 0.7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 300 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.5;
+        if (stacked) return Column(children: stats);
+        return IntrinsicHeight(
+            child: Row(children: [
+          for (var i = 0; i < stats.length; i++) ...[
+            if (i > 0)
+              VerticalDivider(
+                  width: 1,
+                  thickness: 0.5,
+                  color: colors.onSurface.withValues(alpha: 0.12),
+                  indent: 5,
+                  endIndent: 5),
+            Expanded(child: stats[i]),
+          ],
+        ]));
+      }),
     );
   }
 
   Widget _buildStatItem(IconData icon, String value, String label,
       ColorScheme colors, TextTheme texts) {
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: colors.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.outline.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 18, color: colors.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Column(
-              children: [
-                Text(
-                  value,
-                  style: texts.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colors.onSurface,
-                  ),
-                ),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: texts.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 20, color: colors.primary),
+        const SizedBox(height: 3),
+        Text(label,
+            textAlign: TextAlign.center,
+            style: texts.bodySmall?.copyWith(height: 1.2)),
+        const SizedBox(height: 2),
+        Text(value,
+            textAlign: TextAlign.center,
+            style: texts.titleMedium?.copyWith(
+                fontSize: 14 * OfferDetailsStyle.scale(context), height: 1.1)),
+      ]),
     );
   }
 
-  Widget _buildQuickInfoGrid(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
+  Widget _buildDetailsCard(BuildContext context) {
     final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
+    final colors = Theme.of(context).colorScheme;
+    final rows = <Widget>[
+      _buildDetailRow(
+          context,
+          Icons.sell_outlined,
+          loc.translate('offerType'),
+          loc.translate(
+              _currentOffer.offerType == 'rent' ? 'rentOffer' : 'saleOffer')),
+      _buildDetailRow(
+          context,
+          Icons.location_city_outlined,
+          loc.translate('city'),
+          _currentOffer.selectedCity.isNotEmpty
+              ? _getLocalizedCityName(_currentOffer.selectedCity)
+              : loc.translate('cityNotSpecified'),
+          isMissing: _currentOffer.selectedCity.isEmpty),
+      _buildDetailRow(
+          context,
+          Icons.place_outlined,
+          loc.translate('areas'),
+          _currentOffer.selectedAreas.isNotEmpty
+              ? _getLocalizedAreasText(_currentOffer.selectedAreas)
+              : loc.translate('areasNotSpecified'),
+          isMissing: _currentOffer.selectedAreas.isEmpty),
+      _buildDetailRow(
+          context,
+          Icons.phone_outlined,
+          loc.translate('phoneNumber'),
+          _currentOffer.phoneNumber.trim().isNotEmpty
+              ? PhoneInputService.formatForDisplay(_currentOffer.phoneNumber)
+              : loc.translate('phoneNotAdded'),
+          onTap:
+              _currentOffer.phoneNumber.trim().isNotEmpty ? _copyPhone : null,
+          isMissing: _currentOffer.phoneNumber.trim().isEmpty,
+          isPhone: true),
+      _buildDetailRow(
+          context,
+          Icons.map_outlined,
+          loc.translate('location'),
+          _currentOffer.location.trim().isNotEmpty
+              ? _currentOffer.location
+              : loc.translate('specificLocationNotProvided'),
+          isMissing: _currentOffer.location.trim().isEmpty),
+    ];
+    return Container(
+      key: const ValueKey('offer-details-card'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: DetailsSection.decoration(colors),
+      child: Column(children: [
+        Row(children: [
+          Icon(Icons.description_outlined, color: colors.primary, size: 18),
+          const SizedBox(width: 7),
+          Expanded(
+              child: Text(loc.translate('propertyDetails'),
+                  style: Theme.of(context).textTheme.titleMedium)),
+          PopupMenuButton<String>(
+            tooltip: loc.translate('offerDetailsActions'),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 120),
+            icon: Icon(Icons.more_horiz,
+                size: 16, color: colors.onSurfaceVariant),
+            style: IconButton.styleFrom(
+              minimumSize: const Size.square(kMinInteractiveDimension),
             ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.location_city_rounded,
-                    title: loc.translate('city'),
-                    value: _currentOffer.selectedCity.isNotEmpty
-                        ? _getLocalizedCityName(_currentOffer.selectedCity)
-                        : loc.translate('cityNotSpecified'),
-                    colors: colors,
-                    texts: texts,
-                    isEmpty: _currentOffer.selectedCity.isEmpty,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.phone_rounded,
-                    title: loc.translate('phoneNumber'),
-                    value: _currentOffer.phoneNumber.isNotEmpty
-                        ? PhoneInputService.formatForDisplay(
-                            _currentOffer.phoneNumber)
-                        : loc.translate('phoneNotAdded'),
-                    colors: colors,
-                    texts: texts,
-                    onTap: _currentOffer.phoneNumber.isNotEmpty
-                        ? () => _copyPhone()
-                        : null,
-                    isEmpty: _currentOffer.phoneNumber.isEmpty,
-                    isPhone: true,
-                  ),
-                ),
-              ],
-            ),
-            if (_currentOffer.selectedAreas.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildInfoTile(
-                icon: Icons.place_rounded,
-                title: loc.translate('areas'),
-                value: _getLocalizedAreasText(_currentOffer.selectedAreas),
-                colors: colors,
-                texts: texts,
-                fullWidth: true,
+            onSelected: (value) {
+              if (value == 'edit') _editOffer();
+              if (value == 'delete') _showDeleteConfirmation();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: DetailsMenuLabel(label: loc.translate('edit')),
               ),
-            ] else ...[
-              const SizedBox(height: 12),
-              _buildInfoTile(
-                icon: Icons.place_rounded,
-                title: loc.translate('areas'),
-                value: loc.translate('areasNotSpecified'),
-                colors: colors,
-                texts: texts,
-                fullWidth: true,
-                isEmpty: true,
+              PopupMenuItem(
+                value: 'delete',
+                child: DetailsMenuLabel(
+                    label: loc.translate('deleteOffer'), destructive: true),
               ),
             ],
-          ],
+          ),
+        ]),
+        const SizedBox(height: 2),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: rows,
         ),
-      ),
+      ]),
     );
   }
 
-  Widget _buildInfoTile({
-    required IconData icon,
-    required String title,
-    required String value,
-    required ColorScheme colors,
-    required TextTheme texts,
-    VoidCallback? onTap,
-    bool fullWidth = false,
-    bool isEmpty = false,
-    bool isPhone = false,
-  }) {
-    final widget = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isEmpty
-            ? colors.errorContainer.withValues(alpha: 0.3)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isEmpty
-              ? colors.error.withValues(alpha: 0.2)
-              : colors.outline.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isEmpty
-                  ? colors.error.withValues(alpha: 0.1)
-                  : colors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              isEmpty ? Icons.warning_rounded : icon,
-              size: 16,
-              color: isEmpty ? colors.error : colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: texts.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 10,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  textDirection: isPhone ? ui.TextDirection.ltr : null,
-                  style: texts.bodySmall?.copyWith(
-                    fontWeight: isEmpty ? FontWeight.w400 : FontWeight.w600,
-                    color: isEmpty
-                        ? colors.onErrorContainer.withValues(alpha: 0.8)
-                        : colors.onSurface,
-                    fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
-                  ),
-                  maxLines: fullWidth ? 10 : 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (onTap != null && !isEmpty) ...[
-            const SizedBox(width: 4),
-            Icon(
-              Icons.copy_rounded,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (onTap != null && !isEmpty) {
-      return GestureDetector(
+  Widget _buildDetailRow(
+      BuildContext context, IconData icon, String label, String value,
+      {VoidCallback? onTap, bool isPhone = false, bool isMissing = false}) {
+    final colors = Theme.of(context).colorScheme;
+    final texts = Theme.of(context).textTheme;
+    return InkWell(
+        key: ValueKey('offer-detail-row-$label'),
         onTap: onTap,
-        child: widget,
-      );
-    }
-
-    return widget;
+        child: Container(
+          // Keep the same minimum in both languages and let each row wrap.
+          constraints: BoxConstraints(
+              minHeight: kMinInteractiveDimension *
+                  MediaQuery.textScalerOf(context)
+                      .scale(1)
+                      .clamp(1.0, double.infinity)),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+              border: Border(
+                  bottom: BorderSide(
+                      color: colors.onSurface.withValues(alpha: 0.07),
+                      width: 0.5))),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Icon(icon, size: 15, color: colors.onSurfaceVariant),
+            const SizedBox(width: 7),
+            Expanded(flex: 4, child: Text(label, style: texts.bodyMedium)),
+            const SizedBox(width: DetailsSection.fieldColumnGap),
+            Expanded(
+                flex: 6,
+                child: Text(value,
+                    textAlign:
+                        Directionality.of(context) == ui.TextDirection.rtl
+                            ? TextAlign.left
+                            : TextAlign.right,
+                    textDirection: isPhone ? ui.TextDirection.ltr : null,
+                    style: texts.bodyMedium?.copyWith(
+                      color: isMissing ? colors.onSurfaceVariant : null,
+                      fontWeight: isMissing ? FontWeight.w400 : FontWeight.w600,
+                    ))),
+            if (onTap != null) ...[
+              const SizedBox(width: 5),
+              Icon(Icons.copy_outlined, size: 13, color: colors.primary),
+            ],
+          ]),
+        ));
   }
 
   Widget _buildCompactLocationCard(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: colors.primary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
+    final hasMap = MapCoordinates.isValid(
+        _currentOffer.pickUpLatitude, _currentOffer.pickUpLongitude);
+    return Container(
+      key: const ValueKey('offer-details-map'),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+      decoration: DetailsSection.decoration(colors),
+      child: Column(children: [
+        Row(children: [
+          Icon(Icons.location_on_outlined, color: colors.primary, size: 19),
+          const SizedBox(width: 7),
+          Expanded(
+              child: Text(loc.translate('offerDetailsMapTitle'),
+                  style: texts.titleMedium)),
+          Expanded(
+              child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton.icon(
+                      key: const ValueKey('offer-details-view-larger'),
+                      onPressed: hasMap ? _openInMaps : null,
+                      icon: const Icon(Icons.open_in_new, size: 13),
+                      label: Text(loc.translate('offerDetailsViewLarger')),
+                      style: TextButton.styleFrom(
+                          textStyle: texts.labelSmall,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          minimumSize:
+                              const Size.square(kMinInteractiveDimension),
+                          foregroundColor: OfferDetailsStyle.accentText(
+                              colors, colors.surfaceContainerLowest),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap)))),
+        ]),
+        const SizedBox(height: 4),
+        if (hasMap)
+          _buildCachedMiniMap(context)
+        else
+          Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                Icon(Icons.location_off_outlined,
+                    size: 18, color: colors.onSurfaceVariant),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    loc.translate('offerLocationOnMap'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _openInMaps,
-                  icon: Icon(
-                    Icons.open_in_new_rounded,
-                    size: 16,
-                    color: colors.primary,
-                  ),
-                  label: Text(
-                    loc.translate('maps'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_currentOffer.location.isNotEmpty) ...[
-              Text(
-                _currentOffer.location,
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ] else ...[
-              Text(
-                loc.translate('specificLocationNotProvided'),
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            _buildCachedMiniMap(context),
-          ],
-        ),
-      ),
+                    child: Text(loc.translate('mapLocationNotAvailable'),
+                        style: texts.bodyMedium)),
+              ])),
+      ]),
     );
   }
 
@@ -1681,130 +1249,30 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     return _cachedMapWidget!;
   }
 
-  Widget _buildCompactNotesCard(BuildContext context) {
+  Widget _buildContactBar(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
+    return FadeTransition(
+      opacity: _fabAnimation,
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
+        decoration: BoxDecoration(color: colors.surface, boxShadow: [
+          BoxShadow(
+              color: colors.shadow.withValues(alpha: 0.06),
               blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colors.secondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.note_alt_rounded,
-                    color: colors.secondary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    loc.translate('notes'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.outline.withValues(alpha: 0.08),
-                ),
-              ),
-              child: Text(
-                _currentOffer.notes,
-                style: texts.bodyMedium?.copyWith(
-                  height: 1.5,
-                  color: colors.onSurface,
-                ),
-              ),
-            ),
-          ],
+              offset: const Offset(0, -4)),
+        ]),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16 * OfferDetailsStyle.scale(context),
+                10, 16 * OfferDetailsStyle.scale(context), 8),
+            child: Row(children: [
+              Expanded(child: _buildWhatsAppButton(context)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildCallButton(context)),
+            ]),
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildAnimatedFAB(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final loc = AppLocalizations.of(context);
-
-    return AnimatedBuilder(
-      animation: _fabAnimation,
-      builder: (context, child) {
-        final statusColor = _statusColor(_currentOffer.status);
-        final statusIcon = _statusIcon(_currentOffer.status);
-        final statusLabel = _getLocalizedStatusLabel();
-        final canUpdateStatus = _currentOffer.id != null;
-
-        return Transform.scale(
-          scale: _fabAnimation.value,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              FloatingActionButton.extended(
-                heroTag: "status_offer_fab",
-                onPressed: canUpdateStatus ? () => _showStatusSelector() : null,
-                icon: Icon(statusIcon, size: 20),
-                label: Text(
-                  statusLabel,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                backgroundColor: canUpdateStatus
-                    ? statusColor.withValues(alpha: 0.15)
-                    : colors.surfaceContainerHighest.withValues(alpha: 0.7),
-                foregroundColor:
-                    canUpdateStatus ? statusColor : colors.onSurfaceVariant,
-                elevation: canUpdateStatus ? 8 : 0,
-              ),
-              const SizedBox(height: 16),
-              FloatingActionButton.extended(
-                heroTag: "edit_offer_fab",
-                onPressed: _editOffer,
-                icon: const Icon(Icons.edit_rounded, size: 20),
-                label: Text(
-                  loc.translate('edit'),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                backgroundColor: colors.primary,
-                foregroundColor: colors.onPrimary,
-                elevation: 8,
-                extendedPadding: const EdgeInsets.symmetric(horizontal: 14),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -1818,11 +1286,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     }
 
     return translated;
-  }
-
-  Color _statusColor(PropertyStatus status) {
-    return Color(
-        int.parse(status.colorCode.substring(1), radix: 16) + 0xFF000000);
   }
 
   IconData _statusIcon(PropertyStatus status) {
@@ -1849,24 +1312,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   // Helper methods
-  IconData _getPropertyIcon() {
-    switch (_currentOffer.specificPropertyType.toLowerCase()) {
-      case 'villa':
-        return Icons.home_rounded;
-      case 'apartment':
-        return Icons.apartment_rounded;
-      case 'studio':
-        return Icons.meeting_room_rounded;
-      case 'office':
-        return Icons.business_rounded;
-      case 'shop':
-        return Icons.store_rounded;
-      case 'warehouse':
-        return Icons.warehouse_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
 
   String _cityLocalizationKey(String city) {
     switch (city.toLowerCase().replaceAll(' ', '')) {
@@ -2155,19 +1600,13 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   String _getPropertyDisplayText() {
-    if (_currentOffer.specificPropertyType.isEmpty) {
-      return '';
-    }
-
-    String propertyText =
-        _getLocalizedSpecificType(_currentOffer.specificPropertyType);
-    if (_currentOffer.propertyType != null &&
-        _currentOffer.propertyType!.isNotEmpty) {
-      String localizedPropertyType =
-          _getLocalizedPropertyType(_currentOffer.propertyType!);
-      propertyText = '$propertyText - $localizedPropertyType';
-    }
-    return propertyText;
+    final specific = _currentOffer.specificPropertyType.trim();
+    final category = _currentOffer.propertyType?.trim();
+    return [
+      if (specific.isNotEmpty) _getLocalizedSpecificType(specific),
+      if (category != null && category.isNotEmpty)
+        _getLocalizedPropertyType(category),
+    ].join(' ');
   }
 
   String _getLocalizedPropertyType(String propertyType) {
@@ -2256,21 +1695,15 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
 
   Future<void> _makePhoneCall(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
-    if (phoneNumber.isEmpty) {
-      _showToast(loc.translate('phoneNumberNotAvailable'),
-          Theme.of(context).colorScheme.error);
-      return;
-    }
-
-    final dial = PhoneInputService.formatForDial(phoneNumber);
-    final Uri phoneUri = Uri(scheme: 'tel', path: dial);
-    try {
-      await launchUrl(phoneUri, mode: LaunchMode.platformDefault);
-    } on PlatformException catch (e) {
-      debugPrint('Failed to open dialer: ${e.message}');
-      _showToast(loc.translate('unableToMakePhoneCall'),
-          Theme.of(context).colorScheme.error);
-    }
+    final errorColor = Theme.of(context).colorScheme.error;
+    final result = await DetailsContactActions.call(phoneNumber,
+        countryCode: _currentOffer.countryCode);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'unableToMakePhoneCall'),
+        errorColor);
   }
 
   Future<void> _copyPhone() async {
@@ -2289,20 +1722,12 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         Theme.of(context).colorScheme.primary);
   }
 
-  bool _hasValidLatLng(double? lat, double? lng) {
-    if (lat == null || lng == null) return false;
-    if (lat == 0.0 && lng == 0.0) return false; // avoid Null Island
-    if (lat < -90 || lat > 90) return false;
-    if (lng < -180 || lng > 180) return false;
-    return true;
-  }
-
   void _openInMaps() async {
     final lat = _currentOffer.pickUpLatitude;
     final lng = _currentOffer.pickUpLongitude;
 
     // Only open if valid
-    if (_hasValidLatLng(lat, lng)) {
+    if (MapCoordinates.isValid(lat, lng)) {
       final uri = Uri.parse(
           'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
       if (await canLaunchUrl(uri)) {
@@ -2311,7 +1736,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       }
     }
 
-    // Otherwise show the same clear message used in the placeholder
+    if (!mounted) return;
     final loc = AppLocalizations.of(context);
     _showToast(loc.translate('mapLocationNotAvailable'),
         Theme.of(context).colorScheme.error);
@@ -2346,15 +1771,20 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   void _showStatusSelector() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => PropertyStatusSelector(
-        currentStatus: _currentOffer.status,
-        allowedStatuses: PropertyStatus.offerStatuses,
-        onStatusSelected: (newStatus) {
-          _updateOfferStatus(newStatus);
-        },
+      builder: (context) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: PropertyStatusSelector(
+            currentStatus: _currentOffer.status,
+            allowedStatuses: PropertyStatus.offerStatuses,
+            onStatusSelected: _updateOfferStatus,
+          ),
+        ),
       ),
     );
   }
@@ -2370,6 +1800,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       );
 
       await _offerService.updateOffer(_currentOffer.id!, updatedOffer);
+      if (!mounted) return;
 
       setState(() {
         _currentOffer = updatedOffer;
@@ -2380,10 +1811,11 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       //   '${loc.translate('offer')} ${loc.translate('statusUpdatedTo')} ${newStatus.displayName}',
       //   Theme.of(context).colorScheme.primary,
       // );
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       final loc = AppLocalizations.of(context);
       _showToast(
-        '${loc.translate('failedToUpdateStatus')}: ${e.toString()}',
+        loc.translate('failedToUpdateStatus'),
         Theme.of(context).colorScheme.error,
       );
     }
@@ -2398,6 +1830,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -2491,12 +1924,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                           color: colors.onSurface.withValues(alpha: 0.7),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
+                        Flexible(
+                          child: Text(
+                            loc.translate('cancel'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: colors.onSurface.withValues(alpha: 0.8),
+                            ),
                           ),
                         ),
                       ],
@@ -2530,12 +1965,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                           color: Colors.white,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          loc.translate('delete'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
+                        Flexible(
+                          child: Text(
+                            loc.translate('delete'),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -2549,7 +1986,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       },
     );
 
-    if (confirmed == true && _currentOffer.id != null) {
+    if (mounted && confirmed == true && _currentOffer.id != null) {
       await _deleteOffer();
     }
   }
@@ -2584,54 +2021,4 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       textColor: Colors.white,
     );
   }
-}
-
-class _BaseActionDecoration extends BoxDecoration {
-  _BaseActionDecoration({
-    required Color backgroundColor,
-    required Color shadowColor,
-  }) : super(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 8,
-              spreadRadius: 0,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        );
-}
-
-class _BackActionDecoration extends _BaseActionDecoration {
-  _BackActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _FavoriteActionDecoration extends _BaseActionDecoration {
-  _FavoriteActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _ShareActionDecoration extends _BaseActionDecoration {
-  _ShareActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _DeleteActionDecoration extends _BaseActionDecoration {
-  _DeleteActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: Color(0xFFC81E1E).withValues(alpha: 0.1),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
 }

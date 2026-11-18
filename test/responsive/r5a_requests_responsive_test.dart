@@ -7,12 +7,14 @@ import 'package:broker_wallet/src/viewmodels/ListScreens/list_requests_viewmodel
 import 'package:broker_wallet/src/views/Screens/ViewAdd/add_requested_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/requested_view_details.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/requests_list_view.dart';
+import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'r2_test_fakes.dart';
+import 'r5_details_expectations.dart';
 import 'responsive_harness.dart';
 
 const _matrix = <ResponsiveCase>[
@@ -40,7 +42,7 @@ ResponsiveCase _withoutKeyboard(ResponsiveCase scenario) => ResponsiveCase(
       safeArea: scenario.safeArea,
     );
 
-RequestModel _request({String id = 'layout-request'}) => RequestModel(
+RequestModel _request({String? id = 'layout-request'}) => RequestModel(
       id: id,
       userId: 'layout-only',
       requestType: 'rent',
@@ -150,15 +152,80 @@ void main() {
       await pumpResponsive(tester, detailsScenario,
           home: withR2ScreenProviders(RequestDetailsView(request: _request())));
       expect(find.byType(RequestDetailsView), findsOneWidget);
+      expectPinnedDetailsControls(tester);
       expectNoLayoutException(tester, detailsScenario);
+      final arabic = detailsScenario.locale.languageCode == 'ar';
+      final budget = find.text(arabic ? 'الميزانية' : 'Budget');
+      final scrollable = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(budget, 120, scrollable: scrollable);
+      expect(budget, findsOneWidget);
+      final requirements =
+          find.text(arabic ? 'متطلبات الطلب' : 'Request Requirements');
+      await tester.scrollUntilVisible(requirements, 120,
+          scrollable: scrollable);
+      expect(requirements, findsOneWidget);
       for (var section = 0; section < 5; section++) {
         await tester.drag(
             find.byType(CustomScrollView).first, const Offset(0, -500));
         await tester.pump();
         expectNoLayoutException(tester, detailsScenario);
       }
+      expectPinnedDetailsControls(tester);
     });
   }
+
+  testWidgets('Request details keeps status and delete actions reachable',
+      (tester) async {
+    const scenario =
+        ResponsiveCase(Size(320, 568), locale: Locale('ar'), textScale: 1.6);
+    await pumpResponsive(tester, scenario,
+        home: withR2ScreenProviders(RequestDetailsView(request: _request())));
+    await tapExpandedStatusBadge(tester, 'request-details-status');
+    await tester.pumpAndSettle();
+    final statusCancel = find.descendant(
+      of: find.byType(PropertyStatusSelector),
+      matching: find.byType(ElevatedButton),
+    );
+    await tester.ensureVisible(statusCancel);
+    await tester.pumpAndSettle();
+    expect(statusCancel.hitTestable(), findsOneWidget);
+    await tester.tap(statusCancel);
+    await tester.pumpAndSettle();
+    expect(find.byType(PropertyStatusSelector), findsNothing);
+
+    await openDetailsDeleteConfirmation(tester);
+    final deleteCancel = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byIcon(Icons.close_rounded),
+    );
+    expect(deleteCancel.hitTestable(), findsOneWidget);
+    await tester.tap(deleteCancel);
+    await tester.pumpAndSettle();
+    expect(find.byType(RequestDetailsView), findsOneWidget);
+    expectNoLayoutException(tester, scenario);
+  });
+
+  testWidgets('Request without an ID keeps a display-only status badge',
+      (tester) async {
+    const scenario = ResponsiveCase(Size(393, 852));
+    await pumpResponsive(tester, scenario,
+        home: withR2ScreenProviders(
+            RequestDetailsView(request: _request(id: null))));
+    final badge = find.byKey(const ValueKey('request-details-status'));
+    expect(tester.getSize(badge).height, lessThan(48));
+    expect(find.descendant(of: badge, matching: find.byType(InkWell)),
+        findsNothing);
+  });
+
+  testWidgets('Request details shows disabled contact actions without a phone',
+      (tester) async {
+    const scenario = ResponsiveCase(Size(393, 852), locale: Locale('ar'));
+    await pumpResponsive(tester, scenario,
+        home: withR2ScreenProviders(RequestDetailsView(
+          request: _request().copyWith(phoneNumber: ''),
+        )));
+    expectPinnedDetailsControls(tester, hasPhone: false);
+  });
 
   testWidgets('Request list initial, empty, and error states', (tester) async {
     const scenario =

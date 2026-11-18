@@ -16632,3 +16632,94 @@ NOW: commit decision for the splash curve, the timeline markers and the
 animated launch icon. NEXT: the remaining items of this checkpoint's device
 list (signed-out and restored sessions, Retry offline, recovery, displacement,
 both languages and themes, reduced motion, older Android, iOS cold launch).
+
+## DETAILS-PORT-1 (2026-11-18)
+
+Status: CODE_PROVEN using local fakes. Integrated Samsung and final visual
+acceptance remain pending.
+
+Git preflight: the active checkout was clean on `perf/phase-1-startup-baseline`
+at `ba1a58041e7ba08860cd64b4edba14ec9bc7b1e8`. The local index and
+`origin/perf/phase-1-startup-baseline` matched. A read-only GitHub lookup
+confirmed both branch tips. The branch merge base is `45d51b0`. The four
+source commits form the direct chain from parent `c582b46` to the
+`codex/update-the-details-screen` tip:
+
+| Source | Approved scope |
+| --- | --- |
+| `abd9c5d` | C1 coordinates and address fallbacks, C2 localization, C3 Call and WhatsApp validation, C4 localized write failure feedback |
+| `a8b7211` | C5 typography, contrast and accessible controls |
+| `7f84ebf` | C6A detail cards and action menus, C6B Related Items paging and autoplay, C6C information hierarchy |
+| `285a173` | C7 Owner landscape cancel test, 48 dp interactive status targets, related-item rent badge contrast |
+
+Integration: updated Offer, Request, Owner, Office, Broker and Watchman
+Details. Four map views validate finite, in-range coordinates and reject
+the saved (0, 0) sentinel. The applicable address fields fall back to the
+existing pickup value. Maps still use the existing rendering and external
+destination. Contact actions validate with the shared phone normalizer,
+try the approved URL fallbacks and return localized failures. Delete and
+status failures avoid raw exception text. All 29 added keys per locale
+match the verified source values and all existing AR/EN translations were
+retained. Layout uses the shared Details styles, card groups, edit/delete
+menus, pinned contact controls, readable missing values and distinct address
+fields. Related Items localize the count and page position and support RTL
+paging, Play/Pause, reduced motion and lifecycle/visibility gating.
+
+Performance overlap: the Offer and Owner media and Plan coordinators,
+injection contracts and upload subscriptions were retained, including
+`readListedMedia`, `discoverHeldMedia`, `listedMediaObjectIds` and the
+Worker-authoritative precedence rules. The galleries keep Performance swipe
+and controls. The older Details thumbnail strip and Request route rewrite
+predate C1 and were outside this port. Related Offers still use the encoded
+Offer by-ID route. Related Requests still pass the saved record on the
+existing Request details route. AUTH-ROUTE-1, OFF-1, OFF-2b-1/1b/2/3, Splash,
+native assets and registrants remain at the Performance versions.
+
+Files changed:
+
+- Six `lib/src/views/Screens/ViewDetails/*_view_details.dart` screens and
+  shared `widgets/details_media_placeholder.dart`, `details_page.dart`,
+  `details_section.dart` and `offer_details_style.dart`.
+- `lib/src/common/utils/map_coordinates.dart`,
+  `lib/src/services/details_contact_actions.dart`, both ARB files, and
+  `lib/src/widgets/auto_scrolling_related_items_carousel.dart`,
+  `compact_offer_card.dart` and `compact_request_card.dart`.
+- `test/common/map_coordinates_test.dart`,
+  `test/services/details_contact_actions_test.dart`, and the responsive
+  files `details_contacts_test.dart`, `details_map_address_test.dart`,
+  `r5_details_expectations.dart`, `r5a_requests_responsive_test.dart`,
+  `r5b_offers_responsive_test.dart`, `r5c_owners_responsive_test.dart`,
+  `r5d_entity_cases.dart` and `r5d_related_cards_test.dart`.
+- This checkpoint and the Performance Offline-First Master Tracker.
+
+Verification: 847 distinct focused tests passed across two runs. The
+29-file run recorded 845 PASS / 2 FAIL. After fixing the test selectors,
+the two remaining bilingual Offer status/delete error tests passed on
+rerun. Coverage includes the six screens in AR/EN, RTL/LTR, light/dark,
+landscape and large text, maps and address fallback, contact launch
+behavior, safe Offer failure toasts, status controls, Related Items
+interaction, offline Offer/Owner media seed and discovery, saved media
+IDs, session/account isolation, Worker response and revocation precedence,
+Plan details, Favorites, Search, protected routes and Splash. Test logs
+are under the ignored `build/` directory. No APK, device, Supabase or
+Cloudflare operation was performed.
+
+The first focused run ended at 812 PASS / 7 FAIL. The follow-up addressed
+small-screen sheet and dialog overflow, cases where enlarged badge text
+already filled 48 dp, and an Owner test that assumed a pre-C1 thumbnail
+strip. An intermediate run hit an invalid Flutter widget argument that
+was corrected. The two final test-selector failures were a library import
+case mismatch and a finder for a different screen's action menu. Scoped
+Flutter and Dart analysis of 25 files, formatter check and `git diff --check` passed.
+
+The owner reported Details-branch Samsung acceptance for C1/C5/C6 within
+their documented scope. C2/C3/C4/C7 and final visual acceptance of the
+integrated build remain open. OFF-2b-4 and OFF-2b-5, D-63, NG-1 through
+NG-5, FU-OFF2-BYID, FU-OFF-MAP and release acceptance remain open.
+
+NOW — Owner reviews the unstaged port and decides when to stage, commit
+and push it.
+NEXT — Run and record integrated Samsung acceptance for C2/C3/C4/C7 and
+the six-screen visual pass. OFF-2b-4a requires separate owner approval.
+STOP — Index remains clean. All three stashes are unchanged. Owner owns
+staging, commit and push.

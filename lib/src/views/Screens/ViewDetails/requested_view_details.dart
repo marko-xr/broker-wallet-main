@@ -1,23 +1,26 @@
-﻿import 'dart:ui' as ui;
-
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:intl/intl.dart';
+
+import 'widgets/details_page.dart';
+import 'widgets/details_section.dart';
+import 'widgets/offer_details_style.dart';
 
 class RequestDetailsView extends StatefulWidget {
   final RequestModel request;
@@ -110,630 +113,257 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final phone = _currentRequest.phoneNumber;
+    final canContact = DetailsContactActions.normalizePhone(phone,
+            countryCode: _currentRequest.countryCode) !=
+        null;
+    return DetailsPage(
+      title: loc.translate('requestDetails'),
+      favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
+      onShare: _shareRequest,
+      onWhatsApp: !canContact
+          ? null
+          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onCall: !canContact ? null : () => _makePhoneCall(phone),
+      scrollController: _scrollController,
+      fade: _fadeAnimation,
+      slide: _slideAnimation,
+      contactFade: _fabAnimation,
+      media: _buildRequestHeader,
+      content: _buildCompactContent,
+    );
+  }
 
-    return Scaffold(
-      backgroundColor: colors.surface,
-      body: AnimatedBuilder(
-        animation: _mainAnimationController,
-        builder: (context, child) {
-          return CustomScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              _buildModernAppBar(context),
-              SliverToBoxAdapter(
-                child: Transform.translate(
-                  offset: Offset(0, 40 * _slideAnimation.value),
-                  child: Opacity(
-                    opacity: _fadeAnimation.value,
-                    child: _buildCompactContent(context),
+  Widget _buildFavorite(BuildContext context,
+      OptimisticFavoritesService favorites, Widget? child) {
+    final id = _currentRequest.id;
+    if (id == null) {
+      return const Icon(Icons.favorite_border, size: 18);
+    }
+    return OptimizedFavoriteButton(
+      size: 18,
+      padding: const EdgeInsets.all((kMinInteractiveDimension - 18) / 2),
+      isFavorite: favorites.isRequestFavorite(id),
+      isLoading: favorites.isRequestLoading(id),
+      onToggle: _toggleFavorite,
+    );
+  }
+
+  Widget _buildRequestHeader(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final scale = OfferDetailsStyle.scale(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18 * scale),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: 160 + MediaQuery.textScalerOf(context).scale(48) - 48,
+        ),
+        child: AspectRatio(
+          aspectRatio: 2.1,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Material(
+                color: Color.alphaBlend(
+                  colors.primary.withValues(alpha: 0.06),
+                  colors.surfaceContainerHighest,
+                ),
+                child: Center(
+                  child: ColorFiltered(
+                    colorFilter:
+                        ColorFilter.mode(colors.primary, BlendMode.srcIn),
+                    child: SvgPicture.asset(
+                      SvgIcon.requestedSvg,
+                      width: 56,
+                      height: 56,
+                      excludeFromSemantics: true,
+                    ),
                   ),
                 ),
               ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: _buildAnimatedFAB(context),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-    );
-  }
-
-  Widget _buildModernAppBar(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final isRent = _currentRequest.requestType == 'rent';
-    final isRTL = Directionality.of(context) == ui.TextDirection.rtl;
-
-    return SliverAppBar(
-      expandedHeight: 200 +
-          (MediaQuery.textScalerOf(context).scale(100) - 100),
-      floating: false,
-      pinned: true,
-      stretch: true,
-      backgroundColor: colors.surface,
-      surfaceTintColor: colors.surface,
-      elevation: 0,
-      leading: Padding(
-        padding: const EdgeInsetsDirectional.only(start: 6, top: 6, bottom: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              decoration: _BackActionDecoration(colors),
-              child: IconButton(
-                icon: Icon(
-                  isRTL ? Icons.arrow_back_ios_new : Icons.arrow_back_ios_new,
-                  color: colors.onSurface,
-                  size: 18,
+              PositionedDirectional(
+                top: 8,
+                start: 8,
+                end: 8,
+                child: Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: _buildStatusBadge(context),
                 ),
-                onPressed: () => context.pop(),
-                padding: EdgeInsets.zero,
               ),
-            ),
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              child: Consumer<OptimisticFavoritesService>(
-                builder: (context, favoritesService, child) {
-                  final requestId = _currentRequest.id;
-
-                  if (requestId == null) {
-                    return Container(
-                      decoration: _FavoriteActionDecoration(colors),
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: colors.onSurface.withValues(alpha: 0.5),
-                        size: 18,
-                      ),
-                    );
-                  }
-
-                  return OptimizedFavoriteButton(
-                    isFavorite: favoritesService.isRequestFavorite(requestId),
-                    isLoading: favoritesService.isRequestLoading(requestId),
-                    onToggle: () => _toggleFavorite(),
-                    size: 18,
-                    activeColor: colors.primary,
-                    inactiveColor: colors.onSurface,
-                    showBackground: true,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      leadingWidth: 90,
-      centerTitle: false,
-      actions: [
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.fromSTEB(3, 6, 6, 6),
-          decoration: _DeleteActionDecoration(colors),
-          child: IconButton(
-            icon: const Icon(
-              Icons.delete_outline,
-              color: Color(0xFFC81E1E),
-              size: 18,
-            ),
-            onPressed: () => _showDeleteConfirmation(),
-            padding: EdgeInsets.zero,
+            ],
           ),
-        ),
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.only(end: 6, top: 6, bottom: 6),
-          decoration: _ShareActionDecoration(colors),
-          child: IconButton(
-            icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
-            tooltip: AppLocalizations.of(context).translate('share'),
-            onPressed: _shareRequest,
-            padding: EdgeInsets.zero,
-          ),
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: RepaintBoundary(
-          child: _buildGradientHeader(context, isRent, colors, texts),
         ),
       ),
     );
   }
 
-  Widget _buildGradientHeader(
-      BuildContext context, bool isRent, ColorScheme colors, TextTheme texts) {
-    final loc = AppLocalizations.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isRent
-              ? [
-                  colors.primary.withValues(alpha: 0.8),
-                  colors.secondary.withValues(alpha: 0.6),
-                ]
-              : [
-                  colors.tertiary.withValues(alpha: 0.8),
-                  colors.error.withValues(alpha: 0.6),
-                ],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-              ),
-              child: Icon(
-                isRent ? Icons.search_rounded : Icons.business_center_rounded,
-                size: 48,
-                color: Colors.white,
-              ),
+  Widget _buildStatusBadge(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final background = Color.alphaBlend(
+        colors.primary.withValues(alpha: 0.12), colors.surfaceContainerLowest);
+    final foreground = OfferDetailsStyle.accentText(colors, background);
+    return DetailsStatusBadge(
+      key: const ValueKey('request-details-status'),
+      background: background,
+      onTap: _currentRequest.id == null ? null : _showStatusSelector,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(_statusIcon(_currentRequest.status),
+              size: 12, color: foreground),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              _getLocalizedStatusLabel(),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(color: foreground),
             ),
-            const SizedBox(height: 16),
-            Text(
-              isRent
-                  ? loc.translate('rentRequest')
-                  : loc.translate('saleRequest'),
-              style: texts.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ]),
       ),
     );
   }
 
   Widget _buildCompactContent(BuildContext context) {
-    return RepaintBoundary(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            _buildHeroCard(context),
-            const SizedBox(height: 12),
-            _buildQuickInfoGrid(context),
-            const SizedBox(height: 12),
-            if (_currentRequest.notes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildCompactNotesCard(context),
-            ],
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
-    final isRent = _currentRequest.requestType == 'rent';
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colors.primaryContainer,
-              colors.primaryContainer.withValues(alpha: 0.7),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: colors.primary.withValues(alpha: 0.1),
-              blurRadius: 20,
-              spreadRadius: 0,
-              offset: const Offset(0, 8),
+    final rent = _currentRequest.requestType == 'rent';
+    final location = _getLocationText();
+    final property = _getPropertyDisplayText();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(builder: (context, constraints) {
+          final summary = DetailsSummary(
+            title: property.isNotEmpty
+                ? property
+                : loc.translate('propertyTypeNotSpecified'),
+            titleMissing: property.isEmpty,
+            subtitle: location.trim().isEmpty ? null : location,
+          );
+          final price = _buildPriceDisplay(context);
+          if (constraints.maxWidth < 328 ||
+              MediaQuery.textScalerOf(context).scale(1) > 1.3) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                summary,
+                const SizedBox(height: DetailsSection.spacing),
+                price,
+              ],
+            );
+          }
+          return Row(children: [
+            Expanded(child: summary),
+            const SizedBox(width: 10),
+            Expanded(child: price),
+          ]);
+        }),
+        const SizedBox(height: DetailsSection.spacing),
+        _buildPropertyStats(context),
+        const SizedBox(height: DetailsSection.spacing),
+        DetailsFields(
+          title: loc.translate('requestRequirements'),
+          deleteLabel: loc.translate('deleteRequest'),
+          onEdit: _editRequest,
+          onDelete: _showDeleteConfirmation,
+          rows: [
+            DetailsField(
+              icon: Icons.sell_outlined,
+              label: loc.translate('request'),
+              value: loc.translate(rent ? 'rentRequest' : 'saleRequest'),
             ),
+            DetailsField(
+              icon: Icons.location_city_outlined,
+              label: loc.translate('city'),
+              isMissing: _currentRequest.selectedCity.trim().isEmpty,
+              value: _currentRequest.selectedCity.trim().isNotEmpty
+                  ? _getLocalizedCityName(_currentRequest.selectedCity)
+                  : loc.translate('cityNotSpecified'),
+            ),
+            DetailsField(
+              icon: Icons.place_outlined,
+              label: loc.translate('areas'),
+              isMissing: _currentRequest.selectedAreas.isEmpty,
+              value: _currentRequest.selectedAreas.isNotEmpty
+                  ? _getLocalizedAreasText(_currentRequest.selectedAreas)
+                  : loc.translate('areasNotSpecified'),
+            ),
+            DetailsField(
+              icon: Icons.phone_outlined,
+              label: loc.translate('phoneNumber'),
+              isMissing: _currentRequest.phoneNumber.trim().isEmpty,
+              value: _currentRequest.phoneNumber.trim().isNotEmpty
+                  ? PhoneInputService.formatForDisplay(
+                      _currentRequest.phoneNumber)
+                  : loc.translate('phoneNotAdded'),
+              onCopy: _currentRequest.phoneNumber.trim().isNotEmpty
+                  ? _copyPhone
+                  : null,
+            ),
+            if (_currentRequest.location.isNotEmpty)
+              DetailsField(
+                icon: Icons.map_outlined,
+                label: loc.translate('specificLocation'),
+                value: _currentRequest.location,
+              ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isRent ? colors.primary : colors.tertiary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    isRent
-                        ? loc.translate('lookingToRent')
-                        : loc.translate('lookingToBuy'),
-                    style: texts.labelSmall?.copyWith(
-                      color: isRent ? colors.onPrimary : colors.onTertiary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                _buildCallButton(context),
-                _buildWhatsAppButton(context),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Property type and location
-            Row(
-              children: [
-                Icon(
-                  _getPropertyIcon(),
-                  color: colors.onPrimaryContainer,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _getPropertyDisplayText().isNotEmpty
-                        ? _getPropertyDisplayText()
-                        : loc.translate('propertyTypeNotSpecified'),
-                    style: texts.titleLarge?.copyWith(
-                      color: colors.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                Icon(
-                  Icons.location_on_rounded,
-                  color: colors.onPrimaryContainer.withValues(alpha: 0.8),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _getLocationText().isNotEmpty
-                        ? _getLocationText()
-                        : loc.translate('locationNotSpecified'),
-                    style: texts.bodyMedium?.copyWith(
-                      color: _getLocationText().isNotEmpty
-                          ? colors.onPrimaryContainer.withValues(alpha: 0.8)
-                          : colors.onPrimaryContainer.withValues(alpha: 0.6),
-                      fontStyle: _getLocationText().isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Price range
-            _buildPriceDisplay(context),
-
-            const SizedBox(height: 12),
-
-            // Square footage
-            _buildSquareFootageDisplay(context),
-
-            // Property details (rooms, baths) if applicable
-            if (_shouldShowRoomsAndBaths()) ...[
-              const SizedBox(height: 16),
-              _buildPropertyStats(context),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWhatsAppButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final loc = AppLocalizations.of(context);
-    final hasPhone = _currentRequest.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed: hasPhone
-            ? () => _openWhatsApp(
-                _currentRequest.phoneNumber, loc.translate('propertyManager'))
-            : null,
-        icon: Image.asset(
-          hasPhone ? AppImages.whatsapp : AppImages.whatsAppDisable,
-          width: 34,
-          height: 34,
-          color:
-              hasPhone ? null : colors.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
-      ),
+        if (_currentRequest.notes.isNotEmpty) ...[
+          const SizedBox(height: DetailsSection.spacing),
+          DetailsNotes(notes: _currentRequest.notes),
+        ],
+      ],
     );
   }
 
   // WhatsApp functionality
   Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
     final loc = AppLocalizations.of(context);
-    try {
-      // Use PhoneInputService helper to ensure + at start and no spaces
-      final formattedNumber = PhoneInputService.formatForDial(phoneNumber);
-
-      String template = loc.translate('whatsAppBusinessMessage');
-      if (template.startsWith('** ')) {
-        template =
-            'Hello {managerName}, I would like to discuss business opportunities with your office.';
-      }
-      final messageText = template.replaceAll('{managerName}', managerName);
-      final message = Uri.encodeComponent(messageText);
-
-      // Try direct app URL first
-      final directAppUri = Uri.parse(
-          'https://api.whatsapp.com/send?phone=$formattedNumber&text=%22$message%22');
-
-      if (await canLaunchUrl(directAppUri)) {
-        await launchUrl(
-          directAppUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Fallback to native URI
-      final nativeUri =
-          Uri.parse('https://wa.me/$formattedNumber?text=$message');
-      if (await canLaunchUrl(nativeUri)) {
-        await launchUrl(
-          nativeUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Last fallback to web WhatsApp
-      final webUri = Uri.parse(
-          'https://web.whatsapp.com/send?phone=$formattedNumber&text=$message');
-      await launchUrl(webUri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('WhatsApp error: $e');
-      if (context.mounted) {
-        _showToast(
-          loc.translate('couldNotOpenWhatsApp'),
-          Theme.of(context).colorScheme.error,
-        );
-      }
-    }
-  }
-
-  Widget _buildCallButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final hasPhone = _currentRequest.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed:
-            hasPhone ? () => _makePhoneCall(_currentRequest.phoneNumber) : null,
-        icon: Icon(
-          hasPhone ? Icons.phone_rounded : Icons.phone_disabled_rounded,
-          color: hasPhone
-              ? colors.primary
-              : colors.onSurfaceVariant.withValues(alpha: 0.5),
-          size: 30,
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
-      ),
-    );
+    final errorColor = Theme.of(context).colorScheme.error;
+    final message = loc
+        .translate('whatsAppBusinessMessage')
+        .replaceAll('{managerName}', managerName);
+    final result = await DetailsContactActions.whatsApp(phoneNumber,
+        countryCode: _currentRequest.countryCode, message: message);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'couldNotOpenWhatsApp'),
+        errorColor);
   }
 
   Widget _buildPriceDisplay(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
     final loc = AppLocalizations.of(context);
-
-    // Check if both prices are empty
-    final bool hasPricing = _currentRequest.minPrice.isNotEmpty ||
-        _currentRequest.maxPrice.isNotEmpty;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: hasPricing
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.errorContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasPricing
-              ? colors.outline.withValues(alpha: 0.1)
-              : colors.error.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            hasPricing ? Icons.payments_rounded : Icons.warning_rounded,
-            color: hasPricing ? colors.primary : colors.error,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasPricing) ...[
-                  // Show price when available
-                  if (_currentRequest.minPrice.isNotEmpty &&
-                      _currentRequest.maxPrice.isNotEmpty) ...[
-                    Text(
-                      '${_currentRequest.minPrice} - ${_currentRequest.maxPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ] else if (_currentRequest.minPrice.isNotEmpty) ...[
-                    Text(
-                      'From ${_currentRequest.minPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ] else if (_currentRequest.maxPrice.isNotEmpty) ...[
-                    Text(
-                      'Up to ${_currentRequest.maxPrice} AED',
-                      style: texts.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ],
-                  Text(
-                    loc.translate('priceRange'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ] else ...[
-                  // Show empty state when no pricing
-                  Text(
-                    loc.translate('budgetNotSpecified'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colors.onErrorContainer,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSquareFootageDisplay(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    final String value = _currentRequest.squareFootage.trim();
-    final bool hasFootage = value.isNotEmpty;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: hasFootage
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.errorContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasFootage
-              ? colors.outline.withValues(alpha: 0.1)
-              : colors.error.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            hasFootage ? Icons.square_foot : Icons.info_outline,
-            color: hasFootage ? colors.primary : colors.error,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hasFootage
-                      ? '${_formatSquareFootage(value)} ${loc.translate('squareFootageUnit')}'
-                      : loc.translate('squareFootageNotSpecified'),
-                  style: texts.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: hasFootage ? colors.primary : Colors.white,
-                    fontStyle: hasFootage ? FontStyle.normal : FontStyle.italic,
-                  ),
-                ),
-                if (hasFootage)
-                  Text(
-                    loc.translate('squareFootage'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final min = _currentRequest.minPrice;
+    final max = _currentRequest.maxPrice;
+    final currency = loc.translate('aed');
+    final String price;
+    if (min.isNotEmpty && max.isNotEmpty) {
+      price = '$min – $max $currency';
+    } else if (min.isNotEmpty) {
+      price = '${loc.translate('from')} $min $currency';
+    } else if (max.isNotEmpty) {
+      price = '${loc.translate('upTo')} $max $currency';
+    } else {
+      price = loc.translate('budgetNotSpecified');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(loc.translate('requestBudget'), style: theme.textTheme.bodySmall),
+        Text(price,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: min.isEmpty && max.isEmpty
+                  ? theme.colorScheme.onSurfaceVariant
+                  : OfferDetailsStyle.accentText(
+                      theme.colorScheme, theme.colorScheme.surface),
+            )),
+      ],
     );
   }
 
@@ -762,330 +392,70 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     final colors = Theme.of(context).colorScheme;
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatItem(
-            Icons.bed_rounded,
-            _currentRequest.rooms.toString(),
-            loc.translate('rooms'),
-            colors,
-            texts,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatItem(
-            Icons.bathtub_rounded,
+    final stats = <Widget>[
+      if (_shouldShowRoomsAndBaths()) ...[
+        _buildStatItem(Icons.bed_outlined, _currentRequest.rooms.toString(),
+            loc.translate('rooms'), colors, texts),
+        _buildStatItem(
+            Icons.bathtub_outlined,
             _currentRequest.bathrooms.toString(),
             loc.translate('bathrooms'),
             colors,
-            texts,
-          ),
-        ),
+            texts),
       ],
+      _buildStatItem(
+          Icons.square_foot,
+          _currentRequest.squareFootage.trim().isEmpty
+              ? loc.translate('squareFootageNotSpecified')
+              : '${_formatSquareFootage(_currentRequest.squareFootage)} ${loc.translate('squareFootageUnit')}',
+          loc.translate('squareFootage'),
+          colors,
+          texts),
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(
+            color: colors.onSurface.withValues(alpha: 0.08), width: 0.7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 300 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.5;
+        if (stacked) return Column(children: stats);
+        return IntrinsicHeight(
+            child: Row(children: [
+          for (var i = 0; i < stats.length; i++) ...[
+            if (i > 0)
+              VerticalDivider(
+                  width: 1,
+                  thickness: 0.5,
+                  color: colors.onSurface.withValues(alpha: 0.12),
+                  indent: 5,
+                  endIndent: 5),
+            Expanded(child: stats[i]),
+          ],
+        ]));
+      }),
     );
   }
 
   Widget _buildStatItem(IconData icon, String value, String label,
       ColorScheme colors, TextTheme texts) {
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: colors.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.outline.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 18, color: colors.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Column(
-              children: [
-              Text(
-                value,
-                style: texts.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colors.onSurface,
-                ),
-              ),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: texts.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontSize: 10,
-                ),
-              ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickInfoGrid(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.location_city_rounded,
-                    title: loc.translate('city'),
-                    value: _currentRequest.selectedCity.isNotEmpty
-                        ? _getLocalizedCityName(_currentRequest.selectedCity)
-                        : loc.translate('cityNotSpecified'),
-                    colors: colors,
-                    texts: texts,
-                    isEmpty: _currentRequest.selectedCity.isEmpty,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.phone_rounded,
-                    title: loc.translate('phoneNumber'),
-                    value: _currentRequest.phoneNumber.isNotEmpty
-                        ? PhoneInputService.formatForDisplay(
-                            _currentRequest.phoneNumber)
-                        : loc.translate('phoneNotAdded'),
-                    colors: colors,
-                    texts: texts,
-                    onTap: _currentRequest.phoneNumber.isNotEmpty
-                        ? () => _copyPhone()
-                        : null,
-                    isEmpty: _currentRequest.phoneNumber.isEmpty,
-                    isPhone: true, // NEW
-                  ),
-                ),
-              ],
-            ),
-            if (_currentRequest.selectedAreas.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildInfoTile(
-                icon: Icons.place_rounded,
-                title: loc.translate('areas'),
-                value: _getLocalizedAreasText(_currentRequest.selectedAreas),
-                colors: colors,
-                texts: texts,
-                fullWidth: true,
-              ),
-            ] else ...[
-              const SizedBox(height: 12),
-              _buildInfoTile(
-                icon: Icons.place_rounded,
-                title: loc.translate('areas'),
-                value: loc.translate('areasNotSpecified'),
-                colors: colors,
-                texts: texts,
-                fullWidth: true,
-                isEmpty: true,
-              ),
-            ],
-            if (_currentRequest.location.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildInfoTile(
-                icon: Icons.location_on_rounded,
-                title: loc.translate('specificLocation'),
-                value: _currentRequest.location,
-                colors: colors,
-                texts: texts,
-                fullWidth: true,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoTile({
-    required IconData icon,
-    required String title,
-    required String value,
-    required ColorScheme colors,
-    required TextTheme texts,
-    VoidCallback? onTap,
-    bool fullWidth = false,
-    bool isEmpty = false,
-    bool isPhone = false, // NEW param
-  }) {
-    final widget = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isEmpty
-            ? colors.errorContainer.withValues(alpha: 0.3)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isEmpty
-              ? colors.error.withValues(alpha: 0.2)
-              : colors.outline.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isEmpty
-                  ? colors.error.withValues(alpha: 0.1)
-                  : colors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              isEmpty ? Icons.warning_rounded : icon,
-              size: 16,
-              color: isEmpty ? colors.error : colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: texts.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 10,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  textDirection: isPhone ? ui.TextDirection.ltr : null,
-                  style: texts.bodySmall?.copyWith(
-                    fontWeight: isEmpty ? FontWeight.w400 : FontWeight.w600,
-                    color: isEmpty
-                        ? colors.onErrorContainer.withValues(alpha: 0.8)
-                        : colors.onSurface,
-                    fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
-                  ),
-                  maxLines: fullWidth ? 2 : 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (onTap != null && !isEmpty) ...[
-            const SizedBox(width: 4),
-            Icon(
-              Icons.copy_rounded,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (onTap != null && !isEmpty) {
-      return GestureDetector(
-        onTap: onTap,
-        child: widget,
-      );
-    }
-
-    return widget;
-  }
-
-  Widget _buildCompactNotesCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colors.secondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.note_alt_rounded,
-                    color: colors.secondary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    loc.translate('notes'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.outline.withValues(alpha: 0.08),
-                ),
-              ),
-              child: Text(
-                _currentRequest.notes,
-                style: texts.bodyMedium?.copyWith(
-                  height: 1.5,
-                  color: colors.onSurface,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 20, color: colors.primary),
+        const SizedBox(height: 3),
+        Text(label,
+            textAlign: TextAlign.center,
+            style: texts.bodySmall?.copyWith(height: 1.2)),
+        const SizedBox(height: 2),
+        Text(value,
+            textAlign: TextAlign.center,
+            style: texts.titleMedium?.copyWith(
+                fontSize: 14 * OfferDetailsStyle.scale(context), height: 1.1)),
+      ]),
     );
   }
 
@@ -1119,61 +489,6 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     }
   }
 
-  Widget _buildAnimatedFAB(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final loc = AppLocalizations.of(context);
-
-    return AnimatedBuilder(
-      animation: _fabAnimation,
-      builder: (context, child) {
-        final statusColor = _statusColor(_currentRequest.status);
-        final statusIcon = _statusIcon(_currentRequest.status);
-        final statusLabel = _getLocalizedStatusLabel();
-        final canUpdateStatus = _currentRequest.id != null;
-
-        return Transform.scale(
-          scale: _fabAnimation.value,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              FloatingActionButton.extended(
-                heroTag: "status_request_fab",
-                onPressed: canUpdateStatus ? () => _showStatusSelector() : null,
-                icon: Icon(statusIcon, size: 20),
-                label: Text(
-                  statusLabel,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                backgroundColor: canUpdateStatus
-                    ? statusColor.withValues(alpha: 0.15)
-                    : colors.surfaceContainerHighest.withValues(alpha: 0.7),
-                foregroundColor:
-                    canUpdateStatus ? statusColor : colors.onSurfaceVariant,
-                elevation: canUpdateStatus ? 8 : 0,
-              ),
-              const SizedBox(height: 16),
-              FloatingActionButton.extended(
-                heroTag: "edit_request_fab",
-                onPressed: _editRequest,
-                icon: const Icon(Icons.edit_rounded, size: 20),
-                label: Text(
-                  loc.translate('edit'),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                backgroundColor: colors.primary,
-                foregroundColor: colors.onPrimary,
-                elevation: 8,
-                extendedPadding: const EdgeInsets.symmetric(horizontal: 14),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // Helper methods
   String _getLocalizedStatusLabel() {
     final loc = AppLocalizations.of(context);
     final statusKey = _currentRequest.status.name;
@@ -1184,11 +499,6 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     }
 
     return translated;
-  }
-
-  Color _statusColor(PropertyStatus status) {
-    return Color(
-        int.parse(status.colorCode.substring(1), radix: 16) + 0xFF000000);
   }
 
   IconData _statusIcon(PropertyStatus status) {
@@ -1214,39 +524,14 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     }
   }
 
-  IconData _getPropertyIcon() {
-    switch (_currentRequest.specificPropertyType.toLowerCase()) {
-      case 'villa':
-        return Icons.home_rounded;
-      case 'apartment':
-        return Icons.apartment_rounded;
-      case 'studio':
-        return Icons.meeting_room_rounded;
-      case 'office space':
-        return Icons.business_rounded;
-      case 'shop':
-        return Icons.store_rounded;
-      case 'warehouse':
-        return Icons.warehouse_rounded;
-      default:
-        return Icons.search_rounded;
-    }
-  }
-
   String _getPropertyDisplayText() {
-    if (_currentRequest.specificPropertyType.isEmpty) {
-      return '';
-    }
-
-    String propertyText =
-        _getLocalizedSpecificType(_currentRequest.specificPropertyType);
-    if (_currentRequest.propertyType != null &&
-        _currentRequest.propertyType!.isNotEmpty) {
-      String localizedPropertyType =
-          _getLocalizedPropertyType(_currentRequest.propertyType!);
-      propertyText = '$propertyText - $localizedPropertyType';
-    }
-    return propertyText;
+    final specific = _currentRequest.specificPropertyType.trim();
+    final category = _currentRequest.propertyType?.trim();
+    return [
+      if (specific.isNotEmpty) _getLocalizedSpecificType(specific),
+      if (category != null && category.isNotEmpty)
+        _getLocalizedPropertyType(category),
+    ].join(' - ');
   }
 
   String _getLocalizedPropertyType(String propertyType) {
@@ -1614,21 +899,15 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
 
   Future<void> _makePhoneCall(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
-    if (phoneNumber.isEmpty) {
-      _showToast(loc.translate('phoneNumberNotAvailable'),
-          Theme.of(context).colorScheme.error);
-      return;
-    }
-
-    final dial = PhoneInputService.formatForDial(phoneNumber);
-    final Uri phoneUri = Uri(scheme: 'tel', path: dial);
-    try {
-      await launchUrl(phoneUri, mode: LaunchMode.platformDefault);
-    } on PlatformException catch (e) {
-      debugPrint('Failed to open dialer: ${e.message}');
-      _showToast(loc.translate('unableToMakePhoneCall'),
-          Theme.of(context).colorScheme.error);
-    }
+    final errorColor = Theme.of(context).colorScheme.error;
+    final result = await DetailsContactActions.call(phoneNumber,
+        countryCode: _currentRequest.countryCode);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'unableToMakePhoneCall'),
+        errorColor);
   }
 
   Future<void> _copyPhone() async {
@@ -1663,15 +942,20 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
   void _showStatusSelector() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => PropertyStatusSelector(
-        currentStatus: _currentRequest.status,
-        allowedStatuses: PropertyStatus.requestStatuses,
-        onStatusSelected: (newStatus) {
-          _updateRequestStatus(newStatus);
-        },
+      builder: (context) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: PropertyStatusSelector(
+            currentStatus: _currentRequest.status,
+            allowedStatuses: PropertyStatus.requestStatuses,
+            onStatusSelected: _updateRequestStatus,
+          ),
+        ),
       ),
     );
   }
@@ -1687,6 +971,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
       );
 
       await _requestService.updateRequest(_currentRequest.id!, updatedRequest);
+      if (!mounted) return;
 
       setState(() {
         _currentRequest = updatedRequest;
@@ -1697,10 +982,11 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
         '${loc.translate('request')} ${loc.translate('statusUpdatedTo')} ${newStatus.displayName}',
         Theme.of(context).colorScheme.primary,
       );
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       final loc = AppLocalizations.of(context);
       _showToast(
-        '${loc.translate('failedToUpdateStatus')}: ${e.toString()}',
+        loc.translate('failedToUpdateStatus'),
         Theme.of(context).colorScheme.error,
       );
     }
@@ -1715,6 +1001,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          scrollable: true,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -1726,11 +1013,13 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                 size: 28,
               ),
               const SizedBox(width: 12),
-              Text(
-                loc.translate('deleteRequest'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+              Expanded(
+                child: Text(
+                  loc.translate('deleteRequest'),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
             ],
           ),
@@ -1808,12 +1097,15 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                           color: colors.onSurface.withValues(alpha: 0.7),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
+                        Flexible(
+                          child: Text(
+                            loc.translate('cancel'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: colors.onSurface.withValues(alpha: 0.8),
+                            ),
                           ),
                         ),
                       ],
@@ -1847,12 +1139,15 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                           color: Colors.white,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          loc.translate('delete'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
+                        Flexible(
+                          child: Text(
+                            loc.translate('delete'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -1901,54 +1196,4 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
       textColor: Colors.white,
     );
   }
-}
-
-class _BaseActionDecoration extends BoxDecoration {
-  _BaseActionDecoration({
-    required Color backgroundColor,
-    required Color shadowColor,
-  }) : super(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 8,
-              spreadRadius: 0,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        );
-}
-
-class _BackActionDecoration extends _BaseActionDecoration {
-  _BackActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _FavoriteActionDecoration extends _BaseActionDecoration {
-  _FavoriteActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _ShareActionDecoration extends _BaseActionDecoration {
-  _ShareActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: colors.surface.withValues(alpha: 0.95),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
-}
-
-class _DeleteActionDecoration extends _BaseActionDecoration {
-  _DeleteActionDecoration(ColorScheme colors)
-      : super(
-          backgroundColor: const Color(0xFFC81E1E).withValues(alpha: 0.1),
-          shadowColor: colors.shadow.withValues(alpha: 0.12),
-        );
 }

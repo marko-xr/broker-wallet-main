@@ -5657,6 +5657,40 @@ R-OFF2-REVOKE (إلغاء/إزاحة/حذف عن بعد يتأخر ≤ W)؛ R-OF
 
 ---
 
+
+## 7BG) DETAILS-PORT-1 — Details C1–C7 on Performance (2026-11-18)
+
+`CODE_PROVEN / PENDING_REAL_DEVICE`. The existing
+`perf/phase-1-startup-baseline` checkout started clean at `ba1a580`
+(AUTH-ROUTE-1), matching GitHub and the local tracking ref. Read-only Git
+verified merge base `45d51b0` and Details chain
+`c582b46 → abd9c5d → a8b7211 → 7f84ebf → 285a173`. HEAD, the index
+and the three stashes were preserved. See [the checkpoint](CURRENT_CHECKPOINT.md#details-port-1-2026-11-18)
+for the file inventory and evidence.
+
+Ported the approved six-screen Details UI and interactions, including
+29 additions per locale, coordinate/address fallbacks, safe contact and
+write failure feedback, accessible controls, related paging and clearer
+field hierarchy. Performance remains the source for all routing, held
+media lookup, Worker precedence, account/session isolation, Plan and
+upload paths. OFF-1, OFF-2b-1/1b/2/3 and the integrated Splash remain in place.
+
+Local focused verification: 845 PASS / 2 FAIL in the 29-file run, followed
+by 2/2 PASS after the final test-selector fixes, for 847 distinct passing
+tests. Scoped Flutter and Dart analyzers, formatter and diff checks passed. The earlier
+812 PASS / 7 FAIL run and corrections are recorded in the checkpoint.
+C1/C5/C6 Samsung acceptance is owner-reported for the source branch.
+Integrated C2/C3/C4/C7 and final Samsung visual acceptance remain open.
+Offline Home stays disabled and OFF-2b-4/5, D-63, NG-1..NG-5,
+FU-OFF2-BYID, FU-OFF-MAP and the release gates remain open.
+
+**NOW** — Owner reviews the unstaged port and decides when to commit and
+push it. **NEXT** — Run and record the integrated Samsung acceptance and
+visual matrix. **STOP** — No automated staging, commit, push or OFF-2b-4a
+work. OFF-2b-4a requires separate approval.
+
+---
+
 ## 8) مراجع الاستمرار
 
 - `AGENTS.md` (القيود الملزمة للمشروع).

@@ -1,21 +1,17 @@
-// auto_scrolling_related_items_carousel.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:intl/intl.dart';
+
 import '../common/localization/localization_delegate.dart';
 import '../data/models/ScreensModel/offers_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../widgets/compact_offer_card.dart';
 import '../widgets/compact_request_card.dart';
 
-/// 📱 Page-based auto-scrolling carousel for related offers and requests
-/// - Uses a PageView for deterministic snapping and RTL support
-/// - Ensures first item is fully visible (no left/right cut)
-/// - Special handling when there's only one item to ensure symmetric left/right spacing
+/// Related records in Details, with manual paging and optional autoplay.
 class AutoScrollingRelatedItemsCarousel extends StatefulWidget {
-  final List<OfferModel> offers;
-  final List<RequestModel> requests;
-  final String? title;
-
   const AutoScrollingRelatedItemsCarousel({
     super.key,
     required this.offers,
@@ -23,350 +19,255 @@ class AutoScrollingRelatedItemsCarousel extends StatefulWidget {
     this.title,
   });
 
+  final List<OfferModel> offers;
+  final List<RequestModel> requests;
+  final String? title;
+
   @override
   State<AutoScrollingRelatedItemsCarousel> createState() =>
       _AutoScrollingRelatedItemsCarouselState();
 }
 
 class _AutoScrollingRelatedItemsCarouselState
-    extends State<AutoScrollingRelatedItemsCarousel> {
-  Timer? _autoScrollTimer;
-  int _currentIndex = 0;
-  bool _isUserScrolling = false;
-  bool _isRTL = false;
-  bool _isAutoScrolling = false;
+    extends State<AutoScrollingRelatedItemsCarousel>
+    with WidgetsBindingObserver {
+  final _controller = ScrollController(keepScrollOffset: false);
+  final _cardsKey = GlobalKey();
+  Timer? _timer;
+  bool _playing = false;
+  bool _animating = false;
+  bool _active = true;
+  bool _reducedMotion = false;
+  int _index = 0;
+  double? _pageWidth;
 
-  // Card dimensions: visual content (360) + spacing (12) = 372
-  static const double _cardVisualWidth = 360.0;
-  static const double _cardSpacing = 12.0;
-  static const double _cardWidth = _cardVisualWidth + _cardSpacing;
-
-  PageController? _pageController;
-  double _viewportFraction = 1.0;
-  double _singleItemSidePadding = 0.0;
+  int get _total => widget.offers.length + widget.requests.length;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startAutoScroll();
-    });
+    final binding = WidgetsBinding.instance;
+    _active = binding.lifecycleState == null ||
+        binding.lifecycleState == AppLifecycleState.resumed;
+    binding.addObserver(this);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _isRTL = Directionality.of(context) == TextDirection.rtl;
-
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    // Calculate viewport fraction for PageView so a full card + spacing fits exactly.
-    // If cardWidth is slightly bigger than screen, fraction will be 1.0 (clamped).
-    _viewportFraction = (_cardWidth / screenWidth).clamp(0.05, 1.0);
-
-    // For the single-item case, compute exact symmetric side padding so left == right.
-    // If the cardVisualWidth is wider than the screen, side padding is 0.
-    _singleItemSidePadding =
-        ((screenWidth - _cardVisualWidth) / 2.0).clamp(0.0, double.infinity);
-
-    // (Re)create PageController preserving current page if possible
-    final currentPage = _pageController?.hasClients == true
-        ? (_pageController!.page?.round() ?? 0)
-        : 0;
-    _pageController?.dispose();
-    _pageController = PageController(
-      initialPage: currentPage,
-      viewportFraction: _viewportFraction,
-    );
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    _syncTimer();
   }
 
   @override
   void didUpdateWidget(AutoScrollingRelatedItemsCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    final oldCount = oldWidget.offers.length + oldWidget.requests.length;
-    final newCount = widget.offers.length + widget.requests.length;
-    if (oldCount != newCount) {
-      _currentIndex = 0;
-      try {
-        _pageController?.jumpToPage(0);
-      } catch (_) {}
-      _stopAutoScroll();
-      _startAutoScroll();
+    if (_total != oldWidget.offers.length + oldWidget.requests.length) {
+      _index = _total == 0 ? 0 : _index.clamp(0, _total - 1);
+      _restorePosition();
+      _syncTimer();
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active = state == AppLifecycleState.resumed;
+    _syncTimer();
   }
 
   @override
   void dispose() {
-    _stopAutoScroll();
-    _pageController?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
-  void _startAutoScroll() {
-    _stopAutoScroll();
-    final totalItems = widget.offers.length + widget.requests.length;
-    if (totalItems < 2) return;
+  void _restorePosition() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients || _pageWidth == null) return;
+      _controller.jumpTo(_index * _pageWidth!);
+    });
+  }
 
-    _autoScrollTimer =
-        Timer.periodic(const Duration(milliseconds: 2500), (timer) async {
-      if (!mounted || _isUserScrolling) return;
-      if (_pageController == null || !_pageController!.hasClients) return;
+  bool get _visible {
+    if (ModalRoute.of(context)?.isCurrent == false) return false;
+    final cards = _cardsKey.currentContext?.findRenderObject();
+    if (cards is! RenderBox || !cards.hasSize) return false;
+    final viewport = RenderAbstractViewport.maybeOf(cards.parent);
+    if (viewport == null) return true;
+    final bounds = MatrixUtils.transformRect(
+        cards.getTransformTo(viewport), cards.paintBounds);
+    return bounds.overlaps(viewport.paintBounds);
+  }
 
-      _isAutoScrolling = true;
-
-      try {
-        final nextIndex = _isRTL ? _currentIndex - 1 : _currentIndex + 1;
-        int targetIndex;
-        if (_isRTL) {
-          targetIndex = (nextIndex < 0) ? (totalItems - 1) : nextIndex;
-        } else {
-          targetIndex = (nextIndex >= totalItems) ? 0 : nextIndex;
-        }
-
-        await _pageController!.animateToPage(
-          targetIndex,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-        );
-
-        setState(() {
-          _currentIndex = targetIndex;
+  void _syncTimer() {
+    if (!_playing || !_active || _reducedMotion || _total < 2) {
+      _timer?.cancel();
+      _timer = null;
+      if (_animating) {
+        // Settings can change during build. Stop the in-flight motion after it.
+        scheduleMicrotask(() {
+          if (mounted && _animating && _controller.hasClients) {
+            _controller.jumpTo(_index * _controller.position.viewportDimension);
+          }
         });
-      } catch (e) {
-        // ignore errors from animation when disposed/unavailable
-      } finally {
-        _isAutoScrolling = false;
+      }
+      return;
+    }
+    _timer ??= Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (!mounted || !_controller.hasClients || !_visible) return;
+      final position = _controller.position;
+      if (position.isScrollingNotifier.value ||
+          position.viewportDimension <= 0) {
+        return;
+      }
+      final next = (_index + 1) % _total;
+      if (next == 0) {
+        _controller.jumpTo(0);
+      } else {
+        _animating = true;
+        unawaited(_controller
+            .animateTo(next * position.viewportDimension,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeInOut)
+            .whenComplete(() => _animating = false));
       }
     });
   }
 
-  void _stopAutoScroll() {
-    if (_autoScrollTimer != null) {
-      _autoScrollTimer?.cancel();
-      _autoScrollTimer = null;
-    }
+  void _togglePlayback() {
+    setState(() => _playing = !_playing);
+    _syncTimer();
   }
 
-  void _onUserDragStart() {
-    if (!_isUserScrolling) {
-      setState(() => _isUserScrolling = true);
-      _stopAutoScroll();
-    }
+  bool _updatePage(ScrollNotification notification) {
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.horizontal ||
+        notification.metrics.viewportDimension <= 0 ||
+        _total < 2) return false;
+    final page =
+        (notification.metrics.pixels / notification.metrics.viewportDimension)
+            .round()
+            .clamp(0, _total - 1);
+    if (_index != page) setState(() => _index = page);
+    return false;
   }
 
-  void _onUserDragEnd() {
-    if (_isUserScrolling) {
-      setState(() => _isUserScrolling = false);
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && !_isUserScrolling) _startAutoScroll();
-      });
-    }
+  String _count(AppLocalizations loc, String key, int count) {
+    final locale = loc.locale.toString();
+    return Intl.plural(
+      count,
+      locale: locale,
+      zero: loc.translate('${key}Zero'),
+      one: loc.translate('${key}One'),
+      two: loc.translate('${key}Two'),
+      few: loc.translate('${key}Few'),
+      many: loc.translate('${key}Many'),
+      other: loc.translate('${key}Other'),
+    ).replaceAll('{count}', NumberFormat.decimalPattern(locale).format(count));
   }
 
-  Widget _buildSingleItem(BuildContext context, Widget child) {
-    // Center the single card with exact symmetric horizontal padding
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: _singleItemSidePadding),
-      child: child,
-    );
-  }
+  Widget _card(int index) => index < widget.offers.length
+      ? CompactOfferCard(offer: widget.offers[index])
+      : CompactRequestCard(
+          request: widget.requests[index - widget.offers.length]);
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
+    if (_total == 0) return const SizedBox.shrink();
     final loc = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final numbers = NumberFormat.decimalPattern(loc.locale.toString());
+    final position = loc
+        .translate('relatedItemPosition')
+        .replaceAll('{position}', numbers.format(_index + 1))
+        .replaceAll('{total}', numbers.format(_total));
 
-    final totalItems = widget.offers.length + widget.requests.length;
-
-    if (totalItems == 0) return const SizedBox.shrink();
-
-    return Container(
-      margin: const EdgeInsets.only(top: 16, bottom: 100),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colors.surface,
-            colors.surface.withValues(alpha: 0.3),
-          ],
-        ),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                         widget.title ??
                             loc.translate('relatedOffersAndRequests'),
-                        style: texts.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${widget.offers.length} ${loc.translate('offers')}, ${widget.requests.length} ${loc.translate('requests')}',
-                        style: texts.bodySmall?.copyWith(
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (totalItems >= 2)
-                  Container(
-                    width: 110,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: colors.secondary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: colors.secondary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
+                        style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 2),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
                       children: [
-                        Icon(
-                          _isUserScrolling
-                              ? Icons.pause_circle_outline
-                              : Icons.play_circle_outline,
-                          size: 14,
-                          color: colors.secondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                            child: Text(
-                          _isUserScrolling
-                              ? loc.translate('paused')
-                              : loc.translate('autoScroll'),
-                          style: texts.labelSmall?.copyWith(
-                            color: colors.secondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )),
+                        Text(
+                            _count(
+                                loc, 'relatedOfferCount', widget.offers.length),
+                            style: theme.textTheme.bodySmall),
+                        Text(
+                            _count(loc, 'relatedRequestCount',
+                                widget.requests.length),
+                            style: theme.textTheme.bodySmall),
                       ],
                     ),
-                  ),
-              ],
-            ),
-          ),
-
-          // Carousel area
-          SizedBox(
-            height: 140,
-            child: GestureDetector(
-              onPanDown: (_) => _onUserDragStart(),
-              onPanEnd: (_) => _onUserDragEnd(),
-              child: Builder(builder: (context) {
-                // Single item: show centered card with symmetric padding (no inter-card spacing)
-                if (totalItems == 1) {
-                  final bool isOffer = widget.offers.isNotEmpty;
-                  final Widget card = SizedBox(
-                    width: _cardVisualWidth,
-                    child: isOffer
-                        ? SingleChildScrollView(
-                            child: CompactOfferCard(
-                            offer: widget.offers[0],
-                            showShadow: true,
-                          ))
-                        : SingleChildScrollView(
-                            child: CompactRequestCard(
-                            request: widget.requests[0],
-                            showShadow: true,
-                          )),
-                  );
-                  return _buildSingleItem(context, card);
-                }
-
-                // Multiple items: PageView with viewportFraction and symmetric horizontal padding
-                // Use symmetric horizontal padding on each item so gaps at start/end are balanced.
-                return PageView.builder(
-                  reverse: _isRTL,
-                  controller: _pageController,
-                  itemCount: totalItems,
-                  onPageChanged: (page) {
-                    setState(() => _currentIndex = page);
-                  },
-                  physics: totalItems > 1
-                      ? const BouncingScrollPhysics()
-                      : const NeverScrollableScrollPhysics(),
-                  itemBuilder: (context, index) {
-                    if (index < widget.offers.length) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: _cardSpacing / 2),
-                        child: SizedBox(
-                          width: _cardVisualWidth,
-                          child: SingleChildScrollView(
-                              child: CompactOfferCard(
-                            offer: widget.offers[index],
-                            showShadow: true,
-                          )),
-                        ),
-                      );
-                    } else {
-                      final requestIndex = index - widget.offers.length;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: _cardSpacing / 2),
-                        child: SizedBox(
-                          width: _cardVisualWidth,
-                          child: SingleChildScrollView(
-                              child: CompactRequestCard(
-                            request: widget.requests[requestIndex],
-                            showShadow: true,
-                          )),
-                        ),
-                      );
-                    }
-                  },
-                );
-              }),
-            ),
-          ),
-
-          // Page Indicator (only for >1)
-          if (totalItems > 1)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  totalItems > 5 ? 5 : totalItems,
-                  (i) {
-                    final isActive = i == (_currentIndex % 5);
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: isActive ? 24 : 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? colors.primary
-                            : colors.onSurface.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    );
-                  },
+                  ],
                 ),
               ),
-            ),
+              if (_total > 1)
+                IconButton(
+                  tooltip: loc.translate(_reducedMotion
+                      ? 'relatedAutoplayReducedMotion'
+                      : _playing
+                          ? 'relatedAutoplayPause'
+                          : 'relatedAutoplayPlay'),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size.square(kMinInteractiveDimension),
+                  ),
+                  onPressed: _reducedMotion ? null : _togglePlayback,
+                  icon: Icon(_playing && !_reducedMotion
+                      ? Icons.pause_circle_outline
+                      : Icons.play_circle_outline),
+                ),
+            ],
+          ),
+          LayoutBuilder(builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            if (_pageWidth != null && _pageWidth != width) _restorePosition();
+            _pageWidth = width;
+            Widget page(int index) => SizedBox(
+                  width: width,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 400),
+                      child: _card(index),
+                    ),
+                  ),
+                );
+            if (_total == 1) return page(0);
+
+            // Full-width pages snap horizontally. The tallest card sets the
+            // natural row height and the outer Details scroll handles height.
+            return NotificationListener<ScrollNotification>(
+              onNotification: _updatePage,
+              child: SingleChildScrollView(
+                key: _cardsKey,
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                physics: const PageScrollPhysics(),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: List.generate(_total, page),
+                ),
+              ),
+            );
+          }),
+          if (_total > 1)
+            Text(position,
+                textAlign: TextAlign.center, style: theme.textTheme.labelSmall),
         ],
       ),
     );

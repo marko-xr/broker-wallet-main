@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'r2_test_fakes.dart';
+import 'r5_details_expectations.dart';
 import 'responsive_harness.dart';
 
 const entityMatrix = <ResponsiveCase>[
@@ -186,12 +187,13 @@ void entityCases<T, V extends ChangeNotifier>({
       }
       expect(reads, 1);
     });
-    testWidgets('$name details and collapse $c', (tester) async {
+    testWidgets('$name details and pinned actions $c', (tester) async {
       final window = noKeyboard(c);
       await pumpResponsive(tester, window,
           home: withR2ScreenProviders(
               details(record(0, true), LayoutRelatedService())));
       expect(find.byIcon(Icons.share_outlined).hitTestable(), findsWidgets);
+      expectPinnedDetailsControls(tester);
       expect(find.byKey(const Key('local-map-preview')),
           mapSupported ? findsOneWidget : findsNothing);
       for (var i = 0; i < 5; i++) {
@@ -199,6 +201,7 @@ void entityCases<T, V extends ChangeNotifier>({
         await tester.pump();
         expectNoLayoutException(tester, window);
       }
+      expectPinnedDetailsControls(tester);
     });
   }
 
@@ -271,7 +274,7 @@ void entityCases<T, V extends ChangeNotifier>({
                     details(record(0, false), LayoutRelatedService()))
                 : list(Stream.value([record(0, false)]), () {}));
         if (isDetails) {
-          await tester.tap(find.byIcon(Icons.delete_outline));
+          await openDetailsDeleteConfirmation(tester);
         } else {
           await tester.drag(
               find.byType(CustomScrollView), const Offset(0, -300));
@@ -326,8 +329,11 @@ void entityCases<T, V extends ChangeNotifier>({
         final carousel = find.byType(AutoScrollingRelatedItemsCarousel);
         await tester.ensureVisible(carousel);
         await tester.pump();
-        final page =
-            find.descendant(of: carousel, matching: find.byType(PageView));
+        final page = find.descendant(
+            of: carousel,
+            matching: find.byWidgetPredicate((widget) =>
+                widget is SingleChildScrollView &&
+                widget.scrollDirection == Axis.horizontal));
         expect(page, findsOneWidget);
         await tester.ensureVisible(page);
         await tester.pump();

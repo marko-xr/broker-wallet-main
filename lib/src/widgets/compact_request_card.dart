@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:go_router/go_router.dart';
 import '../common/localization/localization_delegate.dart';
+import '../views/Screens/ViewDetails/widgets/offer_details_style.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../Views/Widgets/property_status_indicator.dart';
 
@@ -26,6 +27,8 @@ class CompactRequestCard extends StatelessWidget {
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
     final isRent = request.requestType == 'rent';
+    final typeForeground =
+        isRent ? OfferDetailsStyle.primaryButtonForeground : Colors.white;
     final squareFootageValue = request.squareFootage.trim();
 
     return Container(
@@ -99,14 +102,11 @@ class CompactRequestCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Property Type with icon
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                _getPropertyIcon(request.propertyType),
-                                size: 18,
-                                color: Colors.black,
-                              ),
+                              Icon(_getPropertyIcon(request.propertyType),
+                                  size: 18, color: colors.onSurfaceVariant),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -115,66 +115,36 @@ class CompactRequestCard extends StatelessWidget {
                                     fontWeight: FontWeight.bold,
                                     color: colors.onSurface,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                  child: Text(
-                                _getFormattedDate(request.createdAt),
-                                style: texts.bodySmall?.copyWith(
-                                  color:
-                                      colors.onSurface.withValues(alpha: 0.7),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              )),
                             ],
                           ),
-                          const SizedBox(height: 6),
-
-                          // Location and Specific Property Type
-                          Row(
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
                             children: [
-                              Icon(
-                                Icons.home_rounded,
-                                size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.8),
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
+                              Text(_getFormattedDate(request.createdAt),
+                                  style: texts.bodySmall),
+                              Text(
                                   _getSpecificPropertyTypeDisplay(request, loc),
-                                  style: texts.bodySmall?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w500,
+                                  style: texts.bodySmall),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.location_on_rounded,
+                                      size: 16, color: colors.onSurfaceVariant),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                        _getCityDisplayName(
+                                            request.selectedCity, loc),
+                                        style: texts.bodyMedium),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 40),
-                              Icon(
-                                Icons.location_on_rounded,
-                                size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.6),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  _getCityDisplayName(
-                                      request.selectedCity, loc),
-                                  style: texts.bodyMedium?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                ],
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 12),
 
                           // Enhanced badges row
@@ -189,11 +159,8 @@ class CompactRequestCard extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: isRent
-                                        ? [
-                                            colors.primary,
-                                            colors.primary
-                                                .withValues(alpha: 0.8)
-                                          ]
+                                        ? OfferDetailsStyle.rentBadgeGradient(
+                                            colors)
                                         : [
                                             colors.secondary,
                                             colors.secondary
@@ -221,7 +188,7 @@ class CompactRequestCard extends StatelessWidget {
                                           ? Icons.home_rounded
                                           : Icons.sell_rounded,
                                       size: 14,
-                                      color: Colors.white,
+                                      color: typeForeground,
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
@@ -229,7 +196,7 @@ class CompactRequestCard extends StatelessWidget {
                                           ? loc.translate('rent')
                                           : loc.translate('sale'),
                                       style: texts.labelSmall?.copyWith(
-                                        color: Colors.white,
+                                        color: typeForeground,
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 0.5,
                                       ),

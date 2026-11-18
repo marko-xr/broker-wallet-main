@@ -1,4 +1,3 @@
-﻿import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/action_decorations.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dart';
@@ -13,12 +12,14 @@ import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
 import 'package:broker_wallet/src/views/Screens/ViewDetails/private_media_gallery_loader.dart';
 import 'dart:async';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/utils/svg_icon.dart';
+import 'package:broker_wallet/src/common/utils/map_coordinates.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/services/ScreenServices/owner_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
+import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
@@ -36,6 +37,11 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+
+import 'widgets/details_page.dart';
+import 'widgets/details_media_placeholder.dart';
+import 'widgets/details_section.dart';
+import 'widgets/offer_details_style.dart';
 
 class OwnersDetailsView extends StatefulWidget {
   final OwnerModel owner;
@@ -67,7 +73,6 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
 
   GoogleMapController? _mapController;
   PageController? _mediaPageController;
-  int _currentMediaIndex = 0;
   final ScrollController _scrollController = ScrollController();
 
   // Services
@@ -173,8 +178,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       final uploads = _ownerService.uploadChanges;
       uploads.addListener(_handleMediaChanged);
       _ownerMediaUploads = uploads;
-      _ownerMediaCompletions =
-          _ownerService.uploadCompletions.listen((event) {
+      _ownerMediaCompletions = _ownerService.uploadCompletions.listen((event) {
         if (!mounted || event.offerId != _currentOwner.id) return;
         // The item is on the server now: show it from there.
         unawaited(_mediaLoader?.load());
@@ -278,8 +282,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
           _cachedMapWidget = null;
         });
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
   @override
@@ -298,140 +301,56 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      backgroundColor: colors.surface,
-      body: AnimatedBuilder(
-        animation: _mainAnimationController,
-        builder: (context, child) {
-          return CustomScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              _buildModernAppBar(context),
-              SliverToBoxAdapter(
-                child: Transform.translate(
-                  offset: Offset(0, 40 * _slideAnimation.value),
-                  child: Opacity(
-                    opacity: _fadeAnimation.value,
-                    child: _buildCompactContent(context),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: _buildAnimatedFAB(context),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    final loc = AppLocalizations.of(context);
+    final phone = _currentOwner.phoneNumber;
+    final canContact = DetailsContactActions.normalizePhone(phone,
+            countryCode: _currentOwner.countryCode) !=
+        null;
+    return DetailsPage(
+      title: loc.translate('propertyOwner'),
+      favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
+      onShare: _shareOwner,
+      onWhatsApp: !canContact
+          ? null
+          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onCall: !canContact ? null : () => _makePhoneCall(phone),
+      scrollController: _scrollController,
+      fade: _fadeAnimation,
+      slide: _slideAnimation,
+      contactFade: _fabAnimation,
+      content: _buildCompactContent,
+      media: _buildPropertyMedia,
     );
   }
 
-  Widget _buildModernAppBar(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final isRTL = Directionality.of(context) == TextDirection.rtl;
+  Widget _buildFavorite(BuildContext context,
+      OptimisticFavoritesService favorites, Widget? child) {
+    final id = _currentOwner.id;
+    if (id == null) {
+      return const Icon(Icons.favorite_border, size: 18);
+    }
+    return OptimizedFavoriteButton(
+      size: 18,
+      padding: const EdgeInsets.all((kMinInteractiveDimension - 18) / 2),
+      isFavorite: favorites.isOwnerFavorite(id),
+      isLoading: favorites.isOwnerLoading(id),
+      onToggle: _toggleFavorite,
+    );
+  }
 
-    return SliverAppBar(
-      expandedHeight: (_hasMediaHeader ? 280 : 200) +
-          (MediaQuery.textScalerOf(context).scale(100) - 100),
-      floating: false,
-      pinned: true,
-      stretch: true,
-      backgroundColor: colors.surface,
-      surfaceTintColor: colors.surface,
-      elevation: 0,
-      leading: Padding(
-        padding: const EdgeInsetsDirectional.only(start: 6, top: 6, bottom: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              decoration: BackActionDecoration(colors),
-              child: IconButton(
-                icon: Icon(
-                  isRTL ? Icons.arrow_back_ios_new : Icons.arrow_back_ios_new,
-                  color: colors.onSurface,
-                  size: 18,
-                ),
-                onPressed: () => context.pop(),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsetsDirectional.only(end: 6),
-              child: Consumer<OptimisticFavoritesService>(
-                builder: (context, favoritesService, child) {
-                  final ownerId = _currentOwner.id;
-
-                  if (ownerId == null || ownerId.isEmpty) {
-                    return Container(
-                      decoration: FavoriteActionDecoration(colors),
-                      child: Icon(
-                        Icons.favorite_border,
-                        color: colors.onSurface.withValues(alpha: 0.5),
-                        size: 18,
-                      ),
-                    );
-                  }
-
-                  return OptimizedFavoriteButton(
-                    isFavorite: favoritesService.isOwnerFavorite(ownerId),
-                    isLoading: favoritesService.isOwnerLoading(ownerId),
-                    onToggle: () => _toggleFavorite(),
-                    size: 18,
-                    activeColor: colors.primary,
-                    inactiveColor: colors.onSurface,
-                    showBackground: true,
-                  );
-                },
-              ),
-            ),
-          ],
+  Widget _buildPropertyMedia(BuildContext context) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(18 * OfferDetailsStyle.scale(context)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: 240 + MediaQuery.textScalerOf(context).scale(80) - 80,
         ),
-      ),
-      leadingWidth: 90,
-      centerTitle: false,
-      actions: [
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.fromSTEB(3, 6, 6, 6),
-          decoration: DeleteActionDecoration(colors),
-          child: IconButton(
-            icon: const Icon(
-              Icons.delete_outline,
-              color: Color(0xFFC81E1E),
-              size: 18,
-            ),
-            onPressed: () => _showDeleteConfirmation(),
-            padding: EdgeInsets.zero,
-          ),
-        ),
-        Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsetsDirectional.only(end: 6, top: 6, bottom: 6),
-          decoration: ShareActionDecoration(colors),
-          child: IconButton(
-            icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),
-            tooltip: AppLocalizations.of(context).translate('share'),
-            onPressed: _shareOwner,
-            padding: EdgeInsets.zero,
-          ),
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: RepaintBoundary(
+        child: AspectRatio(
+          aspectRatio: 2.1,
           child: _hasMediaHeader
               ? _buildMediaHeader(context)
-              : _buildGradientHeader(colors, texts),
+              : const DetailsMediaPlaceholder(asset: SvgIcon.ownersSvg),
         ),
       ),
     );
@@ -452,11 +371,6 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       mediaRefs: loader.displayItems,
       imagePlaceholder: const MediaLoadingPlaceholder(),
       pageController: _mediaPageController,
-      onPageChanged: (index) {
-        setState(() {
-          _currentMediaIndex = index;
-        });
-      },
       showControls: true,
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/profile-person.svg',
@@ -509,11 +423,6 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     _cachedMediaGallery ??= OptimizedMediaGalleryWidget(
       mediaUrls: _currentOwner.mediaUrls,
       pageController: _mediaPageController,
-      onPageChanged: (index) {
-        setState(() {
-          _currentMediaIndex = index;
-        });
-      },
       showControls: true,
       autoPlay: false,
       fallbackSvgPath: 'assets/icons/profile-person.svg',
@@ -522,182 +431,69 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     return _cachedMediaGallery!;
   }
 
-  Widget _buildGradientHeader(ColorScheme colors, TextTheme texts) {
-    final loc = AppLocalizations.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colors.primary.withValues(alpha: 0.8),
-            colors.secondary.withValues(alpha: 0.6),
-          ],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-              ),
-              child: Icon(
-                Icons.person_rounded,
-                size: 48,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              loc.translate('propertyOwner'),
-              style: texts.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildCompactContent(BuildContext context) {
     final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            _buildHeroCard(context),
-            const SizedBox(height: 12),
-            _buildQuickInfoGrid(context),
-            const SizedBox(height: 12),
-            if (_hasValidLatLng(_currentOwner.pickUpLatitude,
-                _currentOwner.pickUpLongitude)) ...[
-              _buildCompactLocationCard(context),
-            ] else ...[
-              // Show a placeholder when coordinates are not available
-              RepaintBoundary(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .shadow
-                            .withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .error
-                                  .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.location_off_rounded,
-                              color: Theme.of(context).colorScheme.error,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              loc.translate('propertyLocation'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .errorContainer
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.warning_rounded,
-                              color: Theme.of(context).colorScheme.error,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                loc.translate('mapLocationNotAvailable'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onErrorContainer,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+    final name = _currentOwner.name.trim();
+    final secondary = _currentOwner.propertyLocation.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DetailsSummary(
+          title: name.isEmpty ? loc.translate('nameNotSpecified') : name,
+          titleLabel: loc.translate('name'),
+          titleMissing: name.isEmpty,
+          icon: Icons.location_on_outlined,
+          subtitle: secondary.isEmpty ? null : secondary,
+          subtitleLabel: loc.translate('propertyLocation'),
+        ),
+        const SizedBox(height: DetailsSection.spacing),
+        DetailsFields(
+          title: loc.translate('propertyOwner'),
+          deleteLabel: loc.translate('deleteOwner'),
+          onEdit: _editOwner,
+          onDelete: _showDeleteConfirmation,
+          rows: [
+            DetailsField(
+              icon: Icons.business_outlined,
+              label: loc.translate('propertyType'),
+              isMissing: _currentOwner.typeOfProperties.trim().isEmpty,
+              value: _currentOwner.typeOfProperties.trim().isNotEmpty
+                  ? _currentOwner.typeOfProperties
+                  : loc.translate('notSpecified'),
+            ),
+            if (secondary.isEmpty)
+              DetailsField(
+                icon: Icons.location_on_outlined,
+                label: loc.translate('propertyLocation'),
+                value: loc.translate('propertyLocationNotSpecified'),
+                isMissing: true,
               ),
-            ],
-            if (_currentOwner.notes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _buildCompactNotesCard(context),
-            ],
-            // The land / plot plan: its own card, never part of the gallery.
-            _buildPlanCard(),
-            // 🔗 Related offers and requests carousel
-            _buildRelatedItemsCarousel(context),
+            DetailsField(
+              icon: Icons.phone_outlined,
+              label: loc.translate('phoneNumber'),
+              isMissing: _currentOwner.phoneNumber.trim().isEmpty,
+              value: _currentOwner.phoneNumber.trim().isNotEmpty
+                  ? PhoneInputService.formatForDisplay(
+                      _currentOwner.phoneNumber)
+                  : loc.translate('phoneNotAdded'),
+              onCopy: _currentOwner.phoneNumber.trim().isNotEmpty
+                  ? _copyPhone
+                  : null,
+            ),
           ],
         ),
-      ),
+        if (_currentOwner.notes.isNotEmpty) ...[
+          const SizedBox(height: DetailsSection.spacing),
+          DetailsNotes(notes: _currentOwner.notes),
+        ],
+        _buildPlanCard(),
+        const SizedBox(height: DetailsSection.spacing),
+        _buildCompactLocationCard(context),
+        _buildRelatedItemsCarousel(context),
+      ],
     );
   }
 
-  /// 🔗 Build related items carousel showing offers/requests with matching phone
   Widget _buildRelatedItemsCarousel(BuildContext context) {
     final phone = _currentOwner.phoneNumber;
     // Keep the same subscriptions through animation, resize and locale rebuilds.
@@ -737,554 +533,21 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     );
   }
 
-  Widget _buildHeroCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colors.primaryContainer,
-              colors.primaryContainer.withValues(alpha: 0.7),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: colors.primary.withValues(alpha: 0.1),
-              blurRadius: 20,
-              spreadRadius: 0,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              alignment: WrapAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.primary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    loc.translate('propertyOwnerCaps'),
-                    style: texts.labelSmall?.copyWith(
-                      color: colors.onPrimary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildCallButton(context),
-                    const SizedBox(width: 8),
-                    _buildWhatsAppButton(context),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Owner name and icon
-            Row(
-              children: [
-                Icon(
-                  Icons.person_rounded,
-                  color: colors.onPrimaryContainer,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _currentOwner.name.isNotEmpty
-                        ? _currentOwner.name
-                        : loc.translate('nameNotSpecified'),
-                    style: texts.titleLarge?.copyWith(
-                      color: colors.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Property type
-            Row(
-              children: [
-                Icon(
-                  Icons.business_rounded,
-                  color: colors.onPrimaryContainer.withValues(alpha: 0.8),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _currentOwner.typeOfProperties.isNotEmpty
-                        ? _currentOwner.typeOfProperties
-                        : loc.translate('propertyTypeNotSpecified'),
-                    style: texts.bodyMedium?.copyWith(
-                      color: _currentOwner.typeOfProperties.isNotEmpty
-                          ? colors.onPrimaryContainer.withValues(alpha: 0.8)
-                          : colors.onPrimaryContainer.withValues(alpha: 0.6),
-                      fontStyle: _currentOwner.typeOfProperties.isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // Property location
-            Row(
-              children: [
-                Icon(
-                  Icons.location_on_rounded,
-                  color: colors.onPrimaryContainer.withValues(alpha: 0.8),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _currentOwner.propertyLocation.isNotEmpty
-                        ? _currentOwner.propertyLocation
-                        : loc.translate('propertyLocationNotSpecified'),
-                    style: texts.bodyMedium?.copyWith(
-                      color: _currentOwner.propertyLocation.isNotEmpty
-                          ? colors.onPrimaryContainer.withValues(alpha: 0.8)
-                          : colors.onPrimaryContainer.withValues(alpha: 0.6),
-                      fontStyle: _currentOwner.propertyLocation.isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWhatsAppButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final loc = AppLocalizations.of(context);
-    final hasPhone = _currentOwner.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed: hasPhone
-            ? () => _openWhatsApp(
-                _currentOwner.phoneNumber, loc.translate('propertyManager'))
-            : null,
-        icon: Image.asset(
-          hasPhone ? AppImages.whatsapp : AppImages.whatsAppDisable,
-          width: 34,
-          height: 34,
-          color:
-              hasPhone ? null : colors.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
-      ),
-    );
-  }
-
-  // WhatsApp functionality
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
-    final loc = AppLocalizations.of(context);
-    try {
-      // Use PhoneInputService helper to ensure + at start and no spaces
-      final formattedNumber = PhoneInputService.formatForDial(phoneNumber);
-
-      String template = loc.translate('whatsAppBusinessMessage');
-      if (template.startsWith('** ')) {
-        template =
-            'Hello {managerName}, I would like to discuss business opportunities with your office.';
-      }
-      final messageText = template.replaceAll('{managerName}', managerName);
-      final message = Uri.encodeComponent(messageText);
-
-      // Try direct app URL first
-      final directAppUri = Uri.parse(
-          'https://api.whatsapp.com/send?phone=$formattedNumber&text=%22$message%22');
-
-      if (await canLaunchUrl(directAppUri)) {
-        await launchUrl(
-          directAppUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Fallback to native URI
-      final nativeUri =
-          Uri.parse('https://wa.me/$formattedNumber?text=$message');
-      if (await canLaunchUrl(nativeUri)) {
-        await launchUrl(
-          nativeUri,
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-
-      // Last fallback to web WhatsApp
-      final webUri = Uri.parse(
-          'https://web.whatsapp.com/send?phone=$formattedNumber&text=$message');
-      await launchUrl(webUri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('WhatsApp error: $e');
-      if (context.mounted) {
-        _showToast(
-          loc.translate('couldNotOpenWhatsApp'),
-          Theme.of(context).colorScheme.error,
-        );
-      }
-    }
-  }
-
-  Widget _buildCallButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final hasPhone = _currentOwner.phoneNumber.isNotEmpty;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: hasPhone
-            ? colors.surface.withValues(alpha: 0.9)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhone
-            ? [
-                BoxShadow(
-                  color: colors.shadow.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: IconButton(
-        onPressed:
-            hasPhone ? () => _makePhoneCall(_currentOwner.phoneNumber) : null,
-        icon: Icon(
-          hasPhone ? Icons.phone_rounded : Icons.phone_disabled_rounded,
-          color: hasPhone
-              ? colors.primary
-              : colors.onSurfaceVariant.withValues(alpha: 0.5),
-          size: 28,
-        ),
-        constraints: const BoxConstraints(
-          minWidth: 44,
-          minHeight: 44,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickInfoGrid(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
-    final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.business_rounded,
-                    title: loc.translate('propertyType'),
-                    value: _currentOwner.typeOfProperties.isNotEmpty
-                        ? _currentOwner.typeOfProperties
-                        : loc.translate('notSpecified'),
-                    colors: colors,
-                    texts: texts,
-                    isEmpty: _currentOwner.typeOfProperties.isEmpty,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildInfoTile(
-                    icon: Icons.phone_rounded,
-                    title: loc.translate('phoneNumber'),
-                    value: _currentOwner.phoneNumber.isNotEmpty
-                        ? PhoneInputService.formatForDisplay(
-                            _currentOwner.phoneNumber)
-                        : loc.translate('phoneNotAdded'),
-                    colors: colors,
-                    texts: texts,
-                    onTap: _currentOwner.phoneNumber.isNotEmpty
-                        ? () => _copyPhone()
-                        : null,
-                    isEmpty: _currentOwner.phoneNumber.isEmpty,
-                    isPhone: true, // NEW
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.location_city_rounded,
-              title: loc.translate('propertyLocation'),
-              value: _currentOwner.propertyLocation.isNotEmpty
-                  ? _currentOwner.propertyLocation
-                  : loc.translate('propertyLocationNotSpecified'),
-              colors: colors,
-              texts: texts,
-              fullWidth: true,
-              isEmpty: _currentOwner.propertyLocation.isEmpty,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoTile({
-    required IconData icon,
-    required String title,
-    required String value,
-    required ColorScheme colors,
-    required TextTheme texts,
-    VoidCallback? onTap,
-    bool fullWidth = false,
-    bool isEmpty = false,
-    bool isPhone = false, // NEW param
-  }) {
-    final widget = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isEmpty
-            ? colors.errorContainer.withValues(alpha: 0.3)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isEmpty
-              ? colors.error.withValues(alpha: 0.2)
-              : colors.outline.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isEmpty
-                  ? colors.error.withValues(alpha: 0.1)
-                  : colors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              isEmpty ? Icons.warning_rounded : icon,
-              size: 16,
-              color: isEmpty ? colors.error : colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: texts.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 10,
-                  ),
-                ),
-                const SizedBox(height: 2),
-
-                // Here we render the value. If it's a phone, force LTR direction.
-                Text(
-                  value,
-                  textDirection: isPhone ? TextDirection.ltr : null,
-                  style: texts.bodySmall?.copyWith(
-                    fontWeight: isEmpty ? FontWeight.w400 : FontWeight.w600,
-                    color: isEmpty
-                        ? colors.onErrorContainer.withValues(alpha: 0.8)
-                        : colors.onSurface,
-                    fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
-                  ),
-                  maxLines: fullWidth ? 2 : 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (onTap != null && !isEmpty) ...[
-            const SizedBox(width: 4),
-            Icon(
-              Icons.copy_rounded,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (onTap != null && !isEmpty) {
-      return GestureDetector(
-        onTap: onTap,
-        child: widget,
-      );
-    }
-
-    return widget;
-  }
-
   Widget _buildCompactLocationCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: colors.primary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    loc.translate('propertyLocationOnMap'),
-                    style: texts.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _openInMaps,
-                  icon: Icon(
-                    Icons.open_in_new_rounded,
-                    size: 16,
-                    color: colors.primary,
-                  ),
-                  label: Text(
-                    loc.translate('maps'),
-                    style: texts.bodySmall?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_currentOwner.pickUpAddress.isNotEmpty) ...[
-              Text(
-                _currentOwner.pickUpAddress,
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ] else if (_currentOwner.pickUpLocation.isNotEmpty) ...[
-              Text(
-                _currentOwner.pickUpLocation,
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ] else ...[
-              Text(
-                loc.translate('noSpecificAddressProvided'),
-                style: texts.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            _buildCachedMiniMap(context),
-          ],
-        ),
-      ),
+    final hasMap = MapCoordinates.isValid(
+        _currentOwner.pickUpLatitude, _currentOwner.pickUpLongitude);
+    final address = _currentOwner.pickUpAddress.trim().isNotEmpty
+        ? _currentOwner.pickUpAddress
+        : (_currentOwner.pickUpLocation.trim().isNotEmpty
+            ? _currentOwner.pickUpLocation
+            : loc.translate('noSpecificAddressProvided'));
+    return DetailsMap(
+      title:
+          loc.translate(hasMap ? 'propertyLocationOnMap' : 'propertyLocation'),
+      address: address,
+      onOpen: hasMap ? _openInMaps : null,
+      preview: hasMap ? _buildCachedMiniMap(context) : null,
     );
   }
 
@@ -1347,129 +610,35 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     return _cachedMapWidget!;
   }
 
-  Widget _buildCompactNotesCard(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final texts = Theme.of(context).textTheme;
+  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
     final loc = AppLocalizations.of(context);
-
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.08),
-              blurRadius: 16,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colors.secondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.note_alt_rounded,
-                    color: colors.secondary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                    child: Text(
-                  loc.translate('notes'),
-                  style: texts.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                )),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.outline.withValues(alpha: 0.08),
-                ),
-              ),
-              child: Text(
-                _currentOwner.notes,
-                style: texts.bodyMedium?.copyWith(
-                  height: 1.5,
-                  color: colors.onSurface,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    final errorColor = Theme.of(context).colorScheme.error;
+    final message = loc
+        .translate('whatsAppBusinessMessage')
+        .replaceAll('{managerName}', managerName);
+    final result = await DetailsContactActions.whatsApp(phoneNumber,
+        countryCode: _currentOwner.countryCode, message: message);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'couldNotOpenWhatsApp'),
+        errorColor);
   }
 
-  Widget _buildAnimatedFAB(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+  Future<void> _makePhoneCall(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
-    final hasPhone = _currentOwner.phoneNumber.isNotEmpty;
-
-    return AnimatedBuilder(
-      animation: _fabAnimation,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _fabAnimation.value,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.extended(
-                heroTag: "edit_owner_fab",
-                onPressed: _editOwner,
-                icon: const Icon(Icons.edit_rounded, size: 20),
-                label: Text(
-                  loc.translate('edit'),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                backgroundColor: colors.primary,
-                foregroundColor: colors.onPrimary,
-                elevation: 8,
-                extendedPadding: const EdgeInsets.symmetric(horizontal: 14),
-              ),
-              const SizedBox(height: 16),
-              FloatingActionButton(
-                heroTag: "call_phone_fab",
-                onPressed: hasPhone
-                    ? () => _makePhoneCall(_currentOwner.phoneNumber)
-                    : null,
-                backgroundColor: hasPhone
-                    ? colors.secondary
-                    : colors.surfaceContainerHighest,
-                foregroundColor:
-                    hasPhone ? colors.onSecondary : colors.onSurfaceVariant,
-                elevation: hasPhone ? 8 : 2,
-                child: Icon(
-                  hasPhone ? Icons.phone_rounded : Icons.phone_disabled_rounded,
-                  size: 24,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    final errorColor = Theme.of(context).colorScheme.error;
+    final result = await DetailsContactActions.call(phoneNumber,
+        countryCode: _currentOwner.countryCode);
+    if (!mounted || result == ContactLaunchResult.opened) return;
+    _showToast(
+        loc.translate(result == ContactLaunchResult.invalidPhone
+            ? 'phoneNumberNotAvailable'
+            : 'unableToMakePhoneCall'),
+        errorColor);
   }
 
-  // Action methods
   Future<void> _toggleFavorite() async {
     if (_currentOwner.id == null) return;
 
@@ -1526,26 +695,6 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     );
   }
 
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    final loc = AppLocalizations.of(context);
-
-    if (phoneNumber.isEmpty) {
-      _showToast(loc.translate('phoneNumberNotAvailable'),
-          Theme.of(context).colorScheme.error);
-      return;
-    }
-
-    final dial = PhoneInputService.formatForDial(phoneNumber);
-    final Uri phoneUri = Uri(scheme: 'tel', path: dial);
-    try {
-      await launchUrl(phoneUri, mode: LaunchMode.platformDefault);
-    } on PlatformException catch (e) {
-      debugPrint('Failed to open dialer: ${e.message}');
-      _showToast(loc.translate('unableToMakePhoneCall'),
-          Theme.of(context).colorScheme.error);
-    }
-  }
-
   void _copyPhone() {
     final loc = AppLocalizations.of(context);
 
@@ -1560,20 +709,12 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         Theme.of(context).colorScheme.primary);
   }
 
-  bool _hasValidLatLng(double? lat, double? lng) {
-    if (lat == null || lng == null) return false;
-    if (lat == 0.0 && lng == 0.0) return false; // avoid Null Island
-    if (lat < -90 || lat > 90) return false;
-    if (lng < -180 || lng > 180) return false;
-    return true;
-  }
-
   void _openInMaps() async {
     final lat = _currentOwner.pickUpLatitude;
     final lng = _currentOwner.pickUpLongitude;
 
     // Only open if valid
-    if (_hasValidLatLng(lat, lng)) {
+    if (MapCoordinates.isValid(lat, lng)) {
       final uri = Uri.parse(
           'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
       if (await canLaunchUrl(uri)) {
@@ -1583,6 +724,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     }
 
     // Otherwise show the same clear message used in the placeholder
+    if (!mounted) return;
     final loc = AppLocalizations.of(context);
     _showToast(loc.translate('mapLocationNotAvailable'),
         Theme.of(context).colorScheme.error);
@@ -1783,8 +925,8 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       }
     } catch (e) {
       if (mounted) {
-        _showToast('${loc.translate('failedToDeleteOwner')}: ${e.toString()}',
-            const Color(0xFFC81E1E));
+        _showToast(
+            loc.translate('failedToDeleteOwner'), const Color(0xFFC81E1E));
       }
     }
   }

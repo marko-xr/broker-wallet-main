@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:go_router/go_router.dart';
 import '../common/localization/localization_delegate.dart';
+import '../views/Screens/ViewDetails/widgets/offer_details_style.dart';
 import '../data/models/ScreensModel/offers_model.dart';
 import '../Views/Widgets/property_status_indicator.dart';
 
@@ -26,6 +27,8 @@ class CompactOfferCard extends StatelessWidget {
     final texts = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context);
     final isRent = offer.offerType == 'rent';
+    final typeForeground =
+        isRent ? OfferDetailsStyle.primaryButtonForeground : Colors.white;
     final squareFootageValue = offer.squareFootage.trim();
 
     return Container(
@@ -65,9 +68,7 @@ class CompactOfferCard extends StatelessWidget {
           onTap: () {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               final offerId = offer.id?.trim();
-              if (context.mounted &&
-                  offerId != null &&
-                  offerId.isNotEmpty) {
+              if (context.mounted && offerId != null && offerId.isNotEmpty) {
                 context.push(
                   '/offers-details-by-id/${Uri.encodeComponent(offerId)}',
                   extra: offer,
@@ -105,14 +106,11 @@ class CompactOfferCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Property Type with icon
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                _getPropertyIcon(offer.propertyType),
-                                size: 18,
-                                color: Colors.black,
-                              ),
+                              Icon(_getPropertyIcon(offer.propertyType),
+                                  size: 18, color: colors.onSurfaceVariant),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -121,61 +119,32 @@ class CompactOfferCard extends StatelessWidget {
                                     fontWeight: FontWeight.bold,
                                     color: colors.onSurface,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                  child: Text(
-                                _getFormattedDate(offer.createdAt),
-                                style: texts.bodySmall?.copyWith(
-                                  color:
-                                      colors.onSurface.withValues(alpha: 0.7),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              )),
                             ],
                           ),
-
-                          const SizedBox(height: 6),
-                          // Location and Specific Property Type
-                          Row(
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
                             children: [
-                              Icon(
-                                Icons.home_rounded,
-                                size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.8),
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  _getSpecificPropertyTypeDisplay(offer, loc),
-                                  style: texts.bodySmall?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w500,
+                              Text(_getFormattedDate(offer.createdAt),
+                                  style: texts.bodySmall),
+                              Text(_getSpecificPropertyTypeDisplay(offer, loc),
+                                  style: texts.bodySmall),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.location_on_rounded,
+                                      size: 16, color: colors.onSurfaceVariant),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                        _getCityDisplayName(
+                                            offer.selectedCity, loc),
+                                        style: texts.bodyMedium),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 40),
-                              Icon(
-                                Icons.location_on_rounded,
-                                size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.6),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  _getCityDisplayName(offer.selectedCity, loc),
-                                  style: texts.bodyMedium?.copyWith(
-                                    color:
-                                        colors.onSurface.withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                ],
                               ),
                             ],
                           ),
@@ -194,11 +163,8 @@ class CompactOfferCard extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: isRent
-                                        ? [
-                                            colors.primary,
-                                            colors.primary
-                                                .withValues(alpha: 0.8)
-                                          ]
+                                        ? OfferDetailsStyle.rentBadgeGradient(
+                                            colors)
                                         : [
                                             colors.secondary,
                                             colors.secondary
@@ -226,7 +192,7 @@ class CompactOfferCard extends StatelessWidget {
                                           ? Icons.home_rounded
                                           : Icons.sell_rounded,
                                       size: 14,
-                                      color: Colors.white,
+                                      color: typeForeground,
                                     ),
                                     const SizedBox(width: 2),
                                     Text(
@@ -234,7 +200,7 @@ class CompactOfferCard extends StatelessWidget {
                                           ? loc.translate('rent')
                                           : loc.translate('sale'),
                                       style: texts.labelSmall?.copyWith(
-                                        color: Colors.white,
+                                        color: typeForeground,
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 0.5,
                                       ),

@@ -28,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../plan_attachment/fake_plan_transport.dart';
 import 'r2_test_fakes.dart';
+import 'r5_details_expectations.dart';
 import 'responsive_harness.dart';
 
 const _owner = 'layout-owner';
@@ -236,6 +237,22 @@ void main() {
           )));
       expect(find.byType(OffersDetailsView), findsOneWidget);
       expectNoLayoutException(tester, detailsScenario);
+      const statusKey = 'offer-details-status';
+      if (detailsScenario.textScale == 1) {
+        await tapExpandedStatusBadge(tester, statusKey);
+      } else {
+        final target = find.descendant(
+          of: find.byKey(const ValueKey(statusKey)),
+          matching: find.byType(InkWell),
+        );
+        expect(tester.getSize(target).shortestSide, greaterThanOrEqualTo(48));
+        await tester.tap(target);
+      }
+      await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      expect(sheet, findsOneWidget);
+      Navigator.of(tester.element(sheet)).pop();
+      await tester.pumpAndSettle();
       for (var section = 0; section < 5; section++) {
         await tester.drag(
             find.byType(CustomScrollView).first, const Offset(0, -500));

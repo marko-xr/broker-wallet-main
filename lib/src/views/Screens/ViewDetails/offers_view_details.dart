@@ -24,7 +24,6 @@ import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/services/offer_media_upload_queue.dart'
     show OfferMediaUploadCompleted;
 import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/offer_details_style.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,7 +36,7 @@ import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'widgets/details_page.dart' show DetailsHeaderControl;
+import 'widgets/details_page.dart' show DetailsContactBar, DetailsHeaderControl;
 import 'widgets/details_media_placeholder.dart';
 import 'widgets/details_section.dart';
 
@@ -772,52 +771,6 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     });
   }
 
-  Widget _buildWhatsAppButton(BuildContext context) {
-    final loc = AppLocalizations.of(context);
-    final colors = Theme.of(context).colorScheme;
-    return FilledButton.icon(
-      onPressed: DetailsContactActions.normalizePhone(_currentOffer.phoneNumber,
-                  countryCode: _currentOffer.countryCode) ==
-              null
-          ? null
-          : () => _openWhatsApp(
-              _currentOffer.phoneNumber, loc.translate('propertyManager')),
-      icon: FaIcon(FontAwesomeIcons.whatsapp,
-          size: 21 * OfferDetailsStyle.scale(context)),
-      label: Text(loc.translate('whatsapp')),
-      style: FilledButton.styleFrom(
-        backgroundColor: colors.primary,
-        foregroundColor: OfferDetailsStyle.primaryButtonForeground,
-        textStyle: Theme.of(context).textTheme.labelLarge,
-        minimumSize: const Size(0, kMinInteractiveDimension),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-      ),
-    );
-  }
-
-  Widget _buildCallButton(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
-      onPressed: DetailsContactActions.normalizePhone(_currentOffer.phoneNumber,
-                  countryCode: _currentOffer.countryCode) ==
-              null
-          ? null
-          : () => _makePhoneCall(_currentOffer.phoneNumber),
-      icon: const Icon(Icons.phone_rounded, size: 18),
-      label: Text(AppLocalizations.of(context).translate('call')),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: OfferDetailsStyle.accentText(colors, colors.surface),
-        textStyle: Theme.of(context).textTheme.labelLarge,
-        minimumSize: const Size(0, kMinInteractiveDimension),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        side: BorderSide(
-            color: colors.primary.withValues(alpha: 0.7), width: 0.8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-      ),
-    );
-  }
-
   // WhatsApp functionality
   Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
     final loc = AppLocalizations.of(context);
@@ -1252,29 +1205,19 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   Widget _buildContactBar(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return FadeTransition(
-      opacity: _fabAnimation,
-      child: Container(
-        decoration: BoxDecoration(color: colors.surface, boxShadow: [
-          BoxShadow(
-              color: colors.shadow.withValues(alpha: 0.06),
-              blurRadius: 16,
-              offset: const Offset(0, -4)),
-        ]),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16 * OfferDetailsStyle.scale(context),
-                10, 16 * OfferDetailsStyle.scale(context), 8),
-            child: Row(children: [
-              Expanded(child: _buildWhatsAppButton(context)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildCallButton(context)),
-            ]),
-          ),
-        ),
-      ),
+    final loc = AppLocalizations.of(context);
+    final canContact = DetailsContactActions.normalizePhone(
+            _currentOffer.phoneNumber,
+            countryCode: _currentOffer.countryCode) !=
+        null;
+    return DetailsContactBar(
+      fade: _fabAnimation,
+      onWhatsApp: !canContact
+          ? null
+          : () => _openWhatsApp(
+              _currentOffer.phoneNumber, loc.translate('propertyManager')),
+      onCall:
+          !canContact ? null : () => _makePhoneCall(_currentOffer.phoneNumber),
     );
   }
 

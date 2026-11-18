@@ -1,4 +1,5 @@
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -140,9 +141,10 @@ class DetailsPage extends StatelessWidget {
               ],
             ),
           ),
-          bottomNavigationBar: FadeTransition(
-            opacity: contactFade,
-            child: _ContactBar(onWhatsApp: onWhatsApp, onCall: onCall),
+          bottomNavigationBar: DetailsContactBar(
+            fade: contactFade,
+            onWhatsApp: onWhatsApp,
+            onCall: onCall,
           ),
         );
       }),
@@ -193,9 +195,18 @@ class DetailsHeaderControl extends StatelessWidget {
   }
 }
 
-class _ContactBar extends StatelessWidget {
-  const _ContactBar({required this.onWhatsApp, required this.onCall});
+/// The Call/WhatsApp bar shared by every Details screen, so the two
+/// buttons' order, styling, and disabled appearance can only drift out of
+/// sync in one place instead of once per screen that duplicates it.
+class DetailsContactBar extends StatelessWidget {
+  const DetailsContactBar({
+    super.key,
+    required this.fade,
+    required this.onWhatsApp,
+    required this.onCall,
+  });
 
+  final Animation<double> fade;
   final VoidCallback? onWhatsApp;
   final VoidCallback? onCall;
 
@@ -208,56 +219,77 @@ class _ContactBar extends StatelessWidget {
     const padding = EdgeInsets.symmetric(horizontal: 10, vertical: 8);
     final shape =
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(13));
-    return Container(
-      decoration: BoxDecoration(color: colors.surface, boxShadow: [
-        BoxShadow(
-          color: colors.shadow.withValues(alpha: 0.06),
-          blurRadius: 16,
-          offset: const Offset(0, -4),
-        ),
-      ]),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(16 * scale, 10, 16 * scale, 8),
-          child: Row(children: [
-            Expanded(
-              child: FilledButton.icon(
-                key: const ValueKey('details-whatsapp'),
-                onPressed: onWhatsApp,
-                icon: FaIcon(FontAwesomeIcons.whatsapp, size: 21 * scale),
-                label: Text(loc.translate('whatsapp'),
-                    textAlign: TextAlign.center),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: OfferDetailsStyle.primaryButtonForeground,
-                  textStyle: theme.textTheme.labelLarge,
-                  minimumSize: const Size(0, kMinInteractiveDimension),
-                  padding: padding,
-                  shape: shape,
+    return FadeTransition(
+      opacity: fade,
+      child: Container(
+        decoration: BoxDecoration(color: colors.surface, boxShadow: [
+          BoxShadow(
+            color: colors.shadow.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ]),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16 * scale, 10, 16 * scale, 8),
+            // Call first, then WhatsApp: same order as the list cards.
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const ValueKey('details-call'),
+                  onPressed: onCall,
+                  // Same disabled-phone glyph the list cards use, so "no
+                  // phone number" reads the same way everywhere. Flipped
+                  // so its slash leans the same way as the WhatsApp
+                  // button's disabled artwork, not the opposite diagonal.
+                  icon: onCall == null
+                      ? Transform.flip(
+                          flipX: true,
+                          child: const Icon(Icons.phone_disabled_rounded,
+                              size: 18),
+                        )
+                      : const Icon(Icons.phone_rounded, size: 18),
+                  label:
+                      Text(loc.translate('call'), textAlign: TextAlign.center),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        OfferDetailsStyle.accentText(colors, colors.surface),
+                    textStyle: theme.textTheme.labelLarge,
+                    minimumSize: const Size(0, kMinInteractiveDimension),
+                    padding: padding,
+                    side: BorderSide(
+                        color: colors.primary.withValues(alpha: 0.7),
+                        width: 0.8),
+                    shape: shape,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const ValueKey('details-call'),
-                onPressed: onCall,
-                icon: const Icon(Icons.phone_rounded, size: 18),
-                label: Text(loc.translate('call'), textAlign: TextAlign.center),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor:
-                      OfferDetailsStyle.accentText(colors, colors.surface),
-                  textStyle: theme.textTheme.labelLarge,
-                  minimumSize: const Size(0, kMinInteractiveDimension),
-                  padding: padding,
-                  side: BorderSide(
-                      color: colors.primary.withValues(alpha: 0.7), width: 0.8),
-                  shape: shape,
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const ValueKey('details-whatsapp'),
+                  onPressed: onWhatsApp,
+                  // Same disabled-WhatsApp artwork the list cards use, so
+                  // "no phone number" reads the same way everywhere.
+                  icon: onWhatsApp == null
+                      ? Image.asset(AppImages.whatsAppDisable,
+                          width: 21 * scale, height: 21 * scale)
+                      : FaIcon(FontAwesomeIcons.whatsapp, size: 21 * scale),
+                  label: Text(loc.translate('whatsapp'),
+                      textAlign: TextAlign.center),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.primary,
+                    foregroundColor: OfferDetailsStyle.primaryButtonForeground,
+                    textStyle: theme.textTheme.labelLarge,
+                    minimumSize: const Size(0, kMinInteractiveDimension),
+                    padding: padding,
+                    shape: shape,
+                  ),
                 ),
               ),
-            ),
-          ]),
+            ]),
+          ),
         ),
       ),
     );

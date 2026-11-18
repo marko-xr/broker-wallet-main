@@ -1,5 +1,4 @@
-﻿import 'package:broker_wallet/src/common/utils/images.dart';
-import 'package:broker_wallet/src/common/utils/list_week_keys.dart';
+﻿import 'package:broker_wallet/src/common/utils/list_week_keys.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
@@ -8,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:broker_wallet/src/views/Widgets/entity_delete_progress.dart';
+import 'package:broker_wallet/src/widgets/contact_actions_row.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -951,112 +951,10 @@ class _EnhancedOwnerTile extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // Contact Actions Row
-                  Row(
-                    children: [
-                      // Call Button
-                      Expanded(
-                        child: Container(
-                          constraints: const BoxConstraints(minHeight: 40),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: owner.phoneNumber.isNotEmpty
-                                ? const Color(0xFFE8F5E8)
-                                : colors.surfaceContainerHighest
-                                    .withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap:
-                                  owner.phoneNumber.isNotEmpty ? onCall : null,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    owner.phoneNumber.isNotEmpty
-                                        ? Icons.phone
-                                        : Icons.phone_disabled_rounded,
-                                    color: owner.phoneNumber.isNotEmpty
-                                        ? const Color(0xFF4CAF50)
-                                        : colors.onSurfaceVariant
-                                            .withValues(alpha: 0.5),
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                      child: Text(
-                                    loc.translate('call'),
-                                    style: texts.bodyMedium?.copyWith(
-                                      color: owner.phoneNumber.isNotEmpty
-                                          ? const Color(0xFF4CAF50)
-                                          : colors.onSurfaceVariant
-                                              .withValues(alpha: 0.5),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  )),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      // WhatsApp Button
-                      Expanded(
-                        child: Container(
-                          constraints: const BoxConstraints(minHeight: 40),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: owner.phoneNumber.isNotEmpty
-                                ? const Color(0xFFE8F5E8)
-                                : colors.surfaceContainerHighest
-                                    .withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: owner.phoneNumber.isNotEmpty
-                                  ? onWhatsApp
-                                  : null,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    owner.phoneNumber.isNotEmpty
-                                        ? AppImages.whatsapp
-                                        : AppImages.whatsAppDisable,
-                                    width: 20,
-                                    height: 20,
-                                    color: owner.phoneNumber.isNotEmpty
-                                        ? null
-                                        : colors.onSurfaceVariant
-                                            .withValues(alpha: 0.5),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                      child: Text(
-                                    loc.translate('whatsapp'),
-                                    style: texts.bodyMedium?.copyWith(
-                                      color: owner.phoneNumber.isNotEmpty
-                                          ? const Color(0xFF4CAF50)
-                                          : colors.onSurfaceVariant
-                                              .withValues(alpha: 0.5),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  )),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  ContactActionsRow(
+                    hasPhone: owner.phoneNumber.isNotEmpty,
+                    onCall: onCall,
+                    onWhatsApp: onWhatsApp,
                   ),
                 ],
               ),

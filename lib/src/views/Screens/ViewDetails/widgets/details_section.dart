@@ -335,19 +335,20 @@ class DetailsMap extends StatelessWidget {
       icon: Icons.location_on_outlined,
       action: onOpen == null
           ? null
-          : Flexible(
-              child: TextButton.icon(
-                onPressed: onOpen,
-                icon: const Icon(Icons.open_in_new, size: 13),
-                label: Text(loc.translate('maps')),
-                style: TextButton.styleFrom(
-                  textStyle: theme.textTheme.labelSmall,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size.square(kMinInteractiveDimension),
-                  foregroundColor: OfferDetailsStyle.accentText(
-                      theme.colorScheme,
-                      theme.colorScheme.surfaceContainerLowest),
-                ),
+          // Not Flexible: the title's Expanded is the row's only flex
+          // child, so it absorbs exactly the space up to this button,
+          // leaving no leftover slack trailing after it.
+          : TextButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.open_in_new, size: 13),
+              label: Text(loc.translate('maps')),
+              style: TextButton.styleFrom(
+                textStyle: theme.textTheme.labelSmall,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                minimumSize: const Size.square(kMinInteractiveDimension),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: OfferDetailsStyle.accentText(theme.colorScheme,
+                    theme.colorScheme.surfaceContainerLowest),
               ),
             ),
       child: Column(

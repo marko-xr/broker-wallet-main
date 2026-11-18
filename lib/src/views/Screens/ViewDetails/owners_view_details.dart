@@ -207,6 +207,15 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     return _currentOwner.mediaUrls.isNotEmpty;
   }
 
+  /// Whether the header is showing the explained, retryable error state
+  /// (icon + message + retry button), which needs the taller frame the
+  /// gallery and placeholder states don't — the same distinction Offer
+  /// Details makes with `hasRecoverableFailure`.
+  bool get _hasRecoverableMediaFailure {
+    final loader = _mediaLoader;
+    return loader != null && loader.loadFailed && !loader.hasRenderableMedia;
+  }
+
   void _setupAnimations() {
     _mainAnimationController = AnimationController(
       duration: const Duration(milliseconds: 1200),
@@ -339,12 +348,18 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   }
 
   Widget _buildPropertyMedia(BuildContext context) {
+    final text = MediaQuery.textScalerOf(context);
+    final isRecoverable = _hasRecoverableMediaFailure;
+    final minHeight = isRecoverable ? 240.0 : 160.0;
+    final referenceSize = isRecoverable ? 80.0 : 48.0;
     return ClipRRect(
       borderRadius:
           BorderRadius.circular(18 * OfferDetailsStyle.scale(context)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          minHeight: 240 + MediaQuery.textScalerOf(context).scale(80) - 80,
+          minHeight: minHeight +
+              (text.scale(referenceSize) - referenceSize)
+                  .clamp(0, double.infinity),
         ),
         child: AspectRatio(
           aspectRatio: 2.1,
@@ -537,11 +552,14 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     final loc = AppLocalizations.of(context);
     final hasMap = MapCoordinates.isValid(
         _currentOwner.pickUpLatitude, _currentOwner.pickUpLongitude);
+    // Null, not a fallback string: when there's no address text, DetailsMap's
+    // own "map not available" message already says so — showing a second,
+    // separately-worded "no address" line next to it would just repeat it.
     final address = _currentOwner.pickUpAddress.trim().isNotEmpty
         ? _currentOwner.pickUpAddress
         : (_currentOwner.pickUpLocation.trim().isNotEmpty
             ? _currentOwner.pickUpLocation
-            : loc.translate('noSpecificAddressProvided'));
+            : null);
     return DetailsMap(
       title:
           loc.translate(hasMap ? 'propertyLocationOnMap' : 'propertyLocation'),

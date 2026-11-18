@@ -1999,6 +1999,7 @@
   "deleteWatchmenConfirmationMessage": "Are you sure you want to delete this watchmen contact? This action cannot be undone.",
   "watchmenContact": "Watchmen Contact",
   "buildingLocation": "Building location",
+  "buildingLocationOnMap": "Building location on map",
   "watchmenDeletedSuccessfully": "Watchmen deleted successfully",
   "failedToDeleteWatchmen": "Failed to delete watchmen",
   "pressBackAgainToExit": "Press back again to exit",

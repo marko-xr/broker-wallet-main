@@ -240,10 +240,15 @@ class _AutoScrollingRelatedItemsCarouselState
             _pageWidth = width;
             Widget page(int index) => SizedBox(
                   width: width,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      child: _card(index),
+                  child: Padding(
+                    // A visible gap between pages, so the next card never
+                    // touches the current one while swiping between them.
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 400),
+                        child: _card(index),
+                      ),
                     ),
                   ),
                 );
@@ -265,10 +270,47 @@ class _AutoScrollingRelatedItemsCarouselState
               ),
             );
           }),
-          if (_total > 1)
-            Text(position,
-                textAlign: TextAlign.center, style: theme.textTheme.labelSmall),
+          if (_total > 1) _buildPageIndicator(context, position),
         ],
+      ),
+    );
+  }
+
+  /// Dots below the cards so people can see there's more to scroll without
+  /// having to drag first. The current page's dot is a wider, filled pill;
+  /// the rest are small and muted, per the Page Controls pattern.
+  ///
+  /// The dots are decorative: `position` (the same "x of y" announcement
+  /// shown before this was added) carries the information for screen
+  /// readers, so it's exposed as one label instead of one per dot.
+  Widget _buildPageIndicator(BuildContext context, String position) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Semantics(
+        label: position,
+        child: ExcludeSemantics(
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: List.generate(_total, (index) {
+              final active = index == _index;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                width: active ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: active
+                      ? colors.primary
+                      : colors.onSurfaceVariant.withValues(alpha: 0.3),
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }

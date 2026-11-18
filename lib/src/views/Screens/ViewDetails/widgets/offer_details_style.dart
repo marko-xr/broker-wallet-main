@@ -6,6 +6,19 @@ abstract final class OfferDetailsStyle {
   static double scale(BuildContext context) =>
       (MediaQuery.sizeOf(context).width / 369).clamp(0.85, 1.2);
 
+  /// The outer edge inset for the circular header controls (back,
+  /// favorite, share). Each one centers its visible 34*scale circle inside
+  /// a fixed 48dp (`kMinInteractiveDimension`) touch target, so lining the
+  /// circle itself up with the body content's 13*scale inset means
+  /// subtracting the circle's own built-in inset within that touch target,
+  /// not reusing 13*scale as the outer padding directly.
+  static double headerEdgeInset(double scale) {
+    const controlCircleSize = 34.0;
+    final circleInset =
+        (kMinInteractiveDimension - controlCircleSize * scale) / 2;
+    return (13 * scale - circleInset).clamp(0.0, double.infinity);
+  }
+
   static double toolbarHeight(BuildContext context, double scale) {
     final text = MediaQuery.textScalerOf(context);
     return (48 * scale).clamp(48.0, double.infinity) +

@@ -422,6 +422,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final scale = OfferDetailsStyle.scale(context);
+    final headerEdgeInset = OfferDetailsStyle.headerEdgeInset(scale);
     return SliverAppBar(
       pinned: true,
       toolbarHeight: OfferDetailsStyle.toolbarHeight(context, scale),
@@ -430,14 +431,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      leadingWidth: kMinInteractiveDimension + 18 * scale,
+      leadingWidth: kMinInteractiveDimension + headerEdgeInset,
       title: Text(loc.translate('propertyDetails'),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge),
       leading: Padding(
-        padding: EdgeInsetsDirectional.only(start: 18 * scale),
+        padding: EdgeInsetsDirectional.only(start: headerEdgeInset),
         child: _headerAction(context,
             tooltip: loc.translate('goBack'),
             icon: Directionality.of(context) == ui.TextDirection.rtl
@@ -460,12 +461,12 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                     : _toggleFavorite);
           },
         ),
-        SizedBox(width: 8 * scale),
+        SizedBox(width: 4 * scale),
         _headerAction(context,
             tooltip: loc.translate('share'),
             icon: Icons.share_outlined,
             onPressed: _showShareDialog),
-        SizedBox(width: 18 * scale),
+        SizedBox(width: headerEdgeInset),
       ],
     );
   }
@@ -1153,24 +1154,25 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           Icon(Icons.location_on_outlined, color: colors.primary, size: 19),
           const SizedBox(width: 7),
           Expanded(
-              child: Text(loc.translate('offerDetailsMapTitle'),
+              child: Text(
+                  loc.translate(hasMap ? 'offerDetailsMapTitle' : 'location'),
                   style: texts.titleMedium)),
-          Expanded(
-              child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: TextButton.icon(
-                      key: const ValueKey('offer-details-view-larger'),
-                      onPressed: hasMap ? _openInMaps : null,
-                      icon: const Icon(Icons.open_in_new, size: 13),
-                      label: Text(loc.translate('offerDetailsViewLarger')),
-                      style: TextButton.styleFrom(
-                          textStyle: texts.labelSmall,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          minimumSize:
-                              const Size.square(kMinInteractiveDimension),
-                          foregroundColor: OfferDetailsStyle.accentText(
-                              colors, colors.surfaceContainerLowest),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap)))),
+          // Not Flexible: the title's Expanded is the row's only flex
+          // child, so it absorbs exactly the space up to this button,
+          // leaving no leftover slack trailing after it.
+          if (hasMap)
+            TextButton.icon(
+                key: const ValueKey('offer-details-view-larger'),
+                onPressed: _openInMaps,
+                icon: const Icon(Icons.open_in_new, size: 13),
+                label: Text(loc.translate('maps')),
+                style: TextButton.styleFrom(
+                    textStyle: texts.labelSmall,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: const Size.square(kMinInteractiveDimension),
+                    foregroundColor: OfferDetailsStyle.accentText(
+                        colors, colors.surfaceContainerLowest),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap)),
         ]),
         const SizedBox(height: 4),
         if (hasMap)

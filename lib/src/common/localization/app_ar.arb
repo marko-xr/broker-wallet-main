@@ -1932,6 +1932,7 @@
   "deleteWatchmenConfirmationMessage": "هل أنت متأكد من أنك تريد حذف جهة اتصال الحارس هذه؟ لا يمكن التراجع عن هذا الإجراء.",
   "watchmenContact": "جهة اتصال الحارس",
   "buildingLocation": "موقع المبنى",
+  "buildingLocationOnMap": "موقع المبنى على الخريطة",
   "watchmenDeletedSuccessfully": "تم حذف الحارس بنجاح",
   "failedToDeleteWatchmen": "فشل في حذف الحارس",
   "pressBackAgainToExit": "اضغط للخلف مرة أخرى للخروج",

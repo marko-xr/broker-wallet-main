@@ -45,6 +45,7 @@ class DetailsPage extends StatelessWidget {
         final colors = Theme.of(context).colorScheme;
         final loc = AppLocalizations.of(context);
         final mediaBuilder = media;
+        final headerEdgeInset = OfferDetailsStyle.headerEdgeInset(scale);
         return Scaffold(
           backgroundColor: colors.surface,
           body: SafeArea(
@@ -63,7 +64,7 @@ class DetailsPage extends StatelessWidget {
                   elevation: 0,
                   scrolledUnderElevation: 0,
                   centerTitle: true,
-                  leadingWidth: kMinInteractiveDimension + 18 * scale,
+                  leadingWidth: kMinInteractiveDimension + headerEdgeInset,
                   title: Text(
                     title,
                     maxLines: 2,
@@ -72,7 +73,7 @@ class DetailsPage extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   leading: Padding(
-                    padding: EdgeInsetsDirectional.only(start: 18 * scale),
+                    padding: EdgeInsetsDirectional.only(start: headerEdgeInset),
                     child: DetailsHeaderControl(
                       child: IconButton(
                         tooltip: loc.translate('goBack'),
@@ -95,7 +96,7 @@ class DetailsPage extends StatelessWidget {
                         child: favorite,
                       ),
                     ),
-                    SizedBox(width: 8 * scale),
+                    SizedBox(width: 4 * scale),
                     DetailsHeaderControl(
                       child: IconButton(
                         tooltip: loc.translate('share'),
@@ -104,7 +105,7 @@ class DetailsPage extends StatelessWidget {
                         onPressed: onShare,
                       ),
                     ),
-                    SizedBox(width: 18 * scale),
+                    SizedBox(width: headerEdgeInset),
                   ],
                 ),
                 if (mediaBuilder != null)

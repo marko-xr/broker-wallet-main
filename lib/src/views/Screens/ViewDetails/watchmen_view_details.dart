@@ -268,13 +268,17 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
     final loc = AppLocalizations.of(context);
     final hasMap = MapCoordinates.isValid(
         _currentWatchmen.pickUpLatitude, _currentWatchmen.pickUpLongitude);
+    // Null, not a fallback string: when there's no address text, DetailsMap's
+    // own "map not available" message already says so — showing a second,
+    // separately-worded "no address" line next to it would just repeat it.
     final address = _currentWatchmen.pickUpLocation.trim().isNotEmpty
         ? _currentWatchmen.pickUpLocation
         : (_currentWatchmen.pickUpAddress.trim().isNotEmpty
             ? _currentWatchmen.pickUpAddress
-            : loc.translate('specificLocationNotProvided'));
+            : null);
     return DetailsMap(
-      title: loc.translate('buildingLocation'),
+      title:
+          loc.translate(hasMap ? 'buildingLocationOnMap' : 'buildingLocation'),
       address: address,
       onOpen: hasMap ? _openInMaps : null,
       preview: hasMap ? _buildCachedMiniMap(context) : null,

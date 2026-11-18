@@ -268,11 +268,14 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
     final loc = AppLocalizations.of(context);
     final hasMap = MapCoordinates.isValid(
         _currentOffice.pickUpLatitude, _currentOffice.pickUpLongitude);
+    // Null, not a fallback string: when there's no address text, DetailsMap's
+    // own "map not available" message already says so — showing a second,
+    // separately-worded "no address" line next to it would just repeat it.
     final address = _currentOffice.pickUpAddress.trim().isNotEmpty
         ? _currentOffice.pickUpAddress
         : (_currentOffice.pickUpLocation.trim().isNotEmpty
             ? _currentOffice.pickUpLocation
-            : loc.translate('noSpecificAddressProvided'));
+            : null);
     return DetailsMap(
       title: loc.translate(hasMap ? 'officeLocationOnMap' : 'officeLocation'),
       address: address,

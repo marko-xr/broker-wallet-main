@@ -5867,7 +5867,13 @@ About; Log Out last, in its own card without a heading (look unchanged — it
 was never styled destructive). `accountSecurity` / `privacyData` keys stay in
 the ARB files, unused. Order guards updated in
 `profile_information_architecture_test` and `delete_account_test`. Tests not
-run by the agent; not committed.
+run by the agent; committed e471cae.
+
+Icons (follow-up): the seven SVG rows drew a 10%-tinted circle with a ~10 px
+glyph (each SVG carries its own 40×40 circle; `subscription.svg` is only an
+embedded PNG, so it showed blank), while the Material rows showed a ~20 px
+glyph with no circle and mixed filled/outlined styles. All 15 rows now use
+outlined Material icons; the SVG files are untouched. Not run, not committed.
 
 ---
 

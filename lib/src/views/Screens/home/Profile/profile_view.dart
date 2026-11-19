@@ -119,6 +119,10 @@ class ProfileView extends StatelessWidget {
                         ),
                         const SizedBox(height: 24),
 
+                        // Every row uses an outlined Material icon, so all
+                        // are one size and style. The SVG files carry their
+                        // own background circle and a small glyph (and
+                        // subscription.svg only an embedded PNG).
                         // ===== Category 1: General Settings =====
                         SettingsSectionHeader(
                           title: localization.translate('generalSettings'),
@@ -128,14 +132,16 @@ class ProfileView extends StatelessWidget {
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.language,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.language_outlined,
                               title: localization.translate('language'),
                               onTap: () => context.push('/language'),
                             ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.theme,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.dark_mode_outlined,
                               title: localization.translate('theme'),
                               hasSwitch: true,
                               switchValue: themeVM.themeMode == ThemeMode.dark,
@@ -147,7 +153,8 @@ class ProfileView extends StatelessWidget {
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.notifications,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.notifications_outlined,
                               title: localization.translate('notifications'),
                               onTap: () =>
                                   context.push('/notification-settings'),
@@ -164,14 +171,16 @@ class ProfileView extends StatelessWidget {
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.premiumPlan,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.workspace_premium_outlined,
                               title: localization.translate('myPlan'),
                               onTap: () => context.push('/my-plan'),
                             ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.subscription,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.card_membership_outlined,
                               title: localization.translate('subscriptions'),
                               onTap: () => context.push('/subscription'),
                             ),
@@ -179,7 +188,7 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.subscription,
                               isSvg: false,
-                              materialIcon: Icons.receipt_long_rounded,
+                              materialIcon: Icons.receipt_long_outlined,
                               title: localization.translate('billingPayments'),
                               onTap: () => context.push('/billing-payments'),
                             ),
@@ -205,7 +214,7 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.uploadMedia,
                               isSvg: false,
-                              materialIcon: Icons.download_rounded,
+                              materialIcon: Icons.download_outlined,
                               title: localization.translate('exportData'),
                               onTap: () => context.push('/export-data'),
                             ),
@@ -222,21 +231,23 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.email,
                               isSvg: false,
-                              materialIcon: Icons.mail_outline_rounded,
+                              materialIcon: Icons.mail_outlined,
                               title: localization.translate('contactUs'),
                               onTap: () => context.push('/contact-us'),
                             ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.feedback,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.star_outline,
                               title: localization.translate('sendFeedback'),
                               onTap: () => context.push('/feedback'),
                             ),
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.shareApp,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.share_outlined,
                               title: localization.translate('shareApp'),
                               onTap: vm.shareApp,
                             ),
@@ -253,7 +264,7 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.lockPassword,
                               isSvg: false,
-                              materialIcon: Icons.description_rounded,
+                              materialIcon: Icons.description_outlined,
                               title: localization.translate('termsConditions'),
                               onTap: () => context.push('/terms-conditions'),
                             ),
@@ -261,7 +272,7 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.lockPassword,
                               isSvg: false,
-                              materialIcon: Icons.privacy_tip_rounded,
+                              materialIcon: Icons.privacy_tip_outlined,
                               title: localization.translate('privacyPolicy'),
                               onTap: () => context.push('/privacy-policy'),
                             ),
@@ -269,7 +280,7 @@ class ProfileView extends StatelessWidget {
                               grouped: true,
                               iconAsset: SvgIcon.subscription,
                               isSvg: false,
-                              materialIcon: Icons.info_outline_rounded,
+                              materialIcon: Icons.info_outline,
                               title:
                                   localization.translate('aboutBrokerWallet'),
                               onTap: () => context.push('/about'),
@@ -283,7 +294,8 @@ class ProfileView extends StatelessWidget {
                             SettingsTile(
                               grouped: true,
                               iconAsset: SvgIcon.logOut,
-                              isSvg: true,
+                              isSvg: false,
+                              materialIcon: Icons.logout_outlined,
                               title: localization.translate('logout'),
                               subtitle: vm.isLoggingOut
                                   ? localization.translate('signingOut')

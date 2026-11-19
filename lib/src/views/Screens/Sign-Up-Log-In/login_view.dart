@@ -154,6 +154,7 @@ class _SignInViewState extends State<SignInView> {
                       hint: localization.translate('enterEmail'),
                       value: vm.emailController.text,
                       onChanged: vm.setEmail,
+                      onFocusLost: vm.emailFieldLeft,
                       keyboardType: TextInputType.emailAddress,
                       forceLTR: true,
                       hasError: vm.emailError != null,
@@ -161,7 +162,7 @@ class _SignInViewState extends State<SignInView> {
                     if (vm.emailError != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        vm.emailError!,
+                        localization.translate(vm.emailError!),
                         style: AppTextStyles.bodyText.copyWith(
                           color: Colors.red,
                           fontSize: 12,
@@ -438,6 +439,9 @@ class _TextFieldIcon extends StatefulWidget {
   final bool forceLTR;
   final bool hasError;
 
+  /// Called when the field loses focus (the user moved on).
+  final VoidCallback? onFocusLost;
+
   const _TextFieldIcon({
     this.iconAsset,
     required this.hint,
@@ -448,6 +452,7 @@ class _TextFieldIcon extends StatefulWidget {
     this.keyboardType = TextInputType.text,
     this.forceLTR = false,
     this.hasError = false,
+    this.onFocusLost,
     Key? key,
   }) : super(key: key);
 
@@ -466,8 +471,11 @@ class _TextFieldIconState extends State<_TextFieldIcon> {
     _focusNode.addListener(_onFocusChanged);
   }
 
-  // Only repaints the field outline; focus behaviour itself is untouched.
-  void _onFocusChanged() => setState(() {});
+  // Repaints the field outline, and tells the parent when the user leaves.
+  void _onFocusChanged() {
+    setState(() {});
+    if (!_focusNode.hasFocus) widget.onFocusLost?.call();
+  }
 
   @override
   void didUpdateWidget(covariant _TextFieldIcon old) {

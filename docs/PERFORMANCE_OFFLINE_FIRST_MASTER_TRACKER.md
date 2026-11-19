@@ -5873,7 +5873,25 @@ Icons (follow-up): the seven SVG rows drew a 10%-tinted circle with a ~10 px
 glyph (each SVG carries its own 40×40 circle; `subscription.svg` is only an
 embedded PNG, so it showed blank), while the Material rows showed a ~20 px
 glyph with no circle and mixed filled/outlined styles. All 15 rows now use
-outlined Material icons; the SVG files are untouched. Not run, not committed.
+outlined Material icons; the SVG files are untouched. Not run; committed 9c7b597.
+
+### 7BH-6) EMAIL-BLUR-1 — Sign In / Sign Up email checked on leaving the field (2026-11-20, owner approved)
+
+"Reward early, punish late": no error while typing; the format is checked
+when the email field loses focus (`EmailValidator.fieldErrorKey`, empty says
+nothing there); once an error shows it is re-checked live and clears as soon
+as the address is valid; Submit still checks everything. One format rule for
+both screens (`EmailValidator.isValidFormat`; Sign In's old regex refused
+`name+tag@…` and TLDs over 4 letters). Email errors are keys, translated by
+the screens (`emailRequired` reused; new `emailInvalidFormat`,
+`emailDisposableNotAllowed`, `emailProviderNotAllowed`, `emailTooLong`).
+
+Removed Sign Up's 500 ms typing debounce, which also sent the partly typed
+address to an outside service (`api.eva.pingutil.com`, address in the URL)
+through `EmailValidator.validateEmail` → `verifyEmailExists`; both are now
+uncalled but left in `email_validator.dart`. Unchanged: Sign Up still
+refuses providers outside its short list (`hasValidDomain`) on Submit.
+Not run by the agent; not committed.
 
 ---
 

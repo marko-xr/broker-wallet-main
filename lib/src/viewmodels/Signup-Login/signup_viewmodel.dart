@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -37,7 +35,6 @@ class SignUpViewModel extends ChangeNotifier {
   String? _verificationMessage;
   String? get verificationMessage => _verificationMessage;
 
-  Timer? _debounceTimer;
 
   // Add getter for mounted state
   bool get mounted => _mounted;
@@ -91,12 +88,12 @@ class SignUpViewModel extends ChangeNotifier {
     if (emailController.text != value) {
       emailController.text = value;
 
-      // Clear previous error and debounce validation
-      _emailError = null;
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-        _validateEmailAsync(value);
-      });
+      // Nothing is said while typing. Once an error is showing, it is checked
+      // live, so it goes as soon as the address is valid.
+      if (_emailError != null) {
+        _emailError =
+            EmailValidator.fieldErrorKey(value, rejectDisposable: true);
+      }
 
       notifyListeners();
     }
@@ -128,7 +125,16 @@ class SignUpViewModel extends ChangeNotifier {
 
   String? get nameError => _nameError;
   String? get phoneError => _phoneError;
+  /// A localization key; the screen translates it.
   String? get emailError => _emailError;
+
+  /// The user left the email field: its format is checked now.
+  void emailFieldLeft() {
+    final error = EmailValidator.fieldErrorKey(email, rejectDisposable: true);
+    if (error == _emailError) return;
+    _emailError = error;
+    if (_mounted) notifyListeners();
+  }
   String? get passwordError => _passwordError;
   String? get confirmPasswordError => _confirmPasswordError;
 
@@ -164,36 +170,6 @@ class SignUpViewModel extends ChangeNotifier {
     _confirmPasswordError = null;
   }
 
-  Future<void> _validateEmailAsync(String email) async {
-    if (email.trim().isEmpty || !_mounted) return;
-
-    // Use the enhanced EmailValidator instead of basic regex
-    try {
-      final emailValidation = await EmailValidator.validateEmail(email.trim());
-      if (!emailValidation.isValid) {
-        _emailError = emailValidation.message;
-        if (_mounted) {
-          notifyListeners();
-        }
-      } else {
-        _emailError = null;
-        if (_mounted) {
-          notifyListeners();
-        }
-      }
-    } catch (e) {
-      // Fallback to basic validation if API fails
-      final emailRegex =
-          RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-      if (!emailRegex.hasMatch(email.trim())) {
-        _emailError = 'Please enter a valid email address';
-        if (_mounted) {
-          notifyListeners();
-        }
-      }
-    }
-  }
-
   bool _validateEmailForm() {
     bool isValid = true;
 
@@ -208,22 +184,21 @@ class SignUpViewModel extends ChangeNotifier {
 
     // Enhanced email validation - use synchronous validation here
     if (email.trim().isEmpty) {
-      _emailError = 'Email is required';
+      _emailError = 'emailRequired';
       isValid = false;
     } else {
       // Use EmailValidator for basic format check
       if (!EmailValidator.isValidFormat(email.trim())) {
-        _emailError = 'Please enter a valid email address';
+        _emailError = 'emailInvalidFormat';
         isValid = false;
       } else if (EmailValidator.isDisposableEmail(email.trim())) {
-        _emailError = 'Disposable email addresses are not allowed';
+        _emailError = 'emailDisposableNotAllowed';
         isValid = false;
       } else if (!EmailValidator.hasValidDomain(email.trim())) {
-        _emailError =
-            'Please use a valid email provider (Gmail, Yahoo, Outlook, etc.)';
+        _emailError = 'emailProviderNotAllowed';
         isValid = false;
       } else if (email.trim().length > 254) {
-        _emailError = 'Email address is too long';
+        _emailError = 'emailTooLong';
         isValid = false;
       }
     }
@@ -403,7 +378,6 @@ class SignUpViewModel extends ChangeNotifier {
   void dispose() {
     _mounted = false;
     _disposed = true;
-    _debounceTimer?.cancel();
     nameController.dispose();
     phoneController.dispose();
     emailController.dispose();

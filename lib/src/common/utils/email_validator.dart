@@ -8,6 +8,22 @@ class EmailValidator {
         .hasMatch(email);
   }
 
+  /// The message key for an address the user has finished typing, or null.
+  ///
+  /// Checked when the user leaves the field ("on blur"), never while typing:
+  /// an empty field says nothing here (the form's own submit says it is
+  /// required), and only the format, plus a disposable domain when
+  /// [rejectDisposable], are checked. Nothing is sent anywhere.
+  static String? fieldErrorKey(String email, {bool rejectDisposable = false}) {
+    final value = email.trim();
+    if (value.isEmpty) return null;
+    if (!isValidFormat(value)) return 'emailInvalidFormat';
+    if (rejectDisposable && isDisposableEmail(value)) {
+      return 'emailDisposableNotAllowed';
+    }
+    return null;
+  }
+
   // Check for common disposable email domains
   static bool isDisposableEmail(String email) {
     final disposableDomains = [

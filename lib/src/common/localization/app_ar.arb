@@ -3354,5 +3354,9 @@
   "deleteOfferConfirmationMessage": "هل أنت متأكد من أنك تريد حذف هذا العرض؟ لا يمكن التراجع عن هذا الإجراء.",
   "quotationAndPdfSavedSuccessfully": "تم حفظ عرض السعر وملف PDF بنجاح!",
   "deleteQuotationConfirmationMessage": "هل أنت متأكد من أنك تريد حذف عرض السعر هذا؟ لا يمكن التراجع عن هذا الإجراء.",
-  "accountData": "الحساب والبيانات"
+  "accountData": "الحساب والبيانات",
+  "emailInvalidFormat": "يرجى إدخال بريد إلكتروني صالح",
+  "emailDisposableNotAllowed": "لا يُسمح بعناوين البريد الإلكتروني المؤقتة",
+  "emailProviderNotAllowed": "يرجى استخدام مزوّد بريد معروف (Gmail أو Yahoo أو Outlook وغيرها)",
+  "emailTooLong": "عنوان البريد الإلكتروني طويل جدًا"
 }

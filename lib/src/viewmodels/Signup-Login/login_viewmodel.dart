@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/common/utils/email_validator.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
@@ -48,6 +49,7 @@ class SignInViewModel extends ChangeNotifier {
   // Getters
   bool get isLoading => _isLoading;
   bool get showPassword => _showPassword;
+  /// A localization key; the screen translates it.
   String? get emailError => _emailError;
   String? get passwordError => _passwordError;
   String? get phoneError => _phoneError;
@@ -56,7 +58,19 @@ class SignInViewModel extends ChangeNotifier {
   // Setters
   void setEmail(String value) {
     emailController.text = value;
-    if (_emailError != null) _emailError = null;
+    // Nothing is said while typing. Once an error is showing, it is checked
+    // live, so it goes as soon as the address is valid.
+    if (_emailError != null) {
+      _emailError = EmailValidator.fieldErrorKey(value);
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  /// The user left the email field: its format is checked now.
+  void emailFieldLeft() {
+    final error = EmailValidator.fieldErrorKey(emailController.text);
+    if (error == _emailError) return;
+    _emailError = error;
     if (!_disposed) notifyListeners();
   }
 
@@ -91,11 +105,10 @@ class SignInViewModel extends ChangeNotifier {
     _passwordError = null;
 
     if (emailController.text.trim().isEmpty) {
-      _emailError = 'Email is required';
+      _emailError = 'emailRequired';
       valid = false;
-    } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-        .hasMatch(emailController.text.trim())) {
-      _emailError = 'Please enter a valid email';
+    } else if (!EmailValidator.isValidFormat(emailController.text.trim())) {
+      _emailError = 'emailInvalidFormat';
       valid = false;
     }
 

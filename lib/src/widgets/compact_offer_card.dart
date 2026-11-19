@@ -6,6 +6,7 @@ import '../common/localization/localization_delegate.dart';
 import '../views/Screens/ViewDetails/widgets/offer_details_style.dart';
 import '../data/models/ScreensModel/offers_model.dart';
 import '../Views/Widgets/property_status_indicator.dart';
+import 'compact_property_labels.dart';
 
 /// 🏠 Compact offer card widget for use in lists and carousels
 /// Displays offer summary with property details, price, location, and status
@@ -114,7 +115,8 @@ class CompactOfferCard extends StatelessWidget {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  _getPropertyTypeDisplay(offer, loc),
+                                  CompactPropertyLabels.category(
+                                      offer.propertyType, loc),
                                   style: texts.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.onSurface,
@@ -130,7 +132,9 @@ class CompactOfferCard extends StatelessWidget {
                             children: [
                               Text(_getFormattedDate(offer.createdAt),
                                   style: texts.bodySmall),
-                              Text(_getSpecificPropertyTypeDisplay(offer, loc),
+                              Text(
+                                  CompactPropertyLabels.subtype(
+                                      offer.specificPropertyType, loc),
                                   style: texts.bodySmall),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -140,7 +144,7 @@ class CompactOfferCard extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   Flexible(
                                     child: Text(
-                                        _getCityDisplayName(
+                                        CompactPropertyLabels.city(
                                             offer.selectedCity, loc),
                                         style: texts.bodyMedium),
                                   ),
@@ -195,14 +199,16 @@ class CompactOfferCard extends StatelessWidget {
                                       color: typeForeground,
                                     ),
                                     const SizedBox(width: 2),
-                                    Text(
-                                      offer.offerType == 'rent'
-                                          ? loc.translate('rent')
-                                          : loc.translate('sale'),
-                                      style: texts.labelSmall?.copyWith(
-                                        color: typeForeground,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
+                                    Flexible(
+                                      child: Text(
+                                        isRent
+                                            ? loc.translate('rent')
+                                            : loc.translate('sale'),
+                                        style: texts.labelSmall?.copyWith(
+                                          color: typeForeground,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -314,75 +320,8 @@ class CompactOfferCard extends StatelessWidget {
   //   return loc.translate('priceNotSpecified');
   // }
 
-  String _getCityDisplayName(String city, AppLocalizations loc) {
-    if (city.isEmpty) return loc.translate('noCitySelected');
-
-    String cityKey = _cityLocalizationKey(city);
-    String localized = loc.translate(cityKey);
-
-    if (localized.startsWith('** ')) {
-      return city;
-    }
-    return localized;
-  }
-
-  String _cityLocalizationKey(String city) {
-    switch (city.toLowerCase().replaceAll(' ', '')) {
-      case "dubai":
-        return 'dubai';
-      case "abudhabi":
-        return 'abuDhabi';
-      case "khorfakkan":
-        return 'khorFakkan';
-      case "alain":
-        return 'alAin';
-      case "rasalkhaimah":
-        return 'rasAlKhaimah';
-      case "fujairah":
-        return 'fujairah';
-      case "sharjah":
-        return 'sharjah';
-      case "ajman":
-        return 'ajman';
-      case "ummalquwain":
-        return 'ummAlQuwain';
-      default:
-        return city;
-    }
-  }
-
   String _getFormattedDate(DateTime date) {
     return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _getPropertyTypeDisplay(OfferModel offer, AppLocalizations loc) {
-    final propertyTypeRaw = (offer.propertyType ?? '').trim();
-
-    if (propertyTypeRaw.isEmpty) {
-      return loc.translate('propertyTypeNotSpecified');
-    }
-
-    switch (propertyTypeRaw.toLowerCase()) {
-      case 'residential':
-        return loc.translate('residential');
-      case 'commercial':
-        return loc.translate('commercial');
-      default:
-        return propertyTypeRaw;
-    }
-  }
-
-  String _getSpecificPropertyTypeDisplay(
-      OfferModel offer, AppLocalizations loc) {
-    final specific = offer.specificPropertyType.trim();
-    if (specific.isEmpty) {
-      return loc.translate('typeNotSpecified');
-    }
-
-    // Try to localize common property types
-    final locKey = specific.toLowerCase().replaceAll(' ', '');
-    final localized = loc.translate(locKey);
-    return localized.startsWith('** ') ? specific : localized;
   }
 
   IconData _getPropertyIcon(String? propertyType) {

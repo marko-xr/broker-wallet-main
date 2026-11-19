@@ -16768,3 +16768,21 @@ number and compare the disabled Call and WhatsApp icons. Confirm the Details
 Call button has a muted outline.
 NEXT — Open a record with a valid phone number and verify that both contact
 actions still launch.
+
+## Related Items localization (2026-11-19)
+
+The shared Offer and Request cards use the existing property and UAE city
+catalogs to display recognized saved values in Arabic and English. Empty
+subtypes use the existing localized missing-value label. Unrecognized saved
+text is preserved. The rent and sale badge labels can wrap at enlarged text
+sizes. Related Items headings, counts, controls, statuses and units have
+translations in both ARB files.
+
+All 40 focused Related Items widget tests passed. The broader responsive run
+also reported failures outside Related Items, including list navigation and
+pinned contact expectations. Those are outside this checkpoint. Real-device
+verification is pending.
+
+NOW — On device in Arabic, open Related Items in Owner, Office, Broker and
+Watchman Details and check both Offer and Request card labels.
+NEXT — Switch to English and confirm the same records show English labels.

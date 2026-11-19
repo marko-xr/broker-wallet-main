@@ -6,6 +6,7 @@ import '../common/localization/localization_delegate.dart';
 import '../views/Screens/ViewDetails/widgets/offer_details_style.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../Views/Widgets/property_status_indicator.dart';
+import 'compact_property_labels.dart';
 
 /// 🔍 Compact request card widget for use in lists and carousels
 /// Displays request summary with property details, price, location, and status
@@ -110,7 +111,8 @@ class CompactRequestCard extends StatelessWidget {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  _getPropertyTypeDisplay(request, loc),
+                                  CompactPropertyLabels.category(
+                                      request.propertyType, loc),
                                   style: texts.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.onSurface,
@@ -127,7 +129,8 @@ class CompactRequestCard extends StatelessWidget {
                               Text(_getFormattedDate(request.createdAt),
                                   style: texts.bodySmall),
                               Text(
-                                  _getSpecificPropertyTypeDisplay(request, loc),
+                                CompactPropertyLabels.subtype(
+                                    request.specificPropertyType, loc),
                                   style: texts.bodySmall),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -137,7 +140,7 @@ class CompactRequestCard extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   Flexible(
                                     child: Text(
-                                        _getCityDisplayName(
+                                        CompactPropertyLabels.city(
                                             request.selectedCity, loc),
                                         style: texts.bodyMedium),
                                   ),
@@ -191,14 +194,16 @@ class CompactRequestCard extends StatelessWidget {
                                       color: typeForeground,
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      request.requestType == 'rent'
-                                          ? loc.translate('rent')
-                                          : loc.translate('sale'),
-                                      style: texts.labelSmall?.copyWith(
-                                        color: typeForeground,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
+                                    Flexible(
+                                      child: Text(
+                                        isRent
+                                            ? loc.translate('rent')
+                                            : loc.translate('sale'),
+                                        style: texts.labelSmall?.copyWith(
+                                          color: typeForeground,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -310,74 +315,8 @@ class CompactRequestCard extends StatelessWidget {
     return loc.translate('priceNotSpecified');
   }
 
-  String _getCityDisplayName(String city, AppLocalizations loc) {
-    if (city.isEmpty) return loc.translate('noCitySelected');
-
-    String cityKey = _cityLocalizationKey(city);
-    String localized = loc.translate(cityKey);
-
-    if (localized.startsWith('** ')) {
-      return city;
-    }
-    return localized;
-  }
-
-  String _cityLocalizationKey(String city) {
-    switch (city.toLowerCase().replaceAll(' ', '')) {
-      case "dubai":
-        return 'dubai';
-      case "abudhabi":
-        return 'abuDhabi';
-      case "khorfakkan":
-        return 'khorFakkan';
-      case "alain":
-        return 'alAin';
-      case "rasalkhaimah":
-        return 'rasAlKhaimah';
-      case "fujairah":
-        return 'fujairah';
-      case "sharjah":
-        return 'sharjah';
-      case "ajman":
-        return 'ajman';
-      case "ummalquwain":
-        return 'ummAlQuwain';
-      default:
-        return city;
-    }
-  }
-
   String _getFormattedDate(DateTime date) {
     return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _getPropertyTypeDisplay(RequestModel request, AppLocalizations loc) {
-    final propertyTypeRaw = (request.propertyType ?? '').trim();
-
-    if (propertyTypeRaw.isEmpty) {
-      return loc.translate('propertyTypeNotSpecified');
-    }
-
-    switch (propertyTypeRaw.toLowerCase()) {
-      case 'residential':
-        return loc.translate('residential');
-      case 'commercial':
-        return loc.translate('commercial');
-      default:
-        return propertyTypeRaw;
-    }
-  }
-
-  String _getSpecificPropertyTypeDisplay(
-      RequestModel request, AppLocalizations loc) {
-    final specific = request.specificPropertyType.trim();
-    if (specific.isEmpty) {
-      return loc.translate('typeNotSpecified');
-    }
-
-    final locKey = specific.toLowerCase().replaceAll(' ', '');
-    final localized = loc.translate(locKey);
-    return localized.startsWith('** ') ? specific : localized;
   }
 
   IconData _getPropertyIcon(String? propertyType) {

@@ -1,4 +1,8 @@
+import 'package:broker_wallet/src/common/data/offer_property_types.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/widgets/compact_offer_card.dart';
+import 'package:broker_wallet/src/widgets/compact_property_labels.dart';
+import 'package:broker_wallet/src/widgets/compact_request_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:broker_wallet/src/widgets/auto_scrolling_related_items_carousel.dart';
@@ -50,6 +54,52 @@ void main() {
   }
 
   for (final language in ['en', 'ar']) {
+    testWidgets('Related cards localize saved property and city labels $language',
+        (tester) async {
+      final arabic = language == 'ar';
+      final scenario =
+          ResponsiveCase(const Size(393, 852), locale: Locale(language));
+      await pumpResponsive(tester, scenario,
+          home: Scaffold(
+            body: Column(children: [
+              CompactOfferCard(
+                offer: relatedOffer().copyWith(
+                  propertyType: arabic ? 'Furnished' : 'مفروش',
+                  specificPropertyType: arabic ? 'Full Floor' : 'طابق كامل',
+                  selectedCity: arabic ? 'Abu-Dhabi' : 'أبوظبي',
+                ),
+              ),
+              CompactRequestCard(
+                request: relatedRequest().copyWith(
+                  specificPropertyType: arabic ? 'officeSpace' : 'مساحة مكتبية',
+                ),
+              ),
+              CompactRequestCard(
+                request: relatedRequest().copyWith(specificPropertyType: ' '),
+              ),
+            ]),
+          ));
+
+      expect(find.text(arabic ? 'مفروش' : 'Furnished'), findsOneWidget);
+      expect(find.text(arabic ? 'طابق كامل' : 'Full Floor'), findsOneWidget);
+      expect(find.text(arabic ? 'أبوظبي' : 'Abu Dhabi'), findsOneWidget);
+      expect(find.text(arabic ? 'مساحة مكتبية' : 'Office Space'), findsOneWidget);
+      expect(find.text(arabic ? 'غير محدد' : 'Not specified'), findsOneWidget);
+      expect(find.textContaining('** '), findsNothing);
+
+      final loc =
+          AppLocalizations.of(tester.element(find.byType(CompactOfferCard)));
+      for (final key in OfferPropertyTypes.keys) {
+        final label = AppLocalizations.translateFor(language, key);
+        expect(label, isNotEmpty, reason: '$language must define $key');
+        if (arabic) expect(label, matches(RegExp(r'[\u0600-\u06ff]')));
+        expect(CompactPropertyLabels.subtype(key, loc), label);
+      }
+      expect(CompactPropertyLabels.subtype('Custom description', loc),
+          'Custom description');
+      expectNoLayoutException(tester, scenario);
+    });
+
     testWidgets('Related paging and autoplay controls $language',
         (tester) async {
       final arabic = language == 'ar';
@@ -78,9 +128,13 @@ void main() {
                     const SizedBox(height: 1000),
                   ]))));
       final numbers = NumberFormat.decimalPattern(language);
-      Finder position(int index) => find.text(arabic
-          ? 'العنصر ${numbers.format(index)} من ${numbers.format(8)}'
-          : 'Item $index of 8');
+      Finder position(int index) {
+        final label = arabic
+            ? 'العنصر ${numbers.format(index)} من ${numbers.format(8)}'
+            : 'Item $index of 8';
+        return find.byWidgetPredicate(
+            (widget) => widget is Semantics && widget.properties.label == label);
+      }
       Finder playback(IconData icon) => find.widgetWithIcon(IconButton, icon);
       final pager = find.byWidgetPredicate((widget) =>
           widget is SingleChildScrollView &&

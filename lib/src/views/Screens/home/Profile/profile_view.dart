@@ -186,9 +186,9 @@ class ProfileView extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 28),
-                        // ===== Category 3: Account & Security =====
+                        // ===== Category 3: Account & Data =====
                         SettingsSectionHeader(
-                          title: localization.translate('accountSecurity'),
+                          title: localization.translate('accountData'),
                         ),
                         SettingsSectionCard(
                           children: [
@@ -203,54 +203,16 @@ class ProfileView extends StatelessWidget {
                             ),
                             SettingsTile(
                               grouped: true,
-                              iconAsset: SvgIcon.logOut,
-                              isSvg: true,
-                              title: localization.translate('logout'),
-                              subtitle: vm.isLoggingOut
-                                  ? localization.translate('signingOut')
-                                  : null,
-                              hasTrailing: vm.isLoggingOut,
-                              trailingWidget: vm.isLoggingOut
-                                  ? SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: colors.primary,
-                                      ),
-                                    )
-                                  : null,
-                              onTap: vm.isLoggingOut ? null : vm.logout,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 28),
-                        // ===== Category 4: Privacy & Data =====
-                        SettingsSectionHeader(
-                          title: localization.translate('privacyData'),
-                        ),
-                        SettingsSectionCard(
-                          children: [
-                            SettingsTile(
-                              grouped: true,
                               iconAsset: SvgIcon.uploadMedia,
                               isSvg: false,
                               materialIcon: Icons.download_rounded,
                               title: localization.translate('exportData'),
                               onTap: () => context.push('/export-data'),
                             ),
-                            SettingsTile(
-                              grouped: true,
-                              iconAsset: SvgIcon.lockPassword,
-                              isSvg: false,
-                              materialIcon: Icons.privacy_tip_rounded,
-                              title: localization.translate('privacyPolicy'),
-                              onTap: () => context.push('/privacy-policy'),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 28),
-                        // ===== Category 5: Support =====
+                        // ===== Category 4: Support =====
                         SettingsSectionHeader(
                           title: localization.translate('profileSupport'),
                         ),
@@ -271,10 +233,17 @@ class ProfileView extends StatelessWidget {
                               title: localization.translate('sendFeedback'),
                               onTap: () => context.push('/feedback'),
                             ),
+                            SettingsTile(
+                              grouped: true,
+                              iconAsset: SvgIcon.shareApp,
+                              isSvg: true,
+                              title: localization.translate('shareApp'),
+                              onTap: vm.shareApp,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 28),
-                        // ===== Category 6: Legal & App =====
+                        // ===== Category 5: Legal & App =====
                         SettingsSectionHeader(
                           title: localization.translate('legalAndApp'),
                         ),
@@ -290,6 +259,14 @@ class ProfileView extends StatelessWidget {
                             ),
                             SettingsTile(
                               grouped: true,
+                              iconAsset: SvgIcon.lockPassword,
+                              isSvg: false,
+                              materialIcon: Icons.privacy_tip_rounded,
+                              title: localization.translate('privacyPolicy'),
+                              onTap: () => context.push('/privacy-policy'),
+                            ),
+                            SettingsTile(
+                              grouped: true,
                               iconAsset: SvgIcon.subscription,
                               isSvg: false,
                               materialIcon: Icons.info_outline_rounded,
@@ -297,12 +274,32 @@ class ProfileView extends StatelessWidget {
                                   localization.translate('aboutBrokerWallet'),
                               onTap: () => context.push('/about'),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 28),
+                        // ===== Log Out: last, on its own =====
+                        SettingsSectionCard(
+                          children: [
                             SettingsTile(
                               grouped: true,
-                              iconAsset: SvgIcon.shareApp,
+                              iconAsset: SvgIcon.logOut,
                               isSvg: true,
-                              title: localization.translate('shareApp'),
-                              onTap: vm.shareApp,
+                              title: localization.translate('logout'),
+                              subtitle: vm.isLoggingOut
+                                  ? localization.translate('signingOut')
+                                  : null,
+                              hasTrailing: vm.isLoggingOut,
+                              trailingWidget: vm.isLoggingOut
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: colors.primary,
+                                      ),
+                                    )
+                                  : null,
+                              onTap: vm.isLoggingOut ? null : vm.logout,
                             ),
                           ],
                         ),

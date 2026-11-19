@@ -5858,6 +5858,17 @@ a file this work changed. Focused tests 308/308 (details header actions,
 owners list, r5a–r5d, details map address) and r6b Quotations 108/108.
 Not device-verified. Committed on the owner's request (ae14944).
 
+### 7BH-5) PROFILE-ORDER-1 — Profile list order (2026-11-19, owner approved)
+
+Moves only, nothing removed: General Settings and Plan & Billing unchanged;
+"Account & Data" (new key `accountData`) = Security, Export Data; Support =
+Contact Us, Send Feedback, Share App; Legal & App = Terms, Privacy Policy,
+About; Log Out last, in its own card without a heading (look unchanged — it
+was never styled destructive). `accountSecurity` / `privacyData` keys stay in
+the ARB files, unused. Order guards updated in
+`profile_information_architecture_test` and `delete_account_test`. Tests not
+run by the agent; not committed.
+
 ---
 
 ## 8) مراجع الاستمرار

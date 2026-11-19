@@ -3353,5 +3353,6 @@
   "mediaVideoWithoutAudio": "سيتم تسجيل الفيديو بدون صوت",
   "deleteOfferConfirmationMessage": "هل أنت متأكد من أنك تريد حذف هذا العرض؟ لا يمكن التراجع عن هذا الإجراء.",
   "quotationAndPdfSavedSuccessfully": "تم حفظ عرض السعر وملف PDF بنجاح!",
-  "deleteQuotationConfirmationMessage": "هل أنت متأكد من أنك تريد حذف عرض السعر هذا؟ لا يمكن التراجع عن هذا الإجراء."
+  "deleteQuotationConfirmationMessage": "هل أنت متأكد من أنك تريد حذف عرض السعر هذا؟ لا يمكن التراجع عن هذا الإجراء.",
+  "accountData": "الحساب والبيانات"
 }

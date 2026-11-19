@@ -3424,5 +3424,6 @@
   "mediaVideoWithoutAudio": "Video will be recorded without audio",
   "deleteOfferConfirmationMessage": "Are you sure you want to delete this offer? This action cannot be undone.",
   "quotationAndPdfSavedSuccessfully": "Quotation and PDF saved successfully!",
-  "deleteQuotationConfirmationMessage": "Are you sure you want to delete this quotation? This action cannot be undone."
+  "deleteQuotationConfirmationMessage": "Are you sure you want to delete this quotation? This action cannot be undone.",
+  "accountData": "Account & Data"
 }

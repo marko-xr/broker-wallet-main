@@ -989,19 +989,18 @@ void main() {
         'myPlan',
         'subscriptions',
         'billingPayments',
-        'accountSecurity',
+        'accountData',
         'security',
-        'logout',
-        'privacyData',
         'exportData',
-        'privacyPolicy',
         'profileSupport',
         'contactUs',
         'sendFeedback',
+        'shareApp',
         'legalAndApp',
         'termsConditions',
+        'privacyPolicy',
         'aboutBrokerWallet',
-        'shareApp',
+        'logout',
       ]);
       expect(source, contains("onTap: () => context.push('/privacy-policy')"));
       expect(

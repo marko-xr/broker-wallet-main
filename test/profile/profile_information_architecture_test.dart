@@ -48,13 +48,12 @@ void main() {
     const sections = [
       ('generalSettings', ['language', 'theme', 'notifications']),
       ('planBilling', ['myPlan', 'subscriptions', 'billingPayments']),
-      ('accountSecurity', ['security', 'logout']),
-      ('privacyData', ['exportData', 'privacyPolicy']),
-      ('profileSupport', ['contactUs', 'sendFeedback']),
+      ('accountData', ['security', 'exportData']),
+      ('profileSupport', ['contactUs', 'sendFeedback', 'shareApp']),
       ('legalAndApp', [
         'termsConditions',
+        'privacyPolicy',
         'aboutBrokerWallet',
-        'shareApp',
       ]),
     ];
     final actual = RegExp(
@@ -62,11 +61,13 @@ void main() {
       multiLine: true,
     ).allMatches(list).map((match) => match.group(1)!).toList();
     // Check order section by section, including the section heading.
+    // Log Out is last, on its own, after every section.
     final ordered = [
       for (final (header, rows) in sections) ...[header, ...rows],
+      'logout',
     ];
     expect(actual, ordered);
-    expect(actual.length, 21);
+    expect(actual.length, 20);
     expect(profile, contains("localization.translate('editProfile')"));
     expect(profile, contains('onPressed: vm.editProfile'));
   });
@@ -152,10 +153,8 @@ void main() {
     expect(ar['generalSettings'], 'الإعدادات العامة');
     expect(en['planBilling'], 'Plan & Billing');
     expect(ar['planBilling'], 'الخطة والفوترة');
-    expect(en['accountSecurity'], 'Account & Security');
-    expect(ar['accountSecurity'], 'الحساب والأمان');
-    expect(en['privacyData'], 'Privacy & Data');
-    expect(ar['privacyData'], 'البيانات والخصوصية');
+    expect(en['accountData'], 'Account & Data');
+    expect(ar['accountData'], 'الحساب والبيانات');
     expect(en['profileSupport'], 'Support');
     expect(ar['profileSupport'], 'الدعم');
     expect(en['legalAndApp'], 'Legal & App');

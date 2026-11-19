@@ -87,6 +87,8 @@ class SignUpViewModel extends ChangeNotifier {
   void setEmail(String value) {
     if (emailController.text != value) {
       emailController.text = value;
+      // A hint is about what was left in the field; typing makes it stale.
+      _emailSuggestion = null;
 
       // Nothing is said while typing. Once an error is showing, it is checked
       // live, so it goes as soon as the address is valid.
@@ -128,11 +130,29 @@ class SignUpViewModel extends ChangeNotifier {
   /// A localization key; the screen translates it.
   String? get emailError => _emailError;
 
+  /// A likely-typo correction of the email, offered as a hint ("Did you
+  /// mean …?") when the user leaves the field; null when there is none.
+  String? get emailSuggestion => _emailSuggestion;
+  String? _emailSuggestion;
+
   /// The user left the email field: its format is checked now.
   void emailFieldLeft() {
     final error = EmailValidator.fieldErrorKey(email, rejectDisposable: true);
-    if (error == _emailError) return;
+    final suggestion =
+        error == null ? EmailValidator.suggestedCorrection(email) : null;
+    if (error == _emailError && suggestion == _emailSuggestion) return;
     _emailError = error;
+    _emailSuggestion = suggestion;
+    if (_mounted) notifyListeners();
+  }
+
+  /// The user accepted the "Did you mean …?" hint.
+  void applyEmailSuggestion() {
+    final suggestion = _emailSuggestion;
+    if (suggestion == null) return;
+    emailController.text = suggestion;
+    _emailSuggestion = null;
+    _emailError = null;
     if (_mounted) notifyListeners();
   }
   String? get passwordError => _passwordError;

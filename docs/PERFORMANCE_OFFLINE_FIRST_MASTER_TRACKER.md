@@ -5898,7 +5898,18 @@ leave-field check correctly (`.co` is a valid TLD); the error after Log In
 was Supabase's wrong-credentials answer, shown as raw English. Sign In now
 maps `AuthFailureCode.invalidCredentials` to the new key
 `authInvalidCredentials` (deliberately generic: it never says which of the
-two is wrong). Not run; not committed.
+two is wrong). Committed 56bd85a.
+
+Typo hint (owner request after testing `@mail.com` / `@gail.com`, both valid
+formats): on leaving the field, when the format is valid,
+`EmailValidator.suggestedCorrection` compares the domain with
+`knownProviders` (the list Sign Up already accepts, now one constant shared
+with `hasValidDomain`); at most two edits away, swaps counting as one, gives
+"Did you mean name@gmail.com?" (`EmailSuggestionHint`, key
+`emailDidYouMean`) under the field on Sign In and Sign Up. A hint, never an
+error: tapping it fills the field; typing clears it. Known trade-off: real
+look-alike domains (`mail.com`, `ymail.com`) also get the hint. Not run; not
+committed.
 
 ### 7BH-7) MOTION-1 — Home list screens open with a fade through (2026-11-20, owner chose on device)
 

@@ -14,6 +14,7 @@ import 'package:broker_wallet/src/constants/constants.dart';
 import '../../../viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/Views/Widgets/email_suggestion_hint.dart';
 
 class SignUpView extends StatefulWidget {
   const SignUpView({super.key});
@@ -165,6 +166,11 @@ class _SignUpViewState extends State<SignUpView> {
                         ),
                       ),
                     ],
+                    if (vm.emailError == null && vm.emailSuggestion != null)
+                      EmailSuggestionHint(
+                        suggestion: vm.emailSuggestion!,
+                        onAccept: vm.applyEmailSuggestion,
+                      ),
 
                     const SizedBox(height: 20),
 

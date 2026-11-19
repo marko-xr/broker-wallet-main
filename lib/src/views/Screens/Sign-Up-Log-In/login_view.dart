@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/Views/Widgets/email_suggestion_hint.dart';
 
 // Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
 
@@ -169,6 +170,11 @@ class _SignInViewState extends State<SignInView> {
                         ),
                       ),
                     ],
+                    if (vm.emailError == null && vm.emailSuggestion != null)
+                      EmailSuggestionHint(
+                        suggestion: vm.emailSuggestion!,
+                        onAccept: vm.applyEmailSuggestion,
+                      ),
                     const SizedBox(height: 20),
                     _Label(localization.translate('password')),
                     _TextFieldIcon(

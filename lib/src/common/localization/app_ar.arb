@@ -3359,5 +3359,6 @@
   "emailDisposableNotAllowed": "لا يُسمح بعناوين البريد الإلكتروني المؤقتة",
   "emailProviderNotAllowed": "يرجى استخدام مزوّد بريد معروف (Gmail أو Yahoo أو Outlook وغيرها)",
   "emailTooLong": "عنوان البريد الإلكتروني طويل جدًا",
-  "authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+  "authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "emailDidYouMean": "هل تقصد {email}؟"
 }

@@ -3430,5 +3430,6 @@
   "emailDisposableNotAllowed": "Disposable email addresses are not allowed",
   "emailProviderNotAllowed": "Please use a valid email provider (Gmail, Yahoo, Outlook, etc.)",
   "emailTooLong": "Email address is too long",
-  "authInvalidCredentials": "Invalid email or password."
+  "authInvalidCredentials": "Invalid email or password.",
+  "emailDidYouMean": "Did you mean {email}?"
 }

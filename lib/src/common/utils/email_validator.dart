@@ -40,20 +40,81 @@ class EmailValidator {
     return disposableDomains.contains(domain);
   }
 
+  /// The well-known providers: the ones Sign Up accepts, and the ones a
+  /// likely typo is matched against.
+  static const List<String> knownProviders = [
+    'gmail.com',
+    'yahoo.com',
+    'outlook.com',
+    'hotmail.com',
+    'icloud.com',
+    'protonmail.com',
+    // Add more legitimate domains
+  ];
+
   // Validate against common email providers
   static bool hasValidDomain(String email) {
-    final validDomains = [
-      'gmail.com',
-      'yahoo.com',
-      'outlook.com',
-      'hotmail.com',
-      'icloud.com',
-      'protonmail.com',
-      // Add more legitimate domains
-    ];
-
     final domain = email.split('@').last.toLowerCase();
-    return validDomains.contains(domain);
+    return knownProviders.contains(domain);
+  }
+
+  /// The address with a likely typo in its domain corrected, or null.
+  ///
+  /// Only for an address whose format is already valid: its domain is
+  /// compared with [knownProviders], and one at most two edits away (a
+  /// letter missing, added, changed, or two letters swapped — `gail.com`,
+  /// `gmial.com`, `gmail.co`) is suggested. It is a hint the user may
+  /// ignore, never an error, and nothing is sent anywhere.
+  static String? suggestedCorrection(String email) {
+    final value = email.trim();
+    if (!isValidFormat(value)) return null;
+    final at = value.lastIndexOf('@');
+    final local = value.substring(0, at);
+    final domain = value.substring(at + 1).toLowerCase();
+    if (knownProviders.contains(domain)) return null;
+
+    String? best;
+    var bestDistance = 3;
+    for (final provider in knownProviders) {
+      final distance = _editDistance(domain, provider);
+      if (distance < bestDistance) {
+        best = provider;
+        bestDistance = distance;
+      }
+    }
+    return best == null ? null : '$local@$best';
+  }
+
+  /// Edits between [a] and [b], counting two swapped neighbours as one
+  /// (optimal string alignment distance).
+  static int _editDistance(String a, String b) {
+    final rows = List.generate(
+      a.length + 1,
+      (i) => List<int>.filled(b.length + 1, 0),
+    );
+    for (var i = 0; i <= a.length; i++) {
+      rows[i][0] = i;
+    }
+    for (var j = 0; j <= b.length; j++) {
+      rows[0][j] = j;
+    }
+    for (var i = 1; i <= a.length; i++) {
+      for (var j = 1; j <= b.length; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        var best = rows[i - 1][j] + 1;
+        if (rows[i][j - 1] + 1 < best) best = rows[i][j - 1] + 1;
+        if (rows[i - 1][j - 1] + cost < best) best = rows[i - 1][j - 1] + cost;
+        if (i > 1 &&
+            j > 1 &&
+            a[i - 1] == b[j - 2] &&
+            a[i - 2] == b[j - 1] &&
+            rows[i - 2][j - 2] + 1 < best) {
+          best = rows[i - 2][j - 2] + 1;
+        }
+        rows[i][j] = best;
+      }
+    }
+    return rows[a.length][b.length];
   }
 
   // API-based validation (optional - requires internet)

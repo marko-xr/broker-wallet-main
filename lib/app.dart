@@ -97,6 +97,7 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/su
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/widgets/brand_splash/brand_splash_gate.dart';
+import 'package:broker_wallet/src/Views/Widgets/fade_through_page.dart';
 
 // ===== Global navigator key (kept global for dialogs/global nav helpers) =====
 final GlobalKey<NavigatorState> rootNavigatorKey =
@@ -320,6 +321,12 @@ RouteAccess routeAccessFor(String path) {
 /// input the ordinary rules below would send the user straight to `/home` and
 /// the reset screen could never appear. It defaults to false, which is exactly
 /// the behaviour this function had before recovery existed.
+/// The eight Home list screens open with a Material "fade through": Home is
+/// covered first, then the list fades in, so the two never show together
+/// (chosen on device by the owner, 2026-11-20).
+Page<void> _listScreenPage(GoRouterState state, Widget child) =>
+    FadeThroughPage<void>(key: state.pageKey, child: child);
+
 String? resolveAuthRedirect(
   AuthStatus status,
   String currentPath, {
@@ -574,37 +581,46 @@ GoRouter _createRouter(
       ),
 
       // ===== Standalone list screens =====
+      // They open with a fade through: see _listScreenPage.
       GoRoute(
         path: '/requested-list',
-        builder: (context, state) => const RequestedListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const RequestedListView()),
       ),
       GoRoute(
         path: '/offers-list',
-        builder: (context, state) => const OffersListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const OffersListView()),
       ),
       GoRoute(
         path: '/owners-list',
-        builder: (context, state) => const OwnersListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const OwnersListView()),
       ),
       GoRoute(
         path: '/offices-list',
-        builder: (context, state) => const OfficesListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const OfficesListView()),
       ),
       GoRoute(
         path: '/watchmen-list',
-        builder: (context, state) => const WatchmenListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const WatchmenListView()),
       ),
       GoRoute(
         path: '/brokers-list',
-        builder: (context, state) => const BrokersListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const BrokersListView()),
       ),
       GoRoute(
         path: '/toolkit-list',
-        builder: (context, state) => const ToolkitView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const ToolkitView()),
       ),
       GoRoute(
         path: '/quotation-list',
-        builder: (context, state) => const QuotationListView(),
+        pageBuilder: (context, state) =>
+            _listScreenPage(state, const QuotationListView()),
       ),
       GoRoute(
         path: '/map-view',

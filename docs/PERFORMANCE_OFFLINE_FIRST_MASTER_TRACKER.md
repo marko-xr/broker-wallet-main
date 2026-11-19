@@ -5891,7 +5891,24 @@ address to an outside service (`api.eva.pingutil.com`, address in the URL)
 through `EmailValidator.validateEmail` → `verifyEmailExists`; both are now
 uncalled but left in `email_validator.dart`. Unchanged: Sign Up still
 refuses providers outside its short list (`hasValidDomain`) on Submit.
-Not run by the agent; not committed.
+Not run by the agent; committed f74a740.
+
+### 7BH-7) MOTION-1 — Home list screens open with a fade through (2026-11-20, owner chose on device)
+
+Why Home showed during the open: the eight list routes used Flutter's
+Android default (PredictiveBack → FadeForwards, 450 ms), which slides and
+fades both pages at once. Two Material motions were tried on device:
+Container Transform (screen grows out of the tapped card) and Fade Through.
+The owner chose Fade Through; the Container Transform code was removed.
+
+Now `lib/src/views/Widgets/fade_through_page.dart` (`FadeThroughPage`, no new
+package): Home is covered in the first 35% (300 ms open / 250 ms close),
+then the list fades in growing 92% → 100%; the two never show together. The
+widget tree keeps one shape at every value, so the screen is never rebuilt
+when the motion ends. `_listScreenPage` in `lib/app.dart` applies it to the
+eight routes; Map keeps its own route (its map waits for the slide-in).
+Trade-off: these eight lose the iOS edge-swipe back gesture (custom
+PageRoute); the back button works. Tests not run by the agent.
 
 ---
 

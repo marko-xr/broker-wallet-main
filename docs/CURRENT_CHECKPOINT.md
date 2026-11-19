@@ -16739,3 +16739,16 @@ NOW — When device verification is authorized, archive one Offer and one Reques
 and confirm that each active list's badge increments.
 NEXT — Restore the archived items and confirm the badges decrement and disappear
 when the counts reach zero.
+
+## Offer and Owner Details empty media icon (2026-11-19)
+
+Offer Details shows its existing empty media icon while resolving a gallery
+with no saved media IDs or display items. Owner Details already shows its icon
+in this state. The existing responsive checks now cover the icon before and
+after an empty response on both screens. The checks were not run. Device
+verification is pending.
+
+NOW — Open an Offer and an Owner with no media on the device and confirm each
+shows its own icon without an initial image placeholder.
+NEXT — Open an Offer and an Owner with media and confirm the galleries still
+display their items.

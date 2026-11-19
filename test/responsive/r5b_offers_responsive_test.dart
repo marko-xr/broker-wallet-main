@@ -14,6 +14,7 @@ import 'package:broker_wallet/src/viewmodels/AddScreens/add_offers_viewmodel.dar
 import 'package:broker_wallet/src/viewmodels/ListScreens/list_offers_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/ViewAdd/add_offers_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/offers_view_details.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/details_media_placeholder.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/offers_list_view.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
 import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
@@ -376,7 +377,7 @@ void main() {
     });
   }
 
-  testWidgets('Offer details loading media uses a local pending resolver',
+  testWidgets('Offer details keep the empty media icon across resolution',
       (tester) async {
     const scenario =
         ResponsiveCase(Size(320, 568), locale: Locale('ar'), textScale: 1.6);
@@ -393,13 +394,14 @@ void main() {
               pending.future,
         )));
     await tester.pump();
-    expect(find.byType(MediaLoadingPlaceholder, skipOffstage: false),
-        findsOneWidget);
+    expect(find.byType(MediaLoadingPlaceholder), findsNothing);
+    expect(find.byType(DetailsMediaPlaceholder), findsOneWidget);
     expectNoLayoutException(tester, scenario);
     pending.complete(const OfferMediaResolution(
         offerId: _offerId, ownerId: _owner, items: []));
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
+    expect(find.byType(DetailsMediaPlaceholder), findsOneWidget);
     expectNoLayoutException(tester, scenario);
     await tester.pumpWidget(const SizedBox.shrink());
   });

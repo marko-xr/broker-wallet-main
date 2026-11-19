@@ -578,7 +578,9 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     if (_loadCoordinator.hasRenderableMedia) {
       return _buildCachedMediaGallery();
     }
-    if (_loadCoordinator.isLoading) {
+    if (_loadCoordinator.isLoading &&
+        (_currentOffer.listedMediaObjectIds.isNotEmpty ||
+            _loadCoordinator.displayItems.isNotEmpty)) {
       return _buildMediaLoadingHeader(context);
     }
     // Proven gone for this account: a settled, explained state with no retry,

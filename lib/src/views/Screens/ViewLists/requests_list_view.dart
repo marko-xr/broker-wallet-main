@@ -106,7 +106,7 @@ class _RequestedListViewState extends State<RequestedListView> {
     }
 
     if (vm.hasLoadError) {
-      // The view model's own message (vm.error) is shown for a failed load.
+      // The view model's own message (vm.errorKey) is shown for a failed load.
       return _buildErrorWidget(vm, colors, texts, loc);
     }
 
@@ -360,7 +360,7 @@ class _RequestedListViewState extends State<RequestedListView> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                errorMessage ?? vm.error ?? loc.translate('errorLoading'),
+                errorMessage ?? loc.translate(vm.errorKey ?? 'errorLoading'),
                 style: texts.bodyMedium?.copyWith(
                   color: colors.onSurface.withValues(alpha: 0.7),
                   height: 1.5,
@@ -1374,6 +1374,7 @@ class _EnhancedRequestTile extends StatelessWidget {
   }
 
   void _showStatusSelector(BuildContext context) {
+    final translate = AppLocalizations.of(context).translate;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1384,7 +1385,8 @@ class _EnhancedRequestTile extends StatelessWidget {
         allowedStatuses: PropertyStatus.requestStatuses,
         onStatusSelected: (newStatus) {
           if (request.id != null) {
-            viewModel.updateRequestStatus(request.id!, newStatus);
+            viewModel.updateRequestStatus(request.id!, newStatus,
+                translate: translate);
           }
         },
       ),

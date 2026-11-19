@@ -1,6 +1,7 @@
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
+import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
@@ -122,9 +123,10 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
       title: loc.translate('requestDetails'),
       favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
       onShare: _shareRequest,
-      onWhatsApp: !canContact
-          ? null
-          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onEdit: _editRequest,
+      onDelete: _showDeleteConfirmation,
+      deleteLabel: loc.translate('deleteRequest'),
+      onWhatsApp: !canContact ? null : () => _openWhatsApp(phone),
       onCall: !canContact ? null : () => _makePhoneCall(phone),
       scrollController: _scrollController,
       fade: _fadeAnimation,
@@ -222,6 +224,11 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                   ?.copyWith(color: foreground),
             ),
           ),
+          // Tapping changes the status: say so, as a dropdown does.
+          if (_currentRequest.id != null) ...[
+            const SizedBox(width: 2),
+            Icon(Icons.keyboard_arrow_down, size: 16, color: foreground),
+          ],
         ]),
       ),
     );
@@ -266,9 +273,6 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
         const SizedBox(height: DetailsSection.spacing),
         DetailsFields(
           title: loc.translate('requestRequirements'),
-          deleteLabel: loc.translate('deleteRequest'),
-          onEdit: _editRequest,
-          onDelete: _showDeleteConfirmation,
           rows: [
             DetailsField(
               icon: Icons.sell_outlined,
@@ -309,6 +313,9 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                 label: loc.translate('specificLocation'),
                 value: _currentRequest.location,
               ),
+            ...DetailsDates.fields(context,
+                createdAt: _currentRequest.createdAt,
+                updatedAt: _currentRequest.updatedAt),
           ],
         ),
         if (_currentRequest.notes.isNotEmpty) ...[
@@ -320,14 +327,11 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
   }
 
   // WhatsApp functionality
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
+  Future<void> _openWhatsApp(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    final message = loc
-        .translate('whatsAppBusinessMessage')
-        .replaceAll('{managerName}', managerName);
     final result = await DetailsContactActions.whatsApp(phoneNumber,
-        countryCode: _currentRequest.countryCode, message: message);
+        countryCode: _currentRequest.countryCode);
     if (!mounted || result == ContactLaunchResult.opened) return;
     _showToast(
         loc.translate(result == ContactLaunchResult.invalidPhone
@@ -394,8 +398,12 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     final loc = AppLocalizations.of(context);
     final stats = <Widget>[
       if (_shouldShowRoomsAndBaths()) ...[
-        _buildStatItem(Icons.bed_outlined, _currentRequest.rooms.toString(),
-            loc.translate('rooms'), colors, texts),
+        _buildStatItem(
+            Icons.bed_outlined,
+            RoomCount.display(_currentRequest.rooms),
+            loc.translate('rooms'),
+            colors,
+            texts),
         _buildStatItem(
             Icons.bathtub_outlined,
             _currentRequest.bathrooms.toString(),

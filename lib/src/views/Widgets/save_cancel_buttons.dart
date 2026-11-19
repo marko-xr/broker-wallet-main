@@ -24,9 +24,11 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 ///    last field can scroll completely above the buttons.
 ///
 /// Place it at the bottom of the form's `Stack`, in a
-/// `Positioned(bottom: 0, left: 0, right: 0)`, and leave it out while the
-/// keyboard is open — the form scrolls above the keyboard instead, as the form
-/// screens do. The buttons assume the page is painted with the theme's
+/// `Positioned(bottom: 0, left: 0, right: 0)`. While the keyboard is open the
+/// six record forms (Offers, Requests, Owners, Brokers, Offices, Watchmen) lift
+/// it to `bottom: keyboardHeight` and end their scroll view [heightOf] above
+/// the keyboard, so Save stays in reach while typing; the Quotation form
+/// leaves it out instead. The buttons assume the page is painted with the theme's
 /// `colorScheme.surface`, which every form screen uses for its `Scaffold`.
 class SaveCancelButtons extends StatelessWidget {
   /// Whether the save operation is currently in progress. Both buttons are
@@ -120,6 +122,18 @@ class SaveCancelButtons extends StatelessWidget {
   /// Use it where the screen used to hard-code the room for a bottom panel.
   static double clearanceOf(BuildContext context) =>
       MediaQuery.paddingOf(context).bottom + heightOf(context) + contentGap;
+
+  /// The least room the form keeps above the actions while they rest on the
+  /// keyboard: about one labelled field.
+  static const double minFormRoomAboveKeyboard = 120;
+
+  /// Whether the actions can rest on an open [keyboard] in a form body
+  /// [bodyHeight] tall and still leave [minFormRoomAboveKeyboard] for the
+  /// form. When not (a phone on its side, very large text), they stay hidden
+  /// while typing, so the field being typed in keeps the space.
+  static bool fitsAboveKeyboard(BuildContext context,
+          {required double bodyHeight, required double keyboard}) =>
+      bodyHeight - keyboard - heightOf(context) >= minFormRoomAboveKeyboard;
 
   @override
   Widget build(BuildContext context) {

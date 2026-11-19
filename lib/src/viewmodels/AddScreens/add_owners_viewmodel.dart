@@ -173,7 +173,7 @@ class AddOwnersViewModel extends ChangeNotifier
       }
     } catch (e) {
       delayTimer.cancel();
-      _error = 'Unable to load the owner. Please try again.';
+      _errorKey = 'recordLoadFailedOwner';
     } finally {
       if (showSpinner) {
         _isLoading = false;
@@ -224,6 +224,10 @@ class AddOwnersViewModel extends ChangeNotifier
   // Error state
   String? _error;
   String? get error => _error;
+
+  // A failure found while loading, as a localization key for the screen.
+  String? _errorKey;
+  String? get errorKey => _errorKey;
 
   // Document ID for proper storage structure
   String? _ownerId;
@@ -529,7 +533,9 @@ class AddOwnersViewModel extends ChangeNotifier
         // Show success message
         if (context.mounted) {
           Fluttertoast.showToast(
-            msg: "Added ${selectedFiles.length} file(s) successfully",
+            msg: AppLocalizations.of(context)
+                .translate('mediaFilesAdded')
+                .replaceAll('{count}', '${selectedFiles.length}'),
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,
           );
@@ -544,7 +550,7 @@ class AddOwnersViewModel extends ChangeNotifier
 
       if (context.mounted) {
         Fluttertoast.showToast(
-          msg: 'Unable to select media. Please try again.',
+          msg: AppLocalizations.of(context).translate('unableToSelectMedia'),
           toastLength: Toast.LENGTH_LONG,
           gravity: ToastGravity.BOTTOM,
         );
@@ -618,12 +624,14 @@ class AddOwnersViewModel extends ChangeNotifier
   Future<void> save(BuildContext context) async {
     // Debug log suppressed: SAVE PROCESS STARTED (${isEditMode ? 'EDIT' : 'ADD'})
     _error = null;
+    _errorKey = null;
     _isLoading = true;
     notifyListeners();
 
     try {
       if (!_validateData()) {
-        _error = 'Please fill in the required fields';
+        _error =
+            AppLocalizations.of(context).translate('requiredFieldsMissing');
         _isLoading = false;
         notifyListeners();
         return;
@@ -650,10 +658,13 @@ class AddOwnersViewModel extends ChangeNotifier
         await _handleAddMode(context);
       }
     } catch (e) {
+      final translate =
+          context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
         e,
         'owner',
         isUpdate: isEditMode,
+        translate: translate,
       );
       // Debug log suppressed: SAVE ERROR
       // Debug log suppressed: Error: $_error
@@ -751,7 +762,7 @@ class AddOwnersViewModel extends ChangeNotifier
       _showToast(
         uploading
             ? loc.translate(media.parent.updatedUploadingKey)
-            : 'Owner updated successfully!',
+            : loc.translate('ownerUpdatedSuccessfully'),
         Colors.green,
       );
       // The saved row, read back, goes to Owner Details — with its id, so
@@ -770,7 +781,7 @@ class AddOwnersViewModel extends ChangeNotifier
       _showToast(
         uploading
             ? loc.translate(media.parent.savedUploadingKey)
-            : 'Owner saved successfully!',
+            : loc.translate('ownerSavedSuccessfully'),
         Colors.green,
       );
       context.go('/home');
@@ -794,7 +805,10 @@ class AddOwnersViewModel extends ChangeNotifier
   /// Handle successful edit save and navigation
   Future<void> _handleSuccessfulEditSave(
       BuildContext context, OwnerModel updatedOwner) async {
-    _showToast('Owner updated successfully!', Colors.green);
+    _showToast(
+      AppLocalizations.of(context).translate('ownerUpdatedSuccessfully'),
+      Colors.green,
+    );
 
     // Return updated model to details screen
     if (context.mounted) {
@@ -837,8 +851,11 @@ class AddOwnersViewModel extends ChangeNotifier
       if (context.mounted) {
         // Show success message
         _showToast(
-            'Owner saved successfully! ${mediaFilesToUpload.isNotEmpty ? 'Syncing media...' : ''}',
-            Colors.green);
+          AppLocalizations.of(context).translate(mediaFilesToUpload.isNotEmpty
+              ? 'ownerSavedMediaUploading'
+              : 'ownerSavedSuccessfully'),
+          Colors.green,
+        );
 
         // Navigate back immediately - no waiting for uploads
         // Debug log suppressed: Navigation to home...
@@ -861,20 +878,21 @@ class AddOwnersViewModel extends ChangeNotifier
       showDialog(
         context: context,
         builder: (BuildContext context) {
+          final loc = AppLocalizations.of(context);
           return AlertDialog(
-            title: Text('Discard Changes?'),
-            content: Text('Are you sure you want to discard your changes?'),
+            title: Text(loc.translate('discardChanges')),
+            content: Text(loc.translate('areYouSureDiscard')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: Text('Keep Editing'),
+                child: Text(loc.translate('keepEditing')),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                   context.go('/home');
                 },
-                child: Text('Discard'),
+                child: Text(loc.translate('discard')),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
               ),
             ],

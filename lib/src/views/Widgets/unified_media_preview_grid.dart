@@ -249,6 +249,7 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -258,8 +259,12 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
             children: [
               Text(
                 mediaItems.isEmpty
-                    ? 'No Media Files'
-                    : '${mediaItems.length} Media File${mediaItems.length > 1 ? 's' : ''}',
+                    ? loc.translate('mediaNoFiles')
+                    : mediaItems.length == 1
+                        ? loc.translate('mediaFilesCountOne')
+                        : loc
+                            .translate('mediaFilesCount')
+                            .replaceAll('{count}', '${mediaItems.length}'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.primary,
@@ -268,7 +273,7 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
               if (mediaItems.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
-                  'Tap to view details or remove files',
+                  loc.translate('mediaTapToViewOrRemove'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -361,7 +366,7 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: item.offerMedia != null
                   ? _buildOfferMediaPreview(context, item.offerMedia!, colors)
-                  : _buildPreviewContent(item, colors),
+                  : _buildPreviewContent(context, item, colors),
             ),
           ),
           // File info overlay
@@ -455,7 +460,9 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildPreviewContent(MediaPreviewItem item, ColorScheme colors) {
+  Widget _buildPreviewContent(
+      BuildContext context, MediaPreviewItem item, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     switch (item.mediaType) {
       case 'image':
         if (item.sourceType == MediaSourceType.file &&
@@ -468,7 +475,8 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
             item.platformFile!.bytes!,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              return _buildErrorPreview('Failed to load image', colors);
+              return _buildErrorPreview(
+                  loc.translate('failedToLoadImage'), colors);
             },
           );
         } else if (item.sourceType == MediaSourceType.url) {
@@ -483,14 +491,16 @@ class UnifiedMediaPreviewGrid extends StatelessWidget {
                 ),
               ),
               errorWidget: (context, url, error) {
-                return _buildErrorPreview('Failed to load image', colors);
+                return _buildErrorPreview(
+                    loc.translate('failedToLoadImage'), colors);
               },
             );
           } else {
-            return _buildErrorPreview('Unsupported image URL', colors);
+            return _buildErrorPreview(
+                loc.translate('mediaUnsupportedImageUrl'), colors);
           }
         }
-        return _buildErrorPreview('No image data', colors);
+        return _buildErrorPreview(loc.translate('mediaNoImageData'), colors);
 
       case 'video':
         // ... الكود الخاص بالفيديو كما هو
@@ -800,7 +810,7 @@ class _HeicAwareImageState extends State<HeicAwareImage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Failed to load',
+                    AppLocalizations.of(context).translate('mediaFailedToLoad'),
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                       fontSize: 10,

@@ -1104,8 +1104,8 @@ void main() {
       final screen =
           _read('lib/src/views/Screens/ViewAdd/add_owners_view.dart');
       final picker = screen.indexOf('UaeCityAreaPicker(');
-      final field =
-          screen.indexOf("localization.translate('enterPropertyLocation')");
+      final field = screen.indexOf(
+          RegExp(r"localization\s*\.translate\('enterPropertyLocation'\)"));
       expect(picker, greaterThan(0));
       expect(field, greaterThan(picker),
           reason: 'the text field still follows the picker');

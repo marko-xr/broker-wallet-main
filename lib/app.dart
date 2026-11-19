@@ -1104,13 +1104,14 @@ class _RequestDetailsLoaderState extends State<_RequestDetailsLoader> {
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 16),
                   Text(
-                    'Request not found',
+                    AppLocalizations.of(context).translate('requestNotFound'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => context.pop(),
-                    child: const Text('Go Back'),
+                    child:
+                        Text(AppLocalizations.of(context).translate('goBack')),
                   ),
                 ],
               ),

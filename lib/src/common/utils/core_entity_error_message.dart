@@ -16,19 +16,32 @@ class CoreEntityErrorMessage {
     required bool isUpdate,
     String Function(String key)? translate,
   }) {
+    // With [translate] every message is the localized one; without it, the
+    // English text below (unchanged) is returned.
+    String localized(String key, String english,
+        [Map<String, String> params = const {}]) {
+      if (translate == null) return english;
+      var text = translate(key);
+      final values = {'entity': entity, ...params};
+      values.forEach((name, value) => text = text.replaceAll('{$name}', value));
+      return text;
+    }
+
     if (error is PhoneValidationException) {
-      return 'Please enter a valid phone number.';
+      return localized(
+          'saveErrorInvalidPhone', 'Please enter a valid phone number.');
     }
     if (error is CoreEntityValidationException) {
-      return error.message;
+      final key = error.messageKey;
+      return key == null
+          ? error.message
+          : localized(key, error.message, error.params);
     }
     // The $entity itself is already saved by the time this is thrown, so the
     // generic save-failure message below would falsely claim total failure.
     // Never names a file, a path or a byte count — the exception carries
     // none. When every failed file was refused for the same user-actionable
     // reason, that reason is added as a second localized sentence.
-    // Only these branches are localized; every other message in this class is
-    // unchanged, pre-existing English-only technical debt.
     if (error is OfferMediaPartialUploadException) {
       if (translate != null) {
         final partial = translate('offerSavedMediaPartialFailure');
@@ -51,20 +64,25 @@ class CoreEntityErrorMessage {
           'not be uploaded. Edit the $entity to retry.';
     }
     if (error is StateError && error.message.contains('session')) {
-      return 'Your session has expired. Please sign in again.';
+      return localized('saveErrorSessionExpired',
+          'Your session has expired. Please sign in again.');
     }
     if (error is AuthException ||
         (error is PostgrestException && error.code == '42501')) {
-      return 'You do not have permission to save this $entity.';
+      return localized('saveErrorNoPermission',
+          'You do not have permission to save this $entity.');
     }
     if (error is TimeoutException ||
         error.runtimeType.toString().contains('SocketException') ||
         error.runtimeType.toString().contains('ClientException')) {
-      return 'Check your internet connection and try again.';
+      return localized('saveErrorNoConnection',
+          'Check your internet connection and try again.');
     }
     if (error is PostgrestException) {
-      return 'The $entity data could not be validated. Please check the form.';
+      return localized('saveErrorInvalidData',
+          'The $entity data could not be validated. Please check the form.');
     }
-    return 'Unable to ${isUpdate ? 'update' : 'save'} the $entity. Please try again.';
+    return localized(isUpdate ? 'updateErrorGeneric' : 'saveErrorGeneric',
+        'Unable to ${isUpdate ? 'update' : 'save'} the $entity. Please try again.');
   }
 }

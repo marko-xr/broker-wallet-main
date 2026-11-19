@@ -135,9 +135,10 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
       title: loc.translate('brokerDetails'),
       favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
       onShare: _shareBroker,
-      onWhatsApp: !canContact
-          ? null
-          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onEdit: _editBroker,
+      onDelete: _showDeleteConfirmation,
+      deleteLabel: loc.translate('deleteBroker'),
+      onWhatsApp: !canContact ? null : () => _openWhatsApp(phone),
       onCall: !canContact ? null : () => _makePhoneCall(phone),
       scrollController: _scrollController,
       fade: _fadeAnimation,
@@ -175,10 +176,7 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
         ),
         const SizedBox(height: DetailsSection.spacing),
         DetailsFields(
-          title: loc.translate('brokerDetails'),
-          deleteLabel: loc.translate('deleteBroker'),
-          onEdit: _editBroker,
-          onDelete: _showDeleteConfirmation,
+          title: loc.translate('contactInformation'),
           rows: [
             DetailsField(
               icon: Icons.phone_outlined,
@@ -192,6 +190,9 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
                   ? _copyPhone
                   : null,
             ),
+            ...DetailsDates.fields(context,
+                createdAt: _currentBroker.createdAt,
+                updatedAt: _currentBroker.updatedAt),
           ],
         ),
         if (_currentBroker.notes.isNotEmpty) ...[
@@ -240,14 +241,11 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
     );
   }
 
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
+  Future<void> _openWhatsApp(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    final message = loc
-        .translate('whatsAppBusinessMessage')
-        .replaceAll('{managerName}', managerName);
     final result = await DetailsContactActions.whatsApp(phoneNumber,
-        countryCode: _currentBroker.countryCode, message: message);
+        countryCode: _currentBroker.countryCode);
     if (!mounted || result == ContactLaunchResult.opened) return;
     _showToast(
         loc.translate(result == ContactLaunchResult.invalidPhone

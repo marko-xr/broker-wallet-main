@@ -1309,7 +1309,8 @@ class _OptimizedVideoPlayerWidgetState
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Error loading video',
+                    AppLocalizations.of(context)
+                        .translate('mediaErrorLoadingVideo'),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Colors.white,
                         ),
@@ -1393,7 +1394,8 @@ class _OptimizedVideoPlayerWidgetState
               ),
               const SizedBox(height: 16),
               Text(
-                'Error loading video',
+                AppLocalizations.of(context)
+                    .translate('mediaErrorLoadingVideo'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Colors.white,
                     ),

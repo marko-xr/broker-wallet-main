@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
+import '../../common/localization/localization_delegate.dart';
+
 import '../../data/models/ScreensModel/brokers_model.dart';
 import '../../services/ScreenServices/broker_service.dart';
 import 'entity_list_state.dart';
@@ -41,10 +43,11 @@ class BrokersListViewModel extends ChangeNotifier
     final outcome = await deleteEntity(
         brokerId, () => _brokerService.deleteBroker(brokerId));
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context);
     if (outcome == EntityDeleteOutcome.deleted) {
-      _showToast('Broker deleted successfully', Colors.green);
+      _showToast(loc.translate('brokerDeletedSuccessfully'), Colors.green);
     } else if (outcome == EntityDeleteOutcome.failed) {
-      _showToast('Unable to delete the broker. Please try again.', Colors.red);
+      _showToast(loc.translate('unableToDeleteBroker'), Colors.red);
     }
   }
 

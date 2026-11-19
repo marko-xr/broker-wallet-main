@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 
+import 'details_section.dart';
 import 'offer_details_style.dart';
 
 /// The Offer Details layout for records with their own fields and actions.
@@ -13,6 +14,9 @@ class DetailsPage extends StatelessWidget {
     required this.title,
     required this.favorite,
     required this.onShare,
+    required this.onEdit,
+    required this.onDelete,
+    required this.deleteLabel,
     required this.onWhatsApp,
     required this.onCall,
     required this.scrollController,
@@ -27,6 +31,9 @@ class DetailsPage extends StatelessWidget {
   final String title;
   final Widget favorite;
   final VoidCallback onShare;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final String deleteLabel;
   final VoidCallback? onWhatsApp;
   final VoidCallback? onCall;
   final ScrollController scrollController;
@@ -104,6 +111,14 @@ class DetailsPage extends StatelessWidget {
                         icon: Icon(Icons.share_outlined, size: 21 * scale),
                         padding: EdgeInsets.zero,
                         onPressed: onShare,
+                      ),
+                    ),
+                    SizedBox(width: 4 * scale),
+                    DetailsHeaderControl(
+                      child: DetailsActionsMenu(
+                        deleteLabel: deleteLabel,
+                        onEdit: onEdit,
+                        onDelete: onDelete,
                       ),
                     ),
                     SizedBox(width: headerEdgeInset),

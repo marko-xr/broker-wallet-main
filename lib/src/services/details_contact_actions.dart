@@ -54,16 +54,20 @@ class DetailsContactActions {
 
   static Future<ContactLaunchResult> whatsApp(String phone,
       {String? countryCode,
-      required String message,
+      String? message,
       ContactUrlLauncher? launcher}) async {
     final dial = normalizePhone(phone, countryCode: countryCode);
     if (dial == null) return ContactLaunchResult.invalidPhone;
     final digits = dial.substring(1);
-    final query = {'phone': digits, 'text': message};
+    // No message opens the chat empty, for the broker to write their own.
+    final text = <String, String>{
+      if (message != null && message.isNotEmpty) 'text': message,
+    };
+    final query = {'phone': digits, ...text};
     // Preserve the existing API -> short link -> web fallback order.
     final destinations = [
       Uri.https('api.whatsapp.com', '/send', query),
-      Uri.https('wa.me', '/$digits', {'text': message}),
+      Uri.https('wa.me', '/$digits', text.isEmpty ? null : text),
       Uri.https('web.whatsapp.com', '/send', query),
     ];
     for (final uri in destinations) {

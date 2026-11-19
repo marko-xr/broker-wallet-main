@@ -54,159 +54,182 @@ class AddOwnersView extends StatelessWidget {
             resizeToAvoidBottomInset: false, // Prevent keyboard from moving
             appBar: AppBar(
               leading: const BackArrowButton(),
-              title: Text(localization.translate('owners'),
+              title: Text(
+                  localization.translate(
+                      mode == AddOwnersMode.edit ? 'editOwner' : 'addOwner'),
                   style: AppTextStyles.appBarTitle),
               centerTitle: true,
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: Builder(
-              builder: (context) {
+            body: LayoutBuilder(
+              builder: (context, constraints) {
                 // Detect keyboard visibility
                 final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+                // Save rests on the keyboard only while a field still fits
+                // above it; otherwise it stays hidden while typing.
+                final showActions = keyboardHeight == 0 ||
+                    SaveCancelButtons.fitsAboveKeyboard(context,
+                        bodyHeight: constraints.maxHeight,
+                        keyboard: keyboardHeight);
 
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Scrollable content
-                    SingleChildScrollView(
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 20,
-                        bottom: keyboardHeight > 0
-                            ? keyboardHeight + 20
-                            : SaveCancelButtons.clearanceOf(context),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _Label(localization.translate('name')),
-                          _TextFieldIcon(
-                            iconAsset: 'assets/icons/profile-person.svg',
-                            hint: localization.translate('enterOwnersName'),
-                            value: vm.name,
-                            onChanged: vm.setName,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('phoneNumber')),
-                          PhoneInputWidget(
-                            countryCode: vm.countryCode,
-                            value: vm.phone,
-                            onChanged: vm.setPhone,
-                            localization: localization,
-                            phoneError: vm.phoneError,
-                            showError: vm.phone.isNotEmpty,
-                            outlined: true,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('typeOfProperties')),
-                          // Quick picks only: the text field below stays the
-                          // one stored value and accepts any property type.
-                          PropertyTypeChips(
-                            value: vm.typeOfProperties,
-                            onSelected: vm.setTypeOfProperties,
-                            localization: localization,
-                          ),
-                          const SizedBox(height: 12),
-                          _TextFieldIcon(
-                            iconAsset: 'assets/icons/building-property.svg',
-                            hint: localization.translate('enterPropertiesType'),
-                            value: vm.typeOfProperties,
-                            onChanged: vm.setTypeOfProperties,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('propertyLocation')),
-                          // The shared UAE city and area catalog, one choice:
-                          // an Owner has a single location. It is written into
-                          // the text field below, which stays the stored value.
-                          UaeCityAreaPicker(
-                            cities: vm.locationCities,
-                            selectedCity: vm.locationCity,
-                            onCityChanged: (city) => vm.selectLocationCity(
-                                city, localization.locale.languageCode),
-                            selectedAreas: vm.locationAreaKeys,
-                            onToggleArea: (areaKey) => vm.toggleLocationArea(
-                                areaKey, localization.locale.languageCode),
-                            maxSelectedAreas: 1,
-                            localization: localization,
-                          ),
-                          const SizedBox(height: 12),
-                          _TextFieldIcon(
-                            icon: Icons.location_on_outlined,
-                            hint:
-                                localization.translate('enterPropertyLocation'),
-                            value: vm.propertyLocation,
-                            onChanged: vm.setPropertyLocation,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('notes')),
-                          _NotesBox(
-                            value: vm.notes,
-                            onChanged: vm.setNotes,
-                            hint: localization.translate('notesHint'),
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('pickUpLocation')),
-                          PickUpInputWidget(
-                            value: vm.pickUpLocation,
-                            onChanged: vm.setPickUpLocation,
-                            hint: localization.translate('pickUpLocationHint'),
-                            localization: localization,
-                            viewModel:
-                                vm, // Pass the ViewModel for location features
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('uploadMedia')),
-                          MediaUploadWidget(
-                            selectedFiles: vm.selectedFiles,
-                            existingFileUrls: vm.uploadedFileUrls,
-                            onSelectMedia: () => vm.selectMedia(context),
-                            onRemoveFile: vm.removeFile,
-                            onRemoveExistingFile: vm.removeUploadedFile,
-                            onClearAll: vm.clearAllFiles,
-                            isUploading: vm.isUploading,
-                            localization: localization,
-                            // Standardized to 3 like offers; "+N more" opens
-                            // the rest, so every item stays reachable.
-                            maxDisplayFiles: vm.mediaDisplayCount,
-                            showUploadButton:
-                                false, // Disable upload button - we save immediately
-                            showImagePreview: false,
-                            hintText: localization.translate('uploadMediaHint'),
-                            offerMedia: vm.usesOwnerMediaItems
-                                ? vm.ownerMediaItems
-                                : null,
-                            onRemoveOfferMedia: vm.removeOwnerMediaAt,
-                            onRetryOfferMedia: vm.retryOwnerMediaAt,
-                            onShowAllMedia: vm.showAllMedia,
-                          ),
-                          // The land / plot plan: its own optional attachment,
-                          // apart from the photos and videos above.
-                          if (vm.planAttachment case final plan?) ...[
-                            const SizedBox(height: 18),
-                            _Label(
-                                localization.translate('planAttachmentTitle')),
-                            PlanAttachmentSection(
-                              view: plan.view,
-                              localization: localization,
-                              onSelect: () =>
-                                  selectPlanAttachment(context, plan),
-                              onRemove: plan.removeSelection,
-                              onKeep: plan.keepExisting,
-                              // The Owner itself is already saved: Save sends
-                              // the plan again under the same upload id.
-                              onRetry: () => vm.save(context),
+                    // Scrollable content. With the keyboard open it ends
+                    // above the actions, so a focused field is never
+                    // scrolled in behind them.
+                    Positioned.fill(
+                      bottom: keyboardHeight > 0
+                          ? keyboardHeight +
+                              (showActions
+                                  ? SaveCancelButtons.heightOf(context)
+                                  : 0)
+                          : 0,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 20,
+                          bottom: keyboardHeight > 0
+                              ? 20
+                              : SaveCancelButtons.clearanceOf(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _Label(localization.translate('name')),
+                            _TextFieldIcon(
+                              iconAsset: 'assets/icons/profile-person.svg',
+                              hint: localization.translate('enterOwnersName'),
+                              value: vm.name,
+                              onChanged: vm.setName,
                             ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('phoneNumber')),
+                            PhoneInputWidget(
+                              countryCode: vm.countryCode,
+                              value: vm.phone,
+                              onChanged: vm.setPhone,
+                              localization: localization,
+                              phoneError: vm.phoneError,
+                              showError: vm.phone.isNotEmpty,
+                              outlined: true,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('typeOfProperties')),
+                            // Quick picks only: the text field below stays the
+                            // one stored value and accepts any property type.
+                            PropertyTypeChips(
+                              value: vm.typeOfProperties,
+                              onSelected: vm.setTypeOfProperties,
+                              localization: localization,
+                            ),
+                            const SizedBox(height: 12),
+                            _TextFieldIcon(
+                              iconAsset: 'assets/icons/building-property.svg',
+                              hint:
+                                  localization.translate('enterPropertiesType'),
+                              value: vm.typeOfProperties,
+                              onChanged: vm.setTypeOfProperties,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('propertyLocation')),
+                            // The shared UAE city and area catalog, one choice:
+                            // an Owner has a single location. It is written into
+                            // the text field below, which stays the stored value.
+                            UaeCityAreaPicker(
+                              cities: vm.locationCities,
+                              selectedCity: vm.locationCity,
+                              onCityChanged: (city) => vm.selectLocationCity(
+                                  city, localization.locale.languageCode),
+                              selectedAreas: vm.locationAreaKeys,
+                              onToggleArea: (areaKey) => vm.toggleLocationArea(
+                                  areaKey, localization.locale.languageCode),
+                              maxSelectedAreas: 1,
+                              localization: localization,
+                            ),
+                            const SizedBox(height: 12),
+                            _TextFieldIcon(
+                              icon: Icons.location_on_outlined,
+                              hint: localization
+                                  .translate('enterPropertyLocation'),
+                              value: vm.propertyLocation,
+                              onChanged: vm.setPropertyLocation,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('notes')),
+                            _NotesBox(
+                              value: vm.notes,
+                              onChanged: vm.setNotes,
+                              hint: localization.translate('notesHint'),
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('pickUpLocation')),
+                            PickUpInputWidget(
+                              value: vm.pickUpLocation,
+                              onChanged: vm.setPickUpLocation,
+                              hint:
+                                  localization.translate('pickUpLocationHint'),
+                              localization: localization,
+                              viewModel:
+                                  vm, // Pass the ViewModel for location features
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('uploadMedia')),
+                            MediaUploadWidget(
+                              selectedFiles: vm.selectedFiles,
+                              existingFileUrls: vm.uploadedFileUrls,
+                              onSelectMedia: () => vm.selectMedia(context),
+                              onRemoveFile: vm.removeFile,
+                              onRemoveExistingFile: vm.removeUploadedFile,
+                              onClearAll: vm.clearAllFiles,
+                              isUploading: vm.isUploading,
+                              localization: localization,
+                              // Standardized to 3 like offers; "+N more" opens
+                              // the rest, so every item stays reachable.
+                              maxDisplayFiles: vm.mediaDisplayCount,
+                              showUploadButton:
+                                  false, // Disable upload button - we save immediately
+                              showImagePreview: false,
+                              hintText:
+                                  localization.translate('uploadMediaHint'),
+                              offerMedia: vm.usesOwnerMediaItems
+                                  ? vm.ownerMediaItems
+                                  : null,
+                              onRemoveOfferMedia: vm.removeOwnerMediaAt,
+                              onRetryOfferMedia: vm.retryOwnerMediaAt,
+                              onShowAllMedia: vm.showAllMedia,
+                            ),
+                            // The land / plot plan: its own optional attachment,
+                            // apart from the photos and videos above.
+                            if (vm.planAttachment case final plan?) ...[
+                              const SizedBox(height: 18),
+                              _Label(localization
+                                  .translate('planAttachmentTitle')),
+                              PlanAttachmentSection(
+                                view: plan.view,
+                                localization: localization,
+                                onSelect: () =>
+                                    selectPlanAttachment(context, plan),
+                                onRemove: plan.removeSelection,
+                                onKeep: plan.keepExisting,
+                                // The Owner itself is already saved: Save sends
+                                // the plan again under the same upload id.
+                                onRetry: () => vm.save(context),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
 
-                    // Floating actions: nothing behind them, hidden while the keyboard is open
-                    if (keyboardHeight == 0)
+                    // Floating actions: nothing behind them. With the
+                    // keyboard open they sit just above it, so Save stays
+                    // in reach while typing.
+                    if (showActions)
                       Positioned(
-                        bottom: 0,
+                        bottom: keyboardHeight,
                         left: 0,
                         right: 0,
                         child: SaveCancelButtons(

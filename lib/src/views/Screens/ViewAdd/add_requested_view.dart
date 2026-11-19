@@ -1,4 +1,4 @@
-﻿import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
@@ -13,6 +13,7 @@ import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/viewmodels/AddScreens/add_requested_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/enums/add_requested_mode.dart';
+import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 
 class AddRequestedView extends StatelessWidget {
@@ -51,158 +52,182 @@ class AddRequestedView extends StatelessWidget {
               title: Text(
                   vm.isEditMode
                       ? localization.translate('editRequest')
-                      : localization.translate('requested'),
+                      : localization.translate('addRequest'),
                   style: AppTextStyles.appBarTitle),
               centerTitle: true,
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: Builder(
-              builder: (context) {
+            body: LayoutBuilder(
+              builder: (context, constraints) {
                 // Detect keyboard visibility
                 final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+                // Save rests on the keyboard only while a field still fits
+                // above it; otherwise it stays hidden while typing.
+                final showActions = keyboardHeight == 0 ||
+                    SaveCancelButtons.fitsAboveKeyboard(context,
+                        bodyHeight: constraints.maxHeight,
+                        keyboard: keyboardHeight);
 
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Scrollable content
-                    SingleChildScrollView(
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 8,
-                        bottom: keyboardHeight > 0
-                            ? keyboardHeight + 20
-                            : SaveCancelButtons.clearanceOf(context),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Rent/Sell tab
-                          _RentSellTabs(
-                            tab: vm.tab,
-                            onChanged: vm.setTab,
-                            localization: localization,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('selectTheCity')),
-                          _CityChips(
-                            cities: vm.cities,
-                            selected: vm.selectedCity,
-                            onSelect: vm.selectCity,
-                            localization: localization,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('location')),
-                          _LocationInput(
-                            value: vm.location,
-                            onChanged: (v) => vm.location = v,
-                            hint: localization.translate('locationHint'),
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('phoneNumber')),
-                          PhoneInputWidget(
-                            countryCode: vm.countryCode,
-                            value: vm.phone,
-                            onChanged: vm.setPhone,
-                            localization: localization,
-                            phoneError: vm.phoneError,
-                            showError: vm.phone.isNotEmpty,
-                            outlined: true,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('priceRange')),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _PriceBox(
-                                  value: vm.minPrice,
-                                  onChanged: (v) => vm.minPrice = v,
-                                  hint: localization.translate('minimumPrice'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _PriceBox(
-                                  value: vm.maxPrice,
-                                  onChanged: (v) => vm.maxPrice = v,
-                                  hint: localization.translate('maximumPrice'),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('squareFootage')),
-                          _SquareFootageBox(
-                            value: vm.squareFootage,
-                            onChanged: vm.setSquareFootage,
-                            hint: localization.translate('squareFootageHint'),
-                          ),
-
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('notes')),
-                          _NotesBox(
-                            value: vm.notes,
-                            onChanged: (v) => vm.notes = v,
-                            hint: localization.translate('notesHint'),
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization
-                              .translate('typeOfRequestPropertiesAlt')),
-                          _TypeChips(
-                            type: vm.propertyType,
-                            onSelect: vm.setPropertyType,
-                            localization: localization,
-                          ),
-                          const SizedBox(height: 18),
-                          // Dynamic label and chips for specific property type
-                          if (vm.propertyType != null) ...[
-                            const SizedBox(height: 18),
-                            // Dynamic label and chips for specific property type
-                            _Label(
-                              localization
-                                  .translate('selectSpecificPropertyFor')
-                                  .replaceFirst(
-                                      '{propertyType}',
-                                      localization.translate(
-                                          _propertyTypeLabel(vm.propertyType))),
-                            ),
-                            _SpecificPropertyTypeChips(
-                              types:
-                                  vm.getSpecificPropertyTypes(vm.propertyType),
-                              selected: vm.selectedSpecificPropertyType,
-                              onSelect: vm.selectSpecificPropertyType,
+                    // Scrollable content. With the keyboard open it ends
+                    // above the actions, so a focused field is never
+                    // scrolled in behind them.
+                    Positioned.fill(
+                      bottom: keyboardHeight > 0
+                          ? keyboardHeight +
+                              (showActions
+                                  ? SaveCancelButtons.heightOf(context)
+                                  : 0)
+                          : 0,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 8,
+                          bottom: keyboardHeight > 0
+                              ? 20
+                              : SaveCancelButtons.clearanceOf(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Rent/Sell tab
+                            _RentSellTabs(
+                              tab: vm.tab,
+                              onChanged: vm.setTab,
                               localization: localization,
                             ),
-                          ],
+                            // What the property is first, then its size and
+                            // budget, then where, and last the contact and the
+                            // broker's own notes.
+                            const SizedBox(height: 18),
+                            _Label(localization
+                                .translate('typeOfRequestPropertiesAlt')),
+                            _TypeChips(
+                              type: vm.propertyType,
+                              onSelect: vm.setPropertyType,
+                              localization: localization,
+                            ),
+                            const SizedBox(height: 18),
+                            // Dynamic label and chips for specific property type
+                            if (vm.propertyType != null) ...[
+                              const SizedBox(height: 18),
+                              // Dynamic label and chips for specific property type
+                              _Label(
+                                localization
+                                    .translate('selectSpecificPropertyFor')
+                                    .replaceFirst(
+                                        '{propertyType}',
+                                        localization.translate(
+                                            _propertyTypeLabel(
+                                                vm.propertyType))),
+                              ),
+                              _SpecificPropertyTypeChips(
+                                types: vm
+                                    .getSpecificPropertyTypes(vm.propertyType),
+                                selected: vm.selectedSpecificPropertyType,
+                                onSelect: vm.selectSpecificPropertyType,
+                                localization: localization,
+                              ),
+                            ],
 
-                          // Conditional rooms and bathrooms sections
-                          if (_shouldShowRoomsAndBaths(
-                              vm.selectedSpecificPropertyType)) ...[
+                            // Conditional rooms and bathrooms sections
+                            if (_shouldShowRoomsAndBaths(
+                                vm.selectedSpecificPropertyType)) ...[
+                              const SizedBox(height: 18),
+                              _Label(localization.translate('numberOfRooms')),
+                              _NumbersRow(
+                                count: RoomCount.orMore,
+                                selected: vm.rooms,
+                                onSelect: vm.selectRooms,
+                                lastIsOrMore: true,
+                              ),
+                              const SizedBox(height: 18),
+                              _Label(
+                                  localization.translate('numberOfBathrooms')),
+                              _NumbersRow(
+                                count: 6,
+                                selected: vm.baths,
+                                onSelect: vm.selectBaths,
+                              ),
+                            ],
                             const SizedBox(height: 18),
-                            _Label(localization.translate('numberOfRooms')),
-                            _NumbersRow(
-                              count: 6,
-                              selected: vm.rooms,
-                              onSelect: vm.selectRooms,
+                            _Label(localization.translate('squareFootage')),
+                            _SquareFootageBox(
+                              value: vm.squareFootage,
+                              onChanged: vm.setSquareFootage,
+                              hint: localization.translate('squareFootageHint'),
                             ),
                             const SizedBox(height: 18),
-                            _Label(localization.translate('numberOfBathrooms')),
-                            _NumbersRow(
-                              count: 6,
-                              selected: vm.baths,
-                              onSelect: vm.selectBaths,
+                            _Label(localization.translate('priceRange')),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _PriceBox(
+                                    value: vm.minPrice,
+                                    onChanged: (v) => vm.minPrice = v,
+                                    hint:
+                                        localization.translate('minimumPrice'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _PriceBox(
+                                    value: vm.maxPrice,
+                                    onChanged: (v) => vm.maxPrice = v,
+                                    hint:
+                                        localization.translate('maximumPrice'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('selectTheCity')),
+                            _CityChips(
+                              cities: vm.cities,
+                              selected: vm.selectedCity,
+                              onSelect: vm.selectCity,
+                              localization: localization,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('location')),
+                            _LocationInput(
+                              value: vm.location,
+                              onChanged: (v) => vm.location = v,
+                              hint: localization.translate('locationHint'),
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('phoneNumber')),
+                            PhoneInputWidget(
+                              countryCode: vm.countryCode,
+                              value: vm.phone,
+                              onChanged: vm.setPhone,
+                              localization: localization,
+                              phoneError: vm.phoneError,
+                              showError: vm.phone.isNotEmpty,
+                              outlined: true,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('notes')),
+                            _NotesBox(
+                              value: vm.notes,
+                              onChanged: (v) => vm.notes = v,
+                              hint: localization.translate('notesHint'),
                             ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
 
-                    // Floating actions: nothing behind them, hidden while the keyboard is open
-                    if (keyboardHeight == 0)
+                    // Floating actions: nothing behind them. With the
+                    // keyboard open they sit just above it, so Save stays
+                    // in reach while typing.
+                    if (showActions)
                       Positioned(
-                        bottom: 0,
+                        bottom: keyboardHeight,
                         left: 0,
                         right: 0,
                         child: SaveCancelButtons(
@@ -809,10 +834,14 @@ class _NumbersRow extends StatelessWidget {
   final int count;
   final int selected;
   final ValueChanged<int> onSelect;
+
+  /// Whether the last choice means "[count] or more" (shown as "7+").
+  final bool lastIsOrMore;
   const _NumbersRow({
     required this.count,
     required this.selected,
     required this.onSelect,
+    this.lastIsOrMore = false,
   });
 
   @override
@@ -820,7 +849,8 @@ class _NumbersRow extends StatelessWidget {
     return Wrap(
       runSpacing: 10,
       children: List.generate(count, (idx) {
-        final sel = (idx + 1) == selected;
+        final orMore = lastIsOrMore && idx + 1 == count;
+        final sel = (idx + 1) == selected || (orMore && selected > count);
         return GestureDetector(
           onTap: () => onSelect(idx + 1),
           child: Container(
@@ -841,7 +871,8 @@ class _NumbersRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(22),
             ),
             child: Text(
-              (idx + 1).toString().padLeft(2, '0'),
+              orMore ? '$count+' : (idx + 1).toString().padLeft(2, '0'),
+              textDirection: TextDirection.ltr,
               style: TextStyle(
                 color: sel
                     ? Colors.white

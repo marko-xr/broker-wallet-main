@@ -145,7 +145,8 @@ Future<void> _visible(
   await tester.ensureVisible(finder.first);
   await tester.pump();
   final rect = tester.getRect(finder.first);
-  final bottom = scenario.size.height - scenario.keyboard;
+  final bottom = formVisibleBottom(tester,
+      windowHeight: scenario.size.height, keyboard: scenario.keyboard);
   if (scenario.keyboard == 0) {
     expect(rect.top, greaterThanOrEqualTo(0), reason: '$scenario $rect');
     expect(rect.bottom, lessThanOrEqualTo(bottom + 1),
@@ -181,7 +182,8 @@ void main() {
       if (scenario.keyboard == 0) {
         await _visible(tester, find.byType(SaveCancelButtons), scenario);
       } else {
-        expect(find.byType(SaveCancelButtons), findsNothing);
+        expectFormActionsAboveKeyboard(tester,
+            windowHeight: scenario.size.height, keyboard: scenario.keyboard);
       }
       await _visible(tester, find.byType(TextField).last, scenario);
     });

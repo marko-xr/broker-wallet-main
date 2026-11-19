@@ -81,7 +81,8 @@ Future<void> _reachable(
   var rect = tester.getRect(target.first);
   if (scenario.keyboard > 0) {
     final visibleTop = scenario.safeArea.top + 56;
-    final visibleBottom = scenario.size.height - scenario.keyboard;
+    final visibleBottom = formVisibleBottom(tester,
+        windowHeight: scenario.size.height, keyboard: scenario.keyboard);
     final visibleHeight =
         (rect.bottom < visibleBottom ? rect.bottom : visibleBottom) -
             (rect.top > visibleTop ? rect.top : visibleTop);
@@ -117,7 +118,8 @@ void main() {
         expect(find.byType(SaveCancelButtons), findsOneWidget);
         await _reachable(tester, find.byType(SaveCancelButtons), scenario);
       } else {
-        expect(find.byType(SaveCancelButtons), findsNothing);
+        expectFormActionsAboveKeyboard(tester,
+            windowHeight: scenario.size.height, keyboard: scenario.keyboard);
       }
       await _reachable(tester, find.byType(TextField).last, scenario);
     });

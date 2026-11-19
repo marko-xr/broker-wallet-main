@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
@@ -9,9 +10,8 @@ class RequestedListViewModel extends ChangeNotifier
     with EntityListState<RequestModel> {
   final RequestService _requestService;
 
-  // Error state (shown when the first load fails)
-  String? get error =>
-      hasLoadError ? 'Unable to load requests. Please try again.' : null;
+  // Error state (shown when the first load fails), as a localization key.
+  String? get errorKey => hasLoadError ? 'requestsLoadFailed' : null;
 
   // Requests list
   List<RequestModel> get requests => entities;
@@ -67,10 +67,11 @@ class RequestedListViewModel extends ChangeNotifier
     final outcome = await deleteEntity(
         requestId, () => _requestService.deleteRequest(requestId));
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context);
     if (outcome == EntityDeleteOutcome.deleted) {
-      _showToast('Request deleted successfully', Colors.green);
+      _showToast(loc.translate('requestDeletedSuccessfully'), Colors.green);
     } else if (outcome == EntityDeleteOutcome.failed) {
-      _showToast('Unable to delete the request. Please try again.', Colors.red);
+      _showToast(loc.translate('unableToDeleteRequest'), Colors.red);
     }
   }
 
@@ -98,9 +99,10 @@ class RequestedListViewModel extends ChangeNotifier
     notifyListeners();
   }
 
-  // Update request status
-  Future<void> updateRequestStatus(
-      String requestId, PropertyStatus newStatus) async {
+  // Update request status. [translate] gives the messages in the app's
+  // language; without it they are in English.
+  Future<void> updateRequestStatus(String requestId, PropertyStatus newStatus,
+      {String Function(String key)? translate}) async {
     try {
       // Find the request to update
       final requestIndex = requests.indexWhere((r) => r.id == requestId);
@@ -118,9 +120,17 @@ class RequestedListViewModel extends ChangeNotifier
       // The list re-reads by itself after the update; it stays on screen
       // meanwhile.
       _showToast(
-          'Request status updated to ${newStatus.displayName}', Colors.green);
+          translate == null
+              ? 'Request status updated to ${newStatus.displayName}'
+              : translate('requestStatusUpdatedTo')
+                  .replaceAll('{status}', translate(newStatus.name)),
+          Colors.green);
     } catch (e) {
-      _showToast('Unable to update the request. Please try again.', Colors.red);
+      _showToast(
+          translate == null
+              ? 'Unable to update the request. Please try again.'
+              : translate('unableToUpdateRequest'),
+          Colors.red);
     }
   }
 

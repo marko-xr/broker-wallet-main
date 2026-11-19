@@ -55,7 +55,7 @@ class AddBrokersViewModel extends ChangeNotifier {
       }
     } catch (e) {
       delayTimer.cancel();
-      _error = 'Unable to load the broker. Please try again.';
+      _errorKey = 'recordLoadFailedBroker';
     } finally {
       if (showSpinner) {
         _isLoading = false;
@@ -102,6 +102,10 @@ class AddBrokersViewModel extends ChangeNotifier {
   // Error state
   String? _error;
   String? get error => _error;
+
+  // A failure found while loading, as a localization key for the screen.
+  String? _errorKey;
+  String? get errorKey => _errorKey;
 
   // Form fields
   String name = '';
@@ -179,6 +183,7 @@ class AddBrokersViewModel extends ChangeNotifier {
   // Clear error
   void clearError() {
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 
@@ -206,6 +211,7 @@ class AddBrokersViewModel extends ChangeNotifier {
   // Save method with error handling
   Future<void> save(BuildContext context) async {
     _error = null;
+    _errorKey = null;
     _isLoading = true;
     notifyListeners();
 
@@ -220,10 +226,13 @@ class AddBrokersViewModel extends ChangeNotifier {
         await _handleAddMode(context);
       }
     } catch (e) {
+      final translate =
+          context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
         e,
         'broker',
         isUpdate: mode == AddBrokersMode.edit,
+        translate: translate,
       );
     } finally {
       _isLoading = false;
@@ -282,21 +291,21 @@ class AddBrokersViewModel extends ChangeNotifier {
       showDialog(
         context: context,
         builder: (BuildContext context) {
+          final loc = AppLocalizations.of(context);
           return AlertDialog(
-            title: const Text('Discard Changes?'),
-            content: const Text(
-                'You have unsaved changes. Are you sure you want to cancel?'),
+            title: Text(loc.translate('discardChanges')),
+            content: Text(loc.translate('discardChangesCancelMessage')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Stay'),
+                child: Text(loc.translate('stay')),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                   context.go('/home');
                 },
-                child: const Text('Discard'),
+                child: Text(loc.translate('discard')),
               ),
             ],
           );

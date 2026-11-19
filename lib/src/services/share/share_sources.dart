@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/common/data/owner_location_codec.dart';
+import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/common/data/owner_property_types.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
@@ -213,7 +214,11 @@ class PropertyShareSource extends ShareSource {
       if (basic) b.line(isOffer ? 'offerType' : 'requestType', kind),
       if (basic && !arabicOffer) b.line('propertyType', type),
       if (details && _hasRoomsOrBathrooms && rooms > 0)
-        b.line('rooms', '$rooms'),
+        b.line(
+            'rooms',
+            rooms == RoomCount.orMore
+                ? ShareFormat.ltr(RoomCount.label(rooms), labels)
+                : '$rooms'),
       if (details && _hasRoomsOrBathrooms && bathrooms > 0)
         b.line('bathrooms', '$bathrooms'),
       if (details && footage != null)

@@ -166,7 +166,8 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Video failed to load',
+                    AppLocalizations.of(context)
+                        .translate('mediaVideoFailedToLoad'),
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.white,
                         ),
@@ -660,7 +661,8 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Image failed to load',
+                  AppLocalizations.of(context)
+                      .translate('mediaImageFailedToLoad'),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Colors.white,
                       ),
@@ -757,7 +759,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
             ),
             const SizedBox(height: 24),
             Text(
-              'Unsupported Media Type',
+              AppLocalizations.of(context).translate('mediaUnsupportedType'),
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: Colors.white,
                   ),
@@ -766,7 +768,8 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer>
             ElevatedButton.icon(
               onPressed: () => launchUrl(Uri.parse(mediaItem.url)),
               icon: const Icon(Icons.open_in_new),
-              label: const Text('Open Externally'),
+              label: Text(AppLocalizations.of(context)
+                  .translate('mediaOpenExternally')),
             ),
           ],
         ),

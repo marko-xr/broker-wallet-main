@@ -15,7 +15,8 @@ class CoreEntityPayloadBuilder {
     if (normalized.isEmpty) return null;
     final parsed = num.tryParse(normalized);
     if (parsed == null || !parsed.isFinite || parsed < 0) {
-      throw CoreEntityValidationException('Please enter a valid $field.');
+      throw CoreEntityValidationException('Please enter a valid $field.',
+          messageKey: 'validationInvalidNumber', params: {'field': field});
     }
     return parsed;
   }
@@ -30,13 +31,16 @@ class CoreEntityPayloadBuilder {
     if ((latitude == null) != (longitude == null)) {
       throw const CoreEntityValidationException(
         'Please select a complete property location.',
+        messageKey: 'validationIncompleteLocation',
       );
     }
     if (latitude != null && (latitude < -90 || latitude > 90)) {
-      throw const CoreEntityValidationException('Invalid latitude.');
+      throw const CoreEntityValidationException('Invalid latitude.',
+          messageKey: 'validationInvalidLatitude');
     }
     if (longitude != null && (longitude < -180 || longitude > 180)) {
-      throw const CoreEntityValidationException('Invalid longitude.');
+      throw const CoreEntityValidationException('Invalid longitude.',
+          messageKey: 'validationInvalidLongitude');
     }
     return (latitude, longitude);
   }
@@ -211,19 +215,22 @@ class CoreEntityPayloadBuilder {
     if (value != 'rent' && value != 'sell') {
       throw const CoreEntityValidationException(
         'Please select rent or sell.',
+        messageKey: 'validationSelectRentOrSell',
       );
     }
   }
 
   static void _validateOfferStatus(PropertyStatus status) {
     if (!PropertyStatus.offerStatuses.contains(status)) {
-      throw const CoreEntityValidationException('Invalid offer status.');
+      throw const CoreEntityValidationException('Invalid offer status.',
+          messageKey: 'validationInvalidOfferStatus');
     }
   }
 
   static void _validateRequestStatus(PropertyStatus status) {
     if (!PropertyStatus.requestStatuses.contains(status)) {
-      throw const CoreEntityValidationException('Invalid request status.');
+      throw const CoreEntityValidationException('Invalid request status.',
+          messageKey: 'validationInvalidRequestStatus');
     }
   }
 
@@ -231,13 +238,15 @@ class CoreEntityPayloadBuilder {
     if (min != null && max != null && min > max) {
       throw const CoreEntityValidationException(
         'Minimum price cannot exceed maximum price.',
+        messageKey: 'validationPriceRange',
       );
     }
   }
 
   static int _nonnegative(int value, String field) {
     if (value < 0) {
-      throw CoreEntityValidationException('$field cannot be negative.');
+      throw CoreEntityValidationException('$field cannot be negative.',
+          messageKey: 'validationNegative', params: {'field': field});
     }
     return value;
   }
@@ -245,7 +254,8 @@ class CoreEntityPayloadBuilder {
   static String _requiredName(String value, String entity) {
     final normalized = value.trim();
     if (normalized.isEmpty) {
-      throw CoreEntityValidationException('Please enter the $entity name.');
+      throw CoreEntityValidationException('Please enter the $entity name.',
+          messageKey: 'validationNameRequired', params: {'entity': entity});
     }
     return normalized;
   }
@@ -257,10 +267,16 @@ class CoreEntityPayloadBuilder {
 }
 
 class CoreEntityValidationException implements FormatException {
-  const CoreEntityValidationException(this.message);
+  const CoreEntityValidationException(this.message,
+      {this.messageKey, this.params = const {}});
 
   @override
   final String message;
+
+  /// The localization key for [message], so the app can show it in the
+  /// user's language; `{name}` placeholders are filled from [params].
+  final String? messageKey;
+  final Map<String, String> params;
   @override
   int? get offset => null;
   @override

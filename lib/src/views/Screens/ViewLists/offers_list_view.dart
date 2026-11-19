@@ -1394,6 +1394,7 @@ class _EnhancedOfferTile extends StatelessWidget {
   }
 
   void _showStatusSelector(BuildContext context) {
+    final translate = AppLocalizations.of(context).translate;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1404,7 +1405,8 @@ class _EnhancedOfferTile extends StatelessWidget {
         allowedStatuses: PropertyStatus.offerStatuses,
         onStatusSelected: (newStatus) {
           if (offer.id != null) {
-            viewModel.updateOfferStatus(offer.id!, newStatus);
+            viewModel.updateOfferStatus(offer.id!, newStatus,
+                translate: translate);
           }
         },
       ),

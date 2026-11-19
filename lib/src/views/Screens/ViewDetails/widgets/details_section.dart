@@ -1,5 +1,6 @@
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import 'offer_details_style.dart';
 
@@ -63,48 +64,66 @@ class DetailsFields extends StatelessWidget {
   const DetailsFields({
     super.key,
     required this.title,
-    required this.deleteLabel,
-    required this.onEdit,
-    required this.onDelete,
     required this.rows,
   });
 
   final String title;
-  final String deleteLabel;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
   final List<DetailsField> rows;
 
   @override
   Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
     return DetailsSection(
       title: title,
       icon: Icons.description_outlined,
-      action: PopupMenuButton<VoidCallback>(
-        key: const ValueKey('details-actions'),
-        icon: const Icon(Icons.more_horiz, size: 18),
-        style: IconButton.styleFrom(
-          minimumSize: const Size.square(kMinInteractiveDimension),
-        ),
-        onSelected: (action) => action(),
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            key: const ValueKey('details-edit'),
-            value: onEdit,
-            child: DetailsMenuLabel(label: loc.translate('edit')),
-          ),
-          PopupMenuItem(
-            key: const ValueKey('details-delete'),
-            value: onDelete,
-            child: DetailsMenuLabel(label: deleteLabel, destructive: true),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: rows,
       ),
+    );
+  }
+}
+
+/// The record's Edit and Delete, as the overflow menu at the end of the
+/// Details header: they act on the whole record, so they sit with the other
+/// record actions (Favorite, Share) rather than inside one section.
+class DetailsActionsMenu extends StatelessWidget {
+  const DetailsActionsMenu({
+    super.key,
+    required this.deleteLabel,
+    required this.onEdit,
+    required this.onDelete,
+    this.tooltip,
+  });
+
+  final String deleteLabel;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    return PopupMenuButton<VoidCallback>(
+      key: const ValueKey('details-actions'),
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      icon: Icon(Icons.more_vert, size: 21 * OfferDetailsStyle.scale(context)),
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(kMinInteractiveDimension),
+      ),
+      onSelected: (action) => action(),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          key: const ValueKey('details-edit'),
+          value: onEdit,
+          child: DetailsMenuLabel(label: loc.translate('edit')),
+        ),
+        PopupMenuItem(
+          key: const ValueKey('details-delete'),
+          value: onDelete,
+          child: DetailsMenuLabel(label: deleteLabel, destructive: true),
+        ),
+      ],
     );
   }
 }
@@ -198,6 +217,47 @@ class DetailsField extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// When a record was added and, if it changed on a later day, last updated:
+/// how fresh the broker's information is.
+class DetailsDates {
+  const DetailsDates._();
+
+  static String format(BuildContext context, DateTime date) {
+    final locale = AppLocalizations.of(context).locale.toString();
+    return DateFormat.yMMMd(DateFormat.localeExists(locale) ? locale : 'en_US')
+        .format(date);
+  }
+
+  /// Whether [updated] is worth its own row: a later day than [created], so a
+  /// save that only finished the record (its media, say) is not an "update".
+  static bool showsUpdate(DateTime created, DateTime? updated) =>
+      updated != null &&
+      updated.isAfter(created) &&
+      !DateUtils.isSameDay(created, updated);
+
+  /// The rows for [DetailsFields]; none when the record has no added date.
+  static List<DetailsField> fields(BuildContext context,
+      {required DateTime? createdAt, required DateTime? updatedAt}) {
+    if (createdAt == null) return const [];
+    final loc = AppLocalizations.of(context);
+    return [
+      DetailsField(
+        key: const ValueKey('details-date-added'),
+        icon: Icons.event_outlined,
+        label: loc.translate('dateAdded'),
+        value: format(context, createdAt),
+      ),
+      if (showsUpdate(createdAt, updatedAt))
+        DetailsField(
+          key: const ValueKey('details-last-updated'),
+          icon: Icons.update,
+          label: loc.translate('lastUpdated'),
+          value: format(context, updatedAt!),
+        ),
+    ];
   }
 }
 

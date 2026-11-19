@@ -531,7 +531,7 @@ class _OwnersListViewState extends State<OwnersListView> {
       // Show user-friendly error
       if (context.mounted) {
         _showToast(
-          'Could not open WhatsApp. Please check if WhatsApp is installed.',
+          AppLocalizations.of(context).translate('couldNotOpenWhatsApp'),
           Theme.of(context).colorScheme.error,
         );
       }

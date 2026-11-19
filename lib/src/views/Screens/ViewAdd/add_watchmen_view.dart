@@ -49,119 +49,141 @@ class AddWatchmenView extends StatelessWidget {
               title: Text(
                   mode == AddWatchmenMode.edit
                       ? localization.translate('editWatchman')
-                      : localization.translate('watchman'),
+                      : localization.translate('addWatchman'),
                   style: AppTextStyles.appBarTitle),
               centerTitle: true,
               elevation: 0,
               backgroundColor: colors.surface,
             ),
-            body: Builder(
-              builder: (context) {
+            body: LayoutBuilder(
+              builder: (context, constraints) {
                 // Detect keyboard visibility
                 final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+                // Save rests on the keyboard only while a field still fits
+                // above it; otherwise it stays hidden while typing.
+                final showActions = keyboardHeight == 0 ||
+                    SaveCancelButtons.fitsAboveKeyboard(context,
+                        bodyHeight: constraints.maxHeight,
+                        keyboard: keyboardHeight);
 
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Scrollable content
-                    SingleChildScrollView(
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 20,
-                        bottom: keyboardHeight > 0
-                            ? keyboardHeight + 20
-                            : SaveCancelButtons.clearanceOf(context),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Show error if exists
-                          if (vm.error != null)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 16),
-                              decoration: BoxDecoration(
-                                color: colors.error.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                    color: colors.error.withValues(alpha: 0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.error_outline,
-                                      color: colors.error, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      vm.error!,
-                                      style: TextStyle(
-                                          color: colors.error, fontSize: 14),
+                    // Scrollable content. With the keyboard open it ends
+                    // above the actions, so a focused field is never
+                    // scrolled in behind them.
+                    Positioned.fill(
+                      bottom: keyboardHeight > 0
+                          ? keyboardHeight +
+                              (showActions
+                                  ? SaveCancelButtons.heightOf(context)
+                                  : 0)
+                          : 0,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 20,
+                          bottom: keyboardHeight > 0
+                              ? 20
+                              : SaveCancelButtons.clearanceOf(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Show error if exists
+                            if (vm.error != null || vm.errorKey != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: colors.error.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color:
+                                          colors.error.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: colors.error, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        vm.error ??
+                                            localization
+                                                .translate(vm.errorKey!),
+                                        style: TextStyle(
+                                            color: colors.error, fontSize: 14),
+                                      ),
                                     ),
-                                  ),
-                                  IconButton(
-                                    onPressed: vm.clearError,
-                                    icon: Icon(Icons.close,
-                                        color: colors.error, size: 18),
-                                    constraints: const BoxConstraints(),
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                ],
+                                    IconButton(
+                                      onPressed: vm.clearError,
+                                      icon: Icon(Icons.close,
+                                          color: colors.error, size: 18),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                  ],
+                                ),
                               ),
+                            _Label(localization.translate('name')),
+                            _TextFieldIcon(
+                              iconAsset: 'assets/icons/profile-person.svg',
+                              hint: localization.translate('enterWatchmenName'),
+                              value: vm.name,
+                              onChanged: vm.setName,
                             ),
-                          _Label(localization.translate('name')),
-                          _TextFieldIcon(
-                            iconAsset: 'assets/icons/profile-person.svg',
-                            hint: localization.translate('enterWatchmenName'),
-                            value: vm.name,
-                            onChanged: vm.setName,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('phoneNumber')),
-                          PhoneInputWidget(
-                            countryCode: vm.countryCode,
-                            value: vm.phone,
-                            onChanged: vm.setPhone,
-                            localization: localization,
-                            phoneError: vm.phoneError,
-                            showError: vm.phone.isNotEmpty,
-                            outlined: true,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('buildingName')),
-                          _TextFieldIcon(
-                            icon: Icons.business_rounded,
-                            hint: localization.translate('enterBuildingName'),
-                            value: vm.buildingName,
-                            onChanged: vm.setBuildingName,
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(localization.translate('notes')),
-                          _NotesBox(
-                            value: vm.notes,
-                            onChanged: vm.setNotes,
-                            hint: localization.translate('notesHint'),
-                          ),
-                          const SizedBox(height: 18),
-                          _Label(
-                              localization.translate('pickUpBuildingLocation')),
-                          PickUpInputWidget(
-                            value: vm.pickUpLocation,
-                            onChanged: vm.setPickUpLocation,
-                            hint: localization.translate('pickUpLocationHint'),
-                            localization: localization,
-                            viewModel:
-                                vm, // Pass the ViewModel for location features
-                          ),
-                        ],
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('phoneNumber')),
+                            PhoneInputWidget(
+                              countryCode: vm.countryCode,
+                              value: vm.phone,
+                              onChanged: vm.setPhone,
+                              localization: localization,
+                              phoneError: vm.phoneError,
+                              showError: vm.phone.isNotEmpty,
+                              outlined: true,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('buildingName')),
+                            _TextFieldIcon(
+                              icon: Icons.business_rounded,
+                              hint: localization.translate('enterBuildingName'),
+                              value: vm.buildingName,
+                              onChanged: vm.setBuildingName,
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization.translate('notes')),
+                            _NotesBox(
+                              value: vm.notes,
+                              onChanged: vm.setNotes,
+                              hint: localization.translate('notesHint'),
+                            ),
+                            const SizedBox(height: 18),
+                            _Label(localization
+                                .translate('pickUpBuildingLocation')),
+                            PickUpInputWidget(
+                              value: vm.pickUpLocation,
+                              onChanged: vm.setPickUpLocation,
+                              hint:
+                                  localization.translate('pickUpLocationHint'),
+                              localization: localization,
+                              viewModel:
+                                  vm, // Pass the ViewModel for location features
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 
-                    // Floating actions: nothing behind them, hidden while the keyboard is open
-                    if (keyboardHeight == 0)
+                    // Floating actions: nothing behind them. With the
+                    // keyboard open they sit just above it, so Save stays
+                    // in reach while typing.
+                    if (showActions)
                       Positioned(
-                        bottom: 0,
+                        bottom: keyboardHeight,
                         left: 0,
                         right: 0,
                         child: SaveCancelButtons(

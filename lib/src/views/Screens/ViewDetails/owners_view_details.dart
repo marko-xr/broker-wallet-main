@@ -319,9 +319,10 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       title: loc.translate('propertyOwner'),
       favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
       onShare: _shareOwner,
-      onWhatsApp: !canContact
-          ? null
-          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onEdit: _editOwner,
+      onDelete: _showDeleteConfirmation,
+      deleteLabel: loc.translate('deleteOwner'),
+      onWhatsApp: !canContact ? null : () => _openWhatsApp(phone),
       onCall: !canContact ? null : () => _makePhoneCall(phone),
       scrollController: _scrollController,
       fade: _fadeAnimation,
@@ -463,10 +464,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
         ),
         const SizedBox(height: DetailsSection.spacing),
         DetailsFields(
-          title: loc.translate('propertyOwner'),
-          deleteLabel: loc.translate('deleteOwner'),
-          onEdit: _editOwner,
-          onDelete: _showDeleteConfirmation,
+          title: loc.translate('basicInformation'),
           rows: [
             DetailsField(
               icon: Icons.business_outlined,
@@ -495,6 +493,9 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
                   ? _copyPhone
                   : null,
             ),
+            ...DetailsDates.fields(context,
+                createdAt: _currentOwner.createdAt,
+                updatedAt: _currentOwner.updatedAt),
           ],
         ),
         if (_currentOwner.notes.isNotEmpty) ...[
@@ -628,14 +629,11 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
     return _cachedMapWidget!;
   }
 
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
+  Future<void> _openWhatsApp(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    final message = loc
-        .translate('whatsAppBusinessMessage')
-        .replaceAll('{managerName}', managerName);
     final result = await DetailsContactActions.whatsApp(phoneNumber,
-        countryCode: _currentOwner.countryCode, message: message);
+        countryCode: _currentOwner.countryCode);
     if (!mounted || result == ContactLaunchResult.opened) return;
     _showToast(
         loc.translate(result == ContactLaunchResult.invalidPhone

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../data/models/property_status.dart';
 import '../../services/ScreenServices/offer_service.dart';
@@ -71,10 +72,11 @@ class OffersListViewModel extends ChangeNotifier
     final outcome =
         await deleteEntity(offerId, () => _offerService.deleteOffer(offerId));
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context);
     if (outcome == EntityDeleteOutcome.deleted) {
-      _showToast('Offer deleted successfully', Colors.green);
+      _showToast(loc.translate('offerDeletedSuccessfully'), Colors.green);
     } else if (outcome == EntityDeleteOutcome.failed) {
-      _showToast('Unable to delete the offer. Please try again.', Colors.red);
+      _showToast(loc.translate('unableToDeleteOffer'), Colors.red);
     }
   }
 
@@ -113,9 +115,10 @@ class OffersListViewModel extends ChangeNotifier
     notifyListeners();
   }
 
-  // Update offer status
-  Future<void> updateOfferStatus(
-      String offerId, PropertyStatus newStatus) async {
+  // Update offer status. [translate] gives the messages in the app's
+  // language; without it they are in English.
+  Future<void> updateOfferStatus(String offerId, PropertyStatus newStatus,
+      {String Function(String key)? translate}) async {
     try {
       // Find the offer to update
       final offerIndex = offers.indexWhere((o) => o.id == offerId);
@@ -133,9 +136,17 @@ class OffersListViewModel extends ChangeNotifier
       // The list re-reads by itself after the update; it stays on screen
       // meanwhile.
       _showToast(
-          'Offer status updated to ${newStatus.displayName}', Colors.green);
+          translate == null
+              ? 'Offer status updated to ${newStatus.displayName}'
+              : translate('offerStatusUpdatedTo')
+                  .replaceAll('{status}', translate(newStatus.name)),
+          Colors.green);
     } catch (e) {
-      _showToast('Unable to update the offer. Please try again.', Colors.red);
+      _showToast(
+          translate == null
+              ? 'Unable to update the offer. Please try again.'
+              : translate('unableToUpdateOffer'),
+          Colors.red);
     }
   }
 

@@ -788,7 +788,7 @@ void main() {
         // wrapped around them.
         expect(
           RegExp(
-            r'Positioned\(\s*bottom: 0,\s*left: 0,\s*right: 0,\s*child: SaveCancelButtons\(',
+            r'Positioned\(\s*bottom: (0|keyboardHeight),\s*left: 0,\s*right: 0,\s*child: SaveCancelButtons\(',
           ).hasMatch(source),
           isTrue,
           reason: '$name must place SaveCancelButtons directly',
@@ -814,17 +814,50 @@ void main() {
         );
       });
 
-      test('$name: the keyboard rules are untouched', () {
-        final source = _read(path);
-        expect(source.contains('if (keyboardHeight == 0)'), isTrue,
-            reason: 'the actions are still hidden while the keyboard is open');
-        expect(
-          RegExp(r'bottom: keyboardHeight > 0\s*\? keyboardHeight \+ 20')
-              .hasMatch(source),
-          isTrue,
-          reason: 'the scroll view still pads for the keyboard',
-        );
-      });
+      if (path.contains('quotation')) {
+        test('$name: the keyboard rules are untouched', () {
+          final source = _read(path);
+          expect(source.contains('if (keyboardHeight == 0)'), isTrue,
+              reason:
+                  'the actions are still hidden while the keyboard is open');
+          expect(
+            RegExp(r'bottom: keyboardHeight > 0\s*\? keyboardHeight \+ 20')
+                .hasMatch(source),
+            isTrue,
+            reason: 'the scroll view still pads for the keyboard',
+          );
+        });
+      } else {
+        test('$name: Save stays above the open keyboard', () {
+          final source = _read(path);
+          expect(source.contains('if (keyboardHeight == 0)'), isFalse,
+              reason: 'the actions are no longer hidden while typing');
+          expect(
+            RegExp(r'Positioned\(\s*bottom: keyboardHeight,\s*left: 0,\s*right: 0,\s*child: SaveCancelButtons\(')
+                .hasMatch(source),
+            isTrue,
+            reason: 'the actions rest on the keyboard',
+          );
+          expect(
+            RegExp(r'Positioned\.fill\(\s*bottom: keyboardHeight > 0\s*\? keyboardHeight \+\s*\(showActions\s*\? SaveCancelButtons\.heightOf\(context\)\s*: 0\)\s*: 0,\s*child: SingleChildScrollView\(')
+                .hasMatch(source),
+            isTrue,
+            reason: 'the scroll view ends above the actions, so the focused '
+                'field is never scrolled in behind them',
+          );
+          expect(
+            RegExp(r'final showActions = keyboardHeight == 0 \|\|\s*SaveCancelButtons\.fitsAboveKeyboard\(context,\s*bodyHeight: constraints\.maxHeight,\s*keyboard: keyboardHeight\);')
+                .hasMatch(source),
+            isTrue,
+            reason: 'with no room above the keyboard the actions step aside',
+          );
+          expect(
+            RegExp(r'if \(showActions\)\s*Positioned\(\s*bottom: keyboardHeight,')
+                .hasMatch(source),
+            isTrue,
+          );
+        });
+      }
 
       test(
           '$name: the page is painted with the surface colour the buttons '

@@ -683,7 +683,7 @@ class _BrokersListViewState extends State<BrokersListView> {
       debugPrint('WhatsApp error: $e');
       if (context.mounted) {
         _showToast(
-            'Could not open WhatsApp. Please check if WhatsApp is installed.',
+            AppLocalizations.of(context).translate('couldNotOpenWhatsApp'),
             const Color(0xFFFF6B6B));
       }
     }

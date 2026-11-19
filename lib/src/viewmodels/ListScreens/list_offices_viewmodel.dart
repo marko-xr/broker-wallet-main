@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offices_model.dart';
 import '../../services/ScreenServices/office_service.dart';
 import 'entity_list_state.dart';
@@ -36,10 +37,11 @@ class OfficesListViewModel extends ChangeNotifier
     final outcome = await deleteEntity(
         officeId, () => _officeService.deleteOffice(officeId));
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context);
     if (outcome == EntityDeleteOutcome.deleted) {
-      _showToast('Office deleted successfully', Colors.green);
+      _showToast(loc.translate('officeDeletedSuccessfully'), Colors.green);
     } else if (outcome == EntityDeleteOutcome.failed) {
-      _showToast('Unable to delete the office. Please try again.', Colors.red);
+      _showToast(loc.translate('unableToDeleteOffice'), Colors.red);
     }
   }
 

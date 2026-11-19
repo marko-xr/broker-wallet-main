@@ -635,8 +635,8 @@ void main() {
       final source = File(screen).readAsStringSync();
       expect(source.contains('property_type_chips.dart'), isTrue);
       final chips = source.indexOf('PropertyTypeChips(');
-      final field =
-          source.indexOf("hint: localization.translate('enterPropertiesType')");
+      final field = source.indexOf(
+          RegExp(r"hint:\s*localization\.translate\('enterPropertiesType'\)"));
       expect(chips, greaterThan(0));
       expect(field, greaterThan(chips),
           reason: 'the text field still follows the chips');

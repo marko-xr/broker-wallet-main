@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
@@ -204,10 +205,20 @@ WatchmenModel _watchman(String id) => WatchmenModel(
 
 final _toasts = <String>[];
 
-/// A mounted element to hand the view models as their BuildContext.
+/// A mounted element to hand the view models as their BuildContext; it
+/// carries the app's English translations, which the delete messages use.
 Future<BuildContext> _mountedContext(WidgetTester tester) async {
   const host = ValueKey('context-host');
-  await tester.pumpWidget(const SizedBox(key: host));
+  await tester.pumpWidget(Localizations(
+    locale: const Locale('en'),
+    delegates: const [
+      AppLocalizations.delegate,
+      DefaultWidgetsLocalizations.delegate,
+    ],
+    child: SizedBox(key: host),
+  ));
+  // The translations load asynchronously; their child appears a frame later.
+  await tester.pump();
   return tester.element(find.byKey(host));
 }
 
@@ -305,7 +316,8 @@ void _describe<M, VM extends EntityListState<M>>({
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() {
+  setUpAll(() async {
+    await AppLocalizations.preloadAllLanguages();
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('PonnamKarthik/fluttertoast'),
       (call) async {

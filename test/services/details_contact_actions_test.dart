@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,6 +116,40 @@ void main() {
           ['api.whatsapp.com', 'wa.me', 'web.whatsapp.com']);
     });
   }
+  for (final message in [null, '']) {
+    test('WhatsApp with no message opens the chat empty: $message', () async {
+      final uris = <Uri>[];
+      final result = await DetailsContactActions.whatsApp('0501234567',
+          message: message, launcher: (uri, {required mode}) async {
+        uris.add(uri);
+        return false;
+      });
+      expect(result, ContactLaunchResult.failed);
+      expect(uris.map((uri) => uri.toString()), [
+        'https://api.whatsapp.com/send?phone=971501234567',
+        'https://wa.me/971501234567',
+        'https://web.whatsapp.com/send?phone=971501234567',
+      ]);
+    });
+  }
+  test('the Details screens open WhatsApp with no pre-filled message', () {
+    for (final name in [
+      'offers',
+      'requested',
+      'owners',
+      'brokers',
+      'offices',
+      'watchmen'
+    ]) {
+      final source =
+          File('lib/src/views/Screens/ViewDetails/${name}_view_details.dart')
+              .readAsStringSync();
+      expect(source.contains('DetailsContactActions.whatsApp('), isTrue,
+          reason: name);
+      expect(source.contains('whatsAppBusinessMessage'), isFalse, reason: name);
+      expect(source.contains('message:'), isFalse, reason: name);
+    }
+  });
   for (final successAt in [0, 1, 2]) {
     test('WhatsApp stops after successful destination $successAt', () async {
       var calls = 0;

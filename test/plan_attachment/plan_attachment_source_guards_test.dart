@@ -349,15 +349,18 @@ void main() {
         final section = _at(source, 'PlanAttachmentSection(', media);
         final actions = _at(source, 'SaveCancelButtons(', section);
         expect(actions, greaterThan(section));
-        expect(
-            source.contains('if (vm.planAttachment case final plan?)'), isTrue,
+        // Compared without whitespace, so the formatter's line breaks do not
+        // matter.
+        final flat = source.replaceAll(RegExp(r'\s+'), '');
+        bool has(String code) =>
+            flat.contains(code.replaceAll(RegExp(r'\s+'), ''));
+        expect(has('if (vm.planAttachment case final plan?)'), isTrue,
             reason: 'only where the form has a plan (Supabase mode)');
-        expect(source.contains('selectPlanAttachment(context, plan)'), isTrue);
-        expect(source.contains("localization.translate('planAttachmentTitle')"),
-            isTrue);
-        expect(source.contains('onRemove: plan.removeSelection'), isTrue);
-        expect(source.contains('onKeep: plan.keepExisting'), isTrue);
-        expect(source.contains('onRetry: () => vm.save(context)'), isTrue);
+        expect(has('selectPlanAttachment(context, plan)'), isTrue);
+        expect(has("localization.translate('planAttachmentTitle')"), isTrue);
+        expect(has('onRemove: plan.removeSelection'), isTrue);
+        expect(has('onKeep: plan.keepExisting'), isTrue);
+        expect(has('onRetry: () => vm.save(context)'), isTrue);
       });
     }
 

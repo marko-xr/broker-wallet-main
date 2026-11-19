@@ -141,8 +141,9 @@ class CleanMediaService {
       }
 
       // Show warning if microphone not granted
-      if (!micGranted) {
-        _showWarningSnackBar(context, 'Video will be recorded without audio');
+      if (!micGranted && context.mounted) {
+        _showWarningSnackBar(context,
+            AppLocalizations.of(context).translate('mediaVideoWithoutAudio'));
       }
 
       // Pick video from camera

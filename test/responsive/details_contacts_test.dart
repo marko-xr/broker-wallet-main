@@ -284,13 +284,14 @@ void main() {
           await pumpResponsive(tester, scenario,
               home: withR2ScreenProviders(
                   _screen(kind, number.$1, code: number.$2)));
-          final loc = AppLocalizations.of(tester.element(_call));
           final headers = find.byType(DetailsHeaderControl);
-          expect(headers, findsNWidgets(3));
+          // Back, Favorite, Share and the record menu.
+          expect(headers, findsNWidgets(4));
           for (final target in [
             headers.at(0),
             headers.at(1),
             headers.at(2),
+            headers.at(3),
             _call,
             _whatsApp
           ]) {
@@ -325,10 +326,8 @@ void main() {
           await tester.pumpAndSettle();
           expect(
               launches.last.queryParameters['phone'], number.$3.substring(1));
-          expect(
-              launches.last.queryParameters['text'],
-              loc.translate('whatsAppBusinessMessage').replaceAll(
-                  '{managerName}', loc.translate('propertyManager')));
+          // WhatsApp opens an empty chat: no pre-filled message.
+          expect(launches.last.queryParameters.containsKey('text'), isFalse);
           expect(toasts, isEmpty);
         }
       });

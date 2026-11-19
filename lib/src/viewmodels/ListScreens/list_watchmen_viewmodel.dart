@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/watchmen_model.dart';
 import '../../services/ScreenServices/watchmen_service.dart';
 import 'entity_list_state.dart';
@@ -36,11 +37,11 @@ class WatchmenListViewModel extends ChangeNotifier
     final outcome = await deleteEntity(
         watchmenId, () => _watchmenService.deleteWatchmen(watchmenId));
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context);
     if (outcome == EntityDeleteOutcome.deleted) {
-      _showToast('Watchmen deleted successfully', Colors.green);
+      _showToast(loc.translate('watchmenDeletedSuccessfully'), Colors.green);
     } else if (outcome == EntityDeleteOutcome.failed) {
-      _showToast(
-          'Unable to delete the watchman. Please try again.', Colors.red);
+      _showToast(loc.translate('unableToDeleteWatchman'), Colors.red);
     }
   }
 

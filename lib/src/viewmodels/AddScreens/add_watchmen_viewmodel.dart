@@ -59,11 +59,11 @@ class AddWatchmenViewModel extends ChangeNotifier
       if (watchmen != null) {
         _prefillFormWithWatchmen(watchmen);
       } else {
-        _error = 'Watchmen not found';
+        _errorKey = 'watchmanNotFound';
       }
     } catch (e) {
       delayTimer.cancel();
-      _error = 'Unable to load the watchman. Please try again.';
+      _errorKey = 'recordLoadFailedWatchman';
     } finally {
       if (showSpinner) {
         _isLoading = false;
@@ -126,6 +126,10 @@ class AddWatchmenViewModel extends ChangeNotifier
   // Error state
   String? _error;
   String? get error => _error;
+
+  // A failure found while loading, as a localization key for the screen.
+  String? _errorKey;
+  String? get errorKey => _errorKey;
 
   // ========================= Location Management =========================
 
@@ -364,6 +368,7 @@ class AddWatchmenViewModel extends ChangeNotifier
   // Save method with enhanced validation and error handling
   Future<void> save(BuildContext context) async {
     _error = null;
+    _errorKey = null;
     _isLoading = true;
     notifyListeners();
 
@@ -392,10 +397,13 @@ class AddWatchmenViewModel extends ChangeNotifier
         context.go('/home');
       }
     } catch (e) {
+      final translate =
+          context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
         e,
         'watchman',
         isUpdate: mode == AddWatchmenMode.edit,
+        translate: translate,
       );
     } finally {
       _isLoading = false;
@@ -432,21 +440,21 @@ class AddWatchmenViewModel extends ChangeNotifier
       showDialog(
         context: context,
         builder: (BuildContext context) {
+          final loc = AppLocalizations.of(context);
           return AlertDialog(
-            title: const Text('Discard Changes?'),
-            content: const Text(
-                'You have unsaved changes. Are you sure you want to cancel?'),
+            title: Text(loc.translate('discardChanges')),
+            content: Text(loc.translate('discardChangesCancelMessage')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Stay'),
+                child: Text(loc.translate('stay')),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                   context.go('/home');
                 },
-                child: const Text('Discard'),
+                child: Text(loc.translate('discard')),
               ),
             ],
           );
@@ -460,6 +468,7 @@ class AddWatchmenViewModel extends ChangeNotifier
   // Clear error
   void clearError() {
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 
@@ -477,6 +486,7 @@ class AddWatchmenViewModel extends ChangeNotifier
     _pickUpAddress = '';
     _selectedLocation = null;
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 }

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/services/related_items_service.dart';
@@ -113,7 +112,8 @@ Future<void> reachable(
   await tester.pump();
   final r = tester.getRect(control.first);
   final top = c.safeArea.top + 56;
-  final bottom = c.size.height - c.keyboard;
+  final bottom = formVisibleBottom(tester,
+      windowHeight: c.size.height, keyboard: c.keyboard);
   final visible =
       (r.bottom < bottom ? r.bottom : bottom) - (r.top > top ? r.top : top);
   expect(visible, greaterThanOrEqualTo((r.height < 20 ? r.height : 20) - 1),
@@ -150,7 +150,8 @@ void entityCases<T, V extends ChangeNotifier>({
           expect(find.byType(OutlinedButton).hitTestable(), findsWidgets);
           expect(find.byType(ElevatedButton).hitTestable(), findsWidgets);
         } else {
-          expect(find.byType(SaveCancelButtons), findsNothing);
+          expectFormActionsAboveKeyboard(tester,
+              windowHeight: c.size.height, keyboard: c.keyboard);
           final before = tester
               .widgetList<TextField>(find.byType(TextField))
               .map((w) => w.controller?.text)
@@ -180,8 +181,9 @@ void entityCases<T, V extends ChangeNotifier>({
             (w) => w is Dismissible && w.key == ValueKey('${keyPrefix}_$i'));
         await tester.scrollUntilVisible(tile, 250,
             scrollable: find.byType(Scrollable).first);
-        final call =
-            find.descendant(of: tile, matching: find.byIcon(Icons.phone)).last;
+        final call = find
+            .descendant(of: tile, matching: find.byIcon(Icons.phone_rounded))
+            .last;
         await reachable(tester, call, window);
         expect(call.hitTestable(), findsOneWidget);
       }
@@ -282,7 +284,7 @@ void entityCases<T, V extends ChangeNotifier>({
           final call = find
               .descendant(
                   of: find.byType(Dismissible),
-                  matching: find.byIcon(Icons.phone))
+                  matching: find.byIcon(Icons.phone_rounded))
               .last;
           await tester.ensureVisible(call);
           await tester.pump();

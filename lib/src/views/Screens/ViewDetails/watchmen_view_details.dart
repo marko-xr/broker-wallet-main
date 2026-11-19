@@ -146,9 +146,10 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
       title: loc.translate('watchmenDetails'),
       favorite: Consumer<OptimisticFavoritesService>(builder: _buildFavorite),
       onShare: _shareWatchmen,
-      onWhatsApp: !canContact
-          ? null
-          : () => _openWhatsApp(phone, loc.translate('propertyManager')),
+      onEdit: _editWatchmen,
+      onDelete: _showDeleteConfirmation,
+      deleteLabel: loc.translate('deleteWatchmen'),
+      onWhatsApp: !canContact ? null : () => _openWhatsApp(phone),
       onCall: !canContact ? null : () => _makePhoneCall(phone),
       scrollController: _scrollController,
       fade: _fadeAnimation,
@@ -190,10 +191,7 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
         ),
         const SizedBox(height: DetailsSection.spacing),
         DetailsFields(
-          title: loc.translate('watchmenDetails'),
-          deleteLabel: loc.translate('deleteWatchmen'),
-          onEdit: _editWatchmen,
-          onDelete: _showDeleteConfirmation,
+          title: loc.translate('basicInformation'),
           rows: [
             if (secondary.isEmpty)
               DetailsField(
@@ -214,6 +212,9 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
                   ? _copyPhone
                   : null,
             ),
+            ...DetailsDates.fields(context,
+                createdAt: _currentWatchmen.createdAt,
+                updatedAt: _currentWatchmen.updatedAt),
           ],
         ),
         if (_currentWatchmen.notes.isNotEmpty) ...[
@@ -374,14 +375,11 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
     }
   }
 
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
+  Future<void> _openWhatsApp(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    final message = loc
-        .translate('whatsAppBusinessMessage')
-        .replaceAll('{managerName}', managerName);
     final result = await DetailsContactActions.whatsApp(phoneNumber,
-        countryCode: _currentWatchmen.countryCode, message: message);
+        countryCode: _currentWatchmen.countryCode);
     if (!mounted || result == ContactLaunchResult.opened) return;
     _showToast(
         loc.translate(result == ContactLaunchResult.invalidPhone

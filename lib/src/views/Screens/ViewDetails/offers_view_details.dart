@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/common/utils/map_coordinates.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/offer_details_load_coordinator.dart';
 import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
@@ -465,6 +466,15 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
             tooltip: loc.translate('share'),
             icon: Icons.share_outlined,
             onPressed: _showShareDialog),
+        SizedBox(width: 4 * scale),
+        DetailsHeaderControl(
+          child: DetailsActionsMenu(
+            tooltip: loc.translate('offerDetailsActions'),
+            deleteLabel: loc.translate('deleteOffer'),
+            onEdit: _editOffer,
+            onDelete: _showDeleteConfirmation,
+          ),
+        ),
         SizedBox(width: headerEdgeInset),
       ],
     );
@@ -561,6 +571,11 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                       .textTheme
                       .labelMedium
                       ?.copyWith(color: foreground))),
+          // Tapping changes the status: say so, as a dropdown does.
+          if (_currentOffer.id != null) ...[
+            const SizedBox(width: 2),
+            Icon(Icons.keyboard_arrow_down, size: 16, color: foreground),
+          ],
         ]),
       ),
     );
@@ -774,14 +789,11 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   // WhatsApp functionality
-  Future<void> _openWhatsApp(String phoneNumber, String managerName) async {
+  Future<void> _openWhatsApp(String phoneNumber) async {
     final loc = AppLocalizations.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    final message = loc
-        .translate('whatsAppBusinessMessage')
-        .replaceAll('{managerName}', managerName);
     final result = await DetailsContactActions.whatsApp(phoneNumber,
-        countryCode: _currentOffer.countryCode, message: message);
+        countryCode: _currentOffer.countryCode);
     if (!mounted || result == ContactLaunchResult.opened) return;
     _showToast(
         loc.translate(result == ContactLaunchResult.invalidPhone
@@ -890,8 +902,12 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final loc = AppLocalizations.of(context);
     final stats = <Widget>[
       if (_shouldShowRoomsAndBaths()) ...[
-        _buildStatItem(Icons.bed_outlined, _currentOffer.rooms.toString(),
-            loc.translate('offerDetailsBedrooms'), colors, texts),
+        _buildStatItem(
+            Icons.bed_outlined,
+            RoomCount.display(_currentOffer.rooms),
+            loc.translate('offerDetailsBedrooms'),
+            colors,
+            texts),
         _buildStatItem(
             Icons.bathtub_outlined,
             _currentOffer.bathrooms.toString(),
@@ -1001,6 +1017,12 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
               ? _currentOffer.location
               : loc.translate('specificLocationNotProvided'),
           isMissing: _currentOffer.location.trim().isEmpty),
+      _buildDetailRow(context, Icons.event_outlined, loc.translate('dateAdded'),
+          DetailsDates.format(context, _currentOffer.createdAt)),
+      if (DetailsDates.showsUpdate(
+          _currentOffer.createdAt, _currentOffer.updatedAt))
+        _buildDetailRow(context, Icons.update, loc.translate('lastUpdated'),
+            DetailsDates.format(context, _currentOffer.updatedAt)),
     ];
     return Container(
       key: const ValueKey('offer-details-card'),
@@ -1011,35 +1033,10 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           Icon(Icons.description_outlined, color: colors.primary, size: 18),
           const SizedBox(width: 7),
           Expanded(
-              child: Text(loc.translate('propertyDetails'),
+              child: Text(loc.translate('basicInformation'),
                   style: Theme.of(context).textTheme.titleMedium)),
-          PopupMenuButton<String>(
-            tooltip: loc.translate('offerDetailsActions'),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 120),
-            icon: Icon(Icons.more_horiz,
-                size: 16, color: colors.onSurfaceVariant),
-            style: IconButton.styleFrom(
-              minimumSize: const Size.square(kMinInteractiveDimension),
-            ),
-            onSelected: (value) {
-              if (value == 'edit') _editOffer();
-              if (value == 'delete') _showDeleteConfirmation();
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'edit',
-                child: DetailsMenuLabel(label: loc.translate('edit')),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: DetailsMenuLabel(
-                    label: loc.translate('deleteOffer'), destructive: true),
-              ),
-            ],
-          ),
         ]),
-        const SizedBox(height: 2),
+        const SizedBox(height: 6),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: rows,
@@ -1207,17 +1204,14 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
   }
 
   Widget _buildContactBar(BuildContext context) {
-    final loc = AppLocalizations.of(context);
     final canContact = DetailsContactActions.normalizePhone(
             _currentOffer.phoneNumber,
             countryCode: _currentOffer.countryCode) !=
         null;
     return DetailsContactBar(
       fade: _fabAnimation,
-      onWhatsApp: !canContact
-          ? null
-          : () => _openWhatsApp(
-              _currentOffer.phoneNumber, loc.translate('propertyManager')),
+      onWhatsApp:
+          !canContact ? null : () => _openWhatsApp(_currentOffer.phoneNumber),
       onCall:
           !canContact ? null : () => _makePhoneCall(_currentOffer.phoneNumber),
     );

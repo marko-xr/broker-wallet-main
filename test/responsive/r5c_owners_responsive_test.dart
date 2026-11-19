@@ -184,7 +184,8 @@ Future<void> _visible(
   await tester.ensureVisible(finder.first);
   await tester.pump();
   final rect = tester.getRect(finder.first);
-  final bottom = scenario.size.height - scenario.keyboard;
+  final bottom = formVisibleBottom(tester,
+      windowHeight: scenario.size.height, keyboard: scenario.keyboard);
   if (scenario.keyboard == 0) {
     expect(rect.top, greaterThanOrEqualTo(0), reason: '$scenario $rect');
     expect(rect.bottom, lessThanOrEqualTo(bottom + 1),
@@ -222,7 +223,8 @@ void main() {
       if (scenario.keyboard == 0) {
         await _visible(tester, find.byType(SaveCancelButtons), scenario);
       } else {
-        expect(find.byType(SaveCancelButtons), findsNothing);
+        expectFormActionsAboveKeyboard(tester,
+            windowHeight: scenario.size.height, keyboard: scenario.keyboard);
       }
       for (var i = 0; i < find.byType(TextField).evaluate().length; i++) {
         await _visible(tester, find.byType(TextField).at(i), scenario);
@@ -273,8 +275,8 @@ void main() {
             (w) => w is Dismissible && w.key == ValueKey('owner_$id'));
         await tester.scrollUntilVisible(tile, 250,
             scrollable: find.byType(Scrollable).first);
-        final call =
-            find.descendant(of: tile, matching: find.byIcon(Icons.phone));
+        final call = find.descendant(
+            of: tile, matching: find.byIcon(Icons.phone_rounded));
         await tester.ensureVisible(call);
         await tester.pump();
         expect(call.hitTestable(), findsOneWidget);

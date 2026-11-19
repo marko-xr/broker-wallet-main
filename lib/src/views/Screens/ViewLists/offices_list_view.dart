@@ -524,7 +524,7 @@ class _OfficesListViewState extends State<OfficesListView> {
       debugPrint('WhatsApp error: $e');
       if (context.mounted) {
         _showToast(
-          'Could not open WhatsApp. Please check if WhatsApp is installed.',
+          AppLocalizations.of(context).translate('couldNotOpenWhatsApp'),
           Theme.of(context).colorScheme.error,
         );
       }

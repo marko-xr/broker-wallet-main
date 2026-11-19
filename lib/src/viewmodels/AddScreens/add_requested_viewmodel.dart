@@ -68,7 +68,7 @@ class AddRequestedViewModel extends ChangeNotifier {
       }
     } catch (e) {
       delayTimer.cancel();
-      _error = 'Unable to load the request. Please try again.';
+      _errorKey = 'recordLoadFailedRequest';
     } finally {
       if (showSpinner) {
         _isLoading = false;
@@ -138,6 +138,10 @@ class AddRequestedViewModel extends ChangeNotifier {
   // Error state
   String? _error;
   String? get error => _error;
+
+  // A failure found while loading, as a localization key for the screen.
+  String? _errorKey;
+  String? get errorKey => _errorKey;
 
   // Tabs
   RequestTab tab = RequestTab.rent;
@@ -394,12 +398,14 @@ class AddRequestedViewModel extends ChangeNotifier {
     rooms = 1;
     baths = 1;
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 
 // Clear error
   void clearError() {
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 
@@ -443,13 +449,15 @@ class AddRequestedViewModel extends ChangeNotifier {
   // Save method with error handling - UPDATED to handle both add and edit modes
   Future<void> save(BuildContext context) async {
     _error = null;
+    _errorKey = null;
     _isLoading = true;
     notifyListeners();
 
     try {
       // Validate required data if needed
       if (!_validateData()) {
-        _error = 'Please fill in the required fields';
+        _error =
+            AppLocalizations.of(context).translate('requiredFieldsMissing');
         _isLoading = false;
         notifyListeners();
         return;
@@ -463,10 +471,13 @@ class AddRequestedViewModel extends ChangeNotifier {
         await _handleAddMode(context);
       }
     } catch (e) {
+      final translate =
+          context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
         e,
         'request',
         isUpdate: isEditMode,
+        translate: translate,
       );
       if (context.mounted) {
         _showToast(_error!, Colors.red);
@@ -495,7 +506,10 @@ class AddRequestedViewModel extends ChangeNotifier {
   /// Handle successful edit save and navigation
   Future<void> _handleSuccessfulEditSave(
       BuildContext context, RequestModel updatedRequest) async {
-    _showToast('Request updated successfully!', Colors.green);
+    _showToast(
+      AppLocalizations.of(context).translate('requestUpdatedSuccessfully'),
+      Colors.green,
+    );
 
     // Return updated model to details screen
     if (context.mounted) {
@@ -518,7 +532,10 @@ class AddRequestedViewModel extends ChangeNotifier {
       await CoreEntityQuotaBridge.recordCreated(section: 'requests');
 
       if (context.mounted) {
-        _showToast('Request saved successfully!', Colors.green);
+        _showToast(
+          AppLocalizations.of(context).translate('requestSavedSuccessfully'),
+          Colors.green,
+        );
         context.go('/home');
       }
     }
@@ -530,20 +547,21 @@ class AddRequestedViewModel extends ChangeNotifier {
       showDialog(
         context: context,
         builder: (BuildContext context) {
+          final loc = AppLocalizations.of(context);
           return AlertDialog(
-            title: Text('Discard Changes?'),
-            content: Text('Are you sure you want to discard your changes?'),
+            title: Text(loc.translate('discardChanges')),
+            content: Text(loc.translate('areYouSureDiscard')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: Text('Keep Editing'),
+                child: Text(loc.translate('keepEditing')),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                   context.go('/home');
                 },
-                child: Text('Discard'),
+                child: Text(loc.translate('discard')),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
               ),
             ],

@@ -370,7 +370,7 @@ class AddOffersViewModel extends ChangeNotifier
       }
     } catch (e) {
       delayTimer.cancel();
-      _error = 'Unable to load the offer. Please try again.';
+      _errorKey = 'recordLoadFailedOffer';
     } finally {
       if (showSpinner) {
         _isLoading = false;
@@ -470,6 +470,10 @@ class AddOffersViewModel extends ChangeNotifier
   // Error state
   String? _error;
   String? get error => _error;
+
+  // A failure found while loading, as a localization key for the screen.
+  String? _errorKey;
+  String? get errorKey => _errorKey;
 
   // Location getters
   String get pickUpLocation => _pickUpLocation;
@@ -1225,6 +1229,7 @@ class AddOffersViewModel extends ChangeNotifier
   // Clear error
   void clearError() {
     _error = null;
+    _errorKey = null;
     notifyListeners();
   }
 
@@ -1248,13 +1253,15 @@ class AddOffersViewModel extends ChangeNotifier
   // Save method with error handling - UPDATED to handle both add and edit modes
   Future<void> save(BuildContext context) async {
     _error = null;
+    _errorKey = null;
     _isLoading = true;
     notifyListeners();
 
     try {
       // Validate required data if needed
       if (!_validateData()) {
-        _error = 'Please fill in the required fields';
+        _error =
+            AppLocalizations.of(context).translate('requiredFieldsMissing');
         _isLoading = false;
         notifyListeners();
         return;
@@ -1318,7 +1325,7 @@ class AddOffersViewModel extends ChangeNotifier
       }
     } catch (e) {
       // Only obtained when the context is still valid; an unmounted context
-      // falls back to CoreEntityErrorMessage's existing English text.
+      // falls back to CoreEntityErrorMessage's English text.
       final translate =
           context.mounted ? AppLocalizations.of(context).translate : null;
       _error = CoreEntityErrorMessage.save(
@@ -1477,7 +1484,7 @@ class AddOffersViewModel extends ChangeNotifier
       _showToast(
         uploading
             ? loc.translate('offerSavedMediaUploading')
-            : 'Offer saved successfully!',
+            : loc.translate('offerSavedSuccessfully'),
         Colors.green,
       );
       context.go('/home');
@@ -1490,7 +1497,9 @@ class AddOffersViewModel extends ChangeNotifier
       {required bool hasNewMedia, String? message}) async {
     _showToast(
         message ??
-            'Offer updated successfully! ${hasNewMedia ? 'Syncing new media...' : ''}',
+            AppLocalizations.of(context).translate(hasNewMedia
+                ? 'offerUpdatedMediaUploading'
+                : 'offerUpdatedSuccessfully'),
         Colors.green);
 
     // Fetch the updated offer and return it to the details screen
@@ -1535,8 +1544,11 @@ class AddOffersViewModel extends ChangeNotifier
 
       if (context.mounted) {
         _showToast(
-            'Offer saved successfully! ${mediaFilesToUpload.isNotEmpty ? 'Syncing media...' : ''}',
-            Colors.green);
+          AppLocalizations.of(context).translate(mediaFilesToUpload.isNotEmpty
+              ? 'offerSavedMediaUploading'
+              : 'offerSavedSuccessfully'),
+          Colors.green,
+        );
         context.go('/home');
       }
     }
@@ -1571,14 +1583,14 @@ class AddOffersViewModel extends ChangeNotifier
       showDialog(
         context: context,
         builder: (BuildContext context) {
+          final loc = AppLocalizations.of(context);
           return AlertDialog(
-            title: const Text('Discard Changes?'),
-            content:
-                const Text('Are you sure you want to discard your changes?'),
+            title: Text(loc.translate('discardChanges')),
+            content: Text(loc.translate('areYouSureDiscard')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Keep Editing'),
+                child: Text(loc.translate('keepEditing')),
               ),
               TextButton(
                 onPressed: () {
@@ -1586,7 +1598,7 @@ class AddOffersViewModel extends ChangeNotifier
                   context.go('/home');
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Discard'),
+                child: Text(loc.translate('discard')),
               ),
             ],
           );

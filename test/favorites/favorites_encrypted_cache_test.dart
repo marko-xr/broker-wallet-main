@@ -12,6 +12,7 @@
 //    back to plaintext;
 //  * nothing stored is a link (no `imageUrl`), only stable media identity.
 import 'dart:io';
+import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
 
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart';
@@ -199,6 +200,46 @@ void main() {
       expect(restored.last.media!.isVideo, isTrue);
       expect(restored.last.media!.signedUrl, isNull);
       expect(restored.every((i) => i.originalData == null), isTrue);
+    });
+
+    test(
+        'a cold start shows the saved card fields, never "not available" '
+        'before the server answers', () async {
+      final office = OfficeModel(
+        id: 'c1',
+        officeName: 'Gulf Realty',
+        managerName: 'Sara',
+        countryCode: '+971',
+        phoneNumber: '501234567',
+        officeLocation: 'Business Bay',
+        notes: '',
+        pickUpLocation: '',
+        pickUpAddress: '',
+      );
+      await saveFromServer(_alice, [
+        FavoriteItem(
+          id: 'c1',
+          type: 'offices',
+          title: 'Gulf Realty',
+          subtitle: 'Business Bay',
+          addedAt: DateTime.utc(2026, 10, 3, 8, 30),
+          originalData: office,
+        ),
+        // Saved by an earlier version: no card fields.
+        _item('o9'),
+      ]);
+
+      await restart();
+      final restored = await openAs(_alice);
+      final saved = restored.firstWhere((i) => i.id == 'c1');
+      expect(saved.originalData, isNull, reason: 'nothing from the server yet');
+      expect(saved.cardFields, {
+        'officeName': 'Gulf Realty',
+        'officeLocation': 'Business Bay',
+        'phoneNumber': '501234567',
+      });
+      // An older saved card shows no fields at all until its record loads.
+      expect(restored.firstWhere((i) => i.id == 'o9').cardFields, isNull);
     });
 
     test('no link is ever stored: imageUrl is left out', () async {

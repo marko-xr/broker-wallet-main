@@ -1465,6 +1465,7 @@ class FavoritesViewModel extends ChangeNotifier {
       addedAt: item.addedAt,
       originalData: item.originalData,
       savedRequestSummary: item.savedRequestSummary,
+      savedCardFields: item.savedCardFields,
     );
   }
 

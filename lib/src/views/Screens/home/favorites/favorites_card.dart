@@ -390,14 +390,23 @@ class _FavoriteCardState extends State<FavoriteCard>
     ];
   }
 
+  /// [value], or "not available" when the record really has none.
+  String _orNa(String? value, AppLocalizations localization) =>
+      value == null || value.isEmpty ? localization.translate('na') : value;
+
   List<Widget> _buildOfferFields(
       BuildContext context,
       AppLocalizations localization,
       TextTheme textTheme,
       ColorScheme colors,
       NumberFormat numberFormat) {
-    final offer = widget.favorite.originalData as OfferModel?;
-    final propertyType = offer?.propertyType;
+    final fields = widget.favorite.cardFields;
+    // An older saved card has no fields: show none until the Offer loads,
+    // never "not available" for data that has not arrived yet.
+    if (fields == null) return const [];
+    final propertyType = fields['propertyType'];
+    final specificType = fields['specificPropertyType'];
+    final city = fields['selectedCity'];
     return [
       _buildFieldRowWithIcons([
         _FieldData(
@@ -408,9 +417,8 @@ class _FavoriteCardState extends State<FavoriteCard>
         ),
         _FieldData(
           icon: FieldIcons.specificType,
-          value: offer != null && offer.specificPropertyType.isNotEmpty
-              ? _getLocalizedSpecificType(
-                  offer.specificPropertyType, localization)
+          value: specificType != null && specificType.isNotEmpty
+              ? _getLocalizedSpecificType(specificType, localization)
               : localization.translate('na'),
         ),
       ], textTheme, colors),
@@ -418,8 +426,8 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.city,
-            value: offer != null && offer.selectedCity.isNotEmpty
-                ? _getLocalizedCityName(offer.selectedCity, localization)
+            value: city != null && city.isNotEmpty
+                ? _getLocalizedCityName(city, localization)
                 : localization.translate('na'),
           ),
           textTheme,
@@ -429,7 +437,7 @@ class _FavoriteCardState extends State<FavoriteCard>
           _FieldData(
             icon: FieldIcons.area,
             value: _formatSquareFeet(
-                offer?.squareFootage, numberFormat, localization),
+                fields['squareFootage'], numberFormat, localization),
           ),
           textTheme,
           colors),
@@ -438,12 +446,13 @@ class _FavoriteCardState extends State<FavoriteCard>
 
   List<Widget> _buildOwnerFields(BuildContext context,
       AppLocalizations localization, TextTheme textTheme, ColorScheme colors) {
-    final owner = widget.favorite.originalData as OwnerModel?;
+    final fields = widget.favorite.cardFields;
+    if (fields == null) return const [];
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.name,
-            value: owner?.name ?? localization.translate('na'),
+            value: _orNa(fields['name'], localization),
           ),
           textTheme,
           colors),
@@ -451,18 +460,18 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildFieldRowWithIcons([
         _FieldData(
           icon: FieldIcons.specificType,
-          value: owner?.typeOfProperties ?? localization.translate('na'),
+          value: _orNa(fields['typeOfProperties'], localization),
         ),
         _FieldData(
           icon: FieldIcons.location,
-          value: owner?.propertyLocation ?? localization.translate('na'),
+          value: _orNa(fields['propertyLocation'], localization),
         ),
       ], textTheme, colors),
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.phone,
-            value: _formatPhoneNumber(owner?.phoneNumber),
+            value: _formatPhoneNumber(fields['phoneNumber']),
           ),
           textTheme,
           colors),
@@ -471,12 +480,13 @@ class _FavoriteCardState extends State<FavoriteCard>
 
   List<Widget> _buildOfficeFields(BuildContext context,
       AppLocalizations localization, TextTheme textTheme, ColorScheme colors) {
-    final office = widget.favorite.originalData as OfficeModel?;
+    final fields = widget.favorite.cardFields;
+    if (fields == null) return const [];
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.office,
-            value: office?.officeName ?? localization.translate('na'),
+            value: _orNa(fields['officeName'], localization),
           ),
           textTheme,
           colors),
@@ -484,7 +494,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.location,
-            value: office?.officeLocation ?? localization.translate('na'),
+            value: _orNa(fields['officeLocation'], localization),
           ),
           textTheme,
           colors),
@@ -492,7 +502,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.phone,
-            value: _formatPhoneNumber(office?.phoneNumber),
+            value: _formatPhoneNumber(fields['phoneNumber']),
           ),
           textTheme,
           colors),
@@ -501,15 +511,16 @@ class _FavoriteCardState extends State<FavoriteCard>
 
   List<Widget> _buildBrokerFields(BuildContext context,
       AppLocalizations localization, TextTheme textTheme, ColorScheme colors) {
-    final broker = widget.favorite.originalData as BrokerModel?;
-    final noteText =
-        broker?.notes != null && broker!.notes.isNotEmpty ? broker.notes : null;
+    final fields = widget.favorite.cardFields;
+    if (fields == null) return const [];
+    final notes = fields['notes'];
+    final noteText = notes != null && notes.isNotEmpty ? notes : null;
 
-    List<Widget> fields = [
+    List<Widget> rows = [
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.name,
-            value: broker?.name ?? localization.translate('na'),
+            value: _orNa(fields['name'], localization),
           ),
           textTheme,
           colors),
@@ -517,14 +528,14 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.phone,
-            value: _formatPhoneNumber(broker?.phoneNumber),
+            value: _formatPhoneNumber(fields['phoneNumber']),
           ),
           textTheme,
           colors),
     ];
 
     if (noteText != null) {
-      fields.addAll([
+      rows.addAll([
         const SizedBox(height: 6),
         _buildSingleFieldWithIcon(
             _FieldData(
@@ -537,17 +548,18 @@ class _FavoriteCardState extends State<FavoriteCard>
       ]);
     }
 
-    return fields;
+    return rows;
   }
 
   List<Widget> _buildWatchmenFields(BuildContext context,
       AppLocalizations localization, TextTheme textTheme, ColorScheme colors) {
-    final watchman = widget.favorite.originalData as WatchmenModel?;
+    final fields = widget.favorite.cardFields;
+    if (fields == null) return const [];
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.name,
-            value: watchman?.name ?? localization.translate('na'),
+            value: _orNa(fields['name'], localization),
           ),
           textTheme,
           colors),
@@ -555,7 +567,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
         _FieldData(
           icon: FieldIcons.building,
-          value: watchman?.buildingName ?? localization.translate('na'),
+          value: _orNa(fields['buildingName'], localization),
         ),
         textTheme,
         colors,
@@ -564,7 +576,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: FieldIcons.phone,
-            value: _formatPhoneNumber(watchman?.phoneNumber),
+            value: _formatPhoneNumber(fields['phoneNumber']),
           ),
           textTheme,
           colors),

@@ -1,4 +1,9 @@
+import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
+import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
+import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
+import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
+import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
 import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:hive/hive.dart';
 
@@ -127,6 +132,7 @@ class FavoriteItem {
   final DateTime addedAt;
   final dynamic originalData; // Store the original model data
   final FavoriteRequestSummary? savedRequestSummary;
+  final Map<String, String>? savedCardFields;
 
   FavoriteItem({
     required this.id,
@@ -138,7 +144,54 @@ class FavoriteItem {
     required this.addedAt,
     this.originalData,
     this.savedRequestSummary,
+    this.savedCardFields,
   });
+
+  /// What an Offer, Owner, Office, Broker or Watchman card shows: from the
+  /// record when the server has answered, otherwise the saved copy's fields
+  /// (null for an older saved card that has none: it shows no fields, never
+  /// "not available" for data that simply has not loaded yet).
+  Map<String, String>? get cardFields {
+    final data = originalData;
+    if (data is OfferModel) {
+      return {
+        'propertyType': data.propertyType ?? '',
+        'specificPropertyType': data.specificPropertyType,
+        'selectedCity': data.selectedCity,
+        'squareFootage': data.squareFootage,
+      };
+    }
+    if (data is OwnerModel) {
+      return {
+        'name': data.name,
+        'typeOfProperties': data.typeOfProperties,
+        'propertyLocation': data.propertyLocation,
+        'phoneNumber': data.phoneNumber,
+      };
+    }
+    if (data is OfficeModel) {
+      return {
+        'officeName': data.officeName,
+        'officeLocation': data.officeLocation,
+        'phoneNumber': data.phoneNumber,
+      };
+    }
+    if (data is BrokerModel) {
+      return {
+        'name': data.name,
+        'phoneNumber': data.phoneNumber,
+        'notes': data.notes,
+      };
+    }
+    if (data is WatchmenModel) {
+      return {
+        'name': data.name,
+        'buildingName': data.buildingName,
+        'phoneNumber': data.phoneNumber,
+      };
+    }
+    return isRequest ? null : savedCardFields;
+  }
 
   FavoriteRequestSummary? get requestSummary {
     if (!isRequest) return null;

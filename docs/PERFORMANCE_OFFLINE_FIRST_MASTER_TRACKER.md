@@ -5982,7 +5982,24 @@ in `colorScheme.error`, no icons, no shadow, labels wrap at large text.
 Buttons carry keys `delete-confirm-cancel` / `delete-confirm-delete`; seven
 test finders that looked for the old icons now use them. Agent-run:
 dialog-related tests 409/409 (details_contacts, r5a–r5d, r6b, owners list,
-test/details). Not device-verified; not committed.
+test/details). Not device-verified. Committed d847033.
+
+### 7BH-11) FAV-COLD-1 — Favorites cards no longer flash "not available" (2026-11-20, owner report)
+
+Cause: on a cold start Favorites draws the cards from the encrypted saved
+copy first; that copy kept only title, subtitle and media, so every field of
+an Offer, Owner, Office, Broker or Watchman card read «غير متاح» until the
+server answered (only after a cold start, since a warm process already has
+the records). 27d7dbf had fixed Requests alone by saving a request summary.
+Now `StoredFavorite.cardFields` (encrypted with the rest, key `card`, text
+values only) saves each kind's card fields; `FavoriteItem.cardFields` reads
+the live record when loaded, else the saved fields; the five card builders
+draw from it, and an older saved card with no fields shows no fields (never
+"not available") until its record loads. Names and phone numbers join the
+same per-account encrypted copy the Owners/Brokers lists already keep.
+Test: `favorites_encrypted_cache_test` "a cold start shows the saved card
+fields…". Agent-run: test/favorites 281/281. Not device-verified; not
+committed.
 
 ---
 

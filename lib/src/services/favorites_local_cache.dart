@@ -36,6 +36,7 @@ class StoredFavorite {
     required this.addedAt,
     this.media,
     this.requestSummary,
+    this.cardFields,
   });
 
   /// The account the favorite belongs to (the signed-in Supabase user id).
@@ -47,6 +48,11 @@ class StoredFavorite {
   final DateTime addedAt;
   final String? media;
   final FavoriteRequestSummary? requestSummary;
+
+  /// The fields an Offer, Owner, Office, Broker or Watchman card draws (see
+  /// `FavoriteItem.cardFields`), so a cold start shows them before the
+  /// server answers.
+  final Map<String, String>? cardFields;
 }
 
 /// Each account's saved Favorites, decrypted, for this process only, so a
@@ -140,6 +146,7 @@ class FavoritesLocalCache extends EncryptedAccountListCache<StoredFavorite> {
           'requestSquareFootage': request.squareFootage,
           'requestCity': request.selectedCity,
         },
+        if (f.cardFields case final fields?) 'card': fields,
       };
 
   static StoredFavorite _decode(Map<String, dynamic> m) => StoredFavorite(
@@ -159,5 +166,17 @@ class FavoritesLocalCache extends EncryptedAccountListCache<StoredFavorite> {
                 selectedCity: m['requestCity'] as String,
               )
             : null,
+        cardFields: _cardFields(m['card']),
       );
+
+  /// Only text values are kept; anything else in a saved entry is ignored.
+  static Map<String, String>? _cardFields(Object? raw) {
+    if (raw is! Map) return null;
+    final fields = <String, String>{
+      for (final entry in raw.entries)
+        if (entry.key is String && entry.value is String)
+          entry.key as String: entry.value as String,
+    };
+    return fields.isEmpty ? null : fields;
+  }
 }

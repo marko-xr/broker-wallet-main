@@ -5968,7 +5968,21 @@ uses `FieldIcons.colorIn`. Unchanged on purpose: Rent/Sale pills, Area and
 Price chips (badges with their own background), section-heading icons,
 avatars, the Notes section heading, Call/WhatsApp. Add/Edit forms already
 follow the input rule in `AppInputStyle.icon` (grey at rest, primary when
-focused, red on error) — no change. Not run; not committed.
+focused, red on error) — no change. Committed 7b3d2e8.
+
+### 7BH-10) DIALOG-2 — the shared delete confirmation redesigned (2026-11-20, owner: "the buttons are bad")
+
+Was: small unequal buttons pushed to the two edges with a gap, icons inside
+both, a shadowed red button, a warning icon beside the title and a pink box
+with red text. Now (Material 3, still an `AlertDialog`, same API, so all 13
+callers are untouched): trash icon in a soft red circle above a centred
+title and message; the record in a neutral chip (its field icon + name);
+two equal full-width 48 px buttons, Cancel outlined first and Delete solid
+in `colorScheme.error`, no icons, no shadow, labels wrap at large text.
+Buttons carry keys `delete-confirm-cancel` / `delete-confirm-delete`; seven
+test finders that looked for the old icons now use them. Agent-run:
+dialog-related tests 409/409 (details_contacts, r5a–r5d, r6b, owners list,
+test/details). Not device-verified; not committed.
 
 ---
 

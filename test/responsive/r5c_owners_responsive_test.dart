@@ -552,10 +552,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expectNoLayoutException(tester, scenario);
-    await tester.tap(find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byIcon(Icons.close_rounded),
-    ));
+    await tester.tap(find.byKey(const ValueKey('delete-confirm-cancel')));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(service.subscriptions, 1);
@@ -580,9 +577,7 @@ void main() {
       }
       await openDetailsDeleteConfirmation(tester);
       expectNoLayoutException(tester, scenario);
-      final cancel = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byIcon(Icons.close_rounded));
+      final cancel = find.byKey(const ValueKey('delete-confirm-cancel'));
       await tester.ensureVisible(cancel);
       expect(cancel.hitTestable(), findsOneWidget);
       await tester.tap(cancel);

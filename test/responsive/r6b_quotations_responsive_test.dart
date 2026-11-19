@@ -269,8 +269,7 @@ void main() {
         await t.pumpAndSettle();
         expect(find.byType(AlertDialog), findsOneWidget);
         expectNoLayoutException(t, lc);
-        final cancel =
-            find.widgetWithText(ElevatedButton, _loc(t).translate('cancel'));
+        final cancel = find.byKey(const ValueKey('delete-confirm-cancel'));
         await _reach(t, cancel);
         await t.tap(cancel);
         await t.pumpAndSettle();

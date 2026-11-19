@@ -196,10 +196,7 @@ void main() {
     expect(find.byType(PropertyStatusSelector), findsNothing);
 
     await openDetailsDeleteConfirmation(tester);
-    final deleteCancel = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byIcon(Icons.close_rounded),
-    );
+    final deleteCancel = find.byKey(const ValueKey('delete-confirm-cancel'));
     expect(deleteCancel.hitTestable(), findsOneWidget);
     await tester.tap(deleteCancel);
     await tester.pumpAndSettle();

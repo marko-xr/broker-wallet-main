@@ -40,60 +40,72 @@ class DeleteConfirmationDialog extends StatelessWidget {
   final IconData itemIcon;
   final String itemLabel;
 
-  static const Color _danger = Color(0xFFC81E1E);
+  /// Keys of the two buttons, for tests and accessibility tools.
+  static const Key cancelKey = ValueKey('delete-confirm-cancel');
+  static const Key deleteKey = ValueKey('delete-confirm-delete');
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
     final texts = Theme.of(context).textTheme;
+    final buttonShape =
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+    const buttonSize = Size.fromHeight(48);
+    final buttonText = texts.labelLarge?.copyWith(fontWeight: FontWeight.w600);
 
-    // No LayoutBuilder in here: AlertDialog sizes itself with IntrinsicWidth,
-    // which a LayoutBuilder cannot answer. The actions bar stacks the buttons
-    // by itself when they do not fit side by side.
+    // Material 3 confirmation: the icon, title and message centred; the record
+    // in a calm chip; two equal buttons, the safe one first. No LayoutBuilder
+    // anywhere: AlertDialog sizes itself with IntrinsicWidth.
     return AlertDialog(
       scrollable: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: _danger, size: 28),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              title,
-              style: texts.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      icon: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: colors.error.withValues(alpha: 0.12),
+          shape: BoxShape.circle,
+        ),
+        child:
+            Icon(Icons.delete_outline_rounded, color: colors.error, size: 28),
+      ),
+      title: Text(
+        title,
+        textAlign: TextAlign.center,
+        style: texts.titleLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             message,
+            textAlign: TextAlign.center,
             style: texts.bodyMedium?.copyWith(
-              color: colors.onSurface.withValues(alpha: 0.8),
+              color: colors.onSurfaceVariant,
+              height: 1.45,
             ),
           ),
           const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFE6E6),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFFCCCC)),
+              color: colors.surfaceContainerHighest.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
-                Icon(itemIcon, size: 18, color: _danger),
-                const SizedBox(width: 8),
+                Icon(itemIcon, size: 20, color: colors.onSurfaceVariant),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     itemLabel,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: texts.bodyMedium?.copyWith(
+                      color: colors.onSurface,
                       fontWeight: FontWeight.w600,
-                      color: _danger,
                     ),
                   ),
                 ),
@@ -102,78 +114,42 @@ class DeleteConfirmationDialog extends StatelessWidget {
           ),
         ],
       ),
-      actionsAlignment: MainAxisAlignment.spaceBetween,
+      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       actions: [
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: colors.surface,
-            foregroundColor: colors.onSurface,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: colors.outline.withValues(alpha: 0.3),
-                width: 1.5,
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                key: cancelKey,
+                onPressed: () => Navigator.of(context).pop(false),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: buttonSize,
+                  shape: buttonShape,
+                  foregroundColor: colors.onSurface,
+                  side: BorderSide(color: colors.outlineVariant),
+                  textStyle: buttonText,
+                ),
+                child:
+                    Text(loc.translate('cancel'), textAlign: TextAlign.center),
               ),
             ),
-            elevation: 0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: colors.onSurface.withValues(alpha: 0.7),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  loc.translate('cancel'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                    color: colors.onSurface.withValues(alpha: 0.8),
-                  ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton(
+                key: deleteKey,
+                onPressed: () => Navigator.of(context).pop(true),
+                style: FilledButton.styleFrom(
+                  minimumSize: buttonSize,
+                  shape: buttonShape,
+                  backgroundColor: colors.error,
+                  foregroundColor: colors.onError,
+                  textStyle: buttonText,
                 ),
+                child:
+                    Text(loc.translate('delete'), textAlign: TextAlign.center),
               ),
-            ],
-          ),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _danger,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
             ),
-            elevation: 2,
-            shadowColor: _danger.withValues(alpha: 0.4),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.delete_rounded, size: 18, color: Colors.white),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  loc.translate('delete'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ],
     );

@@ -294,9 +294,7 @@ void entityCases<T, V extends ChangeNotifier>({
         await tester.pumpAndSettle();
         expect(find.byType(AlertDialog), findsOneWidget);
         expectNoLayoutException(tester, c);
-        final cancel = find.descendant(
-            of: find.byType(AlertDialog),
-            matching: find.byIcon(Icons.close_rounded));
+        final cancel = find.byKey(const ValueKey('delete-confirm-cancel'));
         await tester.ensureVisible(cancel);
         await tester.pump();
         expect(cancel.hitTestable(), findsOneWidget);

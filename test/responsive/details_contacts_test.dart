@@ -200,10 +200,7 @@ void main() {
       await tester.tap(find.text(loc.translate('deleteOffer')));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsOneWidget);
-      await tester.tap(find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.byIcon(Icons.delete_rounded),
-      ));
+      await tester.tap(find.byKey(const ValueKey('delete-confirm-delete')));
       await tester.pumpAndSettle();
       expect(toasts, [
         loc.translate('failedToUpdateStatus'),

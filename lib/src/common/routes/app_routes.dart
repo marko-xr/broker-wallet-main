@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'package:broker_wallet/src/Views/Widgets/action_bottom_sheet.dart';
 import 'package:broker_wallet/src/Views/Widgets/bottom_nav_bar.dart';
 import 'package:broker_wallet/src/Views/Widgets/glowing_fab.dart';
@@ -22,6 +23,16 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   DateTime? _lastBackPressed;
+
+  @override
+  void initState() {
+    super.initState();
+    // A Quotation saved in an earlier run may still need its logo or PDF:
+    // finish it now, after the first frame so startup is not slowed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(QuotationMediaPublisher.shared.resume());
+    });
+  }
 
   void _onItemTapped(int index) async {
     final currentIndex = widget.navigationShell.currentIndex;

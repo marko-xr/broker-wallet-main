@@ -8,6 +8,7 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quota
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'services/quotation_service.dart';
 
 class QuotationListViewModel extends ChangeNotifier {
@@ -17,6 +18,8 @@ class QuotationListViewModel extends ChangeNotifier {
   })  : _quotationService = quotationService ?? QuotationService(),
         _toast = toast ?? _showPlatformToast {
     _initializeStream();
+    // Finishes any Quotation PDF an earlier run left unfinished.
+    unawaited(QuotationMediaPublisher.shared.resume());
   }
 
   final QuotationService _quotationService;

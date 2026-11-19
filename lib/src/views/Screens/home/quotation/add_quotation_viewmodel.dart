@@ -2,6 +2,7 @@
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_background_removal_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_optimization_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_workflow.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/pdf_generation_service.dart';
@@ -10,7 +11,8 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quota
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kReleaseMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
@@ -84,6 +86,7 @@ class QuotationSaveOutcome {
     this.logoFailure,
     this.pdfFailure,
     this.wasUpdate = false,
+    this.mediaInBackground = false,
   });
 
   const QuotationSaveOutcome.busy() : this._(QuotationSaveKind.busy);
@@ -97,13 +100,18 @@ class QuotationSaveOutcome {
   /// The Quotation already existed on the server, so this was an update.
   final bool wasUpdate;
 
+  /// The Quotation is saved and its logo and PDF were handed to
+  /// [QuotationMediaPublisher], which finishes them after the editor closes.
+  final bool mediaInBackground;
+
   /// The localization key to show, or null for the existing create message.
   String? get messageKey {
     switch (kind) {
       case QuotationSaveKind.busy:
         return null;
       case QuotationSaveKind.saved:
-        return wasUpdate ? 'quotationUpdatedSuccessfully' : null;
+        if (wasUpdate) return 'quotationUpdatedSuccessfully';
+        return mediaInBackground ? 'quotationSavedSuccessfully' : null;
       case QuotationSaveKind.mediaIncomplete:
         return 'quotationSavedMediaFailure';
       case QuotationSaveKind.invalid:
@@ -168,6 +176,7 @@ class AddQuotationViewModel extends ChangeNotifier {
   final LogoBackgroundRemovalService _logoBackgroundRemovalService;
   final LogoOptimizationService _logoOptimizationService;
   final QuotationCreationGate _canCreate;
+  final QuotationMediaPublisher _publisher;
   final void Function(String message, Color color) _toast;
   final Uuid _uuid;
   final Duration _longSaveThreshold;
@@ -188,6 +197,7 @@ class AddQuotationViewModel extends ChangeNotifier {
     LogoBackgroundRemovalService? logoBackgroundRemovalService,
     LogoOptimizationService? logoOptimizationService,
     QuotationCreationGate? creationGate,
+    QuotationMediaPublisher? mediaPublisher,
     void Function(String message, Color color)? toast,
     Uuid? uuid,
     Duration longSaveThreshold = defaultLongSaveThreshold,
@@ -206,6 +216,7 @@ class AddQuotationViewModel extends ChangeNotifier {
                   context: context,
                   section: 'quotations',
                 )),
+        _publisher = mediaPublisher ?? QuotationMediaPublisher.shared,
         _toast = toast ?? _showPlatformToast,
         _uuid = uuid ?? const Uuid();
 
@@ -1067,8 +1078,10 @@ class AddQuotationViewModel extends ChangeNotifier {
 
       loc = AppLocalizations.of(context);
       locale = Localizations.localeOf(context);
-      outcome =
-          await _performSave(locale: locale, fromSave: true, clock: clock);
+      // Save returns once the Quotation itself is saved; its logo and PDF are
+      // finished by the publisher, so the editor closes at once.
+      outcome = await _performSave(
+          locale: locale, fromSave: true, clock: clock, background: true);
     } finally {
       _saveEntryActive = false;
       endUi();
@@ -1118,13 +1131,20 @@ class AddQuotationViewModel extends ChangeNotifier {
   /// The PDF is not part of "after": it is drawn only from the form, so it is
   /// prepared while the database saves. Publishing it still waits for the save
   /// and for the logo, and a PDF whose save failed is discarded.
-  Future<QuotationSaveOutcome> performSave({Locale? locale}) =>
-      _performSave(locale: locale);
+  /// Saves without the editor UI. With [mediaInBackground] it is the Save
+  /// button's path: the logo and PDF are handed to [QuotationMediaPublisher]
+  /// instead of being waited for.
+  Future<QuotationSaveOutcome> performSave({
+    Locale? locale,
+    bool mediaInBackground = false,
+  }) =>
+      _performSave(locale: locale, background: mediaInBackground);
 
   Future<QuotationSaveOutcome> _performSave({
     Locale? locale,
     bool fromSave = false,
     _SaveTimeline? clock,
+    bool background = false,
   }) async {
     if (_disposed ||
         _isLoading ||
@@ -1170,16 +1190,40 @@ class AddQuotationViewModel extends ChangeNotifier {
       final logo = _pickedLogoForSave();
       endPreparation();
 
+      // The publisher may be finishing this Quotation's previous save: its
+      // logo and PDF bump the server version. Wait for that attempt and take
+      // the version it left, so this save is not refused as a conflict.
+      if (wasUpdate) {
+        final endSettle = timeline.begin('earlier media settle');
+        await _publisher.whenSettled(id);
+        endSettle();
+        final published = _publisher.publishedVersion(id);
+        final current = _version;
+        if (published != null && current != null && published > current) {
+          _version = published;
+        }
+      }
+
       // The save's media steps and the database save each tell the lists to
       // refresh; one refresh at the end is enough.
-      return await _quotationService.batchMutations(() => _saveAndPublish(
-            id: id,
-            model: model,
-            wasUpdate: wasUpdate,
-            logo: logo,
-            locale: locale,
-            timeline: timeline,
-          ));
+      return await _quotationService.batchMutations(() => background
+          ? _saveThenHandOver(
+              id: id,
+              userId: userId,
+              model: model,
+              wasUpdate: wasUpdate,
+              logo: logo,
+              locale: locale,
+              timeline: timeline,
+            )
+          : _saveAndPublish(
+              id: id,
+              model: model,
+              wasUpdate: wasUpdate,
+              logo: logo,
+              locale: locale,
+              timeline: timeline,
+            ));
     } finally {
       _isLoading = false;
       endTotal();
@@ -1250,6 +1294,79 @@ class AddQuotationViewModel extends ChangeNotifier {
     } finally {
       if (!pdfHandedOver) _discardPreparedPdf(preparedPdf);
     }
+  }
+
+  /// Saves the Quotation, then hands its logo change and PDF to the
+  /// publisher instead of waiting for them. Only the database save is waited
+  /// for: the editor closes as soon as the Quotation is safely saved.
+  Future<QuotationSaveOutcome> _saveThenHandOver({
+    required String id,
+    required String userId,
+    required QuotationModel model,
+    required bool wasUpdate,
+    required _PickedLogo? logo,
+    required Locale? locale,
+    required _SaveTimeline timeline,
+  }) async {
+    final QuotationSaveResult saved;
+    final endDatabase = timeline.begin('database save');
+    try {
+      saved = await _quotationService.saveQuotation(
+        model,
+        quotationId: id,
+        expectedVersion: _version,
+      );
+    } catch (error) {
+      return _saveFailure(error);
+    } finally {
+      endDatabase();
+    }
+    _version = saved.version;
+    if (!wasUpdate && saved.outcome == 'created') {
+      unawaited(CoreEntityQuotaBridge.recordCreated(section: 'quotations'));
+    }
+
+    final endHandOver = timeline.begin('media hand-over');
+    File? logoFile;
+    String? logoMediaId;
+    String? logoFileName;
+    if (logo != null) {
+      logoFile = await logo.file;
+      logoMediaId = _pendingLogoMediaId ??= _uuid.v4();
+      logoFileName = logo.backgroundRemoved
+          ? _transparentLogoFileName(officeLogoFileName)
+          : officeLogoFileName;
+    }
+    final removeLogo =
+        logo == null && _logoRemovalRequested && _boundLogoMediaId != null;
+    await _publisher.enqueue(
+      account: userId,
+      quotationId: id,
+      locale: locale,
+      logo: logoFile,
+      logoMediaId: logoMediaId,
+      logoFileName: logoFileName,
+      removeLogo: removeLogo,
+      service: _quotationService,
+      generatePdf: _generatePdf,
+    );
+    // The publisher holds its own copy of the logo now: this form starts from
+    // a clean slate, as after a completed upload.
+    if (logo != null) {
+      _uploadedLogoFile = logoFile;
+      _selectedLogoFile = null;
+      _logoOptimization = null;
+      _removeLogoBackground = false;
+      _pendingLogoMediaId = null;
+    }
+    _logoRemovalRequested = false;
+    endHandOver();
+
+    return QuotationSaveOutcome._(
+      QuotationSaveKind.saved,
+      wasUpdate: wasUpdate,
+      mediaInBackground: true,
+    );
   }
 
   static QuotationSaveOutcome _saveFailure(Object error) {
@@ -1874,8 +1991,11 @@ class AddQuotationViewModel extends ChangeNotifier {
 /// against one clock, so work that overlaps (the PDF is prepared while the
 /// database saves) reads as overlapping ranges. It records no user data, URL or
 /// token, and nothing here is ever shown to the user.
+/// Prints how long each step of a save took, in debug and profile builds
+/// (profile runs at real speed, so its numbers are the ones to trust); never
+/// in a release build.
 class _SaveTimeline {
-  _SaveTimeline() : _clock = kDebugMode ? (Stopwatch()..start()) : null;
+  _SaveTimeline() : _clock = kReleaseMode ? null : (Stopwatch()..start());
 
   final Stopwatch? _clock;
 

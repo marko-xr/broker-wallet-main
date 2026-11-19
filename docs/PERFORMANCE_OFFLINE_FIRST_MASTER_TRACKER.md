@@ -5998,8 +5998,48 @@ draw from it, and an older saved card with no fields shows no fields (never
 "not available") until its record loads. Names and phone numbers join the
 same per-account encrypted copy the Owners/Brokers lists already keep.
 Test: `favorites_encrypted_cache_test` "a cold start shows the saved card
-fields…". Agent-run: test/favorites 281/281. Not device-verified; not
-committed.
+fields…". Agent-run: test/favorites 281/281. Not device-verified.
+Committed 55349d0.
+
+### 7BH-12) QUOTE-SAVE-FAST-1 — Quotation Save returns after the database save (2026-11-20, owner approved)
+
+MEASURED (owner, profile build on the Samsung, `Quotation save timing`):
+database save 0.2–0.9 s; PDF render 0.05–0.46 s (already beside the save);
+logo upload 4.8 s; PDF upload 3.4–6.4 s; total the user waited 6.7–8.4 s —
+new without logo 7.0, new with logo 8.4, edit 6.7. Each media step is
+authorize → R2 PUT → confirm. The timing now also prints in profile builds
+(`kReleaseMode` gate), never in release.
+
+Change (owner's four points): the Save button now waits only for the
+database save, then hands the logo change and PDF to the new app-wide
+`QuotationMediaPublisher` (`quotation/services/quotation_media_publisher.dart`)
+and closes ("Quotation saved successfully!"). The publisher:
+- keeps one job per Quotation in SharedPreferences (`quotation_publish_jobs_v1`:
+  account, id, language, logo copy path + stable upload id, or remove) and a
+  private copy of a picked logo in `quotation_pdfs/.work/<account>/publish/`
+  (backup-excluded, removed by Delete Account);
+- runs each job from FRESH server state: skips a logo already bound under the
+  job's id (lost-confirm safe), removes a cleared logo, re-reads the
+  Quotation and renders the PDF from the server's row, publishes it;
+- drops a job whose Quotation was deleted; keeps it on any other failure and
+  retries (5 s, 30 s, 2 min, 10 min), at once on app resume / network back
+  (`ListRefreshSignals.hints`), on the next app start (MainScaffold post-frame)
+  and when the Quotations list opens; never runs another account's jobs;
+- a newer save of the same Quotation replaces the job (an unfinished logo
+  carries over) and runs after the current attempt; the editor waits for a
+  running attempt and adopts the version it left before its own save, so its
+  own media never reads as a version conflict.
+The list shows «جارٍ تجهيز PDF…» on the card while its job is pending, and
+View/Share say the PDF is being prepared (an edited Quotation's old PDF is
+not offered). `performSave()` keeps its inline path for its tests;
+`performSave(mediaInBackground: true)` is the button's path.
+Known limit: if the logo copy cannot be made (no documents folder), the job
+uses the editor's own file, which the editor deletes on close — the PDF is
+still published, without that new logo.
+Tests: new `quotation_media_publisher_test` (10) + 2 in
+`add_quotation_viewmodel_test`; agent-run 547/547 (test/quotation, r6b,
+canonical_identity, test/account, test/app); analyzer: no errors or
+warnings in the changed files. Not device-verified; not committed.
 
 ---
 

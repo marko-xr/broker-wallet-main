@@ -16,6 +16,7 @@ import 'package:broker_wallet/src/Views/Screens/home/quotation/add_quotation_vie
 import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_background_removal_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_optimization_service.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
@@ -361,6 +362,7 @@ Future<_Env> _env({
   Completer<void>? pdfGate,
   Duration longSaveThreshold = AddQuotationViewModel.defaultLongSaveThreshold,
   _FakeServer? server,
+  QuotationMediaPublisher? mediaPublisher,
 }) async {
   final dir = await Directory.systemTemp.createTemp('quotation_vm_test_');
   final backend = server ?? _FakeServer();
@@ -389,6 +391,7 @@ Future<_Env> _env({
     // The real optimizer needs an isolate and real image bytes.
     logoOptimizationService: logoOptimizer ?? _FakeLogoOptimizer(),
     creationGate: creationGate,
+    mediaPublisher: mediaPublisher,
     longSaveThreshold: longSaveThreshold,
     toast: (message, _) => toasts.add(message),
     pdfGenerator: (quotation, {locale}) async {
@@ -517,6 +520,51 @@ void main() {
           isNull);
       expect(AppLocalizations.translateFor(code, 'quotationPreparing'), isNull);
     }
+  });
+
+  group('Save returns at once', () {
+    test(
+        'the editor is done when the Quotation is saved; the PDF follows in '
+        'the background and the list sees it as preparing until then',
+        () async {
+      final pdfGate = Completer<void>();
+      final publisher = QuotationMediaPublisher(
+        currentUserId: () => 'user-1',
+        retryHints: const Stream<void>.empty(),
+      );
+      final env = await _env(pdfGate: pdfGate, mediaPublisher: publisher);
+      _fill(env.vm);
+
+      final outcome = await env.vm.performSave(mediaInBackground: true);
+
+      expect(outcome.kind, QuotationSaveKind.saved);
+      expect(outcome.mediaInBackground, isTrue);
+      expect(outcome.messageKey, 'quotationSavedSuccessfully');
+      expect(env.vm.isLoading, isFalse);
+      final id = env.server.savedIds.single;
+      expect(env.server.pdfId, isNull, reason: 'Save did not wait for it');
+      expect(publisher.isPending(id), isTrue);
+
+      pdfGate.complete();
+      for (var i = 0; i < 50 && publisher.isPending(id); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(publisher.isPending(id), isFalse);
+      expect(env.server.pdfId, isNotNull);
+    });
+
+    test('a failed save hands nothing over', () async {
+      final publisher = QuotationMediaPublisher(
+        currentUserId: () => 'user-1',
+        retryHints: const Stream<void>.empty(),
+      );
+      final env = await _env(mediaPublisher: publisher);
+      env.vm.setPropertyTitle(''); // can never be saved
+      final outcome = await env.vm.performSave(mediaInBackground: true);
+      expect(outcome.kind, QuotationSaveKind.invalid);
+      expect(env.server.savedIds, isEmpty);
+      expect(env.generated, isEmpty);
+    });
   });
 
   group('create', () {

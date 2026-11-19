@@ -3360,5 +3360,7 @@
   "emailProviderNotAllowed": "يرجى استخدام مزوّد بريد معروف (Gmail أو Yahoo أو Outlook وغيرها)",
   "emailTooLong": "عنوان البريد الإلكتروني طويل جدًا",
   "authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
-  "emailDidYouMean": "هل تقصد {email}؟"
+  "emailDidYouMean": "هل تقصد {email}؟",
+  "quotationPdfPreparing": "جارٍ تجهيز PDF…",
+  "quotationPdfPreparingMessage": "يتم تجهيز ملف PDF، وسيكون جاهزاً خلال لحظات."
 }

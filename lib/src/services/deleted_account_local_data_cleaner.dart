@@ -20,6 +20,7 @@ import 'package:broker_wallet/src/services/watchmen_local_cache.dart';
 import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
 import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
 
 typedef ProfileMediaForgetter = Future<void> Function({
@@ -99,9 +100,11 @@ class DeletedAccountLocalDataCleaner {
         _purgeOfferMediaUploads = purgeOfferMediaUploads ??
             ((ownerId) => OfferMediaUploadQueue.instance.purgeOwner(ownerId)),
         _forgetQuotationPdfs = forgetQuotationPdfs ??
-            ((uid) async =>
-                await QuotationPdfFiles().forgetAccount(uid) +
-                await QuotationPdfVault().forgetAccount(uid)),
+            ((uid) async {
+              await QuotationMediaPublisher.shared.forgetAccount(uid);
+              return await QuotationPdfFiles().forgetAccount(uid) +
+                  await QuotationPdfVault().forgetAccount(uid);
+            }),
         _forgetPrivateMedia =
             forgetPrivateMedia ?? PrivateMediaCache.instance.forgetAccount;
 

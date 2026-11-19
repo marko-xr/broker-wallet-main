@@ -11,6 +11,7 @@ import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
+import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
 
@@ -202,6 +203,21 @@ class _QuotationListViewState extends State<QuotationListView> {
     ColorScheme colors,
     TextTheme texts,
   ) {
+    // Rebuilt when a save's PDF starts or finishes in the background.
+    return ListenableBuilder(
+      listenable: QuotationMediaPublisher.shared,
+      builder: (context, _) =>
+          _buildQuotationsColumn(quotations, vm, loc, colors, texts),
+    );
+  }
+
+  Widget _buildQuotationsColumn(
+    List<QuotationModel> quotations,
+    QuotationListViewModel vm,
+    AppLocalizations loc,
+    ColorScheme colors,
+    TextTheme texts,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -216,6 +232,9 @@ class _QuotationListViewState extends State<QuotationListView> {
           ...quotations.asMap().entries.map((entry) {
             final index = entry.key;
             final quotation = entry.value;
+            final pdfPending = QuotationMediaPublisher.shared.isPending(
+              quotation.id,
+            );
             return AnimatedContainer(
               duration: Duration(milliseconds: 300 + (index * 100)),
               curve: Curves.easeOutBack,
@@ -229,6 +248,7 @@ class _QuotationListViewState extends State<QuotationListView> {
                 viewModel: vm, // Pass the ViewModel
                 loc: loc,
                 index: index,
+                pdfPending: pdfPending,
               ),
             );
           }),
@@ -324,6 +344,13 @@ class _QuotationListViewState extends State<QuotationListView> {
   // download through a fresh short-lived signed link (never a public URL).
   Future<void> _viewPdf(
       QuotationModel quotation, QuotationListViewModel vm) async {
+    if (QuotationMediaPublisher.shared.isPending(quotation.id)) {
+      _showToast(
+        AppLocalizations.of(context).translate('quotationPdfPreparingMessage'),
+        Colors.orange,
+      );
+      return;
+    }
     if (!quotation.hasPdf) {
       _showToast(
         AppLocalizations.of(context).translate('quotationPdfNotAvailable'),
@@ -363,6 +390,13 @@ class _QuotationListViewState extends State<QuotationListView> {
   // as a file with a professional name, never as a link.
   Future<void> _sharePdf(
       QuotationModel quotation, QuotationListViewModel vm) async {
+    if (QuotationMediaPublisher.shared.isPending(quotation.id)) {
+      _showToast(
+        AppLocalizations.of(context).translate('quotationPdfPreparingMessage'),
+        Colors.orange,
+      );
+      return;
+    }
     if (!quotation.hasPdf) {
       _showToast(
         AppLocalizations.of(context).translate('noPdfAvailableToShare'),
@@ -437,6 +471,10 @@ class _EnhancedQuotationTile extends StatefulWidget {
   final AppLocalizations loc;
   final int index;
 
+  /// The logo or PDF of this Quotation's last save is still being finished
+  /// in the background ([QuotationMediaPublisher]).
+  final bool pdfPending;
+
   const _EnhancedQuotationTile({
     required this.quotation,
     required this.onDelete,
@@ -445,6 +483,7 @@ class _EnhancedQuotationTile extends StatefulWidget {
     required this.viewModel, // Add to constructor
     required this.loc,
     required this.index,
+    this.pdfPending = false,
   });
 
   @override
@@ -453,6 +492,14 @@ class _EnhancedQuotationTile extends StatefulWidget {
 
 class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
     with SingleTickerProviderStateMixin {
+  /// A PDF that can be opened now: bound, and not about to be replaced by
+  /// the one the last save is still preparing.
+  bool get _pdfReady => widget.quotation.hasPdf && !widget.pdfPending;
+
+  String get _pdfBadgeKey => widget.pdfPending
+      ? 'quotationPdfPreparing'
+      : (widget.quotation.hasPdf ? 'pdf' : 'noPdf');
+
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -568,8 +615,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                     LayoutBuilder(builder: (context, constraints) {
                       final badgeStyle = texts.bodySmall
                           ?.copyWith(fontWeight: FontWeight.w600);
-                      final badgeLabel = widget.loc
-                          .translate(widget.quotation.hasPdf ? 'pdf' : 'noPdf');
+                      final badgeLabel = widget.loc.translate(_pdfBadgeKey);
                       final label = TextPainter(
                         text: TextSpan(text: badgeLabel, style: badgeStyle),
                         textDirection: Directionality.of(context),
@@ -637,7 +683,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: widget.quotation.hasPdf
+                              color: _pdfReady
                                   ? Colors.green.withValues(alpha: 0.1)
                                   : Colors.orange.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
@@ -648,18 +694,15 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                 Icon(
                                   Icons.picture_as_pdf,
                                   size: 16,
-                                  color: widget.quotation.hasPdf
-                                      ? Colors.green
-                                      : Colors.orange,
+                                  color:
+                                      _pdfReady ? Colors.green : Colors.orange,
                                 ),
                                 const SizedBox(width: 4),
                                 Flexible(
                                     child: Text(
-                                  widget.quotation.hasPdf
-                                      ? widget.loc.translate('pdf')
-                                      : widget.loc.translate('noPdf'),
+                                  widget.loc.translate(_pdfBadgeKey),
                                   style: texts.bodySmall?.copyWith(
-                                    color: widget.quotation.hasPdf
+                                    color: _pdfReady
                                         ? Colors.green
                                         : Colors.orange,
                                     fontWeight: FontWeight.w600,
@@ -758,7 +801,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           child: Container(
                             constraints: const BoxConstraints(minHeight: 40),
                             decoration: BoxDecoration(
-                              color: widget.quotation.hasPdf
+                              color: _pdfReady
                                   ? const Color(0xFFE3F2FD) // Blue for View PDF
                                   : const Color(0xFFF5F5F5), // Disabled gray
                               borderRadius: BorderRadius.circular(12),
@@ -767,7 +810,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               color: Colors.transparent,
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: widget.quotation.hasPdf
+                                onTap: _pdfReady
                                     ? widget.onView // View existing PDF
                                     : null, // Disabled if no PDF
                                 child: Row(
@@ -776,7 +819,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                     Icon(
                                       Icons
                                           .visibility_outlined, // Always use view icon
-                                      color: widget.quotation.hasPdf
+                                      color: _pdfReady
                                           ? const Color(
                                               0xFF1976D2) // Blue for view
                                           : Colors.grey, // Grey for disabled
@@ -784,15 +827,14 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                     ),
                                     const SizedBox(width: 8),
                                     Flexible(child: Text(
-                                      widget.quotation.hasPdf
+                                      _pdfReady
                                           ? widget.loc.translate('viewPdf')
                                           : widget.loc.translate(
                                               'noPdf'), // Show "No PDF" if not available
                                       style: texts.bodyMedium?.copyWith(
-                                        color:
-                                            widget.quotation.hasPdf
-                                                ? const Color(0xFF1976D2)
-                                                : Colors.grey,
+                                        color: _pdfReady
+                                            ? const Color(0xFF1976D2)
+                                            : Colors.grey,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     )),
@@ -810,7 +852,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                           child: Container(
                             constraints: const BoxConstraints(minHeight: 40),
                             decoration: BoxDecoration(
-                              color: widget.quotation.hasPdf
+                              color: _pdfReady
                                   ? const Color(0xFFFFF3E0) // Orange for share
                                   : const Color(0xFFF5F5F5), // Disabled gray
                               borderRadius: BorderRadius.circular(12),
@@ -819,15 +861,13 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                               color: Colors.transparent,
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: widget.quotation.hasPdf
-                                    ? widget.onShare
-                                    : null,
+                                onTap: _pdfReady ? widget.onShare : null,
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
                                       Icons.share_outlined,
-                                      color: widget.quotation.hasPdf
+                                      color: _pdfReady
                                           ? const Color(
                                               0xFFFF9800) // Orange for share
                                           : Colors.grey,
@@ -838,7 +878,7 @@ class _EnhancedQuotationTileState extends State<_EnhancedQuotationTile>
                                         child: Text(
                                       widget.loc.translate('share'),
                                       style: texts.bodyMedium?.copyWith(
-                                        color: widget.quotation.hasPdf
+                                        color: _pdfReady
                                             ? const Color(
                                                 0xFFFF9800) // Orange for share
                                             : Colors.grey,

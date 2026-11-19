@@ -5852,10 +5852,11 @@ the list's delete dialog is now the shared one (new key
 was hard-coded English — now `quotationAndPdfSavedSuccessfully` (same English
 text, Arabic added).
 
-**Verification:** NOT RUN. The agent's analyzer and focused test runs were
-blocked; the owner runs them (commands in the session reply, plus
-`test/responsive/r6b_quotations_responsive_test.dart`). Not device-verified.
-Committed on the owner's request.
+**Verification (owner-run, 2026-11-19):** `flutter analyze lib/src/views
+lib/src/viewmodels/AddScreens` — 0 errors, 0 warnings; 70 info hints, none in
+a file this work changed. Focused tests 308/308 (details header actions,
+owners list, r5a–r5d, details map address) and r6b Quotations 108/108.
+Not device-verified. Committed on the owner's request (ae14944).
 
 ---
 

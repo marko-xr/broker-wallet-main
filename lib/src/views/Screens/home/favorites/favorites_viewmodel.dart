@@ -1464,6 +1464,7 @@ class FavoritesViewModel extends ChangeNotifier {
       media: item.media,
       addedAt: item.addedAt,
       originalData: item.originalData,
+      savedRequestSummary: item.savedRequestSummary,
     );
   }
 

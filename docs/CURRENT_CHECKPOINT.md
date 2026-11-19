@@ -16786,3 +16786,24 @@ verification is pending.
 NOW — On device in Arabic, open Related Items in Owner, Office, Broker and
 Watchman Details and check both Offer and Request card labels.
 NEXT — Switch to English and confirm the same records show English labels.
+
+## Favorites Request cards (2026-11-19)
+
+Cached Request favorites formerly used the property title as a deal label and
+rendered every detail field as unavailable until the full record arrived.
+The existing encrypted Favorites cache now saves the Request deal type,
+property category and subtype, area and city. The badge uses the deal type,
+and older cache entries show the Requests badge with the detail area reserved
+until a refresh supplies the real fields. The summary is for the card only.
+
+On both Offer and Request Favorites cards, the property category and subtype
+share the first row. City is on the second row and square footage is on the
+third.
+
+Tests, analysis and app execution were skipped at the owner's request.
+Real-device verification is pending.
+
+NOW — Open Favorites online and check the row order on an Offer and a Request.
+Check that a rental Request and a sale Request show the correct rotating badge.
+NEXT — Reopen Favorites after that refresh and confirm both cached Request
+cards show the reordered details immediately, without an all-unavailable flash.

@@ -1,3 +1,5 @@
+import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
+import 'package:broker_wallet/src/services/favorites_local_cache.dart';
 import 'package:hive/hive.dart';
 
 import 'favorite_card_media.dart';
@@ -124,6 +126,7 @@ class FavoriteItem {
   final FavoriteCardMedia? media;
   final DateTime addedAt;
   final dynamic originalData; // Store the original model data
+  final FavoriteRequestSummary? savedRequestSummary;
 
   FavoriteItem({
     required this.id,
@@ -134,7 +137,21 @@ class FavoriteItem {
     this.media,
     required this.addedAt,
     this.originalData,
+    this.savedRequestSummary,
   });
+
+  FavoriteRequestSummary? get requestSummary {
+    if (!isRequest) return null;
+    final request = originalData;
+    if (request is! RequestModel) return savedRequestSummary;
+    return (
+      requestType: request.requestType,
+      propertyType: request.propertyType,
+      specificPropertyType: request.specificPropertyType,
+      squareFootage: request.squareFootage,
+      selectedCity: request.selectedCity,
+    );
+  }
 
   // Helper methods to determine type
   bool get isOffer => type == 'offers';

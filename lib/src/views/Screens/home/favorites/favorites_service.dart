@@ -277,6 +277,7 @@ class FavoriteService {
         addedAt: item.addedAt,
         // The card's private media, by identity only (never a link).
         media: item.media?.toStored(),
+        requestSummary: item.requestSummary,
       );
 
   FavoriteItem _fromStored(StoredFavorite f) => FavoriteItem(
@@ -286,6 +287,7 @@ class FavoriteService {
         subtitle: f.subtitle,
         media: FavoriteCardMedia.fromStored(f.media),
         addedAt: f.addedAt,
+        savedRequestSummary: f.requestSummary,
       );
 
   // Test-only override for "who is canonically signed in right now" (mirrors

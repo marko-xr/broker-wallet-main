@@ -1,5 +1,14 @@
 import 'encrypted_account_list_cache.dart';
 
+/// The saved fields a Request favorite needs to draw its card.
+typedef FavoriteRequestSummary = ({
+  String requestType,
+  String? propertyType,
+  String specificPropertyType,
+  String squareFootage,
+  String selectedCity,
+});
+
 /// Favorites-cache keys in secure storage, under
 /// `favorites_cache_key_v1_<uid>`.
 class SecureFavoritesCacheKeyStore extends SecureAccountCacheKeyStore {
@@ -26,6 +35,7 @@ class StoredFavorite {
     required this.subtitle,
     required this.addedAt,
     this.media,
+    this.requestSummary,
   });
 
   /// The account the favorite belongs to (the signed-in Supabase user id).
@@ -36,6 +46,7 @@ class StoredFavorite {
   final String subtitle;
   final DateTime addedAt;
   final String? media;
+  final FavoriteRequestSummary? requestSummary;
 }
 
 /// Each account's saved Favorites, decrypted, for this process only, so a
@@ -122,6 +133,13 @@ class FavoritesLocalCache extends EncryptedAccountListCache<StoredFavorite> {
         'subtitle': f.subtitle,
         'addedAt': f.addedAt.toUtc().toIso8601String(),
         'media': f.media,
+        if (f.requestSummary case final request?) ...{
+          'requestType': request.requestType,
+          'requestPropertyType': request.propertyType,
+          'requestSpecificPropertyType': request.specificPropertyType,
+          'requestSquareFootage': request.squareFootage,
+          'requestCity': request.selectedCity,
+        },
       };
 
   static StoredFavorite _decode(Map<String, dynamic> m) => StoredFavorite(
@@ -132,5 +150,14 @@ class FavoritesLocalCache extends EncryptedAccountListCache<StoredFavorite> {
         subtitle: m['subtitle'] as String,
         addedAt: DateTime.parse(m['addedAt'] as String),
         media: m['media'] as String?,
+        requestSummary: m['type'] == 'requests' && m['requestType'] is String
+            ? (
+                requestType: m['requestType'] as String,
+                propertyType: m['requestPropertyType'] as String?,
+                specificPropertyType: m['requestSpecificPropertyType'] as String,
+                squareFootage: m['requestSquareFootage'] as String,
+                selectedCity: m['requestCity'] as String,
+              )
+            : null,
       );
 }

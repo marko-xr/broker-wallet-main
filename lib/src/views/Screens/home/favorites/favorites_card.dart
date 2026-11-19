@@ -346,40 +346,43 @@ class _FavoriteCardState extends State<FavoriteCard>
       TextTheme textTheme,
       ColorScheme colors,
       NumberFormat numberFormat) {
-    final request = widget.favorite.originalData as RequestModel?;
+    final request = widget.favorite.requestSummary;
+    // Older saved cards only have a title and subtitle. Leave the fields
+    // empty until a real Request is available.
+    if (request == null) return const [];
+    final propertyType = request.propertyType;
     return [
-      _buildSingleFieldWithIcon(
-          _FieldData(
-            icon: Icons.home_rounded,
-            value: request?.propertyType != null &&
-                    request!.propertyType!.isNotEmpty
-                ? _getLocalizedPropertyType(request.propertyType!, localization)
-                : localization.translate('na'),
-          ),
-          textTheme,
-          colors),
-      const SizedBox(height: 6),
       _buildFieldRowWithIcons([
         _FieldData(
-          icon: Icons.business_rounded,
-          value: request != null && request.specificPropertyType.isNotEmpty
-              ? _getLocalizedSpecificType(
-                  request.specificPropertyType, localization)
+          icon: Icons.home_rounded,
+          value: propertyType != null && propertyType.isNotEmpty
+              ? _getLocalizedPropertyType(propertyType, localization)
               : localization.translate('na'),
         ),
         _FieldData(
-          icon: Icons.square_foot,
-          value: _formatSquareFeet(
-              request?.squareFootage, numberFormat, localization),
+          icon: Icons.business_rounded,
+          value: request.specificPropertyType.isNotEmpty
+              ? _getLocalizedSpecificType(
+                  request.specificPropertyType, localization)
+              : localization.translate('na'),
         ),
       ], textTheme, colors),
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
             icon: Icons.location_city_rounded,
-            value: request != null && request.selectedCity.isNotEmpty
+            value: request.selectedCity.isNotEmpty
                 ? _getLocalizedCityName(request.selectedCity, localization)
                 : localization.translate('na'),
+          ),
+          textTheme,
+          colors),
+      const SizedBox(height: 6),
+      _buildSingleFieldWithIcon(
+          _FieldData(
+            icon: Icons.square_foot,
+            value: _formatSquareFeet(
+                request.squareFootage, numberFormat, localization),
           ),
           textTheme,
           colors),
@@ -393,30 +396,21 @@ class _FavoriteCardState extends State<FavoriteCard>
       ColorScheme colors,
       NumberFormat numberFormat) {
     final offer = widget.favorite.originalData as OfferModel?;
+    final propertyType = offer?.propertyType;
     return [
-      _buildSingleFieldWithIcon(
-          _FieldData(
-            icon: Icons.home_rounded,
-            value: offer?.propertyType != null &&
-                    offer!.propertyType!.isNotEmpty
-                ? _getLocalizedPropertyType(offer.propertyType!, localization)
-                : localization.translate('na'),
-          ),
-          textTheme,
-          colors),
-      const SizedBox(height: 6),
       _buildFieldRowWithIcons([
+        _FieldData(
+          icon: Icons.home_rounded,
+          value: propertyType != null && propertyType.isNotEmpty
+              ? _getLocalizedPropertyType(propertyType, localization)
+              : localization.translate('na'),
+        ),
         _FieldData(
           icon: Icons.business_rounded,
           value: offer != null && offer.specificPropertyType.isNotEmpty
               ? _getLocalizedSpecificType(
                   offer.specificPropertyType, localization)
               : localization.translate('na'),
-        ),
-        _FieldData(
-          icon: Icons.square_foot,
-          value: _formatSquareFeet(
-              offer?.squareFootage, numberFormat, localization),
         ),
       ], textTheme, colors),
       const SizedBox(height: 6),
@@ -426,6 +420,15 @@ class _FavoriteCardState extends State<FavoriteCard>
             value: offer != null && offer.selectedCity.isNotEmpty
                 ? _getLocalizedCityName(offer.selectedCity, localization)
                 : localization.translate('na'),
+          ),
+          textTheme,
+          colors),
+      const SizedBox(height: 6),
+      _buildSingleFieldWithIcon(
+          _FieldData(
+            icon: Icons.square_foot,
+            value: _formatSquareFeet(
+                offer?.squareFootage, numberFormat, localization),
           ),
           textTheme,
           colors),
@@ -797,9 +800,12 @@ class _FavoriteCardState extends State<FavoriteCard>
       return _mapDealTypeToLabel(rawType, localization);
     }
     if (widget.favorite.type == 'requests') {
-      final request = widget.favorite.originalData as RequestModel?;
-      final rawType = request?.requestType ?? widget.favorite.title;
-      return _mapDealTypeToLabel(rawType, localization);
+      final dealType = widget.favorite.requestSummary?.requestType;
+      return switch (dealType?.trim().toLowerCase()) {
+        'rent' => localization.translate('rent'),
+        'sell' || 'sale' || 'buy' || 'purchase' => localization.translate('sale'),
+        _ => null,
+      };
     }
     return null;
   }

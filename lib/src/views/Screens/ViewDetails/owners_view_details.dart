@@ -43,6 +43,7 @@ import 'widgets/details_media_placeholder.dart';
 import 'widgets/details_section.dart';
 import 'widgets/offer_details_style.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class OwnersDetailsView extends StatefulWidget {
   final OwnerModel owner;
@@ -459,7 +460,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
           title: name.isEmpty ? loc.translate('nameNotSpecified') : name,
           titleLabel: loc.translate('name'),
           titleMissing: name.isEmpty,
-          icon: Icons.location_on_outlined,
+          icon: FieldIcons.location,
           subtitle: secondary.isEmpty ? null : secondary,
           subtitleLabel: loc.translate('propertyLocation'),
         ),
@@ -468,7 +469,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
           title: loc.translate('basicInformation'),
           rows: [
             DetailsField(
-              icon: Icons.business_outlined,
+              icon: FieldIcons.specificType,
               label: loc.translate('propertyType'),
               isMissing: _currentOwner.typeOfProperties.trim().isEmpty,
               value: _currentOwner.typeOfProperties.trim().isNotEmpty
@@ -477,13 +478,13 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
             ),
             if (secondary.isEmpty)
               DetailsField(
-                icon: Icons.location_on_outlined,
+                icon: FieldIcons.location,
                 label: loc.translate('propertyLocation'),
                 value: loc.translate('propertyLocationNotSpecified'),
                 isMissing: true,
               ),
             DetailsField(
-              icon: Icons.phone_outlined,
+              icon: FieldIcons.phone,
               label: loc.translate('phoneNumber'),
               isMissing: _currentOwner.phoneNumber.trim().isEmpty,
               value: _currentOwner.phoneNumber.trim().isNotEmpty
@@ -776,7 +777,7 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
       context,
       title: loc.translate('deleteOwner'),
       message: loc.translate('deleteOwnerConfirmationMessage'),
-      itemIcon: Icons.person_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: _currentOwner.name.isNotEmpty
           ? _currentOwner.name
           : loc.translate('propertyOwner'),

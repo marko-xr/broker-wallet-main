@@ -23,6 +23,7 @@ import 'widgets/details_page.dart';
 import 'widgets/details_section.dart';
 import 'widgets/offer_details_style.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class RequestDetailsView extends StatefulWidget {
   final RequestModel request;
@@ -276,12 +277,12 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
           title: loc.translate('requestRequirements'),
           rows: [
             DetailsField(
-              icon: Icons.sell_outlined,
+              icon: FieldIcons.dealType(isRent: rent),
               label: loc.translate('request'),
               value: loc.translate(rent ? 'rentRequest' : 'saleRequest'),
             ),
             DetailsField(
-              icon: Icons.location_city_outlined,
+              icon: FieldIcons.city,
               label: loc.translate('city'),
               isMissing: _currentRequest.selectedCity.trim().isEmpty,
               value: _currentRequest.selectedCity.trim().isNotEmpty
@@ -289,7 +290,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                   : loc.translate('cityNotSpecified'),
             ),
             DetailsField(
-              icon: Icons.place_outlined,
+              icon: FieldIcons.areas,
               label: loc.translate('areas'),
               isMissing: _currentRequest.selectedAreas.isEmpty,
               value: _currentRequest.selectedAreas.isNotEmpty
@@ -297,7 +298,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                   : loc.translate('areasNotSpecified'),
             ),
             DetailsField(
-              icon: Icons.phone_outlined,
+              icon: FieldIcons.phone,
               label: loc.translate('phoneNumber'),
               isMissing: _currentRequest.phoneNumber.trim().isEmpty,
               value: _currentRequest.phoneNumber.trim().isNotEmpty
@@ -310,7 +311,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
             ),
             if (_currentRequest.location.isNotEmpty)
               DetailsField(
-                icon: Icons.map_outlined,
+                icon: FieldIcons.map,
                 label: loc.translate('specificLocation'),
                 value: _currentRequest.location,
               ),
@@ -400,20 +401,20 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     final stats = <Widget>[
       if (_shouldShowRoomsAndBaths()) ...[
         _buildStatItem(
-            Icons.bed_outlined,
+            FieldIcons.bedrooms,
             RoomCount.display(_currentRequest.rooms),
             loc.translate('rooms'),
             colors,
             texts),
         _buildStatItem(
-            Icons.bathtub_outlined,
+            FieldIcons.bathrooms,
             _currentRequest.bathrooms.toString(),
             loc.translate('bathrooms'),
             colors,
             texts),
       ],
       _buildStatItem(
-          Icons.square_foot,
+          FieldIcons.area,
           _currentRequest.squareFootage.trim().isEmpty
               ? loc.translate('squareFootageNotSpecified')
               : '${_formatSquareFootage(_currentRequest.squareFootage)} ${loc.translate('squareFootageUnit')}',
@@ -1008,7 +1009,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
       context,
       title: loc.translate('deleteRequest'),
       message: loc.translate('deleteRequestConfirmationMessage'),
-      itemIcon: Icons.search_rounded,
+      itemIcon: FieldIcons.propertyCategory(_currentRequest.propertyType),
       itemLabel: _currentRequest.requestType == 'rent'
           ? loc.translate('rentRequest')
           : loc.translate('saleRequest'),

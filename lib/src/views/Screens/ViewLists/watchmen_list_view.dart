@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import '../../../data/models/ScreensModel/watchmen_model.dart';
 import '../../../viewmodels/ListScreens/list_watchmen_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class WatchmenListView extends StatefulWidget {
   const WatchmenListView({super.key, this.createViewModel});
@@ -563,7 +564,7 @@ class _WatchmenListViewState extends State<WatchmenListView> {
       context,
       title: loc.translate('deleteWatchmen'),
       message: loc.translate('deleteWatchmenConfirmationMessage'),
-      itemIcon: Icons.security_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: watchmen.name.isNotEmpty
           ? watchmen.name
           : loc.translate('watchmenContact'),
@@ -756,7 +757,7 @@ class _EnhancedWatchmenTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.apartment,
+                                        FieldIcons.building,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.8),
@@ -785,7 +786,7 @@ class _EnhancedWatchmenTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.location_on_rounded,
+                                        FieldIcons.location,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.4),

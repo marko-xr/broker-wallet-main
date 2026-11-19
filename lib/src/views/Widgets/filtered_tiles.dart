@@ -11,6 +11,7 @@ import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:go_router/go_router.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 // Reusable Offer Tile for filtered view
 class FilteredOfferTile extends StatelessWidget {
@@ -147,7 +148,7 @@ class FilteredOfferTile extends StatelessWidget {
                           Row(
                             children: [
                               Icon(
-                                Icons.home_rounded,
+                                FieldIcons.specificType,
                                 size: 16,
                                 color: colors.onSurface.withValues(alpha: 0.8),
                               ),
@@ -165,7 +166,7 @@ class FilteredOfferTile extends StatelessWidget {
                               ),
                               const SizedBox(width: 40),
                               Icon(
-                                Icons.location_on_rounded,
+                                FieldIcons.city,
                                 size: 16,
                                 color: colors.onSurface.withValues(alpha: 0.6),
                               ),
@@ -227,8 +228,8 @@ class FilteredOfferTile extends StatelessWidget {
                                   children: [
                                     Icon(
                                       isRent
-                                          ? Icons.home_rounded
-                                          : Icons.sell_rounded,
+                                          ? FieldIcons.rent
+                                          : FieldIcons.sale,
                                       size: 14,
                                       color: Colors.white,
                                     ),
@@ -272,7 +273,7 @@ class FilteredOfferTile extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        Icons.square_foot,
+                                        FieldIcons.area,
                                         size: 14,
                                         color: colors.primary,
                                       ),
@@ -309,7 +310,7 @@ class FilteredOfferTile extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.payments_rounded,
+                                    FieldIcons.price,
                                     size: 12,
                                     color: colors.tertiary,
                                   ),
@@ -491,18 +492,8 @@ class FilteredOfferTile extends StatelessWidget {
     return localization.translate('priceOnRequest');
   }
 
-  IconData _getPropertyIcon(String? propertyType) {
-    switch (propertyType?.toLowerCase()) {
-      case 'residential':
-        return Icons.home_rounded;
-      case 'commercial':
-        return Icons.business_rounded;
-      case 'furnished':
-        return Icons.chair_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
+  IconData _getPropertyIcon(String? propertyType) =>
+      FieldIcons.propertyCategory(propertyType);
 }
 
 // Reusable Request Tile for filtered view
@@ -634,7 +625,7 @@ class FilteredRequestTile extends StatelessWidget {
                           Row(
                             children: [
                               Icon(
-                                Icons.home_rounded,
+                                FieldIcons.specificType,
                                 size: 16,
                                 color: colors.onSurface.withValues(alpha: 0.8),
                               ),
@@ -652,7 +643,7 @@ class FilteredRequestTile extends StatelessWidget {
                               ),
                               const SizedBox(width: 40),
                               Icon(
-                                Icons.location_on_rounded,
+                                FieldIcons.city,
                                 size: 16,
                                 color: colors.onSurface.withValues(alpha: 0.6),
                               ),
@@ -714,8 +705,8 @@ class FilteredRequestTile extends StatelessWidget {
                                   children: [
                                     Icon(
                                       isRent
-                                          ? Icons.home_rounded
-                                          : Icons.sell_rounded,
+                                          ? FieldIcons.rent
+                                          : FieldIcons.sale,
                                       size: 14,
                                       color: Colors.white,
                                     ),
@@ -759,7 +750,7 @@ class FilteredRequestTile extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        Icons.square_foot,
+                                        FieldIcons.area,
                                         size: 14,
                                         color: colors.primary,
                                       ),
@@ -796,7 +787,7 @@ class FilteredRequestTile extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.payments_rounded,
+                                    FieldIcons.price,
                                     size: 12,
                                     color: colors.tertiary,
                                   ),
@@ -978,18 +969,8 @@ class FilteredRequestTile extends StatelessWidget {
     return localization.translate('priceOnRequest');
   }
 
-  IconData _getPropertyIcon(String? propertyType) {
-    switch (propertyType?.toLowerCase()) {
-      case 'residential':
-        return Icons.home_rounded;
-      case 'commercial':
-        return Icons.business_rounded;
-      case 'furnished':
-        return Icons.chair_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
+  IconData _getPropertyIcon(String? propertyType) =>
+      FieldIcons.propertyCategory(propertyType);
 }
 
 // Reusable Owner Tile for filtered view
@@ -1126,7 +1107,7 @@ class FilteredOwnerTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.business_rounded,
+                                      FieldIcons.specificType,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.8),
@@ -1156,7 +1137,7 @@ class FilteredOwnerTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.location_on_rounded,
+                                      FieldIcons.location,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.4),
@@ -1415,7 +1396,7 @@ class FilteredOfficeTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.person_outline,
+                                      FieldIcons.manager,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.8),
@@ -1445,7 +1426,7 @@ class FilteredOfficeTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.location_on_rounded,
+                                      FieldIcons.location,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.4),
@@ -1700,7 +1681,7 @@ class FilteredBrokerTile extends StatelessWidget {
                           Row(
                             children: [
                               Icon(
-                                Icons.phone,
+                                FieldIcons.phone,
                                 size: 16,
                                 color: colors.onSurface.withValues(alpha: 0.6),
                               ),
@@ -1956,7 +1937,7 @@ class FilteredWatchmenTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.apartment,
+                                      FieldIcons.building,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.8),
@@ -1986,7 +1967,7 @@ class FilteredWatchmenTile extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.location_on_rounded,
+                                      FieldIcons.location,
                                       size: 16,
                                       color: colors.onSurface
                                           .withValues(alpha: 0.4),

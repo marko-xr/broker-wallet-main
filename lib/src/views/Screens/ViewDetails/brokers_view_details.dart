@@ -20,6 +20,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'widgets/details_page.dart';
 import 'widgets/details_section.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class BrokersDetailsView extends StatefulWidget {
   final BrokerModel broker;
@@ -180,7 +181,7 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
           title: loc.translate('contactInformation'),
           rows: [
             DetailsField(
-              icon: Icons.phone_outlined,
+              icon: FieldIcons.phone,
               label: loc.translate('phoneNumber'),
               isMissing: _currentBroker.phoneNumber.trim().isEmpty,
               value: _currentBroker.phoneNumber.trim().isNotEmpty
@@ -338,7 +339,7 @@ class _BrokersDetailsViewState extends State<BrokersDetailsView>
       context,
       title: loc.translate('deleteBroker'),
       message: loc.translate('deleteBrokerConfirmationMessage'),
-      itemIcon: Icons.person_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: _currentBroker.name.isNotEmpty
           ? _currentBroker.name
           : loc.translate('broker'),

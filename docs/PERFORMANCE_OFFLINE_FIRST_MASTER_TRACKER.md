@@ -5926,7 +5926,32 @@ widget tree keeps one shape at every value, so the screen is never rebuilt
 when the motion ends. `_listScreenPage` in `lib/app.dart` applies it to the
 eight routes; Map keeps its own route (its map waits for the slide-in).
 Trade-off: these eight lose the iOS edge-swipe back gesture (custom
-PageRoute); the back button works. Tests not run by the agent.
+PageRoute); the back button works. Tests not run by the agent. Committed
+b336d07.
+
+### 7BH-8) ICONS-1 — one icon per record field on every surface (2026-11-20, owner request)
+
+Found: the same field had different icons on lists, search, Favorites and
+details (City: location_on / location_city; Watchman building: apartment /
+business; phone: phone / phone_rounded / phone_outlined), and different
+fields shared one (home_rounded = property type line, Rent badge and
+Residential on the Offer/Request cards; business_rounded = specific type,
+office, building and owner's property types; the Offer delete dialog showed
+the office icon). Now `lib/src/views/Widgets/field_icons.dart`
+(`FieldIcons`, all Material outlined) is the only source: name
+person_outline, manager badge, phone, notes sticky_note_2, office business,
+building apartment, city location_city, areas signpost (was place, a pin like location), location location_on,
+map, specific type home_work (owner chose it over category, 2026-11-20), area square_foot, price payments, bedrooms,
+bathrooms, Rent key / Sale sell, and `propertyCategory()` (Residential home,
+Commercial storefront, Furnished chair, other domain). Applied in the six
+list cards, `filtered_tiles.dart`, the search and Favorites cards, the six
+details screens, and the 12 delete dialogs (Quotation's kept). Unchanged on
+purpose: card avatars, Call/WhatsApp buttons, map screen.
+
+Verification (owner-run, 2026-11-20): `flutter analyze lib/src/views` — 0
+errors, 0 warnings, the same 70 info hints as before (none in a changed
+file); `flutter test --concurrency=1 test/details test/lists` r5a–r5d
+`test/favorites test/search` — 1,634/1,634 passed. Not device-verified.
 
 ---
 

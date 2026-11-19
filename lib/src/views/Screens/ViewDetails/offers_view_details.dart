@@ -41,6 +41,7 @@ import 'widgets/details_page.dart' show DetailsContactBar, DetailsHeaderControl;
 import 'widgets/details_media_placeholder.dart';
 import 'widgets/details_section.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class OffersDetailsView extends StatefulWidget {
   final OfferModel offer;
@@ -904,20 +905,16 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final stats = <Widget>[
       if (_shouldShowRoomsAndBaths()) ...[
         _buildStatItem(
-            Icons.bed_outlined,
+            FieldIcons.bedrooms,
             RoomCount.display(_currentOffer.rooms),
             loc.translate('offerDetailsBedrooms'),
             colors,
             texts),
-        _buildStatItem(
-            Icons.bathtub_outlined,
-            _currentOffer.bathrooms.toString(),
-            loc.translate('bathrooms'),
-            colors,
-            texts),
+        _buildStatItem(FieldIcons.bathrooms, _currentOffer.bathrooms.toString(),
+            loc.translate('bathrooms'), colors, texts),
       ],
       _buildStatItem(
-          Icons.square_foot,
+          FieldIcons.area,
           _currentOffer.squareFootage.trim().isEmpty
               ? loc.translate('squareFootageNotSpecified')
               : '${_formatSquareFootage(_currentOffer.squareFootage)} ${loc.translate('squareFootageUnit')}',
@@ -979,13 +976,13 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     final rows = <Widget>[
       _buildDetailRow(
           context,
-          Icons.sell_outlined,
+          FieldIcons.dealType(isRent: _currentOffer.offerType == 'rent'),
           loc.translate('offerType'),
           loc.translate(
               _currentOffer.offerType == 'rent' ? 'rentOffer' : 'saleOffer')),
       _buildDetailRow(
           context,
-          Icons.location_city_outlined,
+          FieldIcons.city,
           loc.translate('city'),
           _currentOffer.selectedCity.isNotEmpty
               ? _getLocalizedCityName(_currentOffer.selectedCity)
@@ -993,7 +990,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           isMissing: _currentOffer.selectedCity.isEmpty),
       _buildDetailRow(
           context,
-          Icons.place_outlined,
+          FieldIcons.areas,
           loc.translate('areas'),
           _currentOffer.selectedAreas.isNotEmpty
               ? _getLocalizedAreasText(_currentOffer.selectedAreas)
@@ -1001,7 +998,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           isMissing: _currentOffer.selectedAreas.isEmpty),
       _buildDetailRow(
           context,
-          Icons.phone_outlined,
+          FieldIcons.phone,
           loc.translate('phoneNumber'),
           _currentOffer.phoneNumber.trim().isNotEmpty
               ? PhoneInputService.formatForDisplay(_currentOffer.phoneNumber)
@@ -1012,7 +1009,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
           isPhone: true),
       _buildDetailRow(
           context,
-          Icons.map_outlined,
+          FieldIcons.map,
           loc.translate('location'),
           _currentOffer.location.trim().isNotEmpty
               ? _currentOffer.location
@@ -1031,7 +1028,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       decoration: DetailsSection.decoration(colors),
       child: Column(children: [
         Row(children: [
-          Icon(Icons.description_outlined, color: colors.primary, size: 18),
+          Icon(FieldIcons.notes, color: colors.primary, size: 18),
           const SizedBox(width: 7),
           Expanded(
               child: Text(loc.translate('basicInformation'),
@@ -1770,7 +1767,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
       context,
       title: loc.translate('deleteOffer'),
       message: loc.translate('deleteOfferConfirmationMessage'),
-      itemIcon: Icons.business_rounded,
+      itemIcon: FieldIcons.propertyCategory(_currentOffer.propertyType),
       itemLabel: _currentOffer.offerType == 'rent'
           ? loc.translate('rentOffer')
           : loc.translate('saleOffer'),

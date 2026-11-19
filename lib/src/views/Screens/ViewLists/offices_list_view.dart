@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import '../../../data/models/ScreensModel/offices_model.dart';
 import '../../../viewmodels/ListScreens/list_offices_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class OfficesListView extends StatefulWidget {
   const OfficesListView({super.key, this.createViewModel});
@@ -554,7 +555,7 @@ class _OfficesListViewState extends State<OfficesListView> {
       context,
       title: loc.translate('deleteOffice'),
       message: loc.translate('deleteOfficeConfirmationMessage'),
-      itemIcon: Icons.business_rounded,
+      itemIcon: FieldIcons.office,
       itemLabel: office.officeName.isNotEmpty
           ? office.officeName
           : loc.translate('office'),
@@ -751,7 +752,7 @@ class _EnhancedOfficeTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.person_outline,
+                                        FieldIcons.manager,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.8),
@@ -780,7 +781,7 @@ class _EnhancedOfficeTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.location_on_rounded,
+                                        FieldIcons.location,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.4),

@@ -25,6 +25,7 @@ import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'widgets/details_page.dart';
 import 'widgets/details_section.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class WatchmenDetailsView extends StatefulWidget {
   final WatchmenModel watchmen;
@@ -186,7 +187,7 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
           title: name.isEmpty ? loc.translate('nameNotSpecified') : name,
           titleLabel: loc.translate('watchmenName'),
           titleMissing: name.isEmpty,
-          icon: Icons.apartment_outlined,
+          icon: FieldIcons.building,
           subtitle: secondary.isEmpty ? null : secondary,
           subtitleLabel: loc.translate('buildingName'),
         ),
@@ -196,13 +197,13 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
           rows: [
             if (secondary.isEmpty)
               DetailsField(
-                icon: Icons.apartment_outlined,
+                icon: FieldIcons.building,
                 label: loc.translate('buildingName'),
                 value: loc.translate('buildingNameNotSpecified'),
                 isMissing: true,
               ),
             DetailsField(
-              icon: Icons.phone_outlined,
+              icon: FieldIcons.phone,
               label: loc.translate('phoneNumber'),
               isMissing: _currentWatchmen.phoneNumber.trim().isEmpty,
               value: _currentWatchmen.phoneNumber.trim().isNotEmpty
@@ -461,7 +462,7 @@ class _WatchmenDetailsViewState extends State<WatchmenDetailsView>
       context,
       title: loc.translate('deleteWatchmen'),
       message: loc.translate('deleteWatchmenConfirmationMessage'),
-      itemIcon: Icons.security_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: _currentWatchmen.name.isNotEmpty
           ? _currentWatchmen.name
           : loc.translate('watchmenContact'),

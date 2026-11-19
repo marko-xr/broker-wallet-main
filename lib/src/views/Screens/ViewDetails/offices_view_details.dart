@@ -25,6 +25,7 @@ import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'widgets/details_page.dart';
 import 'widgets/details_section.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class OfficesDetailsView extends StatefulWidget {
   final OfficeModel office;
@@ -178,7 +179,7 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
           title: name.isEmpty ? loc.translate('officeNameNotSpecified') : name,
           titleLabel: loc.translate('officeName'),
           titleMissing: name.isEmpty,
-          icon: Icons.location_on_outlined,
+          icon: FieldIcons.location,
           subtitle: secondary.isEmpty ? null : secondary,
           subtitleLabel: loc.translate('officeLocation'),
         ),
@@ -187,7 +188,7 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
           title: loc.translate('basicInformation'),
           rows: [
             DetailsField(
-              icon: Icons.person_outline,
+              icon: FieldIcons.manager,
               label: loc.translate('managerName'),
               isMissing: _currentOffice.managerName.trim().isEmpty,
               value: _currentOffice.managerName.trim().isNotEmpty
@@ -196,13 +197,13 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
             ),
             if (secondary.isEmpty)
               DetailsField(
-                icon: Icons.location_on_outlined,
+                icon: FieldIcons.location,
                 label: loc.translate('officeLocation'),
                 value: loc.translate('officeLocationNotSpecified'),
                 isMissing: true,
               ),
             DetailsField(
-              icon: Icons.phone_outlined,
+              icon: FieldIcons.phone,
               label: loc.translate('phoneNumber'),
               isMissing: _currentOffice.phoneNumber.trim().isEmpty,
               value: _currentOffice.phoneNumber.trim().isNotEmpty
@@ -458,7 +459,7 @@ class _OfficesDetailsViewState extends State<OfficesDetailsView>
       context,
       title: loc.translate('deleteOffice'),
       message: loc.translate('deleteOfficeConfirmationMessage'),
-      itemIcon: Icons.business_rounded,
+      itemIcon: FieldIcons.office,
       itemLabel: _currentOffice.officeName.isNotEmpty
           ? _currentOffice.officeName
           : loc.translate('office'),

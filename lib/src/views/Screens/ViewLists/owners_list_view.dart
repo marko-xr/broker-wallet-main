@@ -15,6 +15,7 @@ import 'package:intl/intl.dart';
 import '../../../data/models/ScreensModel/owners_model.dart';
 import '../../../viewmodels/ListScreens/list_owners_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class OwnersListView extends StatefulWidget {
   const OwnersListView({super.key, this.createViewModel});
@@ -561,7 +562,7 @@ class _OwnersListViewState extends State<OwnersListView> {
       context,
       title: loc.translate('deleteOwner'),
       message: loc.translate('deleteOwnerConfirmationMessage'),
-      itemIcon: Icons.person_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: owner.name.isNotEmpty
           ? owner.name
           : loc.translate('propertyOwner'),
@@ -754,7 +755,7 @@ class _EnhancedOwnerTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.business_rounded,
+                                        FieldIcons.specificType,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.8),
@@ -783,7 +784,7 @@ class _EnhancedOwnerTile extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Icon(
-                                        Icons.location_on_rounded,
+                                        FieldIcons.location,
                                         size: 16,
                                         color: colors.onSurface
                                             .withValues(alpha: 0.4),

@@ -13,6 +13,7 @@ import '../../../data/models/ScreensModel/request_model.dart';
 import '../../../viewmodels/ListScreens/list_requests_viewmodel.dart';
 import '../../../data/models/property_status.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class RequestedListView extends StatefulWidget {
   const RequestedListView({super.key, this.viewModel});
@@ -448,7 +449,7 @@ class _RequestedListViewState extends State<RequestedListView> {
       context,
       title: loc.translate('deleteRequest'),
       message: loc.translate('deleteRequestConfirmationMessage'),
-      itemIcon: Icons.search_rounded,
+      itemIcon: FieldIcons.propertyCategory(request.propertyType),
       itemLabel: request.requestType == 'rent'
           ? loc.translate('rentRequest')
           : loc.translate('saleRequest'),
@@ -863,7 +864,7 @@ class _EnhancedRequestTile extends StatelessWidget {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.home_rounded,
+                                  FieldIcons.specificType,
                                   size: 16,
                                   color:
                                       colors.onSurface.withValues(alpha: 0.8),
@@ -882,7 +883,7 @@ class _EnhancedRequestTile extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 40),
                                 Icon(
-                                  Icons.location_on_rounded,
+                                  FieldIcons.city,
                                   size: 16,
                                   color:
                                       colors.onSurface.withValues(alpha: 0.6),
@@ -945,8 +946,8 @@ class _EnhancedRequestTile extends StatelessWidget {
                                     children: [
                                       Icon(
                                         isRent
-                                            ? Icons.home_rounded
-                                            : Icons.sell_rounded,
+                                            ? FieldIcons.rent
+                                            : FieldIcons.sale,
                                         size: 14,
                                         color: Colors.white,
                                       ),
@@ -990,7 +991,7 @@ class _EnhancedRequestTile extends StatelessWidget {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(
-                                          Icons.square_foot,
+                                          FieldIcons.area,
                                           size: 14,
                                           color: colors.primary,
                                         ),
@@ -1029,7 +1030,7 @@ class _EnhancedRequestTile extends StatelessWidget {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.payments_rounded,
+                                      FieldIcons.price,
                                       size: 12,
                                       color: colors.tertiary,
                                     ),
@@ -1216,18 +1217,8 @@ class _EnhancedRequestTile extends StatelessWidget {
     return loc.translate('priceOnRequest');
   }
 
-  IconData _getPropertyIcon(String? propertyType) {
-    switch (propertyType?.toLowerCase()) {
-      case 'residential':
-        return Icons.home_rounded;
-      case 'commercial':
-        return Icons.business_rounded;
-      case 'furnished':
-        return Icons.chair_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
+  IconData _getPropertyIcon(String? propertyType) =>
+      FieldIcons.propertyCategory(propertyType);
 
   void _showStatusSelector(BuildContext context) {
     final translate = AppLocalizations.of(context).translate;

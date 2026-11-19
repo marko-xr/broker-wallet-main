@@ -17,6 +17,7 @@ import '../../../data/models/ScreensModel/brokers_model.dart';
 import '../../../viewmodels/ListScreens/list_brokers_viewmodel.dart';
 import '../../../services/phone_input_service.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class BrokersListView extends StatefulWidget {
   const BrokersListView({super.key, this.createViewModel});
@@ -491,7 +492,7 @@ class _BrokersListViewState extends State<BrokersListView> {
       context,
       title: loc.translate('deleteBroker'),
       message: loc.translate('deleteBrokerConfirmationMessage'),
-      itemIcon: Icons.person_rounded,
+      itemIcon: FieldIcons.name,
       itemLabel: broker.name.isNotEmpty
           ? broker.name
           : loc.translate('broker'),
@@ -742,7 +743,7 @@ class _EnhancedBrokerTile extends StatelessWidget {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.phone,
+                                  FieldIcons.phone,
                                   size: 16,
                                   color:
                                       colors.onSurface.withValues(alpha: 0.6),

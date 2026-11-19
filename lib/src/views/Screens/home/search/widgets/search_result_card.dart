@@ -26,6 +26,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class _FieldData {
   final IconData icon;
@@ -392,7 +393,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.home_rounded,
+                  icon: FieldIcons.propertyCategory(req?.propertyType),
                   value: (req?.propertyType != null &&
                           (req!.propertyType!.isNotEmpty))
                       ? _getLocalizedPropertyType(req.propertyType!, loc)
@@ -405,13 +406,13 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _fieldRowWithIcons([
                 _FieldData(
-                  icon: Icons.business_rounded,
+                  icon: FieldIcons.specificType,
                   value: (req != null && req.specificPropertyType.isNotEmpty)
                       ? _getLocalizedSpecificType(req.specificPropertyType, loc)
                       : loc.translate('na'),
                 ),
                 _FieldData(
-                  icon: Icons.square_foot,
+                  icon: FieldIcons.area,
                   value:
                       _formatSquareFeet(req?.squareFootage, numberFormat, loc),
                 ),
@@ -419,7 +420,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.location_city_rounded,
+                  icon: FieldIcons.city,
                   value: (req != null && req.selectedCity.isNotEmpty)
                       ? _getLocalizedCityName(req.selectedCity, loc)
                       : loc.translate('na'),
@@ -439,7 +440,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.home_rounded,
+                  icon: FieldIcons.propertyCategory(offer?.propertyType),
                   value: (offer?.propertyType != null &&
                           (offer!.propertyType!.isNotEmpty))
                       ? _getLocalizedPropertyType(offer.propertyType!, loc)
@@ -452,7 +453,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _fieldRowWithIcons([
                 _FieldData(
-                  icon: Icons.business_rounded,
+                  icon: FieldIcons.specificType,
                   value:
                       (offer != null && offer.specificPropertyType.isNotEmpty)
                           ? _getLocalizedSpecificType(
@@ -460,7 +461,7 @@ class _SearchContentFields extends StatelessWidget {
                           : loc.translate('na'),
                 ),
                 _FieldData(
-                  icon: Icons.square_foot,
+                  icon: FieldIcons.area,
                   value: _formatSquareFeet(
                       offer?.squareFootage, numberFormat, loc),
                 ),
@@ -468,7 +469,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.location_city_rounded,
+                  icon: FieldIcons.city,
                   value: (offer != null && offer.selectedCity.isNotEmpty)
                       ? _getLocalizedCityName(offer.selectedCity, loc)
                       : loc.translate('na'),
@@ -488,7 +489,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.person_rounded,
+                  icon: FieldIcons.name,
                   value: owner?.name ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -498,18 +499,18 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _fieldRowWithIcons([
                 _FieldData(
-                  icon: Icons.business_rounded,
+                  icon: FieldIcons.specificType,
                   value: owner?.typeOfProperties ?? loc.translate('na'),
                 ),
                 _FieldData(
-                  icon: Icons.location_on_rounded,
+                  icon: FieldIcons.location,
                   value: owner?.propertyLocation ?? loc.translate('na'),
                 ),
               ], textTheme, colors, searchQuery: searchQuery),
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.phone_rounded,
+                  icon: FieldIcons.phone,
                   value: _formatPhoneNumber(owner?.phoneNumber, loc),
                 ),
                 textTheme,
@@ -527,7 +528,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.business_rounded,
+                  icon: FieldIcons.office,
                   value: office?.officeName ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -537,7 +538,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.location_on_rounded,
+                  icon: FieldIcons.location,
                   value: office?.officeLocation ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -547,7 +548,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.phone_rounded,
+                  icon: FieldIcons.phone,
                   value: _formatPhoneNumber(office?.phoneNumber, loc),
                 ),
                 textTheme,
@@ -568,7 +569,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.person_rounded,
+                  icon: FieldIcons.name,
                   value: broker?.name ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -578,7 +579,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.phone_rounded,
+                  icon: FieldIcons.phone,
                   value: _formatPhoneNumber(broker?.phoneNumber, loc),
                 ),
                 textTheme,
@@ -588,7 +589,7 @@ class _SearchContentFields extends StatelessWidget {
               if (noteText != null) ...[
                 const SizedBox(height: 6),
                 _singleFieldWithIcon(
-                  _FieldData(icon: Icons.note_alt_rounded, value: noteText),
+                  _FieldData(icon: FieldIcons.notes, value: noteText),
                   textTheme,
                   colors,
                   maxLines: 1,
@@ -606,7 +607,7 @@ class _SearchContentFields extends StatelessWidget {
             children: [
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.person_rounded,
+                  icon: FieldIcons.name,
                   value: w?.name ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -616,7 +617,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.business_rounded,
+                  icon: FieldIcons.building,
                   value: w?.buildingName ?? loc.translate('na'),
                 ),
                 textTheme,
@@ -626,7 +627,7 @@ class _SearchContentFields extends StatelessWidget {
               const SizedBox(height: 6),
               _singleFieldWithIcon(
                 _FieldData(
-                  icon: Icons.phone_rounded,
+                  icon: FieldIcons.phone,
                   value: _formatPhoneNumber(w?.phoneNumber, loc),
                 ),
                 textTheme,

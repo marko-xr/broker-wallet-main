@@ -20,6 +20,7 @@ import '../../../../data/models/ScreensModel/owners_model.dart';
 import '../../../../data/models/ScreensModel/offices_model.dart';
 import '../../../../data/models/ScreensModel/brokers_model.dart';
 import '../../../../data/models/ScreensModel/watchmen_model.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class _FieldData {
   final IconData icon;
@@ -354,13 +355,13 @@ class _FavoriteCardState extends State<FavoriteCard>
     return [
       _buildFieldRowWithIcons([
         _FieldData(
-          icon: Icons.home_rounded,
+          icon: FieldIcons.propertyCategory(propertyType),
           value: propertyType != null && propertyType.isNotEmpty
               ? _getLocalizedPropertyType(propertyType, localization)
               : localization.translate('na'),
         ),
         _FieldData(
-          icon: Icons.business_rounded,
+          icon: FieldIcons.specificType,
           value: request.specificPropertyType.isNotEmpty
               ? _getLocalizedSpecificType(
                   request.specificPropertyType, localization)
@@ -370,7 +371,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.location_city_rounded,
+            icon: FieldIcons.city,
             value: request.selectedCity.isNotEmpty
                 ? _getLocalizedCityName(request.selectedCity, localization)
                 : localization.translate('na'),
@@ -380,7 +381,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.square_foot,
+            icon: FieldIcons.area,
             value: _formatSquareFeet(
                 request.squareFootage, numberFormat, localization),
           ),
@@ -400,13 +401,13 @@ class _FavoriteCardState extends State<FavoriteCard>
     return [
       _buildFieldRowWithIcons([
         _FieldData(
-          icon: Icons.home_rounded,
+          icon: FieldIcons.propertyCategory(propertyType),
           value: propertyType != null && propertyType.isNotEmpty
               ? _getLocalizedPropertyType(propertyType, localization)
               : localization.translate('na'),
         ),
         _FieldData(
-          icon: Icons.business_rounded,
+          icon: FieldIcons.specificType,
           value: offer != null && offer.specificPropertyType.isNotEmpty
               ? _getLocalizedSpecificType(
                   offer.specificPropertyType, localization)
@@ -416,7 +417,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.location_city_rounded,
+            icon: FieldIcons.city,
             value: offer != null && offer.selectedCity.isNotEmpty
                 ? _getLocalizedCityName(offer.selectedCity, localization)
                 : localization.translate('na'),
@@ -426,7 +427,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.square_foot,
+            icon: FieldIcons.area,
             value: _formatSquareFeet(
                 offer?.squareFootage, numberFormat, localization),
           ),
@@ -441,7 +442,7 @@ class _FavoriteCardState extends State<FavoriteCard>
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.person_rounded,
+            icon: FieldIcons.name,
             value: owner?.name ?? localization.translate('na'),
           ),
           textTheme,
@@ -449,18 +450,18 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildFieldRowWithIcons([
         _FieldData(
-          icon: Icons.business_rounded,
+          icon: FieldIcons.specificType,
           value: owner?.typeOfProperties ?? localization.translate('na'),
         ),
         _FieldData(
-          icon: Icons.location_on_rounded,
+          icon: FieldIcons.location,
           value: owner?.propertyLocation ?? localization.translate('na'),
         ),
       ], textTheme, colors),
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.phone_rounded,
+            icon: FieldIcons.phone,
             value: _formatPhoneNumber(owner?.phoneNumber),
           ),
           textTheme,
@@ -474,7 +475,7 @@ class _FavoriteCardState extends State<FavoriteCard>
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.business_rounded,
+            icon: FieldIcons.office,
             value: office?.officeName ?? localization.translate('na'),
           ),
           textTheme,
@@ -482,7 +483,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.location_on_rounded,
+            icon: FieldIcons.location,
             value: office?.officeLocation ?? localization.translate('na'),
           ),
           textTheme,
@@ -490,7 +491,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.phone_rounded,
+            icon: FieldIcons.phone,
             value: _formatPhoneNumber(office?.phoneNumber),
           ),
           textTheme,
@@ -507,7 +508,7 @@ class _FavoriteCardState extends State<FavoriteCard>
     List<Widget> fields = [
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.person_rounded,
+            icon: FieldIcons.name,
             value: broker?.name ?? localization.translate('na'),
           ),
           textTheme,
@@ -515,7 +516,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.phone_rounded,
+            icon: FieldIcons.phone,
             value: _formatPhoneNumber(broker?.phoneNumber),
           ),
           textTheme,
@@ -527,7 +528,7 @@ class _FavoriteCardState extends State<FavoriteCard>
         const SizedBox(height: 6),
         _buildSingleFieldWithIcon(
             _FieldData(
-              icon: Icons.note_alt_rounded,
+              icon: FieldIcons.notes,
               value: noteText,
             ),
             textTheme,
@@ -545,7 +546,7 @@ class _FavoriteCardState extends State<FavoriteCard>
     return [
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.person_rounded,
+            icon: FieldIcons.name,
             value: watchman?.name ?? localization.translate('na'),
           ),
           textTheme,
@@ -553,7 +554,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
         _FieldData(
-          icon: Icons.business_rounded,
+          icon: FieldIcons.building,
           value: watchman?.buildingName ?? localization.translate('na'),
         ),
         textTheme,
@@ -562,7 +563,7 @@ class _FavoriteCardState extends State<FavoriteCard>
       const SizedBox(height: 6),
       _buildSingleFieldWithIcon(
           _FieldData(
-            icon: Icons.phone_rounded,
+            icon: FieldIcons.phone,
             value: _formatPhoneNumber(watchman?.phoneNumber),
           ),
           textTheme,

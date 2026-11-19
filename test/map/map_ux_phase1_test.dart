@@ -502,7 +502,10 @@ void main() {
       for (final key in MapResultCount.keys) {
         expect((en[key] as String?)?.trim(), isNotEmpty, reason: 'en $key');
         expect((ar[key] as String?)?.trim(), isNotEmpty, reason: 'ar $key');
-        expect((en[key] as String).contains('{count}'), isTrue, reason: key);
+        // English says "No results", not "0 results".
+        expect(
+            (en[key] as String).contains('{count}'), key != MapResultCount.none,
+            reason: key);
       }
       for (final key in [MapResultCount.few, MapResultCount.other]) {
         expect((ar[key] as String).contains('{count}'), isTrue, reason: key);

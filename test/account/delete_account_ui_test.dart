@@ -495,6 +495,15 @@ void main() {
     expect(find.text('HOME_SCREEN'), findsNothing);
     expect(homeBuilds, homeBuildsBefore);
     expect(find.text(_en('deleteAccountConfirmTitle')), findsNothing);
+    // The sheet closes when the session ends, while the deleted account's
+    // local data is still being cleared. That clean-up does real file work,
+    // which advances only outside the test's fake clock, and the message is
+    // shown once it has finished.
+    for (var i = 0; i < 40 && toasts.isEmpty; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+    }
     expect(toasts, [_en('deleteAccountDeletedToast')]);
 
     router.dispose();

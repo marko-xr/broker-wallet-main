@@ -774,7 +774,7 @@ void main() {
 
   group('Deletion job migration and hosted validation script', () {
     const migrationPath =
-        'supabase/migrations/20260913000100_account_deletion_jobs.sql';
+        'supabase/migrations/20260913175221_account_deletion_jobs.sql';
     const scriptPath =
         'supabase/validation/account_deletion_cascade_validation.sql';
     late String migration;

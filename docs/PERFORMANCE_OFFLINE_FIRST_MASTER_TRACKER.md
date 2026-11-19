@@ -5689,6 +5689,134 @@ push it. **NEXT** — Run and record the integrated Samsung acceptance and
 visual matrix. **STOP** — No automated staging, commit, push or OFF-2b-4a
 work. OFF-2b-4a requires separate approval.
 
+## 7BH) DETAILS-UX-1 — Add/Details UX review items for the six sections (2026-11-19)
+
+`CODE_PROVEN / PENDING_REAL_DEVICE`, uncommitted, on
+`perf/phase-1-startup-baseline` from clean `27d7dbf`. Owner-approved list
+(owner chose: keep the disabled contact bar, open WhatsApp empty, clarify the
+Owner hints; keep the Request header image as is).
+
+- Details (all six): Edit/Delete moved from the section card to a `⋮` menu at
+  the end of the header (Favorite · Share · ⋮), shared `DetailsActionsMenu`;
+  section titles no longer repeat the screen title (`basicInformation`,
+  Brokers `contactInformation`); "Date Added" row and a "Last Updated" row
+  only when changed on a later day (`DetailsDates`); WhatsApp opens the chat
+  with no pre-filled text; Offer/Request status badge shows a ⌄.
+- Add/Edit (all six): titles `add*` / `edit*` (Owner edit title fixed);
+  Save/Cancel stay above the open keyboard, the scroll view ends above them.
+  Offer/Request forms reordered: type → rooms/baths → area → price → city →
+  location/map/media → phone → notes. Rooms offer `7+` (stored 7, shown "7+"
+  in Details and share text). Owner free-text hints say a chip fills them.
+- Not done, needs an owner data decision: **Studio** (rooms `0` already means
+  "not set": DB default 0, share hides 0), BRN/ORN fields.
+- Backlog (other screens, not touched): list-card and Map WhatsApp still
+  pre-fill `whatsAppBusinessMessage`; notification match screen shows
+  "7 rooms" for 7+; English `editWatchman` reads "Edit whatchman".
+
+Local verification: owner's device check PASS (2026-11-19). Owner's scoped
+analyze: no new issues (24 pre-existing infos in untouched files). Owner's
+5-file test run: 23 FAIL, all fixed in source after it — header now has 4
+controls; a stale Call/WhatsApp order assertion (left from commit c7297a9);
+landscape + 2× text + keyboard left no room, so Save now rests on the
+keyboard only when ≥120 px of form remains (`fitsAboveKeyboard`). Re-run
+pending by the owner.
+
+Consolidated device checklist additions: header ⋮ menu reach/RTL order on
+all six Details; date rows in ar/en; WhatsApp opens an empty chat; Save above
+the keyboard while typing the last field (notes) in all six forms; 7+ chip
+and its Details/share text in Arabic.
+
+### 7BH-2) L10N-MSG-1 — record messages follow the app language (2026-11-19)
+
+Owner report: messages after save/update/delete showed English while the app
+was Arabic. Cause: hard-coded English strings. Fixed for the six record
+sections, with the English wording unchanged (new ARB keys keep the old
+English text; Arabic added):
+- `CoreEntityErrorMessage.save` localizes every branch when given
+  `translate`; all six add view models now pass it. `CoreEntityValidationException`
+  carries a `messageKey` + `params`.
+- Add view models: save/update success toasts, "required fields", the
+  Discard dialogs, Owner media pick toasts; load failures became an
+  `errorKey` the Broker/Office/Watchman screens translate.
+- List view models: delete success/failure toasts; Offer/Request status
+  toasts (the list passes `translate`; status name via `translate(status.name)`);
+  Requests list load error is an `errorKey`.
+- WhatsApp failure toast on the Broker/Office/Owner/Watchman lists; media
+  preview grid, gallery and full-screen viewer error texts; camera
+  no-microphone warning; the Request-not-found route screen.
+- Tests: `test/details/localized_messages_test.dart` (ARB coverage, Arabic
+  save errors, source guard against the old English literals);
+  `entity_list_view_models_test` now mounts English translations.
+
+Not in this pass (still English, separate areas): sign-up/login/email
+verification toasts, Edit Profile email/OTP errors, Quotation logo toasts,
+Favorites/Match-details load errors, map picker, PDF viewer, permission
+dialogs (`permission_service.dart`, `media_permission_wrapper.dart`).
+
+Verification (agent-run, owner authorized this run): analyze lib+test — no
+new issues (7 pre-existing errors in untouched `test/scanner/scanner_cloud_test.dart`);
+affected-area tests 789/789 PASS. Full suite: 7952 pass, 65 fail. Of the 65:
+2 were ours (Plan source guard matched text the reformat had split across
+lines; now whitespace-tolerant, 30/30 PASS); 1 timing flake
+(`image_pdf_viewmodel_test`, passes alone twice); the other 62 fail
+identically on a `git archive HEAD` copy, so they predate this work
+(list-card `Icons.phone` finders since 91f4a17, `details_map_address`,
+share guards, migration/hosted-script tests, scanner `Harness` ambiguity,
+toolkit, map opening, combine-PDF guards) — owner follow-up, not touched.
+
+**NOW** — Owner reviews the unstaged diff and commits when satisfied.
+**NEXT** — Device pass of the checklist lines above in the consolidated
+session. **STOP** — No staging, commit or push by the agent.
+
+### 7BH-3) TEST-DEBT-1 — the 62 older failures fixed (2026-11-19)
+
+Owner: "Yes, fix them". Each group was traced to its cause; three were real
+app defects, the rest were tests left behind by later approved changes.
+
+**App fixes (behaviour):**
+- Delete Account: the sign-out at the end of a deletion moves the app to the
+  logged-out entry, which closed the sheet before the flow recorded its
+  outcome, so the "account deleted" / "sign in again" toast never showed.
+  `DeleteAccountViewModel.whenSettled()` + `await viewModel.whenSettled()` in
+  `showDeleteAccountFlow` before choosing the message.
+- `AfterRouteTransition` (map opening): Flutter builds a pushed page off
+  screen for one frame (Hero measuring) and its animation reads as complete
+  then, so the map was built during the slide-in. It now skips the off-stage
+  frame and looks again after it (maxWait still bounds the wait).
+
+**Tests brought in line with approved changes:**
+- Renamed migrations (0d7fb17): phone-security and deletion-job path
+  constants; validation scripts untouched.
+- Email change: the fake token now carries a `session_id` and the backend
+  confirms `is_current_app_session` (a token without one is treated as
+  replaced and signed out mid-test).
+- Session-replaced dialog: Home is left in the same frame; the check waits
+  for the ordinary page transition.
+- Delete Account UI: lets the cleaner's real file work finish (`runAsync`).
+- Combine guards: the added-keys block stops at the last `combine*` key; the
+  one progress bar is allowed only as the real checked/total count.
+- Map result count: English "No results" carries no number.
+- Details map (2c70eea): no address line when address and location are both
+  empty; no Offer Maps button without a location; Offers use the shared
+  `details-actions` menu.
+- List cards (91f4a17): `Icons.phone_rounded`.
+- Share guards: the Share icon lives in the shared Details header (Offer:
+  its own header helper); a new guard checks the shared header.
+- r2 media read test: dropped the incomplete entry (Option C refuses the
+  whole list; covered by `offer_media_error_classification_test`).
+- Toolkit Worker guard: Toolkit is on in staging and production
+  (2026-10-21), sweep off.
+- Toolkit delete test: starts the sync as the tool wiring does.
+- Scanner cloud test: `hide Harness` on the Toolkit fakes import, PDF result
+  shape (`pdfUri`), and the fake server now keeps `pageCount` as the Worker
+  does.
+
+**Verification:** `flutter analyze` — 0 errors, 0 warnings (88 info hints,
+none from this work; the 7 scanner errors are gone). Full suite: 8,035 pass,
+5 fail under parallel load in `favorites_metadata_pagination`,
+`list_refresh` and `offer_media_legacy_migration` (not touched); those three
+files pass alone twice (102/102). Not device-verified.
+
 ---
 
 ## 8) مراجع الاستمرار

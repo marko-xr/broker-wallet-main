@@ -18,7 +18,8 @@ import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_sy
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_document_transport.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
 
-import '../toolkit_documents/toolkit_fakes.dart';
+// Its own Harness is the Toolkit library's; this file uses the Scanner one.
+import '../toolkit_documents/toolkit_fakes.dart' hide Harness;
 import 'scanner_harness.dart';
 
 void main() {
@@ -51,7 +52,11 @@ void main() {
   Future<ScannerDocument> saveScan(
       Harness h, ScannerViewModel vm, String name) async {
     final path = await h.pdf(2, name);
-    h.engine.handler = (_) => <String>[path];
+    // What the scanner returns for a PDF scan (a list is image output).
+    h.engine.handler = (_) => <String, Object?>{
+          'pdfUri': Uri.file(path).toString(),
+          'pageCount': 2,
+        };
     final start = await scanOnce(vm);
     expect(start.draft, isNotNull);
     final saved = await vm.saveDraft(name);

@@ -17,9 +17,9 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 const _uid = '550e8400-e29b-41d4-a716-446655440000';
 
 const _revokeMigration =
-    'supabase/migrations/20260911000100_revoke_client_profile_phone_writes.sql';
+    'supabase/migrations/20260911181050_revoke_client_profile_phone_writes.sql';
 const _guardMigration =
-    'supabase/migrations/20260911000200_guard_pending_phone_changes.sql';
+    'supabase/migrations/20260911181112_guard_pending_phone_changes.sql';
 const _pgTapSuite = 'supabase/tests/phone_security_test.sql';
 const _validationScript = 'supabase/validation/phone_security_validation.sql';
 

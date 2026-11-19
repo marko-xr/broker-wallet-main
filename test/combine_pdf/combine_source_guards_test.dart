@@ -25,12 +25,17 @@ List<String> serviceFiles() => <String>[
 List<String> combineSources() =>
     <String>[...serviceFiles(), viewModelPath, viewPath, pagesPath];
 
-/// The messages this checkpoint added.
+/// The messages this checkpoint added: the `combine` block that starts at
+/// `combineErrSignedOut`. Keys added later by other features follow it in
+/// the file and are not part of it.
 List<String> addedKeys() {
   final en = arb('en').keys.toList();
   final start = en.indexOf('combineErrSignedOut');
   expect(start, greaterThan(0));
-  return en.sublist(start);
+  return en
+      .sublist(start)
+      .takeWhile((key) => key.startsWith('combine'))
+      .toList();
 }
 
 Set<String> placeholders(String text) =>
@@ -128,8 +133,12 @@ void main() {
         expect(text.contains('_processingProgress'), isFalse, reason: path);
         expect(text.contains('* 100).toInt()'), isFalse, reason: path);
       }
+      // The one progress bar counts real work: files checked so far out of
+      // the files chosen. No other progress value exists.
       final view = read(viewPath);
-      expect(view.contains('LinearProgressIndicator'), isFalse);
+      expect('LinearProgressIndicator('.allMatches(view), hasLength(1));
+      expect(view, contains('final done = _vm.checkedCount.clamp(0, total);'));
+      expect(view, contains('value: total == 0 ? null : done / total,'));
       expect(view.contains('value: _'), isFalse);
     });
 

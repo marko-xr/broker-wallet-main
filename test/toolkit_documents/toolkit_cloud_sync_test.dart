@@ -522,6 +522,9 @@ void main() {
     test('a delete that cannot reach the server hides the document and waits',
         () async {
       final rig = newRig();
+      // As the tool's wiring does: a confirmed delete reaches the phone through
+      // the deletions this starts listening to.
+      rig.sync.start();
       await rig.saveOnPhone(doc1);
       await rig.run();
       rig.transport.failNext('remove', ToolkitFailure.unavailable);

@@ -515,7 +515,8 @@ void main() {
               'durationMs': 42000,
               'url': 'https://r2.example.test/a.mp4?X-Amz-Signature=x',
             },
-            {'mediaObjectId': 'missing-url'},
+            // An incomplete entry would refuse the whole list (Option C,
+            // D-FOMF-4); offer_media_error_classification_test covers that.
           ],
         }),
       );

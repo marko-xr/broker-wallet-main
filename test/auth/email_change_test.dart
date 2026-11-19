@@ -22,12 +22,21 @@ const _otherUid = '550e8400-e29b-41d4-a716-4466554400ff';
 const _oldEmail = 'old@example.test';
 const _newEmail = 'new@example.test';
 
-String _fakeJwt(String uid) {
+/// An application session id, for a test whose session must outlive the
+/// app-session check: a token without one is treated as replaced and signed
+/// out.
+const _appSessionId = '6f1c2d3e-4a5b-4c6d-8e7f-901234567890';
+
+String _fakeJwt(String uid, {String? sessionId}) {
   String part(Map<String, dynamic> value) =>
       base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
   final exp = DateTime.now().add(const Duration(hours: 1));
   return '${part({'alg': 'HS256', 'typ': 'JWT'})}.'
-      '${part({'sub': uid, 'exp': exp.millisecondsSinceEpoch ~/ 1000})}.sig';
+      '${part({
+        'sub': uid,
+        'exp': exp.millisecondsSinceEpoch ~/ 1000,
+        if (sessionId != null) 'session_id': sessionId,
+      })}.sig';
 }
 
 Map<String, dynamic> _userJson({
@@ -49,8 +58,12 @@ Map<String, dynamic> _userJson({
       'created_at': '2026-09-11T10:00:00Z',
     };
 
-Map<String, dynamic> _sessionJson({Map<String, dynamic>? user}) => {
-      'access_token': _fakeJwt(_uid),
+Map<String, dynamic> _sessionJson({
+  Map<String, dynamic>? user,
+  String? sessionId,
+}) =>
+    {
+      'access_token': _fakeJwt(_uid, sessionId: sessionId),
       'token_type': 'bearer',
       'expires_in': 3600,
       'expires_at':
@@ -92,8 +105,8 @@ class _Backend {
     ),
   );
 
-  Future<void> signIn() => client.auth.setInitialSession(
-        jsonEncode(_sessionJson()),
+  Future<void> signIn({String? sessionId}) => client.auth.setInitialSession(
+        jsonEncode(_sessionJson(sessionId: sessionId)),
       );
 }
 
@@ -317,9 +330,14 @@ void main() {
         if (request.url.path.endsWith('/auth/v1/user')) {
           return _json(_userJson(email: _newEmail), 200);
         }
+        if (request.url.path.endsWith('/rpc/is_current_app_session')) {
+          return _json(true, 200);
+        }
         return _json({}, 404);
       });
-      await backend.signIn();
+      // The refresh awaits the network, so this session must stay current
+      // while it does: a real app session that the server confirms.
+      await backend.signIn(sessionId: _appSessionId);
       final repository = _repository(backend);
       final confirmed = repository.authStateChanges.firstWhere(
         (user) => user?.email == _newEmail,

@@ -46,9 +46,24 @@ class _AfterRouteTransitionState extends State<AfterRouteTransition> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_arrived) return;
+    _look();
+  }
 
-    final animation = ModalRoute.of(context)?.animation;
+  void _look() {
+    if (_arrived || !mounted) return;
+
+    final route = ModalRoute.of(context);
+    // A pushed page is first built off screen for one frame, so its Heroes can
+    // be measured, and during that frame its animation reads as complete.
+    // That is not the page being in place: look again after that frame, when
+    // the page is on screen and its animation is the real one.
+    if (route != null && route.offstage) {
+      _giveUp ??= Timer(widget.maxWait, _arrive);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _look());
+      return;
+    }
+
+    final animation = route?.animation;
     // The route's other changes (a page pushed over it) call this again.
     if (_looked && identical(animation, _watching)) return;
     _looked = true;

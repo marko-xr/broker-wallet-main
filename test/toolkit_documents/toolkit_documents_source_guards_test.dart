@@ -149,11 +149,13 @@ void main() {
           read(module), contains("env?.TOOLKIT_DOCUMENTS_ENABLED === 'true'"));
       for (final config in ['wrangler.toml']) {
         final text = read('cloudflare/workers/r2-profile-upload/$config');
-        expect('TOOLKIT_DOCUMENTS_ENABLED = "false"'.allMatches(text).length, 2,
-            reason: 'production and staging both ship off');
+        // Switched on in staging and then, on 2026-10-21 with the owner's
+        // approval, in production; the sweep still ships off in both.
+        expect('TOOLKIT_DOCUMENTS_ENABLED = "true"'.allMatches(text).length, 2,
+            reason: 'production and staging are both on');
         expect(
             'TOOLKIT_DOCUMENT_SWEEP_MODE = "off"'.allMatches(text).length, 2);
-        expect(text, isNot(contains('TOOLKIT_DOCUMENTS_ENABLED = "true"')));
+        expect(text, isNot(contains('TOOLKIT_DOCUMENTS_ENABLED = "false"')));
       }
     });
 

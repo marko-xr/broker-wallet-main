@@ -192,20 +192,48 @@ void main() {
           '$name has one Share icon, the same icon and size as the others, '
           'with a label for a screen reader', () {
         final source = read(entry.key);
-        expect(RegExp('Icons\\.share_outlined').allMatches(source).length, 1);
-        expect(
-          source,
-          contains(
-              "icon: Icon(Icons.share_outlined, color: colors.onSurface, size: 18),\n"
-              "            tooltip: AppLocalizations.of(context).translate('share'),"),
-        );
-        // The same 36 x 36 box as the Back and Delete icons beside it.
-        final box = RegExp(
-                r'Container\(\s*width: 36,\s*height: 36,\s*margin: [^\n]*\n\s*decoration: _?ShareActionDecoration\(colors\),')
-            .hasMatch(source);
-        expect(box, isTrue);
+        if (name == 'offers_view_details.dart') {
+          // The Offer screen builds its own header, with the same control as
+          // the Favorite icon beside it.
+          expect(RegExp('Icons\\.share_outlined').allMatches(source).length, 1);
+          expect(
+              source,
+              contains("tooltip: loc.translate('share'),\n"
+                  '            icon: Icons.share_outlined,\n'
+                  '            onPressed: _showShareDialog),'));
+          expect(
+              source,
+              contains('    return DetailsHeaderControl(\n'
+                  '      child: IconButton(\n'
+                  '        tooltip: tooltip,\n'
+                  '        icon: Icon(icon, size: 21 * scale,'));
+        } else {
+          // The others hand their share to the shared Details header, which
+          // draws the one icon.
+          expect(source.contains('Icons.share_outlined'), isFalse);
+          expect(RegExp(r'onShare: _share\w+,').allMatches(source).length, 1);
+        }
       });
     }
+
+    test(
+        'the shared Details header has one Share icon, the same control and '
+        'size as Back, with a label for a screen reader', () {
+      final header =
+          read('lib/src/views/Screens/ViewDetails/widgets/details_page.dart');
+      expect(RegExp('Icons\\.share_outlined').allMatches(header).length, 1);
+      expect(
+          header,
+          contains('DetailsHeaderControl(\n'
+              '                      child: IconButton(\n'
+              "                        tooltip: loc.translate('share'),\n"
+              '                        icon: Icon(Icons.share_outlined, '
+              'size: 21 * scale),\n'
+              '                        padding: EdgeInsets.zero,\n'
+              '                        onPressed: onShare,'));
+      // Back, beside it, is the same size.
+      expect(header, contains('                          size: 21 * scale,\n'));
+    });
 
     test(
         'the Offer and Owner screens hand over the media they hold, and a '

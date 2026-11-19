@@ -41,6 +41,7 @@ Future<void> showDeleteAccountFlow(
         email: authViewModel.currentUser?.email ?? '',
       ),
     );
+    await viewModel.whenSettled();
     if (viewModel.isCompleted) {
       Fluttertoast.showToast(msg: deletedMessage);
     } else if (viewModel.endedUnconfirmed) {

@@ -127,7 +127,30 @@ class DeleteAccountViewModel extends ChangeNotifier {
   /// Deletes the account. Returns true only when the account is gone — as
   /// reported by the server for this request, or by Supabase Auth when this
   /// request's outcome was unknown — and local state for it has been ended.
-  Future<bool> submit({required String password}) async {
+  Future<bool> submit({required String password}) {
+    if (isDeleting) {
+      // A second tap while one request is running is ignored, never sent.
+      return Future.value(false);
+    }
+    return _submission = _submit(password: password);
+  }
+
+  Future<bool>? _submission;
+
+  /// Completes once the last [submit] has ended, whatever its outcome.
+  ///
+  /// Ending the session at the end of a deletion moves the app to the
+  /// logged-out entry, which can close the sheet before the flow has recorded
+  /// how it ended. Callers that report the outcome wait for this first.
+  Future<void> whenSettled() async {
+    try {
+      await _submission;
+    } catch (_) {
+      // The outcome is read from [isCompleted] and [endedUnconfirmed].
+    }
+  }
+
+  Future<bool> _submit({required String password}) async {
     if (_step == DeleteAccountStep.deleting) {
       // A second tap while one request is running is ignored, never sent.
       return false;

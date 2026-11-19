@@ -198,7 +198,9 @@ void _expectMap(WidgetTester tester, _Kind kind, double? lat, double? lng,
   if (!available) {
     expect(find.byType(GoogleMap), findsNothing);
     if (kind == _Kind.offer) {
-      expect(_mapButton(tester, kind).onPressed, isNull);
+      // Without a location the Offer card has no Maps button at all.
+      expect(find.byKey(const ValueKey('offer-details-view-larger')),
+          findsNothing);
     } else {
       expect(tester.widget<DetailsMap>(_mapCard(kind)).onOpen, isNull);
     }
@@ -344,18 +346,26 @@ void main() {
                 kind == _Kind.watchman ? input.location : input.address;
             final secondary =
                 kind == _Kind.watchman ? input.address : input.location;
+            // With neither, there is no address line: the card's own "location
+            // not available" message already says so.
             final expected = primary.trim().isNotEmpty
                 ? primary
                 : secondary.trim().isNotEmpty
                     ? secondary
-                    : loc.translate(kind == _Kind.watchman
-                        ? 'specificLocationNotProvided'
-                        : 'noSpecificAddressProvided');
+                    : null;
             expect(card.address, expected);
-            expect(
-                find.descendant(
-                    of: _mapCard(kind), matching: find.text(expected)),
-                findsOneWidget);
+            if (expected != null) {
+              expect(
+                  find.descendant(
+                      of: _mapCard(kind), matching: find.text(expected)),
+                  findsOneWidget);
+            }
+            for (final key in [
+              'specificLocationNotProvided',
+              'noSpecificAddressProvided'
+            ]) {
+              expect(find.text(loc.translate(key)), findsNothing);
+            }
             expect(Directionality.of(tester.element(_mapCard(kind))),
                 language == 'ar' ? TextDirection.rtl : TextDirection.ltr);
             _expectMap(tester, kind, null, null, available: false);
@@ -415,9 +425,8 @@ void main() {
           edited = _record(kind, point.$1, point.$2,
               address: 'Edited address عنوان معدل',
               location: 'Edited label مكان معدل');
-          final menu = kind == _Kind.offer
-              ? find.byType(PopupMenuButton<String>)
-              : find.byKey(const ValueKey('details-actions'));
+          // Every kind, Offers included, uses the shared Details menu.
+          final menu = find.byKey(const ValueKey('details-actions'));
           await tester.scrollUntilVisible(menu, -160,
               scrollable: find.byType(Scrollable).first);
           await tester.ensureVisible(menu);

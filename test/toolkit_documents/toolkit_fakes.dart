@@ -42,10 +42,13 @@ class FakeServerDoc {
     required this.size,
     required this.sha,
     this.contentType = ToolkitContentType.pdf,
+    this.pageCount,
   });
 
   final ToolkitDocumentType type;
   final ToolkitContentType contentType;
+  // Kept and listed back, as the Worker does (page_count).
+  final int? pageCount;
   String title;
   final int size;
   final String sha;
@@ -157,7 +160,8 @@ class FakeToolkitTransport implements ToolkitDocumentTransport {
           contentType: contentType,
           title: title,
           size: contentLength,
-          sha: contentSha256);
+          sha: contentSha256,
+          pageCount: pageCount);
     }
     return ToolkitUploadAuthorization.pending(
       documentId: documentId,
@@ -255,6 +259,7 @@ class FakeToolkitTransport implements ToolkitDocumentTransport {
       sourceCreatedAt: doc.created,
       createdAt: doc.created,
       version: doc.version,
+      pageCount: doc.pageCount,
     );
   }
 

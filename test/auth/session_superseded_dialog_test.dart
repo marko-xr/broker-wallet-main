@@ -214,6 +214,10 @@ void main() {
     expect(auth.status, AuthStatus.unknown);
     expect(auth.hasSessionSupersededNotice, isFalse);
     await tester.pump();
+    // Home is left in the same frame; its page then slides out with the
+    // ordinary route transition.
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/');
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('HOME'), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
 

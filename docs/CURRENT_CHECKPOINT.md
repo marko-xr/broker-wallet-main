@@ -16723,3 +16723,19 @@ NEXT — Run and record integrated Samsung acceptance for C2/C3/C4/C7 and
 the six-screen visual pass. OFF-2b-4a requires separate owner approval.
 STOP — Index remains clean. All three stashes are unchanged. Owner owns
 staging, commit and push.
+
+## Offers and Requests archive count (2026-11-19)
+
+The archive button on each active list shows the localized total of archived
+items when the count is positive. The count follows existing list updates and
+includes all item types. The button and list filters keep their existing behavior.
+The badge sits at the icon's top right in both languages, with a slightly
+smaller bubble.
+
+Status — Implemented. Tests, analysis and app execution were skipped at the
+owner's request. Real-device verification is pending.
+
+NOW — When device verification is authorized, archive one Offer and one Request
+and confirm that each active list's badge increments.
+NEXT — Restore the archived items and confirm the badges decrement and disappear
+when the counts reach zero.

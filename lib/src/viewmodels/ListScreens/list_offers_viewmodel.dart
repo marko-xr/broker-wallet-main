@@ -18,6 +18,8 @@ class OffersListViewModel extends ChangeNotifier
 
   // Offers list
   List<OfferModel> get offers => entities;
+  int get archivedCount =>
+      offers.where((offer) => offer.status.isInactive).length;
 
   // Filter state for offer type
   String? _selectedFilter; // null = all, 'rent' = rent only, 'sell' = sell only

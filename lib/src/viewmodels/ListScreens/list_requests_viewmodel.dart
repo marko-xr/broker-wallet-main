@@ -15,6 +15,8 @@ class RequestedListViewModel extends ChangeNotifier
 
   // Requests list
   List<RequestModel> get requests => entities;
+  int get archivedCount =>
+      requests.where((request) => request.status.isInactive).length;
 
   // Filter state for request type
   String? _selectedFilter; // null = all, 'rent' = rent only, 'sell' = sell only

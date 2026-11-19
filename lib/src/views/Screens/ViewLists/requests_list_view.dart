@@ -33,6 +33,8 @@ class _RequestedListViewState extends State<RequestedListView> {
       create: (_) => widget.viewModel ?? RequestedListViewModel(),
       child: Consumer<RequestedListViewModel>(
         builder: (context, vm, _) {
+          final archivedCount = vm.archivedCount;
+
           return Scaffold(
             backgroundColor: colors.surface,
             resizeToAvoidBottomInset: false,
@@ -48,12 +50,27 @@ class _RequestedListViewState extends State<RequestedListView> {
               backgroundColor: colors.surface,
               actions: [
                 IconButton(
-                  icon: Icon(
-                    vm.showInactiveOnly
-                        ? Icons.archive_outlined
-                        : Icons.archive,
-                    color:
-                        vm.showInactiveOnly ? colors.primary : colors.onSurface,
+                  icon: Badge(
+                    isLabelVisible: !vm.showInactiveOnly && archivedCount > 0,
+                    alignment: Alignment.topRight,
+                    offset: const Offset(4, -4),
+                    largeSize: 14,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    textStyle: texts.labelSmall?.apply(fontSizeFactor: 0.9),
+                    backgroundColor: colors.primary,
+                    textColor: colors.onPrimary,
+                    label: Text(
+                      NumberFormat.decimalPattern(loc.locale.languageCode)
+                          .format(archivedCount),
+                    ),
+                    child: Icon(
+                      vm.showInactiveOnly
+                          ? Icons.archive_outlined
+                          : Icons.archive,
+                      color: vm.showInactiveOnly
+                          ? colors.primary
+                          : colors.onSurface,
+                    ),
                   ),
                   onPressed: vm.toggleStatusFilter,
                   tooltip: loc.translate(vm.showInactiveOnly

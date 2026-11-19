@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
 import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
@@ -409,163 +410,14 @@ class _QuotationListViewState extends State<QuotationListView> {
     AppLocalizations loc,
     ColorScheme colors,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          scrollable: true,
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: const Color(0xFFC81E1E),
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                  child: Text(
-                loc.translate('deleteQuotation'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              )),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                loc.translate('deleteQuotationConfirm'),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.8),
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE6E6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFFFCCCC),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.description,
-                      size: 18,
-                      color: const Color(0xFFC81E1E),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        quotation.propertyTitle.isNotEmpty
-                            ? quotation.propertyTitle
-                            : loc.translate('unknownProperty'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFC81E1E),
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            Row(
-              children: [
-                // Cancel Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      foregroundColor: colors.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.outline.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: colors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                            child: Text(
-                          loc.translate('cancel'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        )),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                // Delete Button
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFC81E1E),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                      shadowColor:
-                          const Color(0xFFC81E1E).withValues(alpha: 0.4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.delete_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                            child: Text(
-                          loc.translate('delete'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        )),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+    final confirmed = await showDeleteConfirmationDialog(
+      context,
+      title: loc.translate('deleteQuotation'),
+      message: loc.translate('deleteQuotationConfirmationMessage'),
+      itemIcon: Icons.description_rounded,
+      itemLabel: quotation.propertyTitle.isNotEmpty
+          ? quotation.propertyTitle
+          : loc.translate('unknownProperty'),
     );
 
     if (confirmed == true) {

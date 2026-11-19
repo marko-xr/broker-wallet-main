@@ -3421,5 +3421,8 @@
   "mediaImageFailedToLoad": "Image failed to load",
   "mediaUnsupportedType": "Unsupported Media Type",
   "mediaOpenExternally": "Open Externally",
-  "mediaVideoWithoutAudio": "Video will be recorded without audio"
+  "mediaVideoWithoutAudio": "Video will be recorded without audio",
+  "deleteOfferConfirmationMessage": "Are you sure you want to delete this offer? This action cannot be undone.",
+  "quotationAndPdfSavedSuccessfully": "Quotation and PDF saved successfully!",
+  "deleteQuotationConfirmationMessage": "Are you sure you want to delete this quotation? This action cannot be undone."
 }

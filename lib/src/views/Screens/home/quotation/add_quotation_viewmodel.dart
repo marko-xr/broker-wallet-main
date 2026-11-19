@@ -1085,7 +1085,7 @@ class AddQuotationViewModel extends ChangeNotifier {
       case QuotationSaveKind.saved:
         _showToast(
           key == null
-              ? 'Quotation and PDF saved successfully!'
+              ? loc.translate('quotationAndPdfSavedSuccessfully')
               : loc.translate(key),
           Colors.green,
         );

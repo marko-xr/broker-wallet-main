@@ -5817,6 +5817,46 @@ none from this work; the 7 scanner errors are gone). Full suite: 8,035 pass,
 `list_refresh` and `offer_media_legacy_migration` (not touched); those three
 files pass alone twice (102/102). Not device-verified.
 
+### 7BH-4) CRUD-AUDIT-1 — add, edit and delete in the six sections (2026-11-19)
+
+Owner: check add/edit/delete in the six sections, fix only what is broken,
+one shared delete confirmation everywhere.
+
+**Audit:** the delete chain (screen → list view model `deleteEntity` →
+service `deleteThenRemember` → Supabase `_softDelete`) is the same in all
+six; the six details `_deleteX` and the six edit routes match too.
+
+**Broken and fixed:**
+- Offers list delete: its dialog put a `LayoutBuilder` in the actions.
+  `AlertDialog` sizes itself with `IntrinsicWidth`, which a LayoutBuilder
+  cannot answer (debug assertion), so the dialog failed to lay out and the
+  delete could not be confirmed.
+- Office and Watchman edit: after saving, the app went to Home instead of
+  returning the updated record to the details screen (the other four pop
+  with it). Now `context.pop(record)` with the loaded record's id, owner and
+  creation date. Their Add also went Home when adding was not allowed
+  (quota); it now stays on the form, as the other four do.
+
+**Unified dialog:** `lib/src/views/Widgets/delete_confirmation_dialog.dart`
+(`showDeleteConfirmationDialog` → bool) replaces the 12 copies (6 lists, 6
+details). Text per section = the details message ("… cannot be undone"); new
+key `deleteOfferConfirmationMessage` (en/ar). The item line uses translated
+fallbacks instead of hard-coded "Unknown Owner/Broker/Office/Watchmen";
+icons are the details ones. Buttons gained 16 px side padding.
+
+**Quotations (same audit):** delete (soft delete, "already deleted" is a
+success, list refreshed by the mutation signal), edit (opened from the card,
+pops back to the list) and add (goes Home only when saved) all work. Changed:
+the list's delete dialog is now the shared one (new key
+`deleteQuotationConfirmationMessage`), and a new Quotation's success toast
+was hard-coded English — now `quotationAndPdfSavedSuccessfully` (same English
+text, Arabic added).
+
+**Verification:** NOT RUN. The agent's analyzer and focused test runs were
+blocked; the owner runs them (commands in the session reply, plus
+`test/responsive/r6b_quotations_responsive_test.dart`). Not device-verified.
+Committed on the owner's request.
+
 ---
 
 ## 8) مراجع الاستمرار

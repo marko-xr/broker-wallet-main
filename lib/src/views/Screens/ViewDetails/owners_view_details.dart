@@ -42,6 +42,7 @@ import 'widgets/details_page.dart';
 import 'widgets/details_media_placeholder.dart';
 import 'widgets/details_section.dart';
 import 'widgets/offer_details_style.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
 class OwnersDetailsView extends StatefulWidget {
   final OwnerModel owner;
@@ -771,154 +772,14 @@ class _OwnersDetailsViewState extends State<OwnersDetailsView>
   // Show delete confirmation dialog
   Future<void> _showDeleteConfirmation() async {
     final loc = AppLocalizations.of(context);
-    final colors = Theme.of(context).colorScheme;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          scrollable: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Color(0xFFC81E1E),
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                  child: Text(
-                loc.translate('deleteOwner'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              )),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                loc.translate('deleteOwnerConfirmationMessage'),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.8),
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE6E6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFFFCCCC),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.person_rounded,
-                      size: 18,
-                      color: Color(0xFFC81E1E),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _currentOwner.name.isNotEmpty
-                            ? _currentOwner.name
-                            : loc.translate('propertyOwner'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFC81E1E),
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colors.surface,
-                foregroundColor: colors.onSurface,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: colors.outline.withValues(alpha: 0.3),
-                    width: 1.5,
-                  ),
-                ),
-                elevation: 0,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: colors.onSurface.withValues(alpha: 0.7),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      loc.translate('cancel'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: colors.onSurface.withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC81E1E),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-                shadowColor: const Color(0xFFC81E1E).withValues(alpha: 0.4),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.delete_rounded, size: 18, color: Colors.white),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      loc.translate('delete'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    final confirmed = await showDeleteConfirmationDialog(
+      context,
+      title: loc.translate('deleteOwner'),
+      message: loc.translate('deleteOwnerConfirmationMessage'),
+      itemIcon: Icons.person_rounded,
+      itemLabel: _currentOwner.name.isNotEmpty
+          ? _currentOwner.name
+          : loc.translate('propertyOwner'),
     );
 
     if (confirmed == true && _currentOwner.id != null) {

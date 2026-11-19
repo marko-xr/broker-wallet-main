@@ -21,6 +21,10 @@ class AddWatchmenViewModel extends ChangeNotifier
   final AddWatchmenMode mode;
   final String? watchmenId;
 
+  /// The record loaded for editing: its id, owner and creation date go back
+  /// to the details screen with the edited fields.
+  WatchmenModel? _originalWatchmen;
+
   // Constructor
   AddWatchmenViewModel({
     this.mode = AddWatchmenMode.add,
@@ -74,6 +78,7 @@ class AddWatchmenViewModel extends ChangeNotifier
 
   // Prefill form with watchmen data
   void _prefillFormWithWatchmen(WatchmenModel watchmen) {
+    _originalWatchmen = watchmen;
     name = watchmen.name;
     buildingName = watchmen.buildingName;
     notes = watchmen.notes;
@@ -387,14 +392,23 @@ class AddWatchmenViewModel extends ChangeNotifier
       if (mode == AddWatchmenMode.edit && watchmenId != null) {
         // Update existing watchmen
         await _handleEditMode(watchmen);
+        // Back to the details screen it was opened from, with the record as
+        // it now is (as the other sections do).
+        if (context.mounted) {
+          context.pop(watchmen.copyWith(
+            id: watchmenId,
+            userId: _originalWatchmen?.userId,
+            createdAt: _originalWatchmen?.createdAt,
+            updatedAt: DateTime.now(),
+          ));
+        }
       } else {
         // Create new watchmen
-        await _handleAddMode(context, watchmen);
-      }
-
-      // Success - navigate back
-      if (context.mounted) {
-        context.go('/home');
+        final saved = await _handleAddMode(context, watchmen);
+        // When adding was not allowed nothing was saved: stay on the form.
+        if (saved && context.mounted) {
+          context.go('/home');
+        }
       }
     } catch (e) {
       final translate =
@@ -412,19 +426,20 @@ class AddWatchmenViewModel extends ChangeNotifier
   }
 
   // Handle add mode
-  Future<void> _handleAddMode(
+  Future<bool> _handleAddMode(
       BuildContext context, WatchmenModel watchmen) async {
     final canAdd = await CoreEntityQuotaBridge.canCreate(
       context: context,
       section: 'watchmen',
     );
-    if (!canAdd) return;
+    if (!canAdd) return false;
 
     final watchmenId = await _watchmenService.saveWatchmen(watchmen);
     if (watchmenId == null) {
       throw Exception('Failed to save watchmen information');
     }
     await CoreEntityQuotaBridge.recordCreated(section: 'watchmen');
+    return true;
   }
 
   // Handle edit mode

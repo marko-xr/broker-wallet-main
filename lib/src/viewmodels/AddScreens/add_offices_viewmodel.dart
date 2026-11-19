@@ -20,6 +20,10 @@ class AddOfficesViewModel extends ChangeNotifier
   final AddOfficesMode mode;
   final String? officeId;
   bool _isEditMode = false;
+
+  /// The record loaded for editing: its id, owner and creation date go back
+  /// to the details screen with the edited fields.
+  OfficeModel? _originalOffice;
   bool get isEditMode => _isEditMode;
 
   // Constructor
@@ -273,13 +277,22 @@ class AddOfficesViewModel extends ChangeNotifier
 
       if (_isEditMode && officeId != null) {
         await _handleEditMode(office);
+        // Back to the details screen it was opened from, with the record as
+        // it now is (as the other sections do).
+        if (context.mounted) {
+          context.pop(office.copyWith(
+            id: officeId,
+            userId: _originalOffice?.userId,
+            createdAt: _originalOffice?.createdAt,
+            updatedAt: DateTime.now(),
+          ));
+        }
       } else {
-        await _handleAddMode(context, office);
-      }
-
-      // Success - navigate back
-      if (context.mounted) {
-        context.go('/home');
+        final saved = await _handleAddMode(context, office);
+        // When adding was not allowed nothing was saved: stay on the form.
+        if (saved && context.mounted) {
+          context.go('/home');
+        }
       }
     } catch (e) {
       final translate =
@@ -297,18 +310,19 @@ class AddOfficesViewModel extends ChangeNotifier
   }
 
   // Handle add mode
-  Future<void> _handleAddMode(BuildContext context, OfficeModel office) async {
+  Future<bool> _handleAddMode(BuildContext context, OfficeModel office) async {
     final canAdd = await CoreEntityQuotaBridge.canCreate(
       context: context,
       section: 'offices',
     );
-    if (!canAdd) return;
+    if (!canAdd) return false;
 
     final newOfficeId = await _officeService.saveOffice(office);
     if (newOfficeId == null) {
       throw Exception('Failed to save office');
     }
     await CoreEntityQuotaBridge.recordCreated(section: 'offices');
+    return true;
   }
 
   // Handle edit mode
@@ -358,6 +372,7 @@ class AddOfficesViewModel extends ChangeNotifier
 
   // Prefill form with office data
   void _prefillFormWithOffice(OfficeModel office) {
+    _originalOffice = office;
     officeName = office.officeName;
     managerName = office.managerName;
     countryCode = office.countryCode;

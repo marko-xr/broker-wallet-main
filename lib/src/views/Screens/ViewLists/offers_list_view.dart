@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import '../../../data/models/ScreensModel/offers_model.dart';
 import '../../../viewmodels/ListScreens/list_offers_viewmodel.dart';
 import '../../../data/models/property_status.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
 class OffersListView extends StatefulWidget {
   const OffersListView({super.key, this.viewModel});
@@ -452,173 +453,14 @@ class _OffersListViewState extends State<OffersListView> {
     AppLocalizations loc,
     ColorScheme colors,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          scrollable: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Color(0xFFC81E1E),
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  loc.translate('deleteOffer'),
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                loc.translate('confirmDeleteOffer'),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.8),
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE6E6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFFFCCCC),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.business_rounded,
-                      size: 18,
-                      color: Color(0xFFC81E1E),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        offer.offerType == 'rent'
-                            ? loc.translate('rentOffer')
-                            : loc.translate('saleOffer'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFC81E1E),
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final stacked = constraints.maxWidth < 260 &&
-                    MediaQuery.textScalerOf(context).scale(16) > 24;
-                final buttonWidth = stacked
-                    ? constraints.maxWidth
-                    : (constraints.maxWidth - 12) / 2;
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: buttonWidth,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colors.surface,
-                          foregroundColor: colors.onSurface,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: colors.outline.withValues(alpha: 0.3),
-                              width: 1.5,
-                            ),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: colors.onSurface.withValues(alpha: 0.7),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                loc.translate('cancel'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                  color: colors.onSurface.withValues(alpha: 0.8),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: buttonWidth,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC81E1E),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                          shadowColor:
-                              const Color(0xFFC81E1E).withValues(alpha: 0.4),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.delete_rounded,
-                                size: 18, color: Colors.white),
-                            SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                'Delete',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
-        );
-      },
+    final confirmed = await showDeleteConfirmationDialog(
+      context,
+      title: loc.translate('deleteOffer'),
+      message: loc.translate('deleteOfferConfirmationMessage'),
+      itemIcon: Icons.business_rounded,
+      itemLabel: offer.offerType == 'rent'
+          ? loc.translate('rentOffer')
+          : loc.translate('saleOffer'),
     );
 
     if (confirmed == true) {

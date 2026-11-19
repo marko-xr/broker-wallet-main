@@ -15,6 +15,7 @@ import 'package:intl/intl.dart';
 
 import '../../../data/models/ScreensModel/watchmen_model.dart';
 import '../../../viewmodels/ListScreens/list_watchmen_viewmodel.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
 class WatchmenListView extends StatefulWidget {
   const WatchmenListView({super.key, this.createViewModel});
@@ -558,152 +559,14 @@ class _WatchmenListViewState extends State<WatchmenListView> {
     AppLocalizations loc,
     ColorScheme colors,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          scrollable: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: const Color(0xFFC81E1E),
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                  child: Text(
-                loc.translate('deleteWatchmen'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              )),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                loc.translate('confirmDeleteWatchmen'),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurface.withValues(alpha: 0.8),
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE6E6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFFFCCCC),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.security_outlined,
-                      size: 18,
-                      color: const Color(0xFFC81E1E),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        watchmen.name.isNotEmpty
-                            ? watchmen.name
-                            : 'Unknown Watchmen',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFC81E1E),
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colors.surface,
-                foregroundColor: colors.onSurface,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: colors.outline.withValues(alpha: 0.3),
-                    width: 1.5,
-                  ),
-                ),
-                elevation: 0,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: colors.onSurface.withValues(alpha: 0.7),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      loc.translate('cancel'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: colors.onSurface.withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC81E1E),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-                shadowColor: const Color(0xFFC81E1E).withValues(alpha: 0.4),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.delete_rounded, size: 18, color: Colors.white),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      loc.translate('delete'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    final confirmed = await showDeleteConfirmationDialog(
+      context,
+      title: loc.translate('deleteWatchmen'),
+      message: loc.translate('deleteWatchmenConfirmationMessage'),
+      itemIcon: Icons.security_rounded,
+      itemLabel: watchmen.name.isNotEmpty
+          ? watchmen.name
+          : loc.translate('watchmenContact'),
     );
 
     if (confirmed == true) {

@@ -3429,5 +3429,6 @@
   "emailInvalidFormat": "Please enter a valid email address",
   "emailDisposableNotAllowed": "Disposable email addresses are not allowed",
   "emailProviderNotAllowed": "Please use a valid email provider (Gmail, Yahoo, Outlook, etc.)",
-  "emailTooLong": "Email address is too long"
+  "emailTooLong": "Email address is too long",
+  "authInvalidCredentials": "Invalid email or password."
 }

@@ -198,6 +198,7 @@ class SignInViewModel extends ChangeNotifier {
           return;
         }
         final key = switch (e.code) {
+          AuthFailureCode.invalidCredentials => 'authInvalidCredentials',
           AuthFailureCode.appSessionUnavailable => 'appSessionCheckFailed',
           AuthFailureCode.sessionExpired => 'authSessionExpired',
           _ => null,

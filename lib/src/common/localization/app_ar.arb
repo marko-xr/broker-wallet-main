@@ -3358,5 +3358,6 @@
   "emailInvalidFormat": "يرجى إدخال بريد إلكتروني صالح",
   "emailDisposableNotAllowed": "لا يُسمح بعناوين البريد الإلكتروني المؤقتة",
   "emailProviderNotAllowed": "يرجى استخدام مزوّد بريد معروف (Gmail أو Yahoo أو Outlook وغيرها)",
-  "emailTooLong": "عنوان البريد الإلكتروني طويل جدًا"
+  "emailTooLong": "عنوان البريد الإلكتروني طويل جدًا",
+  "authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة."
 }

@@ -5893,6 +5893,13 @@ uncalled but left in `email_validator.dart`. Unchanged: Sign Up still
 refuses providers outside its short list (`hasValidDomain`) on Submit.
 Not run by the agent; committed f74a740.
 
+Follow-up (owner device test, 2026-11-20): `mohammed@gmail.co` passed the
+leave-field check correctly (`.co` is a valid TLD); the error after Log In
+was Supabase's wrong-credentials answer, shown as raw English. Sign In now
+maps `AuthFailureCode.invalidCredentials` to the new key
+`authInvalidCredentials` (deliberately generic: it never says which of the
+two is wrong). Not run; not committed.
+
 ### 7BH-7) MOTION-1 — Home list screens open with a fade through (2026-11-20, owner chose on device)
 
 Why Home showed during the open: the eight list routes used Flutter's

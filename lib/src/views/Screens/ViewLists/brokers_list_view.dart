@@ -745,8 +745,7 @@ class _EnhancedBrokerTile extends StatelessWidget {
                                 Icon(
                                   FieldIcons.phone,
                                   size: 16,
-                                  color:
-                                      colors.onSurface.withValues(alpha: 0.6),
+                                  color: FieldIcons.colorIn(colors),
                                 ),
                                 const SizedBox(width: 4),
                                 Expanded(

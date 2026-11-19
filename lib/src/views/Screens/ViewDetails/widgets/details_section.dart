@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 import 'offer_details_style.dart';
+import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
 class DetailsSection extends StatelessWidget {
   const DetailsSection({
@@ -192,7 +193,7 @@ class DetailsField extends StatelessWidget {
               Border(bottom: BorderSide(color: theme.dividerColor, width: 0.5)),
         ),
         child: Row(children: [
-          Icon(icon, size: 15, color: colors.onSurfaceVariant),
+          Icon(icon, size: 15, color: FieldIcons.colorIn(colors)),
           const SizedBox(width: 7),
           Expanded(flex: 4, child: Text(label, style: labelStyle)),
           const SizedBox(width: DetailsSection.fieldColumnGap),
@@ -295,7 +296,7 @@ class DetailsSummary extends StatelessWidget {
         if (subtitle != null) ...[
           const SizedBox(height: 7),
           Row(children: [
-            Icon(icon, color: theme.colorScheme.primary, size: 14),
+            Icon(icon, color: FieldIcons.colorIn(theme.colorScheme), size: 14),
             const SizedBox(width: 6),
             Expanded(
               child: Text(

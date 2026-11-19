@@ -956,7 +956,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 20, color: colors.primary),
+        Icon(icon, size: 20, color: FieldIcons.colorIn(colors)),
         const SizedBox(height: 3),
         Text(label,
             textAlign: TextAlign.center,
@@ -1065,7 +1065,7 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
                       color: colors.onSurface.withValues(alpha: 0.07),
                       width: 0.5))),
           child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            Icon(icon, size: 15, color: colors.onSurfaceVariant),
+            Icon(icon, size: 15, color: FieldIcons.colorIn(colors)),
             const SizedBox(width: 7),
             Expanded(flex: 4, child: Text(label, style: texts.bodyMedium)),
             const SizedBox(width: DetailsSection.fieldColumnGap),

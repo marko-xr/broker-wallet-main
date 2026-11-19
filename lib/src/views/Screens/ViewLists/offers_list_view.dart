@@ -871,8 +871,7 @@ class _EnhancedOfferTile extends StatelessWidget {
                                 Icon(
                                   FieldIcons.specificType,
                                   size: 16,
-                                  color:
-                                      colors.onSurface.withValues(alpha: 0.8),
+                                  color: FieldIcons.colorIn(colors),
                                 ),
                                 const SizedBox(width: 4),
                                 Flexible(
@@ -890,8 +889,7 @@ class _EnhancedOfferTile extends StatelessWidget {
                                 Icon(
                                   FieldIcons.city,
                                   size: 16,
-                                  color:
-                                      colors.onSurface.withValues(alpha: 0.6),
+                                  color: FieldIcons.colorIn(colors),
                                 ),
                                 const SizedBox(width: 4),
                                 Expanded(

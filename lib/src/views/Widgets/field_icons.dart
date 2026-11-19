@@ -4,8 +4,13 @@ import 'package:flutter/material.dart';
 /// search and Favorites cards and the details screens alike, so a field
 /// looks the same wherever it appears and no two fields share an icon.
 ///
-/// All are Material outlined icons, one style throughout.
+/// All are Material outlined icons, one style throughout, drawn in one
+/// neutral colour ([colorIn]). Colour is kept for what means something: a
+/// section heading, a card's avatar, something to tap, a badge.
 abstract final class FieldIcons {
+  /// The colour of every field icon: quieter than the text beside it.
+  static Color colorIn(ColorScheme colors) => colors.onSurfaceVariant;
+
   // People and contact.
   static const IconData name = Icons.person_outline;
   static const IconData manager = Icons.badge_outlined;

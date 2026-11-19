@@ -5952,6 +5952,23 @@ Verification (owner-run, 2026-11-20): `flutter analyze lib/src/views` — 0
 errors, 0 warnings, the same 70 info hints as before (none in a changed
 file); `flutter test --concurrency=1 test/details test/lists` r5a–r5d
 `test/favorites test/search` — 1,634/1,634 passed. Not device-verified.
+Committed c85ed1b.
+
+### 7BH-9) ICONS-2 — one neutral colour for field icons (2026-11-20, owner approved)
+
+Rule (Material 3): a field icon beside text is a quiet guide, drawn in
+`FieldIcons.colorIn` (= `onSurfaceVariant`); colour is kept for what means
+something — section headings, card avatars, things to tap, badges.
+Found: list cards and filtered tiles used `onSurface` at 60%, 80% and full;
+search/Favorites 60%; details rows `onSurfaceVariant` but the details header
+field line and the Offer/Request stat tiles (bedrooms, bathrooms, area) in
+primary. Now every field row (22 in lists + filtered tiles, the search and
+Favorites row builders, the details rows, header field line and stat tiles)
+uses `FieldIcons.colorIn`. Unchanged on purpose: Rent/Sale pills, Area and
+Price chips (badges with their own background), section-heading icons,
+avatars, the Notes section heading, Call/WhatsApp. Add/Edit forms already
+follow the input rule in `AppInputStyle.icon` (grey at rest, primary when
+focused, red on error) — no change. Not run; not committed.
 
 ---
 

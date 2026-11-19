@@ -455,7 +455,7 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 20, color: colors.primary),
+        Icon(icon, size: 20, color: FieldIcons.colorIn(colors)),
         const SizedBox(height: 3),
         Text(label,
             textAlign: TextAlign.center,

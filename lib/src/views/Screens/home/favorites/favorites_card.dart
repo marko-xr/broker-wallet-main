@@ -605,7 +605,7 @@ class _FavoriteCardState extends State<FavoriteCard>
                 Icon(
                   data.icon,
                   size: 16,
-                  color: colors.onSurface.withValues(alpha: 0.6),
+                  color: FieldIcons.colorIn(colors),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -643,7 +643,7 @@ class _FavoriteCardState extends State<FavoriteCard>
           Icon(
             data.icon,
             size: 16,
-            color: colors.onSurface.withValues(alpha: 0.6),
+            color: FieldIcons.colorIn(colors),
           ),
           const SizedBox(width: 6),
           Expanded(

@@ -150,7 +150,7 @@ class FilteredOfferTile extends StatelessWidget {
                               Icon(
                                 FieldIcons.specificType,
                                 size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.8),
+                                color: FieldIcons.colorIn(colors),
                               ),
                               const SizedBox(width: 4),
                               Flexible(
@@ -168,7 +168,7 @@ class FilteredOfferTile extends StatelessWidget {
                               Icon(
                                 FieldIcons.city,
                                 size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.6),
+                                color: FieldIcons.colorIn(colors),
                               ),
                               const SizedBox(width: 4),
                               Expanded(
@@ -627,7 +627,7 @@ class FilteredRequestTile extends StatelessWidget {
                               Icon(
                                 FieldIcons.specificType,
                                 size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.8),
+                                color: FieldIcons.colorIn(colors),
                               ),
                               const SizedBox(width: 4),
                               Flexible(
@@ -645,7 +645,7 @@ class FilteredRequestTile extends StatelessWidget {
                               Icon(
                                 FieldIcons.city,
                                 size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.6),
+                                color: FieldIcons.colorIn(colors),
                               ),
                               const SizedBox(width: 4),
                               Expanded(
@@ -1109,8 +1109,7 @@ class FilteredOwnerTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.specificType,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.8),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(
@@ -1139,8 +1138,7 @@ class FilteredOwnerTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.location,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.4),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(
@@ -1398,8 +1396,7 @@ class FilteredOfficeTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.manager,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.8),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(
@@ -1428,8 +1425,7 @@ class FilteredOfficeTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.location,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.4),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(
@@ -1683,7 +1679,7 @@ class FilteredBrokerTile extends StatelessWidget {
                               Icon(
                                 FieldIcons.phone,
                                 size: 16,
-                                color: colors.onSurface.withValues(alpha: 0.6),
+                                color: FieldIcons.colorIn(colors),
                               ),
                               const SizedBox(width: 4),
                               Expanded(
@@ -1939,8 +1935,7 @@ class FilteredWatchmenTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.building,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.8),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(
@@ -1969,8 +1964,7 @@ class FilteredWatchmenTile extends StatelessWidget {
                                     Icon(
                                       FieldIcons.location,
                                       size: 16,
-                                      color: colors.onSurface
-                                          .withValues(alpha: 0.4),
+                                      color: FieldIcons.colorIn(colors),
                                     ),
                                     const SizedBox(width: 4),
                                     Expanded(

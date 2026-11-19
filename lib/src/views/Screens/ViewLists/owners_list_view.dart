@@ -757,8 +757,7 @@ class _EnhancedOwnerTile extends StatelessWidget {
                                       Icon(
                                         FieldIcons.specificType,
                                         size: 16,
-                                        color: colors.onSurface
-                                            .withValues(alpha: 0.8),
+                                        color: FieldIcons.colorIn(colors),
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
@@ -786,8 +785,7 @@ class _EnhancedOwnerTile extends StatelessWidget {
                                       Icon(
                                         FieldIcons.location,
                                         size: 16,
-                                        color: colors.onSurface
-                                            .withValues(alpha: 0.4),
+                                        color: FieldIcons.colorIn(colors),
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(

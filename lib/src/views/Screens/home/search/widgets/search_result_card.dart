@@ -686,8 +686,7 @@ class _SearchContentFields extends StatelessWidget {
             alignment: AlignmentDirectional.centerStart,
             child: Row(
               children: [
-                Icon(data.icon,
-                    size: 16, color: colors.onSurface.withValues(alpha: 0.6)),
+                Icon(data.icon, size: 16, color: FieldIcons.colorIn(colors)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: searchQuery != null && searchQuery.isNotEmpty
@@ -729,7 +728,7 @@ class _SearchContentFields extends StatelessWidget {
       alignment: AlignmentDirectional.centerStart,
       child: Row(
         children: [
-          Icon(data.icon, size: 16, color: colors.onSurface.withValues(alpha: 0.6)),
+          Icon(data.icon, size: 16, color: FieldIcons.colorIn(colors)),
           const SizedBox(width: 6),
           Expanded(
             child: searchQuery != null && searchQuery.isNotEmpty

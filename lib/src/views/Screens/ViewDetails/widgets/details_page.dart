@@ -1,5 +1,5 @@
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/common/utils/images.dart';
+import 'package:broker_wallet/src/widgets/disabled_contact_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -239,16 +239,8 @@ class DetailsContactBar extends StatelessWidget {
                 child: OutlinedButton.icon(
                   key: const ValueKey('details-call'),
                   onPressed: onCall,
-                  // Same disabled-phone glyph the list cards use, so "no
-                  // phone number" reads the same way everywhere. Flipped
-                  // so its slash leans the same way as the WhatsApp
-                  // button's disabled artwork, not the opposite diagonal.
                   icon: onCall == null
-                      ? Transform.flip(
-                          flipX: true,
-                          child: const Icon(Icons.phone_disabled_rounded,
-                              size: 18),
-                        )
+                      ? const DisabledContactIcon.call(size: 18)
                       : const Icon(Icons.phone_rounded, size: 18),
                   label:
                       Text(loc.translate('call'), textAlign: TextAlign.center),
@@ -259,8 +251,11 @@ class DetailsContactBar extends StatelessWidget {
                     minimumSize: const Size(0, kMinInteractiveDimension),
                     padding: padding,
                     side: BorderSide(
-                        color: colors.primary.withValues(alpha: 0.7),
-                        width: 0.8),
+                      color: onCall == null
+                          ? colors.outlineVariant
+                          : colors.primary.withValues(alpha: 0.7),
+                      width: 0.8,
+                    ),
                     shape: shape,
                   ),
                 ),
@@ -270,11 +265,8 @@ class DetailsContactBar extends StatelessWidget {
                 child: FilledButton.icon(
                   key: const ValueKey('details-whatsapp'),
                   onPressed: onWhatsApp,
-                  // Same disabled-WhatsApp artwork the list cards use, so
-                  // "no phone number" reads the same way everywhere.
                   icon: onWhatsApp == null
-                      ? Image.asset(AppImages.whatsAppDisable,
-                          width: 21 * scale, height: 21 * scale)
+                      ? DisabledContactIcon.whatsApp(size: 21 * scale)
                       : FaIcon(FontAwesomeIcons.whatsapp, size: 21 * scale),
                   label: Text(loc.translate('whatsapp'),
                       textAlign: TextAlign.center),

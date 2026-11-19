@@ -16752,3 +16752,19 @@ NOW — Open an Offer and an Owner with no media on the device and confirm each
 shows its own icon without an initial image placeholder.
 NEXT — Open an Offer and an Owner with media and confirm the galleries still
 display their items.
+
+## Shared disabled contact icons (2026-11-19)
+
+The shared contact row on Owner, Office, Broker and Watchman lists and the
+contact bar on all six Details screens use `DisabledContactIcon`. Both icons
+use the lists' muted theme color when the contact action is unavailable.
+The Details Call button uses the theme's muted outline when disabled.
+Each screen keeps its existing button layout, enabled appearance and handlers.
+All 34 focused contact widget tests passed in Arabic and English. Real-device
+verification is pending.
+
+NOW — On device, open a list card and its Details screen without a phone
+number and compare the disabled Call and WhatsApp icons. Confirm the Details
+Call button has a muted outline.
+NEXT — Open a record with a valid phone number and verify that both contact
+actions still launch.

@@ -120,10 +120,8 @@ Widget _screen(String kind, String phone, {String code = '+971'}) {
   }
 }
 
-Finder get _call => find.ancestor(
-    of: find.byIcon(Icons.phone_rounded),
-    matching: find.byType(OutlinedButton));
-Finder get _whatsApp => find.byType(FilledButton);
+Finder get _call => find.byKey(const ValueKey('details-call'));
+Finder get _whatsApp => find.byKey(const ValueKey('details-whatsapp'));
 
 double _contrast(Color first, Color second) {
   final a = first.computeLuminance();
@@ -257,8 +255,25 @@ void main() {
           await tester.pumpWidget(const SizedBox.shrink());
           await pumpResponsive(tester, scenario,
               home: withR2ScreenProviders(_screen(kind, phone)));
-          expect(tester.widget<OutlinedButton>(_call).onPressed, isNull);
+          final call = tester.widget<OutlinedButton>(_call);
+          final colors = Theme.of(tester.element(_call)).colorScheme;
+          expect(call.onPressed, isNull);
+          expect(
+            call.style!.side!.resolve({WidgetState.disabled})!.color,
+            colors.outlineVariant,
+          );
           expect(tester.widget<FilledButton>(_whatsApp).onPressed, isNull);
+          final mutedColor = colors.onSurfaceVariant.withValues(alpha: 0.5);
+          final callIcon = tester.widget<Icon>(find.descendant(
+            of: _call,
+            matching: find.byIcon(Icons.phone_disabled_rounded),
+          ));
+          final whatsAppIcon = tester.widget<Image>(find.descendant(
+            of: _whatsApp,
+            matching: find.byType(Image),
+          ));
+          expect(callIcon.color, mutedColor);
+          expect(whatsAppIcon.color, mutedColor);
         }
         expect(launches, isEmpty);
         for (final number in [
@@ -292,6 +307,8 @@ void main() {
                   theme.colorScheme.primary),
               greaterThanOrEqualTo(4.5));
           final callStyle = tester.widget<OutlinedButton>(_call).style!;
+          expect(callStyle.side!.resolve({})!.color,
+              theme.colorScheme.primary.withValues(alpha: 0.7));
           expect(
               _contrast(callStyle.foregroundColor!.resolve({})!,
                   theme.colorScheme.surface),

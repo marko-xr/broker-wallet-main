@@ -2,6 +2,8 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:flutter/material.dart';
 
+import 'disabled_contact_icon.dart';
+
 /// The Call/WhatsApp row shared by every list card, so their order,
 /// styling, and disabled appearance can only drift out of sync in one
 /// place instead of once per list screen that duplicates it.
@@ -71,27 +73,17 @@ class ContactActionsRow extends StatelessWidget {
     return Row(children: [
       pill(
         onTap: hasPhone ? onCall : null,
-        // Material's phone_disabled slash runs the opposite diagonal from
-        // the WhatsApp-disabled artwork below; flip it so both "disabled"
-        // marks lean the same way.
         icon: hasPhone
             ? Icon(Icons.phone_rounded, color: activeColor, size: 20)
-            : Transform.flip(
-                flipX: true,
-                child: Icon(Icons.phone_disabled_rounded,
-                    color: mutedColor, size: 20),
-              ),
+            : const DisabledContactIcon.call(size: 20),
         label: loc.translate('call'),
       ),
       const SizedBox(width: 12),
       pill(
         onTap: hasPhone ? onWhatsApp : null,
-        icon: Image.asset(
-          hasPhone ? AppImages.whatsapp : AppImages.whatsAppDisable,
-          width: 20,
-          height: 20,
-          color: hasPhone ? null : mutedColor,
-        ),
+        icon: hasPhone
+            ? Image.asset(AppImages.whatsapp, width: 20, height: 20)
+            : const DisabledContactIcon.whatsApp(size: 20),
         label: loc.translate('whatsapp'),
       ),
     ]);

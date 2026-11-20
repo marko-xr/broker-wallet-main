@@ -133,7 +133,7 @@ void main() {
         }
       }
       final kotlin = read(
-          'android/app/src/main/kotlin/com/example/broker_wallet/FileSaverPlugin.kt');
+          'android/app/src/main/kotlin/com/nmodigital/brokerwallet/FileSaverPlugin.kt');
       expect(kotlin.contains('Log.'), isFalse);
       expect(kotlin.contains('printStackTrace'), isFalse);
     });
@@ -149,7 +149,7 @@ void main() {
 
   group('the native saver', () {
     final kotlin = read(
-        'android/app/src/main/kotlin/com/example/broker_wallet/FileSaverPlugin.kt');
+        'android/app/src/main/kotlin/com/nmodigital/brokerwallet/FileSaverPlugin.kt');
 
     test('keeps the contract the other Toolkit tools use', () {
       expect(kotlin, contains('"saveFileToDownloads" -> saveBytes'));
@@ -230,7 +230,7 @@ void main() {
 
   group('a lost scan result and backup', () {
     const kotlinFolder =
-        'android/app/src/main/kotlin/com/example/broker_wallet';
+        'android/app/src/main/kotlin/com/nmodigital/brokerwallet';
     final guard = read('$kotlinFolder/ScanLifecycleGuard.kt');
 
     test(

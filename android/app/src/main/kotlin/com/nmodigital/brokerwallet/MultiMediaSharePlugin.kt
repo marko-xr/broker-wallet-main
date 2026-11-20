@@ -1,4 +1,4 @@
-package com.example.broker_wallet
+package com.nmodigital.brokerwallet
 
 import android.app.Activity
 import android.content.ClipData

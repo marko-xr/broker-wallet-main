@@ -16807,3 +16807,89 @@ NOW — Open Favorites online and check the row order on an Offer and a Request.
 Check that a rental Request and a sale Request show the correct rotating badge.
 NEXT — Reopen Favorites after that refresh and confirm both cached Request
 cards show the reordered details immediately, without an all-unavailable flash.
+
+## Android identity A-ID-1 — `com.nmodigital.brokerwallet` (2026-11-20)
+
+Owner decision: the final Android package is `com.nmodigital.brokerwallet`. The
+new NMO Digital Firebase project is for FCM only, OneSignal delivers push, and
+Supabase stays the only backend. The old Firebase project `broker-wallet-app`
+is not used in production and is not deleted.
+
+Source changes:
+
+- `android/app/build.gradle`: `namespace` and `applicationId` are now
+  `com.nmodigital.brokerwallet`. There are still no flavors and no suffix.
+- The six Kotlin files moved from `kotlin/com/example/broker_wallet/` to
+  `kotlin/com/nmodigital/brokerwallet/`. Only the `package` line changed in
+  each file.
+- The Kotlin folder paths in `test/scanner/scanner_source_guards_test.dart` and
+  `test/share/share_source_guards_test.dart` now point to the new folder.
+- The `$Package` in
+  `cloudflare/workers/r2-profile-upload/staging-acceptance/run_c3_combine_device_gate.ps1`
+  is now the new package.
+
+Kept on purpose:
+
+- MethodChannel names `com.example.broker_wallet/{scan_lifecycle,backup_exclusion,multi_media_share}`
+  and `file_saver`. They are opaque strings shared by Dart, Kotlin, iOS and
+  tests, not the Android identity.
+- FileProvider authorities, which follow `${applicationId}` and
+  `activity.packageName`.
+- The `brokerwallet://auth/...` deep links, the Google Maps key and the
+  Supabase config.
+- iOS Bundle ID `com.example.broker-wallet` and the old
+  `GoogleService-Info.plist`. These are a separate iOS step.
+- Historical package names in docs and trackers.
+
+RESOLVED (see the update below). It was blocked because `android/app/google-services.json` still held the old project's
+`com.example.broker_wallet` client. The `google-services` plugin fails every
+Android build ("No matching client found") until the NMO Digital file
+replaces it. A candidate is in `Downloads\google-services.json`, dated
+2026-11-20 21:15: project `broker-wallet`, package
+`com.nmodigital.brokerwallet`, no OAuth client. It was not copied; the owner
+must confirm it first.
+
+The Firestore quota removal plan is in `docs/LEGACY_FIRESTORE_QUOTA_REMOVAL_PLAN.md`.
+It is a plan only.
+
+The phone impact is as follows. The new id installs as a separate app beside
+`com.example.broker_wallet`. Local data (offline lists, Hive, secure-storage
+keys, quotation PDF vault, Toolkit files) does not carry over; Supabase
+account data does. A first sign-in on the new app claims the single active
+session.
+
+Nothing was built, tested or analysed, at the owner's request. Nothing was
+committed.
+
+UPDATE 2026-11-20, owner-approved: `android/app/google-services.json` is now
+the NMO Digital file. The checks passed before the swap:
+
+- project `broker-wallet`, number `285578142613`
+- one client, `com.nmodigital.brokerwallet`, with app id
+  `1:285578142613:android:…`
+
+The JSON is byte-for-byte equal to the downloaded file except that the line
+endings are CRLF. The old file is backed up outside the repo in
+`C:\Users\xr343\BrokerWallet-Artifacts\firebase-legacy-2026-11-20\`: the
+working copy and the HEAD copy, which differ only in line endings.
+
+The Gradle wiring is unchanged: plugin `com.google.gms.google-services` 4.4.2
+in `settings.gradle`, applied in `app/build.gradle`. No Firebase service was
+added. `firebase-firestore` and the quota code stay, per the plan file.
+
+The new file has no OAuth client; the old one had a web client and an iOS
+client. Nothing in `lib/` or the Android sources reads those ids. The root
+`firebase.json` (FlutterFire CLI) and the iOS plist still name the old
+project, and both are left as they are.
+
+NOW — The owner runs `flutter test test/scanner/scanner_source_guards_test.dart test/share/share_source_guards_test.dart test/share/share_android_sink_test.dart`
+and then `flutter build apk --debug`. In the APK, check that
+`aapt dump badging` shows `package: name='com.nmodigital.brokerwallet'`.
+NEXT — Install it on a device as the new app, sign in, and check:
+
+- Scanner save
+- multi-media Share
+- email-confirmation and password-reset links
+- Maps
+
+Then make the iOS Bundle ID and plist change a separate checkpoint.

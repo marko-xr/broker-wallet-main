@@ -1,4 +1,4 @@
-package com.example.broker_wallet
+package com.nmodigital.brokerwallet
 
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity

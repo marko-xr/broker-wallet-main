@@ -586,7 +586,7 @@ void main() {
       // Kotlin. The adapter declares the type of its files and refuses a mix
       // while it builds the intent, which happens before the sheet is started.
       const kotlinFolder =
-          'android/app/src/main/kotlin/com/example/broker_wallet';
+          'android/app/src/main/kotlin/com/nmodigital/brokerwallet';
       final format = read('$kotlinFolder/MultiMediaShareFormat.kt');
       final plugin = read('$kotlinFolder/MultiMediaSharePlugin.kt');
       expect(format,
@@ -758,8 +758,8 @@ void main() {
         ...dartFilesUnder(shareFolder).map(relative),
         'lib/src/views/Widgets/share_options_dialog.dart',
         'lib/src/views/Widgets/share_media_picker.dart',
-        'android/app/src/main/kotlin/com/example/broker_wallet/MultiMediaSharePlugin.kt',
-        'android/app/src/main/kotlin/com/example/broker_wallet/MultiMediaShareFormat.kt',
+        'android/app/src/main/kotlin/com/nmodigital/brokerwallet/MultiMediaSharePlugin.kt',
+        'android/app/src/main/kotlin/com/nmodigital/brokerwallet/MultiMediaShareFormat.kt',
       ]) {
         final offenders = <String>[
           for (final api in timingApis)
@@ -876,9 +876,9 @@ void main() {
         'lib/src/views/Widgets/share_options_dialog.dart':
             read('lib/src/views/Widgets/share_options_dialog.dart'),
         'android/MultiMediaShareFormat.kt': read(
-            'android/app/src/main/kotlin/com/example/broker_wallet/MultiMediaShareFormat.kt'),
+            'android/app/src/main/kotlin/com/nmodigital/brokerwallet/MultiMediaShareFormat.kt'),
         'android/MultiMediaSharePlugin.kt': read(
-            'android/app/src/main/kotlin/com/example/broker_wallet/MultiMediaSharePlugin.kt'),
+            'android/app/src/main/kotlin/com/nmodigital/brokerwallet/MultiMediaSharePlugin.kt'),
       };
       sources.forEach((path, source) {
         for (final word in <String>[
@@ -995,7 +995,7 @@ void main() {
       'the native Android transport is narrow and shaped as Android describes',
       () {
     const androidMain = 'android/app/src/main';
-    const kotlinFolder = '$androidMain/kotlin/com/example/broker_wallet';
+    const kotlinFolder = '$androidMain/kotlin/com/nmodigital/brokerwallet';
     late String plugin;
     late String format;
     late String provider;

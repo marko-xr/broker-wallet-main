@@ -1,4 +1,4 @@
-package com.example.broker_wallet
+package com.nmodigital.brokerwallet
 
 import androidx.core.content.FileProvider
 

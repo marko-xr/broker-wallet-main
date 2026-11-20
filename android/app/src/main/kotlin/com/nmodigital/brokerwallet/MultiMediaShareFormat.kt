@@ -1,4 +1,4 @@
-package com.example.broker_wallet
+package com.nmodigital.brokerwallet
 
 /**
  * The deterministic part of the native media-batch share: which MIME type an

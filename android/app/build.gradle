@@ -24,7 +24,7 @@ if (!hasReleaseKeystore) {
 }
 
 android {
-    namespace = "com.example.broker_wallet"
+    namespace = "com.nmodigital.brokerwallet"
     // compileSdk and targetSdk are correctly set for Android 15+ compliance.
     compileSdk = 36
     
@@ -46,7 +46,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.broker_wallet"
+        applicationId = "com.nmodigital.brokerwallet"
         minSdkVersion flutter.minSdkVersion
         targetSdk = 35  // Update to latest
         versionCode = flutter.versionCode

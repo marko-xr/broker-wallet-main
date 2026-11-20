@@ -61,7 +61,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Package = 'com.example.broker_wallet'
+$Package = 'com.nmodigital.brokerwallet'
 $StagingBucket = 'broker-wallet-media-staging'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $ReportsDir = Join-Path $PSScriptRoot 'reports'

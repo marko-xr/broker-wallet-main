@@ -308,9 +308,9 @@ void main() {
         final stays = source.substring(gate, _at(source, 'return;', gate));
         expect(stays.contains('context.go('), isFalse);
         expect(stays.contains('context.pop('), isFalse);
+        expect(stays.contains('leaveForm('), isFalse);
         // And only a complete save reaches the success path.
-        expect(
-            source.indexOf("context.go('/home')", commit), greaterThan(gate));
+        expect(source.indexOf('leaveForm(', commit), greaterThan(gate));
         expect('plan.commit('.allMatches(source).length, 1);
       });
 

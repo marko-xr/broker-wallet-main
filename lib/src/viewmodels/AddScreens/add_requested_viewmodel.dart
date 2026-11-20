@@ -10,6 +10,7 @@ import '../../common/localization/localization_delegate.dart';
 
 import '../../data/models/ScreensModel/request_model.dart';
 import '../../services/ScreenServices/request_service.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 enum RequestTab { rent, sell }
 
@@ -536,7 +537,7 @@ class AddRequestedViewModel extends ChangeNotifier {
           AppLocalizations.of(context).translate('requestSavedSuccessfully'),
           Colors.green,
         );
-        context.go('/home');
+        leaveForm(GoRouter.of(context));
       }
     }
   }
@@ -558,8 +559,9 @@ class AddRequestedViewModel extends ChangeNotifier {
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 child: Text(loc.translate('discard')),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -569,7 +571,7 @@ class AddRequestedViewModel extends ChangeNotifier {
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 

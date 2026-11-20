@@ -6039,7 +6039,25 @@ still published, without that new logo.
 Tests: new `quotation_media_publisher_test` (10) + 2 in
 `add_quotation_viewmodel_test`; agent-run 547/547 (test/quotation, r6b,
 canonical_identity, test/account, test/app); analyzer: no errors or
-warnings in the changed files. Not device-verified; not committed.
+warnings in the changed files. Not device-verified. Committed 458ed76.
+
+### 7BH-13) FORM-EXIT-1 — Add forms return to the screen that opened them (2026-11-20, owner report)
+
+Found: both entry points push the Add forms (Home's quick-action sheet and
+each list's add button), but every Add view model ended a successful add, a
+cancel with nothing typed, and "Discard" with `context.go('/home')`, so a
+form opened from a list landed on Home. Now `leaveForm(GoRouter)`
+(`lib/src/common/routes/leave_form.dart`): pop back to the opener, or Home
+only when nothing is underneath (opened by a link). Applied to all seven
+(Offers, Requests, Owners, Offices, Brokers, Watchmen, Quotation: 23 exits);
+the discard dialogs read the router before closing. Edit saves already popped
+with the updated record (unchanged). Tests: new `test/forms/leave_form_test`
+(list → list, Home → Home, discard dialog, link → Home, source guard); old
+expectations of Home after a save updated in `offer_media_form_test` (2),
+`plan_attachment_offer_form_test` (4) and the plan source guard. Agent-run
+1,668/1,668 (forms, offers, owners, plan_attachment, quotation, r5a–r5d,
+brokers, details_map_address, navigation_authority). Not device-verified;
+not committed.
 
 ---
 

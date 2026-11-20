@@ -12,6 +12,7 @@ import 'package:geocoding/geocoding.dart';
 import '../../data/models/ScreensModel/watchmen_model.dart';
 import '../../services/ScreenServices/watchmen_service.dart';
 import '../../Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 class AddWatchmenViewModel extends ChangeNotifier
     implements LocationCapableViewModel {
@@ -407,7 +408,7 @@ class AddWatchmenViewModel extends ChangeNotifier
         final saved = await _handleAddMode(context, watchmen);
         // When adding was not allowed nothing was saved: stay on the form.
         if (saved && context.mounted) {
-          context.go('/home');
+          leaveForm(GoRouter.of(context));
         }
       }
     } catch (e) {
@@ -466,8 +467,9 @@ class AddWatchmenViewModel extends ChangeNotifier
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 child: Text(loc.translate('discard')),
               ),
@@ -476,7 +478,7 @@ class AddWatchmenViewModel extends ChangeNotifier
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 

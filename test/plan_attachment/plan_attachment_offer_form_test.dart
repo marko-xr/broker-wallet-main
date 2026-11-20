@@ -447,7 +447,9 @@ void main() {
       expect(rig.service.saves.single.newMedia, isEmpty,
           reason: 'the plan is not sent as a gallery item');
       expect(toasts, isNot(contains(en['planAttachmentSavedUploadFailed'])));
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
 
     testWidgets(
@@ -483,7 +485,9 @@ void main() {
         reason: 'one upload id for the whole life of the choice',
       );
       expect(rig.transport.current?.mediaObjectId, _planId);
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
 
     testWidgets(
@@ -502,7 +506,9 @@ void main() {
       expect(rig.service.saves.single.newMedia, hasLength(10));
       expect(rig.service.saves.single.newMedia, isNot(contains(_planId)));
       expect(rig.transport.authorizeCalls.single.mediaObjectId, _planId);
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
 
     testWidgets(
@@ -516,7 +522,9 @@ void main() {
 
       expect(rig.transport.calls, isEmpty);
       expect(rig.events, ['offer saved']);
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
 
     testWidgets(

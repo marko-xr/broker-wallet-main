@@ -27,6 +27,7 @@ import 'package:broker_wallet/src/viewmodels/plan_attachment_form_factory.dart';
 import 'package:broker_wallet/src/viewmodels/private_media_form.dart';
 import '../../data/models/ScreensModel/owners_model.dart';
 import '../../services/ScreenServices/owner_service.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 class AddOwnersViewModel extends ChangeNotifier
     implements LocationCapableViewModel {
@@ -784,7 +785,7 @@ class AddOwnersViewModel extends ChangeNotifier
             : loc.translate('ownerSavedSuccessfully'),
         Colors.green,
       );
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 
@@ -859,7 +860,7 @@ class AddOwnersViewModel extends ChangeNotifier
 
         // Navigate back immediately - no waiting for uploads
         // Debug log suppressed: Navigation to home...
-        context.go('/home');
+        leaveForm(GoRouter.of(context));
       }
     }
   }
@@ -889,8 +890,9 @@ class AddOwnersViewModel extends ChangeNotifier
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 child: Text(loc.translate('discard')),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -900,7 +902,7 @@ class AddOwnersViewModel extends ChangeNotifier
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 

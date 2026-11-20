@@ -11,6 +11,7 @@ import '../../common/localization/localization_delegate.dart';
 import '../../common/enums/add_offices_mode.dart';
 import '../../data/models/ScreensModel/offices_model.dart';
 import '../../services/ScreenServices/office_service.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 class AddOfficesViewModel extends ChangeNotifier
     implements LocationCapableViewModel {
@@ -291,7 +292,7 @@ class AddOfficesViewModel extends ChangeNotifier
         final saved = await _handleAddMode(context, office);
         // When adding was not allowed nothing was saved: stay on the form.
         if (saved && context.mounted) {
-          context.go('/home');
+          leaveForm(GoRouter.of(context));
         }
       }
     } catch (e) {
@@ -418,8 +419,9 @@ class AddOfficesViewModel extends ChangeNotifier
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 child: Text(loc.translate('discard')),
               ),
@@ -428,7 +430,7 @@ class AddOfficesViewModel extends ChangeNotifier
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 }

@@ -523,7 +523,9 @@ void main() {
       expect(service.saves.last.newMedia, ['d2']);
       expect(service.generatedIds, 1, reason: 'one Offer, created once');
       expect(toasts.last, en['offerSavedMediaUploading']);
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
 
     testWidgets(
@@ -569,7 +571,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(toasts.single, isNot(en['offerSavedMediaUploading']));
-      expect(find.text('HOME'), findsOneWidget);
+      // Back to the screen the form was opened from, not Home.
+      expect(find.text('OPEN'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
     });
   });
 }

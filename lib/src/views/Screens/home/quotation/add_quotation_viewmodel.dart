@@ -22,6 +22,7 @@ import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 /// Renders a Quotation to a local PDF file and returns its path.
 typedef QuotationPdfGenerator = Future<String> Function(
@@ -1061,7 +1062,6 @@ class AddQuotationViewModel extends ChangeNotifier {
     late QuotationSaveOutcome outcome;
     late AppLocalizations loc;
     late Locale locale;
-    final wasEditing = isEditMode;
     try {
       final currentUserId = _authRepository.currentUserId;
       if (currentUserId == null) {
@@ -1102,11 +1102,7 @@ class AddQuotationViewModel extends ChangeNotifier {
               : loc.translate(key),
           Colors.green,
         );
-        if (wasEditing && context.canPop()) {
-          context.pop();
-        } else {
-          context.go('/home');
-        }
+        leaveForm(GoRouter.of(context));
       case QuotationSaveKind.mediaIncomplete:
         _showToast(loc.translate(key!), Colors.orange);
       case QuotationSaveKind.failed:
@@ -1848,8 +1844,9 @@ class AddQuotationViewModel extends ChangeNotifier {
                   child: const Text('Keep Editing')),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('Discard'),
@@ -1859,7 +1856,7 @@ class AddQuotationViewModel extends ChangeNotifier {
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 

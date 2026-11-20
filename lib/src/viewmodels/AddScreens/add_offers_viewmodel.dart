@@ -37,6 +37,7 @@ import 'package:uuid/uuid.dart';
 import '../../common/localization/localization_delegate.dart';
 import '../../data/models/ScreensModel/offers_model.dart';
 import '../../services/ScreenServices/offer_service.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 enum OffersTab { rent, sell }
 
@@ -1487,7 +1488,7 @@ class AddOffersViewModel extends ChangeNotifier
             : loc.translate('offerSavedSuccessfully'),
         Colors.green,
       );
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 
@@ -1549,7 +1550,7 @@ class AddOffersViewModel extends ChangeNotifier
               : 'offerSavedSuccessfully'),
           Colors.green,
         );
-        context.go('/home');
+        leaveForm(GoRouter.of(context));
       }
     }
   }
@@ -1594,8 +1595,9 @@ class AddOffersViewModel extends ChangeNotifier
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: Text(loc.translate('discard')),
@@ -1605,7 +1607,7 @@ class AddOffersViewModel extends ChangeNotifier
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 

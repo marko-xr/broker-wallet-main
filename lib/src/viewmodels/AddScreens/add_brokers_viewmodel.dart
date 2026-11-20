@@ -9,6 +9,7 @@ import '../../common/enums/add_brokers_mode.dart';
 
 import '../../data/models/ScreensModel/brokers_model.dart';
 import '../../services/ScreenServices/broker_service.dart';
+import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 class AddBrokersViewModel extends ChangeNotifier {
   final BrokerService _brokerService = BrokerService();
@@ -256,7 +257,7 @@ class AddBrokersViewModel extends ChangeNotifier {
 
       // Success - navigate back
       if (context.mounted) {
-        context.go('/home');
+        leaveForm(GoRouter.of(context));
       }
     } else {
       throw Exception('Failed to save broker');
@@ -302,8 +303,9 @@ class AddBrokersViewModel extends ChangeNotifier {
               ),
               TextButton(
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/home');
+                  leaveForm(router);
                 },
                 child: Text(loc.translate('discard')),
               ),
@@ -312,7 +314,7 @@ class AddBrokersViewModel extends ChangeNotifier {
         },
       );
     } else {
-      context.go('/home');
+      leaveForm(GoRouter.of(context));
     }
   }
 }

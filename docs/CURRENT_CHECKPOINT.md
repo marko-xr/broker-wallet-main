@@ -16808,6 +16808,41 @@ Check that a rental Request and a sale Request show the correct rotating badge.
 NEXT — Reopen Favorites after that refresh and confirm both cached Request
 cards show the reordered details immediately, without an all-unavailable flash.
 
+## Notifications N1 — settings cleanup and inbox correctness (2026-11-20)
+
+The final notification plan is in `docs/NOTIFICATIONS_PRODUCTION_PLAN.md`.
+
+Owner decisions:
+
+- Remove the Status changes and App updates settings.
+- Remove the "push not configured" card.
+- Shorten the remaining descriptions.
+- Drop the `system` category.
+
+Source changes:
+
+- Settings keep exactly five switches plus the master switch, and Plan alerts
+  now persists. A failed save reverts the switch.
+- The unread badge uses an exact server count.
+- Paging uses a keyset on `(created_at, id)`, so tied rows are read once.
+- Answers for an earlier account are dropped.
+- Offline and failure states show Retry instead of "all caught up".
+- A swipe-delete is rolled back if the server refuses it.
+- Taps follow only a fixed allowlist of screens.
+
+New tests are in `test/notifications/notification_n1_test.dart`.
+`test/profile/profile_information_architecture_test.dart` and
+`test/responsive/r3_test_fakes.dart` were updated.
+
+Tests and analysis were not run, at the owner's request (2026-11-19). No SQL,
+hosted, vendor or device change was made. Real-device verification is pending.
+
+NOW — Run `flutter test test/notifications test/profile/profile_information_architecture_test.dart test/responsive/r3_profile_settings_notifications_responsive_test.dart test/auth/password_recovery_quarantine_test.dart test/account/account_deletion_quarantine_test.dart`
+and `flutter analyze lib/src/viewmodels/notification_viewmodel.dart lib/src/viewmodels/notification_settings_viewmodel.dart lib/src/repositories lib/src/data/models/notification_model.dart lib/src/views/Screens/home/notifications lib/src/views/Screens/home/Profile/notification_settings_view.dart test/notifications`.
+NEXT — On the device, open Notification Settings in Arabic and English. Confirm
+it shows five switches and no card, and that the switches survive reopening the
+screen. Open the inbox offline and confirm it shows Retry.
+
 ## Android identity A-ID-1 — `com.nmodigital.brokerwallet` (2026-11-20)
 
 Owner decision: the final Android package is `com.nmodigital.brokerwallet`. The
@@ -16893,3 +16928,625 @@ NEXT — Install it on a device as the new app, sign in, and check:
 - Maps
 
 Then make the iOS Bundle ID and plist change a separate checkpoint.
+
+## Notifications N2 + N3 — follow-up reminders and FCM push (2026-11-20)
+
+Branch: `notifications-implementation`. The source is uncommitted. Nothing
+hosted was changed.
+
+Approved design:
+
+- Supabase is the only auth and data authority.
+- FCM HTTP v1 handles transport. OneSignal is not used.
+- The user picks the follow-up date and time.
+
+Details, the deploy runbook and the iOS checklist are in
+`docs/NOTIFICATIONS_PRODUCTION_PLAN.md`.
+
+Source changes:
+
+- **Migration:** `supabase/migrations/20261120130000_follow_up_reminders_and_push_delivery.sql`
+- **Edge Function:** `supabase/functions/push-dispatch/` (`index.ts`, `fcm.ts`,
+  `fcm.test.ts`) and its entry in `supabase/config.toml`
+- **Scheduler script:** `supabase/deploy/notifications_n2_schedule.sql`
+- **Validation:** `supabase/validation/follow_up_reminders_validation.sql`
+- **App:**
+  - `firebase_messaging` dependency
+  - the push service
+  - the follow-up section on Request and Offer Details
+  - follow-up text in the inbox
+  - the Android channel and icon
+
+Evidence, run by the agent:
+
+- On a local PostgreSQL 17.5 (PGlite, not Supabase): all 20 migrations applied.
+- 58 of 58 behaviour checks passed.
+- 12 of 12 SQL mutations were caught.
+- The validation script passed and rolled back.
+- `deno check` of the function is clean.
+- `node --test` of the FCM helpers: 5 of 5 passed.
+
+Not run: Flutter tests and analyze (by the owner's rule), the hosted
+validation, the device.
+
+Open decision: starting Firebase wakes the dormant Firestore quota code. Keep
+the `broker-wallet` project without a Firestore database, or with deny-all
+rules, until that code is removed.
+
+NOW — Run `flutter pub get`, then the tests:
+`flutter test test/notifications test/profile/profile_information_architecture_test.dart test/responsive/r3_profile_settings_notifications_responsive_test.dart test/responsive/r5a_requests_responsive_test.dart test/responsive/r5b_offers_responsive_test.dart test/responsive/details_contacts_test.dart test/responsive/details_map_address_test.dart test/services/app_access_policy_test.dart test/map/map_sdk_warmup_test.dart test/auth/password_recovery_quarantine_test.dart test/account/account_deletion_quarantine_test.dart`
+Then run `flutter analyze lib test/notifications`.
+NEXT — Approve the hosted steps in the runbook one at a time: validation,
+migration, function and secrets, schedule. Then test on the Samsung.
+
+## Notifications N2/N3 — pre-hosted review (2026-11-20)
+
+The owner's run: 308 tests passed, and `flutter analyze` found one new
+warning. That warning is fixed: the push-tap helper moved into `lib/app.dart`
+as `openInboxFromPush`, where it may use `routeAccessFor`. The other 84 info
+items were already there.
+
+**Firestore quota conflict, solved in source.** Firebase is now initialized for
+FCM, which would have connected the dormant Toolkit quota to the new project's
+Firestore. Five places used to call `FirebaseFirestore.instance`:
+
+- `QuotaHelper.checkAndWarnQuota` (read)
+- the scanner, combine, images-to-PDF and signature usage gates (counter write)
+
+They now call `legacyQuotaFirestore()` in
+`lib/src/services/legacy_quota_store.dart`. It throws the same way the app
+failed before Firebase was initialized, so:
+
+- the existing catch blocks give the same answers as before: allowed, nothing
+  written
+- no Firestore traffic
+- no limit added or removed
+- no change to subscription authority
+
+The gates and the dialog stay in place for the future server-side quota. B5 in
+`test/services/app_access_policy_test.dart` now looks for the new call. The new
+`test/services/legacy_quota_store_test.dart` checks the change.
+
+**Migration hardening:**
+
+- no `BEGIN`/`COMMIT`, like the other recent migrations
+- one device row per account (a refreshed token replaces the old one)
+- no push for a record deleted after its reminder fired
+
+Android: `firebase_messaging_auto_init_enabled=false`, so no FCM token is created
+before a signed-in, confirmed session asks for one.
+
+**Validation script rewritten** in the repository pattern:
+
+- preflight checks that the migration is not applied yet
+- `\ir` includes the migration
+- one transaction that always ends in `ROLLBACK`
+- checks only its own fixtures
+- prints no token
+
+Evidence on a local PostgreSQL (PGlite) seeded with rows like the hosted ones:
+
+- PASS, and the database is identical before and after (counts and device
+  digest)
+- 61 of 61 behaviour checks pass
+- 15 of 15 migration mutations are caught by the behaviour suite
+- the validation script alone catches the security mutations: session gate,
+  owner check, event key, active-session join, device cleanup, client grants
+- an injected `COMMIT` is detected as a persistent change
+
+**The hosted project is production.** `rbvcnvqpdqrhywcgxkne` is the only
+Supabase project and has no branches. It holds 5 real accounts, and the last
+sign-in was 2026-11-20. It has no webhooks and no trigger that calls out, and
+N2 is not applied.
+
+NOW — Owner approval to run `supabase/validation/follow_up_reminders_validation.sql`
+once against `rbvcnvqpdqrhywcgxkne`, with a SELECT-only snapshot before and after.
+Stop on any failure.
+NEXT — Re-run the Flutter tests, and analyze the changed files. Then approve
+the migration apply as its own step.
+
+Owner run 2026-11-20 (services, notifications, toolkit and route tests): 1139 passed, 4 failed.
+- `legacy_quota_store_test`: fixed. A missing material import for `Dialog` stopped it compiling.
+- `app_access_policy_test`: the compiler crashed in the same run, right after that error. The file's change is only a comment and a string. Re-run to confirm.
+- `details_contact_actions_test` ("no pre-filled message"): fails at HEAD. The delete dialog in `offers_view_details.dart` (commit d847033) uses `message:`. Not N2/N3.
+- `image_pdf_viewmodel_test` ("any change discards the draft", reason quality): does not use the changed usage gate, and its view model is unchanged. Probably a file-deletion timing failure. Re-run alone to classify.
+
+Agent run 2026-11-20 (owner asked):
+- Fixed two test-only issues:
+  - `legacy_quota_store_test` no longer scans the store's own comment.
+  - `details_contact_actions_test` checks `message:` only inside the WhatsApp call. The delete dialog's `message:` had made it fail at HEAD.
+- Full `flutter test`: 8105 passed, 0 failed.
+- Scoped `flutter analyze` of every changed path: no issues.
+- The macOS plugin registrant changed (firebase_messaging, generated). Do not commit it in the feature commit.
+
+Owner device check, 2026-11-21 (Samsung, com.nmodigital.brokerwallet debug): "all good".
+- Notification settings, inbox offline and retry, Toolkit tools, sign-out and sign-in all reported fine.
+- The follow-up section showed its expected pre-migration state.
+- The reminder flow and push are not tested yet: they need the hosted migration, the function and the schedule.
+
+NOW — Owner approval for one rollback-only hosted validation run against production (rbvcnvqpdqrhywcgxkne).
+
+### Hosted rollback-only validation, 2026-11-21: PASS (owner-approved, run once)
+
+- **Project:** `rbvcnvqpdqrhywcgxkne` (production).
+- **Transport:** the Supabase MCP `execute_sql`, as session user `postgres`.
+- **CLI:** not used. The `cli_login_postgres` role was not touched. It is a standing role, not a temporary one; its password expired 2026-11-03.
+- **Preconditions proven first (read-only plus one no-write probe):**
+  - One request runs in one session and one transaction.
+  - An error aborts the request, and no transaction stays open.
+  - No sequence or identity column is written.
+  - No trigger calls out. pg_net, http and dblink are not installed.
+  - The extension event triggers do nothing for this DDL.
+  - `NOTIFY pgrst` is discarded on ROLLBACK.
+- **File:** the single-request file built from the repository (sha256 `1f2f5b01…`), with the migration inlined verbatim (sha256 `19bbeb49…`).
+- **Result:** `follow_up_reminders_validation: PASS`.
+- **Snapshots:** the 20 SELECT-only values were identical before and after: counts, function/column/policy/index/trigger/grant digests, and migration history 19. N2 objects were absent. Fixture users, sessions and requests: 0. No idle-in-transaction session.
+- **Not done:** migration apply, function deploy, secrets, cron, commit, push.
+
+NOW — Owner approval to apply migration 20261120130000 to production as its own step, then read it back with SELECTs only.
+
+### N2 apply readiness, 2026-11-21
+
+1. **Backup: NOT MET.**
+   - The organization is on the Supabase Free plan, which has no automatic daily backups (Supabase docs: Pro, Team and Enterprise only).
+   - This machine has no pg_dump and no Docker, so `supabase db dump` cannot run here.
+2. **Tests and analyze: MET.**
+   - No Dart, ARB, manifest or pubspec file changed after the full run (8105 passed).
+   - Scoped analyze of all changed paths was clean.
+3. **Same migration: MET.** The repo file's LF sha256 is `19bbeb49…`, identical to the version inlined in the production validation.
+4. **Recovery plan: MET.**
+   - The apply is one transaction with a preflight, so a failure changes nothing (MCP semantics proven 2026-11-21).
+   - `supabase/rollback/20261120130000_follow_up_reminders_and_push_delivery_down.sql` restores the exact previous schema, including the two replaced indexes as read from production.
+   - Local test: 9 of 9 checks pass (apply, refused re-apply with no change, use, down to identical schema, down refused when not applied, re-apply after down).
+   - The migration changes no existing row: notifications and push_devices have 0 rows on production.
+- **Production snapshot note:** the earlier digests for policies, indexes, triggers and grants used `string_agg(... order by 1)`, which orders by a constant. They matched, but the snapshot query is now fixed to order by the value.
+
+Owner decision 2026-11-21: back up production with the owner's own pg_dump before applying N2.
+- Steps: PostgreSQL 17 client tools via winget, the Session pooler, a password prompt, a custom-format dump of public, auth, storage and supabase_migrations into a private folder outside the repo, verification with pg_restore --list and Get-FileHash.
+- The agent never sees the password or the file.
+- NOW: the owner confirms the backup. Then the agent requests approval for the N2 apply.
+
+Backup capability check, 2026-11-21:
+- `supabase backups list` returned backups=[] and pitr_enabled=false (Free plan).
+- The Supabase MCP returns query results into the conversation only, so it cannot write a file. Using it for a full backup would pass auth password hashes and session tokens through the agent's context, so it was rejected.
+- `supabase db dump` needs Docker (not installed) to run pg_dump. pg_dump is not installed either.
+- pglite-tools' pg_dump can only dump a local PGlite database, not a remote one.
+- Minimum route: the owner permits installing the PostgreSQL 17 client tools. Then either the CLI's temporary login role (no password from the owner) or the owner's DB password.
+
+### Production backup before N2, 2026-11-21: DONE and VERIFIED
+
+Path A, approved by the owner.
+
+**How it was taken:**
+- Tools: PostgreSQL 17.12 client tools, already installed, with no local server.
+- The CLI was linked from a scratch folder.
+- The `db dump --dry-run` script was reviewed with its password redacted. Its temporary `cli_login_postgres` credentials were loaded into one process and never printed.
+- The direct connection was reachable.
+
+**Files** (in `%USERPROFILE%\BrokerWallet-Backups\2026-11-21-before-n2\`, outside Git):
+
+| File | Size | Content | sha256 starts |
+|---|---|---|---|
+| `broker-wallet-before-n2.dump` | 718,704 bytes | custom format; schemas public, auth, storage and supabase_migrations, with data | `649365ab48bd5aa` |
+| `roles.sql` | 6,229 bytes | roles, without passwords | `80fa49daded4d07` |
+
+**Verification:**
+- `pg_restore --list` reads 1172 TOC entries, including 77 TABLE DATA entries.
+- The rows of every COPY block were counted locally (counts only, no row content printed). All 77 tables match the live production counts exactly: 712 rows.
+
+**Side effect:** the CLI set a temporary password on `cli_login_postgres`, valid until 2026-11-20 20:53 UTC, after which it expires. The role is not a superuser and had no open sessions.
+
+NOW — Owner approval to apply the N2 migration only.
+
+### N2 migration APPLIED to production, 2026-11-21 (owner-approved, run once)
+
+**How it was applied**
+- **Project:** `rbvcnvqpdqrhywcgxkne`.
+- **Transport:** Supabase MCP `execute_sql` as `postgres`, in one transaction with a preflight.
+- **File:** apply file sha256 `370830404b92…`. It contains migration `19bbeb49…` verbatim and its history row.
+- **Result:** committed with no error.
+
+**Read-back (SELECT only):** all checks pass.
+
+| Area | Result |
+|---|---|
+| Migration history | 20 rows. The newest is `20261120130000` / `follow_up_reminders_and_push_delivery` / 55 statements, matching the repo file name. |
+| New tables | `follow_up_reminders` and `notification_delivery_jobs`, both with RLS on and 0 rows. |
+| New columns | `notifications.event_key`, `push_devices.session_id` |
+| New constraints | `notifications_event_key_shape`, `notifications_category_offered`, `push_devices_locale_valid`, `push_devices_platform_valid` |
+| Indexes | The new indexes are present. The replaced `notifications_recipient_created_idx` and `push_devices_owner_idx` are gone. |
+| Policies | `follow_up_reminders`: `select_own` (permissive) and `app_session_gate` (restrictive). `notification_delivery_jobs`: none, by design. |
+| Client table grants | Only `authenticated:SELECT` on `follow_up_reminders`. No client grant on `push_devices` or the jobs table. |
+
+**Functions** (all 9):
+- Every one is SECURITY DEFINER with `search_path=""`, and anon cannot execute any.
+- authenticated can execute only the 4 client RPCs: set and cancel reminder, register and unregister device.
+- service_role can execute all 9; on the non-client functions this comes from Supabase's default privileges, and service_role is the trusted server.
+- Each `md5(prosrc)` is identical to the repo migration bodies.
+
+**Everything else unchanged.** The pre-apply digests were recomputed excluding the N2 objects and adding back the two replaced index definitions. All 14 values are identical: counts, plus the functions, columns, policies, indexes, constraints, triggers and grants digests. No transaction was left idle.
+
+**Not done:**
+- `push-dispatch` deploy, secrets, Vault, pg_cron and pg_net.
+- Firebase changes.
+- Commit and push.
+
+**What this means now:**
+- The app's follow-up section can create, change and cancel reminders.
+- A due reminder will NOT fire until the scheduler is enabled. Push also needs the function and the secrets.
+
+**Recovery**, if ever needed:
+- `supabase/rollback/20261120130000_follow_up_reminders_and_push_delivery_down.sql`, run with its own approval.
+- The verified backup in `%USERPROFILE%\BrokerWallet-Backups\2026-11-21-before-n2\`.
+
+NEXT — Owner device check of create, change and cancel on the Samsung. Then separate approvals for (1) the push-dispatch deploy plus secrets and (2) the scheduler.
+
+Device check, 2026-11-21 (Samsung):
+- Create, change, cancel and persistence all work.
+- Server read-back: request reminder scheduled at generation 3, offer reminder scheduled at generation 2. Both are already past due; they will fire as soon as the scheduler is enabled.
+- **Defect found:** no Android permission prompt, and the 'notifications are off' snackbar showed instead. Cause: firebase_messaging on Android reports only authorized or denied (FlutterFirebaseMessagingPlugin.getPermissions), so the code waiting for notDetermined never asked.
+- **Fix:** request whenever not granted (the OS caps repeat prompts); the snackbar shows at most once per app run.
+- Tests: test/notifications 48 passed; scoped analyze clean. push_devices is still 0 until the re-test.
+
+Device re-test, 2026-11-21: PASS.
+- The Android permission prompt shows.
+- Server read-back: 1 device (fcm/android), bound to the account's active app session and a live auth session, locale ar, token present.
+- Two overdue reminders (request and offer) wait for the scheduler.
+
+NEXT — N3 server side, one approval per step:
+- (1) The owner creates the Firebase service-account key and sets FCM_SERVICE_ACCOUNT_JSON themselves (the agent never sees it).
+- (2) The agent deploys push-dispatch, and generates and sets PUSH_DISPATCH_SECRET in Edge secrets and Vault without printing it.
+- (3) Scheduler (pg_cron + pg_net + cron jobs). This makes the two overdue reminders fire: the first end-to-end test.
+
+### push-dispatch: pre-deploy review, 2026-11-21 (NOT deployed)
+
+**Read-only checks**
+- Edge secret names: `FCM_SERVICE_ACCOUNT_JSON` exists (the owner set it; the value was never read). `SUPABASE_SERVICE_ROLE_KEY` is present.
+- Legacy JWT keys are enabled, so the service-role JWT works with PostgREST.
+- The scheduler extensions (pg_cron, pg_net) are absent. 0 inbox rows, 0 jobs.
+
+**Review fixes**
+- `SENDER_ID_MISMATCH` and `INVALID_ARGUMENT` now fail the job and KEEP the device. They used to delete it, which would have wiped valid phones if the configuration or the message were wrong. Only `UNREGISTERED`/404 deletes a device.
+- Project guard: the function refuses a service account whose `project_id` is not `broker-wallet`. A test checks that this matches google-services.json. The guard runs before any reminder is fired or any job is leased.
+- `{"mode":"check"}` verifies the key and obtains a Google OAuth token. It touches no reminder, job or device, and sends nothing.
+- Each job's completion has its own error handling (`complete_failed` counter).
+- Every outbound fetch has a 10 s timeout.
+
+**Evidence**
+- `node --test fcm.test.ts`: 6/6.
+- `deno check`: clean.
+- New `handler_test.ts` (Deno, with fake Supabase, Google and FCM): 6/6 steps. It covers rejecting a missing or wrong secret, rejecting non-POST, check mode touching only OAuth, a normal run, a mismatch keeping the device, UNREGISTERED removing it, and 503 being retried.
+
+**Overdue reminders (read-only)**
+- The request reminder is about 1.4 h overdue and the offer reminder about 0.3 h, both scheduled.
+- They belong to one account, which has one registered, session-bound device.
+- They fire only on a normal run (scheduler or authorized call); deploying and check mode do not fire them.
+
+**Prepared deploy (needs approval)**
+1. Generate `PUSH_DISPATCH_SECRET` in memory and set it with `supabase secrets set`. It is never printed.
+2. `supabase functions deploy push-dispatch --project-ref rbvcnvqpdqrhywcgxkne --no-verify-jwt --use-api`. Never `--prune`.
+3. Verify:
+   - the function is listed as ACTIVE with JWT verification off
+   - a POST without the secret returns 401, and a GET returns 405
+   - a POST with `{"mode":"check"}` returns `{ok:true, oauth:true}`
+4. No DB change, no Vault, no cron, no push. Vault and cron come with the scheduler step, which rotates the dispatch secret into Vault.
+
+### push-dispatch DEPLOYED to production, 2026-11-21 (owner-approved)
+
+**What was done**
+- `PUSH_DISPATCH_SECRET`: 64 characters, generated in memory, set with `supabase secrets set`, never printed, cleared afterwards. No one holds a copy.
+- `supabase functions deploy push-dispatch --project-ref rbvcnvqpdqrhywcgxkne --no-verify-jwt --use-api`. Only `index.ts` and `fcm.ts` were uploaded.
+- The function is ACTIVE, version 1, with `verify_jwt=false`. Its ezbr_sha256 starts `f3db240973ea`.
+
+**Probes**
+
+| Request | Answer |
+|---|---|
+| POST, no secret | 401 |
+| POST, wrong secret | 401 |
+| GET | 405 |
+| POST `{"mode":"check"}` with the secret | 200, `{"ok":true,"project":"broker-wallet","oauth":true}` |
+
+The check proves the FCM service account belongs to `broker-wallet` and that Google issues an access token. It does not prove that the FCM v1 API is enabled; a disabled API would show as a failed job on the first send.
+
+**Unchanged (read-only)**
+- Both reminders are still scheduled.
+- 0 inbox rows, 0 jobs, 1 device.
+- No pg_cron or pg_net. Migration history: 20.
+
+**Not done:** Vault, cron, pg_net, any push, commit, push.
+
+**Scheduler step**
+- It must ROTATE the dispatch secret: generate a new one, set the Edge secret and the Vault `bw_push_dispatch_secret` together, and add the Vault `bw_push_dispatch_url`.
+- Then run `supabase/deploy/notifications_n2_schedule.sql`.
+- The two overdue reminders will fire within about a minute. That is the first end-to-end test on the Samsung.
+
+### Scheduler pre-activation review, 2026-11-21 (nothing activated)
+
+**Read-only checks**
+
+| Area | Finding |
+|---|---|
+| Vault | Only postgres and service_role can read `decrypted_secrets`; anon and authenticated cannot. No secrets are stored yet. |
+| Extensions | pg_cron 1.6.4 and pg_net 0.20.4 are available and not installed. |
+| Reminders | Exactly 2 are scheduled, both due, owned by one account. 0 jobs, 0 inbox rows. |
+| Device | 1 Android FCM device, bound to that owner's active session and a live auth session. |
+| Preferences | The owner's preferences allow push. |
+
+**push-dispatch source change (v2, not deployed)**
+- Check mode now also sends an FCM `validate_only` request to a fake token.
+  - 400 or 404 means the API is enabled and the key is authorized.
+  - 403 means the API is disabled or the key is denied.
+- Nothing is delivered, and nothing touches the database.
+- Tests: fcm.test 7/7, handler_test 7/7, deno check clean.
+
+**Scheduler script**
+- `supabase/deploy/notifications_n2_schedule.sql` is now one transaction.
+- Its preflight requires the migration, both Vault entries with a secret of at least 32 characters, and the exact function URL.
+- An exposure guard refuses to commit if anon or authenticated can read `net.http_request_queue`, `net._http_response` or the cron tables.
+- It refuses to run if any `bw-*` job already exists.
+- PGlite with stand-ins: 16/16. That covers the three jobs, no secret in the commands, the refusals, all-or-nothing, and prune deleting only finished jobs older than 30 days, never inbox rows.
+
+**Activation plan (needs approval)**
+- (A) Redeploy push-dispatch v2 and run the check. It must report `fcm_api=enabled`; otherwise STOP.
+- (B) Rotate the dispatch secret, without printing it, into the Edge secret and Vault (`supabase db query --linked`, Management API). Add the Vault URL.
+- (C) Run the scheduler script through MCP. The script contains no secret.
+- (D) Monitor the two reminders, the inbox rows, the job statuses, the FCM message ids (booleans only), the cron run details and the pg_net status codes.
+
+### Activation, 2026-11-21: STOPPED at the scheduler exposure guard (by design)
+
+**Done**
+- **A.** `PUSH_DISPATCH_SECRET` was rotated (64 characters, never printed). push-dispatch v2 was deployed.
+  - Its check returned `{"ok":true,"project":"broker-wallet","oauth":true,"fcm_api":"enabled","fcm_probe_status":400}`.
+  - **The FCM v1 API is confirmed enabled**, and nothing was delivered.
+- **B.** Vault now holds `bw_push_dispatch_secret` (64 characters) and `bw_push_dispatch_url` (exact).
+  - They were written through `supabase db query --linked` from a scratch link. That initialised the CLI login role with a temporary password.
+  - The temporary SQL file was deleted.
+
+**Stopped**
+- **C.** The scheduler transaction raised: `scheduler exposure check failed: anon can read net.http_request_queue`. Supabase's pg_net setup grants anon SELECT on its request queue, which briefly holds the dispatch header.
+- The whole transaction rolled back. Read-back:
+  - no pg_cron or pg_net, and no cron or net schema
+  - 2 reminders still scheduled
+  - 0 inbox rows and 0 jobs
+  - no idle transaction
+- **Nothing was sent.** The two Vault entries remain; only postgres and service_role can read them.
+
+**Owner decision needed**
+1. **Rollback-only diagnostic, then activation.**
+   - Inside a transaction that ends in ROLLBACK: create pg_net, then try `revoke select on net.http_request_queue, net._http_response from anon, authenticated, public`, then re-check.
+   - If the revoke works, add it to the scheduler script before its guard, and activate.
+2. **Accept Supabase's documented pattern.**
+   - The net schema is not exposed by PostgREST (config.toml exposes only public and graphql_public), so anon cannot query it through the API.
+   - The guard would then check API exposure instead of the raw grant.
+   - The owner must confirm under Dashboard → Settings → API → Exposed schemas that `net` is not listed.
+3. **Single-use nonce.**
+   - The cron job passes a single-use token that expires in 2 minutes, instead of the long-lived secret.
+   - This needs a new migration: a private table and two functions.
+
+### pg_net revoke test (Option 1), 2026-11-21: REVOKE IS NOT POSSIBLE. STOP.
+
+**How it ran**
+- One transaction that could never commit: it ended with a RAISE carrying the results.
+- Inside it: `create extension pg_net`, then `revoke all on net.http_request_queue, net._http_response from public, anon, authenticated`.
+- Effective permissions were measured with `has_table_privilege`, which includes inherited permissions.
+
+**Result**
+- `supabase_admin` owns both tables, and its ACL grants PUBLIC everything: `=arwdDxtm/supabase_admin`.
+- The REVOKE raised no error, but postgres is not the grantor, so the ACL did not change.
+- Effective permissions are identical before and after: anon and authenticated keep SELECT, INSERT, UPDATE and DELETE on both tables.
+- They can also EXECUTE `net.http_post` and `net.http_get`.
+
+**Read-back**
+- No pg_net or pg_cron, and no net or cron schema.
+- 2 reminders scheduled, 0 inbox rows, 0 jobs, no idle transaction.
+
+**Conclusion.** With Supabase's pg_net, any secret sent through `net.http_post` sits briefly in a table that the platform lets anon and authenticated read and change. That access is only reachable through SQL, not through PostgREST (net is not exposed), but the guard rightly refuses a long-lived secret there.
+
+**Recommended secure alternative: single-use dispatch nonce** (needs a migration and a function update, each approved separately)
+- A private table `push_dispatch_nonces`: no client grants, RLS on.
+- **Cron command:** `net.http_post` with header `x-dispatch-nonce = public.issue_push_dispatch_nonce()`. The function inserts a random 32-byte value with a 2-minute expiry.
+- **push-dispatch:** accepts either the static secret (manual check calls only) or a nonce. The nonce goes to the service_role RPC `consume_push_dispatch_nonce(text)`, which deletes it and returns true only if it was unused and unexpired.
+- **Leak impact:** at most one dispatch run, and a run only delivers due reminders to their rightful owners, so it gives no access to any data. Deleting a queued request only delays one minute of push. Inbox rows still come from the plain-SQL cron job.
+- **Vault:** the dispatch secret is no longer needed and can be deleted; `bw_push_dispatch_url` stays.
+- **Guard update:** the scheduler stops requiring that anon cannot read the queue, and instead requires that no long-lived secret appears in any cron command or http_post header.
+
+### Single-use dispatch nonce, 2026-11-21: tested locally, then validated, applied, deployed and activated (steps below)
+
+**Files**
+- `supabase/migrations/20261121090000_push_dispatch_nonce.sql`
+  - `push_dispatch_nonces` stores only `sha256(nonce)`, with RLS and no client or service_role grant.
+  - `issue_push_dispatch_nonce()` is callable by postgres only: 244 random bits, 2-minute expiry, at most 100 open.
+  - `consume_push_dispatch_nonce(text)` is callable by service_role only: single-use, checks expiry and shape.
+- `supabase/validation/push_dispatch_nonce_validation.sql`: rollback-only; the migration is included with `\ir`.
+- `supabase/rollback/20261121090000_push_dispatch_nonce_down.sql`
+  - Refuses to run while a cron job still issues nonces.
+  - Uses dynamic SQL so it also works without pg_cron. A bug was found and fixed by the local test.
+- `supabase/functions/push-dispatch/index.ts`: accepts `x-dispatch-nonce` (consumed through the RPC; a malformed one is refused with no DB call) or the static secret for manual checks.
+- `supabase/deploy/notifications_n2_schedule.sql`
+  - The dispatch job sends `x-dispatch-nonce = public.issue_push_dispatch_nonce()`.
+  - The script deletes the Vault `bw_push_dispatch_secret`.
+  - A guard refuses any bw-* job mentioning a static secret, service_role or authorization.
+
+**Evidence (PGlite; Deno and Node for the function)**
+- Nonce validation: PASS, and the database is unchanged afterwards.
+- 6/6 mutations caught: raw storage, expiry ignored, reuse, service_role issuing, anon consuming, no cap.
+- Down script: restores the exact previous schema and history.
+- Scheduler script: 17/17.
+- N2 behaviour suite with the full chain: 61/61.
+- handler_test: 9/9 steps, including nonce once only, replay refused, malformed nonce never reaching the DB.
+- fcm.test: 7/7. deno check: clean.
+
+**Hosted steps (each needs approval; stop on any failure)**
+1. Rollback-only validation of the nonce migration, with snapshots. **DONE 2026-11-21 (owner: "Validation only")**
+   - Run once on production `rbvcnvqpdqrhywcgxkne` through the Supabase MCP as postgres, in one request.
+   - Content: `validation/push_dispatch_nonce_validation.sql` with the migration inlined.
+     - Migration sha256 `8794bf12…`; hosted file sha256 `2b3df4ca…`, 7273 bytes.
+     - One BEGIN; it ends in ROLLBACK.
+   - Result: `push_dispatch_nonce_validation: PASS`.
+   - Before and after snapshots are identical (18 values):
+     - users 5, profiles 5, requests 4, offers 23
+     - inbox 0, jobs 0, scheduled reminders 2, devices 1
+     - history 20, bw Vault entries 2
+     - no nonce table, no issue function, no pg_cron/pg_net
+     - functions, columns, policies, indexes and grants digests unchanged
+   - No session was left idle in a transaction afterwards.
+   - Nothing was applied, deployed, scheduled or sent. Steps 2–4 still need separate approval.
+2. Apply the nonce migration: one transaction, a history row, read-back. **APPLIED to production 2026-11-21 (owner: "Approve nonce apply")**
+   - One MCP request as postgres. Apply file sha256 `f37c924a…`, 6363 bytes: preflight, migration verbatim (sha256 `8794bf12…`, identical to the hosted-validated segment), history row, COMMIT.
+   - Preflight required:
+     - the nonce objects absent and no `20261121090000` history row
+     - the latest history version `20261120130000`
+     - no pg_cron/pg_net
+     - N2 present
+   - Local proof first (PGlite, 10/10): objects and grants as designed, second apply refused with nothing changed, unexpected history refused, mid-file failure all-or-nothing, down restores exact schema and history.
+   - Read-back after apply:
+     - history 21, latest `20261121090000`; the row is `push_dispatch_nonce` with 9 statements
+     - the table exists with RLS on, 0 policies, 0 open nonces
+     - both functions are SECURITY DEFINER with `search_path=""`
+   - Effective privileges after apply:
+     - postgres can issue; service_role can consume but cannot issue or touch the table
+     - anon and authenticated have no function or table access
+   - All counts are unchanged: users 5, profiles 5, requests 4, offers 23, inbox 0, jobs 0, scheduled 2, devices 1, bw Vault entries 2.
+   - Still no pg_cron/pg_net.
+   - The functions, columns, policies, indexes and grants digests for every other object are identical to before. No idle-in-transaction session.
+   - Recovery: `supabase/rollback/20261121090000_push_dispatch_nonce_down.sql` (only while no cron job issues nonces).
+   - push-dispatch v2 (live) does not call the nonce RPC yet; nothing is scheduled or sent.
+3. Redeploy push-dispatch v3. Probes: 401 without credentials, 401 for a malformed nonce, and the check mode using a freshly rotated manual secret. **DEPLOYED 2026-11-21 (owner: "Approve v3 deploy")**
+   - Local proof before deploy:
+     - `handler_test.ts` 9/9 steps
+     - `node --test supabase/functions/push-dispatch/fcm.test.ts` 7/7 (run from the repo root; it reads `android/app/google-services.json` relative to the current folder)
+     - `deno check` clean
+   - The manual Edge secret `PUSH_DISPATCH_SECRET` was rotated in-process, never printed, and is now held nowhere.
+   - The Vault `bw_push_dispatch_secret` therefore holds a stale value, unused by the nonce design and deleted by the scheduler script.
+   - `supabase functions deploy push-dispatch --no-verify-jwt --use-api`: platform version 5, ACTIVE, verify_jwt false.
+   - Probes against production:
+     - GET → 405
+     - POST with no credentials, a wrong secret, a malformed nonce, or an unknown well-formed nonce → 401
+     - check mode with the manual secret → 200 (`project broker-wallet`, `oauth true`, `fcm_api enabled`, probe status 400)
+   - Nonce end to end:
+     - A nonce was issued by postgres through `supabase db query --linked` into a variable, never printed.
+     - Check mode with it → 200; replaying it → 401.
+   - Afterwards: inbox 0, jobs 0, scheduled 2, devices 1, open nonces 0, history 21, no pg_cron/pg_net, no idle transaction. No push was delivered: check mode only calls FCM `validate_only` on a fake token.
+   - Script: `deploy_v3.ps1` in this session's scratchpad.
+4. Activate the scheduler, which deletes the static Vault secret. Then monitor the two reminders through to the Samsung. **ACTIVATED 2026-11-21 (owner: "Approve activation")**
+   - Before:
+     - local `schedule_test.mjs` 17/17; script sha256 (LF) `4d1a90e3…`, 4620 bytes
+     - production: 2 scheduled overdue reminders (1 request, 1 offer), 1 device on the active session, inbox 0, jobs 0, no pg_cron/pg_net
+   - Run once through the Supabase MCP as postgres. It committed.
+     - Jobs, all active: `bw-fire-follow-up-reminders` (* * * * *), `bw-push-dispatch` (* * * * *), `bw-prune-push-delivery-jobs` (17 3 * * *).
+     - Vault now holds only `bw_push_dispatch_url`.
+   - First minute (23:20 UTC):
+     - both cron runs succeeded
+     - both reminders → `sent`, each with one inbox row (category `reminder`, `follow_up` key)
+     - both delivery jobs → `sent`, attempt 1, no error
+     - push-dispatch answered 200: `claimed 2, sent 2, retry 0, invalid_token 0, failed 0`
+     - 0 open nonces, empty pg_net queue
+   - Exposure check:
+     - no cron command or return message and no pg_net response contains a 64-hex value or a long-lived secret
+     - the only "secret" text is the `vault.decrypted_secrets` URL lookup
+   - Second minute (23:21 UTC):
+     - 4 runs, all succeeded
+     - the second dispatch claimed 0 and sent 0
+     - still 2 inbox rows and 2 sent jobs: no duplicates
+   - FCM accepting both messages is server-side proof only. **Arrival on the Samsung is for the owner to confirm.**
+   - **VERIFIED_REAL_DEVICE (owner, Samsung, 2026-11-21)**:
+     1. Both real FCM push notifications arrived.
+     2. Tapping a push opened Broker Wallet.
+     3. Both notifications appeared in the in-app Inbox.
+
+     Do not repeat these tests except as a regression check.
+
+**Remaining Android acceptance** (one group at a time; owner tests on the Samsung, agent verifies with read-only Supabase queries):
+1. New Request/Offer reminders: create, edit, cancel, scheduled delivery. **PASSED 2026-11-21 (owner on the Samsung + read-only DB check)**
+   - New request reminder: created, then changed (generation 2), due 23:49 UTC.
+     - It fired at 23:49:00, and its job was `sent` on attempt 1 in the same minute.
+     - It made exactly one inbox row, with generation 2 in its key, so nothing was created for the old time.
+   - Offer reminder: set for 23:51 and cancelled at 23:43:56 (`cancel_reason user`).
+     - Checked again at 23:52:24: still `cancelled`, no inbox row, no job.
+   - A past time was refused in the app; no row was created.
+   - Totals: 3 inbox rows, 3 jobs `sent`, 0 duplicate event keys, 62 cron runs with 0 failures, 0 non-200 dispatch answers.
+2. Read/unread and deletion. **PASSED 2026-11-21 (owner on the Samsung + read-only DB check at 23:59:47 UTC)**
+   - Two new reminders fired at 23:58:00: the request one (same request re-set, generation 3, new event key) and a new offer one.
+     - Both jobs `sent` on attempt 1.
+   - Tapping the request notification stored `read_at` 23:58:30. "Mark all read" stored 23:59:18 on the offer one.
+     - All 4 remaining rows have `is_read` true with a `read_at`.
+   - The deleted notification (the 23:20 offer row) is gone from the server.
+     - Its delivery job went with it (cascade), and its reminder's link became null (`on delete set null`).
+     - Every other row is untouched.
+   - 0 duplicate event keys, 0 failed cron runs, 0 non-200 dispatch answers.
+   - Still to observe in group 6: Arabic swipe direction, and whether the delete background icon is hidden. `Alignment.centerRight` is hard-coded in `_NotificationTile`, so it is not mirrored for RTL. This is not a confirmed defect yet.
+3. Background, terminated and offline recovery. **PASSED 2026-11-21 (owner on the Samsung + read-only DB check at 00:13:37 UTC)**
+   - Three new reminders fired at 00:06, 00:09 and 00:12 UTC, all on offers (one offer re-set, generation 4).
+     - Each created exactly one inbox row and one job `sent` on attempt 1, within 2 s.
+   - The owner ran 4 scenarios, but the server shows 3 reminders. Which scenario shared or skipped a reminder was not stated.
+   - Offline delivery after reconnect is FCM-side (TTL 86400 s). The server only proves the send was accepted at fire time; the arrival after reconnect is the owner's observation.
+   - Tapping a push opens the inbox and does not mark the row read (by design). Rows are marked read only by a tap in the inbox list (one at 00:09:26).
+   - Totals: 7 inbox rows, 0 duplicate event keys, 0 jobs not `sent`, 0 failed cron runs, 0 non-200 answers. The device is still bound to the active session.
+4. Preferences, including push disabled. **PASSED 2026-11-21 (owner on the Samsung + read-only DB check at 00:32:13 UTC)**
+   - Each reminder created an inbox row; preferences only decide the push.
+
+     | Time (UTC) | Setting | Reminder | Job |
+     |---|---|---|---|
+     | 00:22 | push off | request | `skipped / push_disabled`, 0 attempts |
+     | 00:26 | request reminders off | request | `skipped / push_disabled` |
+     | 00:27 | (offer reminders still on) | offer | `sent`, attempt 1 |
+     | 00:31 | master switch off | request (owner used a request instead of an offer) | `skipped / push_disabled` |
+
+   - Saved preferences afterwards: `notificationsEnabled` true and all five keys true; they persisted across an app restart.
+   - 0 duplicate event keys, 0 failed cron runs, 0 non-200 answers. The device is still bound to the active session.
+5. Duplicate prevention, account isolation, Single Active Device. **PASSED for (a) and (b); (c) and (d) NOT RUN (optional; owner check at 00:55:02 UTC)**
+   - (a) Rapid re-scheduling:
+     - The request reminder moved from generation 4 to 7 (set, then changed twice).
+     - It fired once at 00:46: one inbox row, one job `sent` on attempt 1.
+   - (b) Signed out before the due time:
+     - The offer reminder (generation 6) fired at 00:52 and created its inbox row.
+     - The job was `skipped / no_active_device` with 0 attempts, so no push reached the signed-out phone.
+     - After the owner signed back in, the device row was bound to the new active session (last seen 00:54:46).
+   - Every new row belongs to the owner of its record; no other account received a row.
+   - The owner deleted the 00:26 notification; its reminder's link became null as designed.
+   - Not verified on a real device: account isolation with a second account (c) and the second-device handover (d). The server-side RLS and ownership checks are covered by the hosted validation and the PGlite behaviour suite.
+   - 0 duplicate event keys, 0 failed cron runs, 0 non-200 answers.
+6. Arabic/English and notification permission. **PASSED per owner 2026-11-21 (read-only DB check at 01:07:15 UTC)**
+   - Server side: two offer reminders fired at 01:02 and 01:06 (the second re-set, generation 7). Each made one inbox row and one job `sent` on attempt 1. 0 duplicates.
+   - The device row's locale is `ar` now. Its change history is not stored, so the English push text is the owner's observation only.
+   - The owner deleted the 00:46 row at 01:02:38 (swipe test).
+   - NOT REPORTED by the owner: Arabic swipe direction, the delete-icon visibility, and Arabic layout notes.
+     - The hard-coded `Alignment.centerRight` in `_NotificationTile`'s delete background remains a possible RTL cosmetic issue. It is not confirmed.
+   - The push title is `تذكير متابعة` while the in-app title is `تذكير المتابعة`. This is a wording difference only.
+7. Cron reliability, failed delivery, retries, security. **PASSED (agent, read-only, 01:07–01:09 UTC)**
+   - Cron since activation (23:20 → 01:07):
+     - `bw-fire-follow-up-reminders` and `bw-push-dispatch`: 108 runs each over 107 minutes, 0 failed, longest gap 60 s, longest run 0.099 s.
+     - `bw-prune-push-delivery-jobs` has not run yet (first run 03:17 UTC).
+   - Delivery:
+     - 108 dispatch responses, all 200; 0 timeouts or errors.
+     - Jobs: 9 `sent`, 1 `skipped/push_disabled`; the rest were deleted with their notifications.
+     - The highest attempt count is 1. Nothing is leased or in flight, and no reminder is overdue and unfired.
+     - The longest time from fire to sent is 2.2 s.
+     - 0 open or expired nonces, so every scheduled call consumed its nonce. The pg_net queue is empty.
+   - Retries and failed delivery were NOT exercised in production (no failure occurred). They are covered by `handler_test.ts`:
+     - 503 is retried with the provider delay
+     - UNREGISTERED removes the device
+     - SENDER_ID_MISMATCH keeps it
+
+     The PGlite N2 suite covers the 5-attempt cap and backoff. Forcing a real failure would need a production change or an app uninstall, so it was not done.
+   - Security:
+     - The privilege matrix is as designed. fire, claim, complete, prune, consume and `notification_push_allowed` are service_role only. `issue_push_dispatch_nonce` is postgres only. The 4 client RPCs are authenticated only, never anon.
+     - 14 anonymous REST and function probes with the shipped publishable key were all refused with 401:
+       - the 6 tables
+       - 6 RPCs, including issue, consume, fire and prune
+       - push-dispatch with the key alone and with the anon JWT
+     - The data was unchanged afterwards (inbox 10, jobs 10, reminders 8, devices 1).
+   - Security advisor:
+     - INFO: RLS on with no policy for 7 private tables, intended.
+     - WARN: 8 authenticated SECURITY DEFINER RPCs; the 4 notification ones are intended and session-gated.
+     - WARN: leaked-password protection is off. This is a pre-existing Auth setting, out of scope, left unchanged.
+   - Residual risk, accepted in the nonce design:
+     - pg_net's queue is PUBLIC-readable inside Postgres, so a queued nonce is visible for the second or so before pg_net sends it.
+     - Its value is one dispatch run of already-due reminders.
+     - The `net` schema is not exposed through the REST API.
+
+**Android acceptance: DONE except** the optional 5c (second account) and 5d (second device), the unreported 6(b) Arabic visual checks, and the unexercised production retry path. Next: the iOS/APNs plan.
+
+Then the iOS/APNs plan.
+   - Rollback: `select cron.unschedule('bw-push-dispatch'); select cron.unschedule('bw-fire-follow-up-reminders'); select cron.unschedule('bw-prune-push-delivery-jobs');`

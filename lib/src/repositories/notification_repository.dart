@@ -21,6 +21,9 @@ abstract class NotificationRepository {
   /// Stream of unread count for quick badge updates
   Stream<int> watchUnreadCount(String userId);
 
+  /// The exact number of unread notifications, counted by the server.
+  Future<int> countUnread(String userId);
+
   /// Mark a single notification as read
   Future<void> markAsRead(String userId, String notificationId);
 

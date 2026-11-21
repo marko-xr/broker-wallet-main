@@ -2,7 +2,7 @@ import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:broker_wallet/src/services/legacy_quota_store.dart';
 import 'package:broker_wallet/src/common/utils/app_notifier.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 
@@ -28,7 +28,7 @@ class QuotaHelper {
     try {
       // Get user's plan and current count
       final userDoc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          await legacyQuotaFirestore().collection('users').doc(uid).get();
 
       if (!userDoc.exists) return true; // Allow if user doc doesn't exist yet
 

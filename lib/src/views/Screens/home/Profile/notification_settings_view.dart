@@ -94,16 +94,6 @@ class _NotificationSettingsViewState extends State<NotificationSettingsView> {
                       ),
                       _ToggleTile(
                         title: AppLocalizations.of(context)
-                            .translate('statusChanges'),
-                        subtitle: AppLocalizations.of(context)
-                            .translate('alertMeWhenStatusChanges'),
-                        value: vm.toggles['statusReminders'] ?? true,
-                        enabled: vm.notificationsEnabled,
-                        onChanged: (value) =>
-                            vm.toggleSetting('statusReminders', value),
-                      ),
-                      _ToggleTile(
-                        title: AppLocalizations.of(context)
                             .translate('planAlerts'),
                         subtitle: AppLocalizations.of(context)
                             .translate('alertMeOnPlanChanges'),
@@ -112,28 +102,7 @@ class _NotificationSettingsViewState extends State<NotificationSettingsView> {
                         onChanged: (value) =>
                             vm.toggleSetting('planAlerts', value),
                       ),
-                      _ToggleTile(
-                        title: AppLocalizations.of(context)
-                            .translate('appUpdates'),
-                        subtitle: AppLocalizations.of(context)
-                            .translate('alertMeOnNewVersions'),
-                        value: vm.toggles['systemUpdates'] ?? true,
-                        enabled: vm.notificationsEnabled,
-                        onChanged: (value) =>
-                            vm.toggleSetting('systemUpdates', value),
-                      ),
                       const SizedBox(height: 24),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            AppLocalizations.of(context)
-                                .translate('pushDeliveryNotConfigured'),
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       Text(
                         AppLocalizations.of(context).translate('channels'),
                         style: Theme.of(context).textTheme.titleMedium,

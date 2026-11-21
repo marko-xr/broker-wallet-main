@@ -103,6 +103,31 @@ import 'package:broker_wallet/src/Views/Widgets/fade_through_page.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
 
+/// Opens the notification inbox after a push tap. The inbox is read again
+/// under RLS for the signed-in account, and its rows lead on only through the
+/// validated routes; a push never opens a record directly. Called only once
+/// the user is signed in; it waits (about five seconds at most) until the
+/// router has left the start-up gate, the sign-in screens, the verification
+/// flows and any password recovery, then gives up rather than navigate over
+/// them.
+void openInboxFromPush([int attempt = 0]) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final context = rootNavigatorKey.currentContext;
+    final path = context == null
+        ? null
+        : GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+    if (path == null || routeAccessFor(path) != RouteAccess.protected) {
+      if (attempt < 20) {
+        Future<void>.delayed(const Duration(milliseconds: 250),
+            () => openInboxFromPush(attempt + 1));
+      }
+      return;
+    }
+    GoRouter.of(context!).push('/notifications');
+  });
+  WidgetsBinding.instance.scheduleFrame();
+}
+
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
   @override

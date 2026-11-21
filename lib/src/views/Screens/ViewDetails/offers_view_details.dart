@@ -40,6 +40,8 @@ import 'package:intl/intl.dart';
 import 'widgets/details_page.dart' show DetailsContactBar, DetailsHeaderControl;
 import 'widgets/details_media_placeholder.dart';
 import 'widgets/details_section.dart';
+import 'widgets/follow_up_reminder_section.dart';
+import 'package:broker_wallet/src/data/models/follow_up_reminder.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
@@ -750,6 +752,13 @@ class _OffersDetailsViewState extends State<OffersDetailsView>
         _buildPropertyStats(context),
         const SizedBox(height: DetailsSection.spacing),
         _buildDetailsCard(context),
+        if ((_currentOffer.id ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: DetailsSection.spacing),
+          FollowUpReminderSection(
+            target: FollowUpTarget.offer,
+            targetId: _currentOffer.id!.trim(),
+          ),
+        ],
         if (_currentOffer.notes.isNotEmpty) ...[
           const SizedBox(height: DetailsSection.spacing),
           DetailsNotes(notes: _currentOffer.notes),

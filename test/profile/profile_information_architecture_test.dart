@@ -141,11 +141,31 @@ void main() {
     }
   });
 
-  test('notification preferences and the push limitation stay visible', () {
+  // Owner decision 2026-11-20 (notification plan N1): Status changes, App
+  // updates and the push-not-configured card were removed from the screen.
+  test('notification preferences keep exactly the approved switches', () {
     expect(notificationSettings, contains('vm.toggleMaster'));
-    expect(notificationSettings, contains("vm.toggleSetting('push', value)"));
-    expect(notificationSettings,
-        contains(".translate('pushDeliveryNotConfigured')"));
+    for (final key in [
+      'matchAlerts',
+      'requestReminders',
+      'offerReminders',
+      'planAlerts',
+      'push',
+    ]) {
+      expect(notificationSettings, contains("vm.toggleSetting('$key', value)"),
+          reason: key);
+    }
+    for (final removed in [
+      'statusReminders',
+      'systemUpdates',
+      'statusChanges',
+      'appUpdates',
+      'pushDeliveryNotConfigured',
+    ]) {
+      expect(notificationSettings, isNot(contains(removed)), reason: removed);
+      expect(en.containsKey(removed), isFalse, reason: removed);
+      expect(ar.containsKey(removed), isFalse, reason: removed);
+    }
   });
 
   test('English and Arabic section labels match the approved structure', () {

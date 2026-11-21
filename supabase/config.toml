@@ -419,3 +419,10 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Notifications N3: called by pg_cron with a single-use x-dispatch-nonce header
+# (manual checks use x-dispatch-secret), not by users, so the platform JWT
+# check is off and the function checks its caller itself.
+[functions.push-dispatch]
+enabled = true
+verify_jwt = false

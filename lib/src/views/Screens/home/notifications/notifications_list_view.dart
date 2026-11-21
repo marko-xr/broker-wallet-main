@@ -33,39 +33,70 @@ class _NotificationsListViewState extends State<NotificationsListView> {
                 ),
               )
             : null;
+        final showRetryFooter = vm.loadMoreFailed;
         final feed = RefreshIndicator(
           onRefresh: () => _onRefresh(vm),
           child: vm.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : vm.isEmpty
-                  ? _EmptyState(onRefresh: () => _onRefresh(vm))
-                  : NotificationListener<ScrollNotification>(
-                      onNotification: (notification) {
-                        if (notification.metrics.pixels >=
-                            notification.metrics.maxScrollExtent - 200) {
-                          vm.loadMore();
-                        }
-                        return false;
-                      },
-                      child: ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        itemCount: vm.notifications.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final notification = vm.notifications[index];
-                          return _NotificationTile(
-                            notification: notification,
-                            onTap: () => _handleTap(context, vm, notification),
-                            onDismissed: () =>
-                                vm.deleteNotification(notification.id),
-                          );
-                        },
-                      ),
-                    ),
+              : vm.isEmpty && vm.isOffline
+                  ? _StatusState(
+                      icon: Icons.cloud_off_outlined,
+                      titleKey: 'notificationsOffline',
+                      actionKey: 'retry',
+                      onAction: () => _onRefresh(vm),
+                    )
+                  : vm.isEmpty && vm.isFeedUnavailable
+                      ? _StatusState(
+                          icon: Icons.error_outline,
+                          titleKey: 'notificationsLoadFailed',
+                          actionKey: 'retry',
+                          onAction: () => _onRefresh(vm),
+                        )
+                      : vm.isEmpty
+                          ? _EmptyState(onRefresh: () => _onRefresh(vm))
+                          : NotificationListener<ScrollNotification>(
+                              onNotification: (notification) {
+                                if (vm.hasMore &&
+                                    notification.metrics.pixels >=
+                                        notification.metrics.maxScrollExtent -
+                                            200) {
+                                  vm.loadMore();
+                                }
+                                return false;
+                              },
+                              child: ListView.separated(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                itemCount: vm.notifications.length +
+                                    (showRetryFooter ? 1 : 0),
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, index) {
+                                  if (index == vm.notifications.length) {
+                                    return Center(
+                                      child: TextButton(
+                                        onPressed: vm.retryLoadMore,
+                                        child: Text(
+                                          AppLocalizations.of(context)
+                                              .translate('retry'),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  final notification = vm.notifications[index];
+                                  return _NotificationTile(
+                                    notification: notification,
+                                    onTap: () =>
+                                        _handleTap(context, vm, notification),
+                                    onDismissed: () =>
+                                        vm.deleteNotification(notification.id),
+                                  );
+                                },
+                              ),
+                            ),
         );
 
         return Scaffold(
@@ -109,62 +140,72 @@ class _NotificationsListViewState extends State<NotificationsListView> {
     NotificationModel notification,
   ) {
     vm.markAsRead(notification.id);
-
-    // Handle navigation based on notification category
-    switch (notification.category) {
-      case NotificationCategory.match:
-        // Navigate to match details view showing both request and offer
-        if (notification.requestId != null && notification.offerId != null) {
-          context.push(
-            '/match-details',
-            extra: {
-              'requestId': notification.requestId,
-              'offerId': notification.offerId,
-              'matchScore': notification.matchScore,
-            },
-          );
-          return;
-        }
-        break;
-
-      case NotificationCategory.reminder:
-        // Navigate to specific item detail
-        if (notification.offerId != null) {
-          context.push('/offers-details-by-id/${notification.offerId}');
-          return;
-        }
-        if (notification.requestId != null) {
-          context.push('/requested-details-by-id/${notification.requestId}');
-          return;
-        }
-        break;
-
-      case NotificationCategory.plan:
-        // Navigate to subscription/plan page
-        context.push('/my-plan');
-        return;
-
-      case NotificationCategory.system:
-        // System notifications may have a custom action route or just show info
-        final route = notification.actionRoute ?? notification.data['route'];
-        if (route is String && route.isNotEmpty) {
-          context.push(route, extra: notification.data);
-          return;
-        }
-        // Default: open app store for update (handled by data['storeUrl'])
-        final storeUrl = notification.data['storeUrl'] as String?;
-        if (storeUrl != null) {
-          // Will be handled by url_launcher in the app
-          return;
-        }
-        break;
+    final target = notificationTarget(notification);
+    if (target != null) {
+      context.push(target.location, extra: target.extra);
     }
+  }
+}
 
-    // Fallback: use actionRoute or data['route'] if available
-    final route = notification.actionRoute ?? notification.data['route'];
-    if (route is String && route.isNotEmpty) {
-      context.push(route, extra: notification.data);
-    }
+/// The app's own wording for notifications it knows, in the app language;
+/// the stored English text otherwise. A follow-up reminder is created by the
+/// server in English and shown here in Arabic or English.
+({String title, String body}) localizedNotificationText(
+  BuildContext context,
+  NotificationModel notification,
+) {
+  if (notification.data['kind'] == 'follow_up' &&
+      notification.category == NotificationCategory.reminder) {
+    final loc = AppLocalizations.of(context);
+    return (
+      title: loc.translate('followUpReminder'),
+      body: loc.translate(notification.data['target'] == 'offer'
+          ? 'followUpNotificationOffer'
+          : 'followUpNotificationRequest'),
+    );
+  }
+  return (title: notification.title, body: notification.body);
+}
+
+final RegExp _uuid = RegExp(
+  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+);
+
+bool _isRecordId(String? value) => value != null && _uuid.hasMatch(value);
+
+/// Where a tapped notification may lead. Only these fixed screens are
+/// reachable, each built from a validated record id; the stored
+/// `action_route`, `data['route']` and any URL in `data` are never followed.
+/// Null means the tap only marks the notification read.
+@visibleForTesting
+({String location, Object? extra})? notificationTarget(
+  NotificationModel notification,
+) {
+  final offerId = notification.offerId;
+  final requestId = notification.requestId;
+  switch (notification.category) {
+    case NotificationCategory.match:
+      if (_isRecordId(requestId) && _isRecordId(offerId)) {
+        return (
+          location: '/match-details',
+          extra: <String, dynamic>{
+            'requestId': requestId,
+            'offerId': offerId,
+            'matchScore': notification.matchScore,
+          },
+        );
+      }
+      return null;
+    case NotificationCategory.reminder:
+      if (_isRecordId(offerId)) {
+        return (location: '/offers-details-by-id/$offerId', extra: null);
+      }
+      if (_isRecordId(requestId)) {
+        return (location: '/requested-details-by-id/$requestId', extra: null);
+      }
+      return null;
+    case NotificationCategory.plan:
+      return (location: '/my-plan', extra: null);
   }
 }
 
@@ -187,8 +228,6 @@ class _NotificationTile extends StatelessWidget {
         return Icons.alarm;
       case NotificationCategory.plan:
         return Icons.workspace_premium;
-      case NotificationCategory.system:
-        return Icons.system_update;
     }
   }
 
@@ -199,8 +238,9 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = localizedNotificationText(context, notification);
     final subtitle = Text(
-      notification.body,
+      text.body,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
@@ -221,7 +261,7 @@ class _NotificationTile extends StatelessWidget {
         ),
       ),
       title: Text(
-        notification.title,
+        text.title,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight:
                   notification.isRead ? FontWeight.w500 : FontWeight.bold,
@@ -338,6 +378,50 @@ class _EmptyState extends StatelessWidget {
           child: FilledButton.tonal(
             onPressed: onRefresh,
             child: Text(AppLocalizations.of(context).translate('refresh')),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The same layout as [_EmptyState] for a feed that could not be read
+/// (offline or failed), so an empty screen is never shown as "all caught up".
+class _StatusState extends StatelessWidget {
+  const _StatusState({
+    required this.icon,
+    required this.titleKey,
+    required this.actionKey,
+    required this.onAction,
+  });
+
+  final IconData icon;
+  final String titleKey;
+  final String actionKey;
+  final Future<void> Function() onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        const SizedBox(height: 100),
+        Icon(
+          icon,
+          size: 64,
+          color: Theme.of(context).colorScheme.outline,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          AppLocalizations.of(context).translate(titleKey),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 24),
+        Center(
+          child: FilledButton.tonal(
+            onPressed: onAction,
+            child: Text(AppLocalizations.of(context).translate(actionKey)),
           ),
         ),
       ],

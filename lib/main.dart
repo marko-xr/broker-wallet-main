@@ -11,6 +11,8 @@ import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/services/map_sdk_warmup.dart';
 import 'package:broker_wallet/src/services/analytics_service.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
+import 'package:broker_wallet/src/services/push/firebase_push_platform.dart';
+import 'package:broker_wallet/src/services/push/push_messaging_service.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
@@ -256,6 +258,8 @@ Future<void> _main() async {
   // Ensure all services are initialized before running the app
   await initializeAppServices();
   _mark('services');
+  // Before runApp, so the first account attach is not missed; not awaited.
+  _startPush();
 
   // Create instances of ViewModels that need to load persistent state
   final localeViewModel = LocaleViewModel();
@@ -348,7 +352,26 @@ Future<void> _main() async {
             notifier.attachUser(
               authVM.isPasswordRecoveryActive ? null : authVM.currentUser?.uid,
             );
+            PushMessagingService.current?.onForegroundMessage =
+                notifier.refreshUnreadCount;
             return notifier;
+          },
+        ),
+        // Notifications N3: keeps this phone's FCM token bound to the
+        // signed-in account's current app session (identity is published
+        // only after the server confirmed that session) and in the app's
+        // language. Signing out unbinds nothing here on purpose: the server
+        // re-checks the active session at send time.
+        ProxyProvider2<AuthViewModel, LocaleViewModel, _PushAttachment>(
+          lazy: false,
+          update: (_, authVM, localeVM, previous) {
+            PushMessagingService.current?.attach(
+              userId: authVM.isPasswordRecoveryActive
+                  ? null
+                  : authVM.currentUser?.uid,
+              languageCode: localeVM.locale.languageCode,
+            );
+            return previous ?? const _PushAttachment();
           },
         ),
       ],
@@ -360,4 +383,21 @@ Future<void> _main() async {
   // time a map is shown. Do that once, in the background, now that the app is
   // up, so it does not happen while the map page is sliding in.
   unawaited(MapSdkWarmup.start());
+}
+
+/// Marker value for the push ProxyProvider; it carries no state.
+class _PushAttachment {
+  const _PushAttachment();
+}
+
+/// Starts FCM on a platform where push is configured (Android today). Not
+/// awaited: push must never delay the first frame or block sign-in.
+void _startPush() {
+  if (!pushSupportedOnThisPlatform) return;
+  final push = PushMessagingService(
+    platform: FirebasePushPlatform(),
+    registrar: SupabasePushRegistrar(),
+  )..openInbox = openInboxFromPush;
+  PushMessagingService.current = push;
+  unawaited(push.start().catchError((Object _) {}));
 }

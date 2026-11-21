@@ -11,9 +11,6 @@ enum NotificationCategory {
 
   /// Plan alerts - quota limits, subscription expiring, upgrade prompts
   plan,
-
-  /// System updates - new app version available
-  system,
 }
 
 extension NotificationCategoryParser on NotificationCategory {
@@ -25,12 +22,13 @@ extension NotificationCategoryParser on NotificationCategory {
         return 'reminder';
       case NotificationCategory.plan:
         return 'plan';
-      case NotificationCategory.system:
-        return 'system';
     }
   }
 
-  static NotificationCategory fromString(String? value) {
+  /// The category of a stored notification, or null when the app does not
+  /// offer it. A null row is not shown: an unknown value (or the retired
+  /// `system` category) must never be presented as some other kind of alert.
+  static NotificationCategory? fromString(String? value) {
     switch ((value ?? '').toLowerCase()) {
       case 'match':
         return NotificationCategory.match;
@@ -39,11 +37,8 @@ extension NotificationCategoryParser on NotificationCategory {
       case 'plan':
       case 'quota': // Legacy support
         return NotificationCategory.plan;
-      case 'system':
-        return NotificationCategory.system;
       default:
-        return NotificationCategory
-            .reminder; // Default to reminder instead of general
+        return null;
     }
   }
 }

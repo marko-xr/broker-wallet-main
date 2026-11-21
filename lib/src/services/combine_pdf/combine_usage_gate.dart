@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:broker_wallet/src/services/app_access_policy.dart';
+import 'package:broker_wallet/src/services/legacy_quota_store.dart';
 import 'package:broker_wallet/src/services/quota_helper.dart';
 
 /// Records that a combine was completed. One call is one combined PDF however
@@ -49,7 +50,7 @@ class LegacyFirestoreCombineUsageGate implements CombineUsageGate {
     // Firestore SDK) offline read-only; the tool itself works as before.
     if (!AppAccessPolicy.isOnline) return;
     try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).set({
+      await legacyQuotaFirestore().collection('users').doc(userId).set({
         'counts': {section: FieldValue.increment(1)},
         'lifetimeCreated': {section: FieldValue.increment(1)},
       }, SetOptions(merge: true));

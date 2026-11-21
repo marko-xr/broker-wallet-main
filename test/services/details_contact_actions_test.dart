@@ -147,7 +147,11 @@ void main() {
       expect(source.contains('DetailsContactActions.whatsApp('), isTrue,
           reason: name);
       expect(source.contains('whatsAppBusinessMessage'), isFalse, reason: name);
-      expect(source.contains('message:'), isFalse, reason: name);
+      // Only the WhatsApp call is checked: the shared delete confirmation
+      // dialog also takes a `message:` argument.
+      final call = source.indexOf('DetailsContactActions.whatsApp(');
+      final args = source.substring(call, source.indexOf(';', call));
+      expect(args.contains('message:'), isFalse, reason: name);
     }
   });
   for (final successAt in [0, 1, 2]) {

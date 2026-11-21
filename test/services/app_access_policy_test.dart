@@ -671,7 +671,9 @@ void main() {
         expect(start, isNonNegative, reason: file);
         final guard =
             src.indexOf('if (!AppAccessPolicy.isOnline) return;', start);
-        final firestore = src.indexOf('FirebaseFirestore.instance', start);
+        // The legacy store is reached only through legacyQuotaFirestore()
+        // since Firebase is initialized for push (legacy_quota_store.dart).
+        final firestore = src.indexOf('legacyQuotaFirestore()', start);
         expect(guard, isNonNegative, reason: file);
         expect(guard, lessThan(firestore), reason: file);
       }

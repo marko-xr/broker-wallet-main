@@ -21,7 +21,9 @@ import 'package:intl/intl.dart';
 
 import 'widgets/details_page.dart';
 import 'widgets/details_section.dart';
+import 'widgets/follow_up_reminder_section.dart';
 import 'widgets/offer_details_style.dart';
+import 'package:broker_wallet/src/data/models/follow_up_reminder.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 import 'package:broker_wallet/src/views/Widgets/field_icons.dart';
 
@@ -320,6 +322,13 @@ class _RequestDetailsViewState extends State<RequestDetailsView>
                 updatedAt: _currentRequest.updatedAt),
           ],
         ),
+        if (_currentRequest.id != null) ...[
+          const SizedBox(height: DetailsSection.spacing),
+          FollowUpReminderSection(
+            target: FollowUpTarget.request,
+            targetId: _currentRequest.id!,
+          ),
+        ],
         if (_currentRequest.notes.isNotEmpty) ...[
           const SizedBox(height: DetailsSection.spacing),
           DetailsNotes(notes: _currentRequest.notes),

@@ -94,4 +94,7 @@ class ControlledNotificationRepository implements NotificationRepository {
 
   @override
   Stream<int> watchUnreadCount(String userId) => _unread.stream;
+
+  @override
+  Future<int> countUnread(String userId) async => 0;
 }

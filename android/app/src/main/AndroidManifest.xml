@@ -120,6 +120,21 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Push (FCM): the channel and status-bar icon used when Android itself
+             shows a notification while the app is in the background or closed.
+             The channel id matches the push-dispatch Edge Function. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="follow_up_reminders" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <!-- No FCM token is created at app start: the app asks for one only
+             after a signed-in user's session is confirmed (getToken). -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+
         <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"

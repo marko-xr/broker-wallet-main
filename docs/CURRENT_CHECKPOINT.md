@@ -17548,5 +17548,63 @@ The check proves the FCM service account belongs to `broker-wallet` and that Goo
 
 **Android acceptance: DONE except** the optional 5c (second account) and 5d (second device), the unreported 6(b) Arabic visual checks, and the unexercised production retry path. Next: the iOS/APNs plan.
 
+### Notification UX fixes from the owner's Samsung review, 2026-11-21 (source only, uncommitted, NOT RUN)
+After commit `1a240bd`. No Supabase, Firebase, Edge Function or cron change.
+
+1. **Settings with no loading state.** `NotificationSettingsViewModel` shows values at once and then refreshes from the server quietly.
+   - Seed order: this run's last known values per account, then the profile copy on `AuthViewModel.currentUser`.
+   - A change made before the server answers is kept.
+   - The spinner shows only when neither source exists.
+2. **Reminder tap opens details immediately, with the Home-list fade through** (revised after the owner saw a delay; the first version awaited the record before navigating).
+   - `inboxDestination()` sends a reminder to the new routes `/notification-request/:id` and `/notification-offer/:id` with no await before navigating. Both routes are in `app.dart`, use `FadeThroughPage` (the same as Home→lists), and are protected by default.
+   - Their `NotificationRecordScreen` finds the record while the fade plays, through `NotificationRecordLookup`: the account's encrypted list cache first, then the server with a 2 s budget.
+   - Until the record is found the page is plain background. A spinner and app bar appear only after 400 ms.
+   - If nothing is found, the regular by-id screen takes over (`_RequestDetailsLoader` / `OfferDetailsLoader`, with their "not found" state).
+   - Match and plan notifications, and every other route's transition, are unchanged. `notificationTarget` keeps `@visibleForTesting`.
+   - `notification_target_resolver.dart` imports nothing under `src/views`, so `app.dart` (which uses the `Views` spelling) loads one copy of it.
+   - `app.dart`'s committed version already differs from `dart format`, so it was not reformatted. Only its added block was checked against the formatter output.
+3. **Delete all notifications.**
+   - New: the repository's `deleteAllNotifications(userId, upTo:)` (`recipient_id` + `created_at <= newest seen`), `NotificationViewModel.deleteAllNotifications()`, and an app-bar button with the shared delete dialog.
+   - The view model empties the list optimistically; if the server refuses, the rows and the badge come back and a snackbar shows.
+   - A notification newer than the cut-off is kept.
+4. **Bell.** The whole 48 dp circle, badge included, is one `InkWell` button. Before, the inner `IconButton` was smaller than the circle and the badge swallowed taps. The visuals are unchanged and the badge is not clipped.
+   - Badge colour (owner asked for red or orange):
+     - New `AppColors.notificationBadge` `#D32F2F` with white digits (contrast 5.0:1, WCAG AA).
+     - It is the same in both modes, because the dark theme's default `error` is pink with black text.
+     - The original size and place (padding 6×2, radius 12, right 6, top 4), with no outline. The owner removed the ring and the larger pill.
+
+     Only the bell has an unread badge.
+5. **Reminder time.** `showReminderTimeSheet` (hour and minute wheels, 1-minute steps, Cancel/Save) replaces `showTimePicker`. The date calendar is unchanged.
+6. **Arabic swipe.** The owner chose the mirror of English (swipe left to right, bin on the left). The swipe direction was already correct; the bin moved from `Alignment.centerRight` to `AlignmentDirectional.centerEnd`.
+7. **Notification icon.**
+   - `ic_stat_notification.xml` is now the Broker Wallet logo silhouette: roof, chimney, 2×2 window, wallet with clasp. It is hand-drawn from `assets/images/app-logo.png` and checked by rasterising it at 4 sizes.
+   - New `values/colors.xml` `notification_accent` `#027965` (logo green), set as FCM `default_notification_color`.
+   - The launcher icon is untouched.
+
+8. **Inbox cards: neutral cards, unread marked by signals** (revised after the owner's Samsung screenshot).
+   - The first version used the list cards' `tertiary` (cyan) border and glow. That made read cards look active, and the unread green gradient looked like a selected button.
+   - Now every card is the plain card surface: white in light mode, `colorScheme.surface` in dark mode.
+     - Fine neutral outline: `onSurface` at 8% (light) or 12% (dark).
+     - Soft neutral shadow in light mode only (black 4%). No gradient.
+     - 16 px corners.
+   - Unread:
+     - a 10 dp brand dot at the row end (screen-reader label `notificationUnread`)
+     - a bold title, a brand icon and avatar, and a brand time label
+     - a light flat brand tint (6% light, 12% dark) and a brand outline at 28%
+   - Read: a grey icon, a weight-500 title and muted text.
+   - Checked by eye with an HTML mock-up of both modes using the same colours.
+   - Compact rows (owner asked for lower items):
+     - content padding 2 dp vertical and `minVerticalPadding` 6
+     - avatar radius 18 (was 20)
+     - title/body/time gaps 2 and 3 (were 4 and 6)
+     - gap between cards 8 (was 12)
+     - the row still exceeds the 48 dp tap target
+
+- **Tests (owner to run):**
+  - New `test/notifications/notification_ux_test.dart`.
+  - New cases in `notification_n1_test.dart` (delete all, settings seed). Its settings group now clears the run-wide memory in `setUp`.
+  - `r3_test_fakes.dart` gained the new repository method. The other fakes use `noSuchMethod`.
+- **Checks:** `dart format` is clean (only new lines re-wrapped; the committed versions were verified clean with `--language-version=3.5`), and `git diff --check` is clean.
+
 Then the iOS/APNs plan.
    - Rollback: `select cron.unschedule('bw-push-dispatch'); select cron.unschedule('bw-fire-follow-up-reminders'); select cron.unschedule('bw-prune-push-delivery-jobs');`

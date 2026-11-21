@@ -360,6 +360,48 @@ class NotificationViewModel extends ChangeNotifier {
     unawaited(_recount(userId, generation));
   }
 
+  /// Deletes every notification the user can see and all older ones. The
+  /// list empties at once and comes back unchanged if the server does not
+  /// confirm. Returns whether the server confirmed.
+  Future<bool> deleteAllNotifications() async {
+    final userId = _userId;
+    if (userId == null || _notifications.isEmpty) return false;
+    final generation = _generation;
+    final shown = _notifications;
+    final upTo = shown
+        .map((item) => item.createdAt)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
+    final ids = shown.map((item) => item.id).toSet();
+    final unreadBefore = _unreadCount;
+    _pendingDeletes.addAll(ids);
+    _unreadCount = 0;
+    _rebuild();
+    _notify();
+    try {
+      await _repository.deleteAllNotifications(userId, upTo: upTo);
+    } catch (_) {
+      if (!_isCurrent(userId, generation)) return false;
+      _pendingDeletes.removeAll(ids);
+      _unreadCount = unreadBefore;
+      _rebuild();
+      _notify();
+      return false;
+    }
+    if (!_isCurrent(userId, generation)) return true;
+    bool kept(NotificationModel item) => item.createdAt.isAfter(upTo);
+    _live = _live.where(kept).toList();
+    _paged = _paged.where(kept).toList();
+    _pendingDeletes.removeAll(ids);
+    // Everything older is gone on the server too, so nothing is left to page.
+    _cursor = null;
+    _hasMore = false;
+    _loadMoreFailed = false;
+    _rebuild();
+    _notify();
+    unawaited(_recount(userId, generation));
+    return true;
+  }
+
   /// Re-reads the exact unread count, e.g. when a push arrives while the app
   /// is open (Realtime normally does this already).
   Future<void> refreshUnreadCount() async {

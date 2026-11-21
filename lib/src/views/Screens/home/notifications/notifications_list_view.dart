@@ -1,6 +1,7 @@
 import 'package:broker_wallet/src/data/models/notification_model.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +15,9 @@ class NotificationsListView extends StatefulWidget {
 }
 
 class _NotificationsListViewState extends State<NotificationsListView> {
+  /// One tap opens one screen: further taps are ignored until it is closed.
+  bool _opening = false;
+
   Future<void> _onRefresh(NotificationViewModel vm) async {
     await vm.refresh();
   }
@@ -33,6 +37,15 @@ class _NotificationsListViewState extends State<NotificationsListView> {
                 ),
               )
             : null;
+        final deleteAllButton = vm.notifications.isEmpty
+            ? null
+            : IconButton(
+                key: const ValueKey('notifications-delete-all'),
+                tooltip: AppLocalizations.of(context)
+                    .translate('deleteAllNotifications'),
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onPressed: () => _confirmDeleteAll(context, vm),
+              );
         final showRetryFooter = vm.loadMoreFailed;
         final feed = RefreshIndicator(
           onRefresh: () => _onRefresh(vm),
@@ -73,7 +86,7 @@ class _NotificationsListViewState extends State<NotificationsListView> {
                                 itemCount: vm.notifications.length +
                                     (showRetryFooter ? 1 : 0),
                                 separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 8),
                                 itemBuilder: (context, index) {
                                   if (index == vm.notifications.length) {
                                     return Center(
@@ -108,6 +121,7 @@ class _NotificationsListViewState extends State<NotificationsListView> {
             ),
             actions: [
               if (!compactHeader && markAllButton != null) markAllButton,
+              if (deleteAllButton != null) deleteAllButton,
             ],
           ),
           body: compactHeader && markAllButton != null
@@ -134,15 +148,42 @@ class _NotificationsListViewState extends State<NotificationsListView> {
     );
   }
 
+  /// Opens the destination at once: nothing is awaited before the screen
+  /// starts to move. A reminder's record is found by the destination while
+  /// its fade through plays (see [inboxDestination]).
   void _handleTap(
     BuildContext context,
     NotificationViewModel vm,
     NotificationModel notification,
   ) {
     vm.markAsRead(notification.id);
-    final target = notificationTarget(notification);
-    if (target != null) {
-      context.push(target.location, extra: target.extra);
+    final target = inboxDestination(notification);
+    if (target == null || _opening) return;
+    _opening = true;
+    context
+        .push(target.location, extra: target.extra)
+        .whenComplete(() => _opening = false);
+  }
+
+  Future<void> _confirmDeleteAll(
+    BuildContext context,
+    NotificationViewModel vm,
+  ) async {
+    final loc = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final confirmed = await showDeleteConfirmationDialog(
+      context,
+      title: loc.translate('deleteAllNotifications'),
+      message: loc.translate('deleteAllNotificationsMessage'),
+      itemIcon: Icons.notifications_outlined,
+      itemLabel: loc.translate('allNotifications'),
+    );
+    if (!confirmed) return;
+    final deleted = await vm.deleteAllNotifications();
+    if (!deleted && mounted) {
+      messenger?.showSnackBar(SnackBar(
+        content: Text(loc.translate('deleteAllNotificationsFailed')),
+      ));
     }
   }
 }
@@ -177,6 +218,43 @@ bool _isRecordId(String? value) => value != null && _uuid.hasMatch(value);
 /// reachable, each built from a validated record id; the stored
 /// `action_route`, `data['route']` and any URL in `data` are never followed.
 /// Null means the tap only marks the notification read.
+/// Request details opened from the inbox: fades through like the Home list
+/// screens and finds its record while the motion plays (app.dart).
+const String notificationRequestRoute = '/notification-request';
+
+/// Offer details opened from the inbox, the same way.
+const String notificationOfferRoute = '/notification-offer';
+
+/// Where an inbox tap goes, decided at once: nothing is awaited before the
+/// screen starts to open. A follow-up reminder opens
+/// [notificationRequestRoute] or [notificationOfferRoute]; match and plan
+/// notifications keep [notificationTarget] unchanged.
+({String location, Object? extra})? inboxDestination(
+  NotificationModel notification,
+) {
+  final target = notificationTarget(notification);
+  if (target == null ||
+      notification.category != NotificationCategory.reminder) {
+    return target;
+  }
+  final offerId = notification.offerId;
+  if (target.location.startsWith('/offers-details-by-id/') && offerId != null) {
+    return (
+      location: '$notificationOfferRoute/${Uri.encodeComponent(offerId)}',
+      extra: null,
+    );
+  }
+  final requestId = notification.requestId;
+  if (target.location.startsWith('/requested-details-by-id/') &&
+      requestId != null) {
+    return (
+      location: '$notificationRequestRoute/${Uri.encodeComponent(requestId)}',
+      extra: null,
+    );
+  }
+  return target;
+}
+
 @visibleForTesting
 ({String location, Object? extra})? notificationTarget(
   NotificationModel notification,
@@ -220,6 +298,8 @@ class _NotificationTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDismissed;
 
+  static const BorderRadius _cardRadius = BorderRadius.all(Radius.circular(16));
+
   IconData get _leadingIcon {
     switch (notification.category) {
       case NotificationCategory.match:
@@ -231,68 +311,141 @@ class _NotificationTile extends StatelessWidget {
     }
   }
 
-  Color _statusColor(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return notification.isRead ? scheme.outline : scheme.primary;
+  /// The card every notification sits on, read or not: the plain card
+  /// surface (white in light mode, the app's dark surface in dark mode) with
+  /// a fine neutral outline and, in light mode, a soft neutral shadow, so it
+  /// stands off the page without colour. Unread is shown by signals, not by
+  /// recolouring the card: a brand-colour dot, a bold title, a brand-colour
+  /// icon and time, and a very light flat brand tint.
+  static BoxDecoration _cardDecoration(
+    ColorScheme colors, {
+    required bool unread,
+  }) {
+    final dark = colors.brightness == Brightness.dark;
+    final card = dark ? colors.surface : Colors.white;
+    return BoxDecoration(
+      color: unread
+          ? Color.alphaBlend(
+              colors.primary.withValues(alpha: dark ? 0.12 : 0.06),
+              card,
+            )
+          : card,
+      borderRadius: _cardRadius,
+      border: Border.all(
+        color: unread
+            ? colors.primary.withValues(alpha: 0.28)
+            : colors.onSurface.withValues(alpha: dark ? 0.12 : 0.08),
+      ),
+      boxShadow: dark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final unread = !notification.isRead;
+    final loc = AppLocalizations.of(context);
     final text = localizedNotificationText(context, notification);
-    final subtitle = Text(
-      text.body,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    );
+    final muted = colors.onSurface.withValues(alpha: 0.6);
 
-    final relativeTimeStr = _relativeTime(notification.createdAt);
-    final timeLabel = Text(
-      _formatTimeLabel(context, relativeTimeStr),
-      style: Theme.of(context).textTheme.labelSmall,
-    );
-
-    final tile = ListTile(
+    final listTile = ListTile(
       onTap: onTap,
+      shape: const RoundedRectangleBorder(borderRadius: _cardRadius),
+      // Compact row: tight padding, still well above the 48 dp tap target.
+      contentPadding: const EdgeInsetsDirectional.fromSTEB(14, 2, 12, 2),
+      minVerticalPadding: 6,
+      horizontalTitleGap: 12,
       leading: CircleAvatar(
-        backgroundColor: _statusColor(context).withValues(alpha: 0.12),
+        radius: 18,
+        backgroundColor: unread
+            ? colors.primary.withValues(alpha: 0.12)
+            : colors.onSurface.withValues(alpha: 0.06),
         child: Icon(
           _leadingIcon,
-          color: _statusColor(context),
+          color: unread ? colors.primary : muted,
         ),
       ),
       title: Text(
         text.title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight:
-                  notification.isRead ? FontWeight.w500 : FontWeight.bold,
-            ),
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: colors.onSurface,
+          fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+        ),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 4),
-          subtitle,
-          const SizedBox(height: 6),
-          timeLabel,
+          const SizedBox(height: 2),
+          Text(
+            text.body,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: unread
+                  ? colors.onSurface.withValues(alpha: 0.87)
+                  : colors.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            _formatTimeLabel(context, _relativeTime(notification.createdAt)),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: unread ? colors.primary : muted,
+              fontWeight: unread ? FontWeight.w600 : null,
+            ),
+          ),
         ],
       ),
-      tileColor: notification.isRead
-          ? Theme.of(context).colorScheme.surface
-          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+      // Unread: a small brand-colour dot at the end of the row.
+      trailing: unread
+          ? Semantics(
+              label: loc.translate('notificationUnread'),
+              child: Container(
+                key: const ValueKey('notification-unread-dot'),
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            )
+          : null,
+    );
+
+    final tile = DecoratedBox(
+      key: ValueKey('notification-card-${notification.id}'),
+      decoration: _cardDecoration(colors, unread: unread),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: _cardRadius,
+        clipBehavior: Clip.antiAlias,
+        child: listTile,
       ),
     );
 
+    // The swipe runs from the end edge toward the start (right to left in
+    // English, left to right in Arabic), so the bin sits on the end side,
+    // where the card uncovers it.
     return Dismissible(
       key: ValueKey(notification.id),
       direction: DismissDirection.endToStart,
       background: Container(
-        alignment: Alignment.centerRight,
+        key: const ValueKey('notification-delete-background'),
+        alignment: AlignmentDirectional.centerEnd,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.error,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: _cardRadius,
         ),
         child: const Icon(Icons.delete, color: Colors.white),
       ),

@@ -149,6 +149,22 @@ class _Repo implements NotificationRepository {
     deletes.add(notificationId);
   }
 
+  /// The `upTo` of each delete-all call. When [deleteAllGate] is set the call
+  /// waits for it, so a test can look at the screen state in between.
+  final List<DateTime> deleteAllCalls = [];
+  Completer<void>? deleteAllGate;
+
+  @override
+  Future<void> deleteAllNotifications(
+    String userId, {
+    required DateTime upTo,
+  }) async {
+    deleteAllCalls.add(upTo);
+    await deleteAllGate?.future;
+    final error = deleteError;
+    if (error != null) throw error;
+  }
+
   @override
   Future<void> markAsRead(String userId, String notificationId) async {}
 
@@ -164,6 +180,10 @@ List<String> _ids(NotificationViewModel vm) =>
 
 void main() {
   group('notification settings keys', () {
+    // The view model keeps this run's last known values per account; every
+    // test starts without them.
+    setUp(NotificationSettingsViewModel.debugForgetLastKnown);
+
     const kept = [
       'matchAlerts',
       'requestReminders',
@@ -258,6 +278,83 @@ void main() {
       await vm.toggleSetting('systemUpdates', false);
       expect(vm.toggles.containsKey('systemUpdates'), isFalse);
       expect(users.saved, isEmpty);
+    });
+
+    test('opens with the profile values at once, then takes the server ones',
+        () async {
+      final server = _user({
+        'notifications': {'push': false},
+      });
+      final users = _Users(server);
+      final vm = NotificationSettingsViewModel(
+        authViewModel: _Auth(_user({
+          'notifications': {'push': true, 'planAlerts': false},
+        })),
+        userRepository: users,
+      );
+      final loading = vm.initialize();
+      // No loading state: the profile's copy is on screen before any await.
+      expect(vm.isLoading, isFalse);
+      expect(vm.toggles['planAlerts'], isFalse);
+      await loading;
+      expect(vm.toggles['push'], isFalse);
+      expect(vm.toggles['planAlerts'], isTrue);
+    });
+
+    test('a switch flipped before the server answers is kept', () async {
+      final users = _Users(_user({
+        'notifications': {'matchAlerts': true},
+      }));
+      final vm = NotificationSettingsViewModel(
+        authViewModel: _Auth(_user({
+          'notifications': {'matchAlerts': true},
+        })),
+        userRepository: users,
+      );
+      final loading = vm.initialize();
+      await vm.toggleSetting('matchAlerts', false);
+      await loading;
+      expect(vm.toggles['matchAlerts'], isFalse);
+      expect(users.saved.single['notifications'],
+          containsPair('matchAlerts', false));
+    });
+
+    test('reopening shows the last saved values with no loading state',
+        () async {
+      final users = _Users(_user(const {}));
+      final first = NotificationSettingsViewModel(
+        authViewModel: _Auth(users.user),
+        userRepository: users,
+      );
+      await first.initialize();
+      await first.toggleSetting('offerReminders', false);
+      first.dispose();
+
+      // The profile copy still says "on"; this run's saved value wins.
+      final again = NotificationSettingsViewModel(
+        authViewModel: _Auth(_user({
+          'notifications': {'offerReminders': true},
+        })),
+        userRepository: _Users(null),
+      );
+      final loading = again.initialize();
+      expect(again.isLoading, isFalse);
+      expect(again.toggles['offerReminders'], isFalse);
+      await loading;
+      again.dispose();
+    });
+
+    test('with no stored values at all the screen waits for the server',
+        () async {
+      final users = _Users(_user(const {}));
+      final vm = NotificationSettingsViewModel(
+        authViewModel: _Auth(_user(const {})),
+        userRepository: users,
+      );
+      final loading = vm.initialize();
+      expect(vm.isLoading, isTrue);
+      await loading;
+      expect(vm.isLoading, isFalse);
     });
   });
 
@@ -481,6 +578,68 @@ void main() {
       expect(_ids(vm), [_uuid(3)]);
       expect(repo.deletes, [_uuid(2)]);
       expect(vm.unreadCount, 4);
+      vm.dispose();
+    });
+
+    test('delete all empties the list at once and stays empty when confirmed',
+        () async {
+      final repo = _Repo()..unreadValue = 0;
+      final vm = NotificationViewModel(repository: repo, isOnline: () => true)
+        ..attachUser('user-a');
+      repo.live['user-a']!
+          .add([_n(3), _n(2, minutesAgo: 1), _n(1, minutesAgo: 2)]);
+      repo.unread['user-a']!.add(2);
+      repo.deleteAllGate = Completer<void>();
+      final deleting = vm.deleteAllNotifications();
+      expect(_ids(vm), isEmpty);
+      expect(vm.unreadCount, 0);
+      // Only what the user saw (and older) is deleted on the server.
+      expect(repo.deleteAllCalls, [_base]);
+      repo.deleteAllGate!.complete();
+      expect(await deleting, isTrue);
+      await pumpEventQueue();
+      expect(_ids(vm), isEmpty);
+      expect(vm.hasMore, isFalse);
+      expect(repo.countCalls, 1);
+      vm.dispose();
+    });
+
+    test('a refused delete all puts every row and the badge back', () async {
+      final repo = _Repo()..deleteError = StateError('refused');
+      final vm = NotificationViewModel(repository: repo, isOnline: () => true)
+        ..attachUser('user-a');
+      repo.live['user-a']!.add([_n(2), _n(1, minutesAgo: 1)]);
+      repo.unread['user-a']!.add(2);
+      expect(await vm.deleteAllNotifications(), isFalse);
+      expect(_ids(vm), [_uuid(2), _uuid(1)]);
+      expect(vm.unreadCount, 2);
+      expect(repo.countCalls, 0);
+      vm.dispose();
+    });
+
+    test('a notification newer than the delete-all cut-off stays', () async {
+      final repo = _Repo();
+      final vm = NotificationViewModel(repository: repo, isOnline: () => true)
+        ..attachUser('user-a');
+      repo.live['user-a']!.add([_n(1)]);
+      repo.deleteAllGate = Completer<void>();
+      final deleting = vm.deleteAllNotifications();
+      // A reminder arrives while the server is deleting.
+      final newer = _n(2, at: _base.add(const Duration(seconds: 5)));
+      repo.live['user-a']!.add([newer, _n(1)]);
+      repo.deleteAllGate!.complete();
+      await deleting;
+      expect(_ids(vm), [_uuid(2)]);
+      vm.dispose();
+    });
+
+    test('delete all with nothing on screen does nothing', () async {
+      final repo = _Repo();
+      final vm = NotificationViewModel(repository: repo, isOnline: () => true)
+        ..attachUser('user-a');
+      repo.live['user-a']!.add(const []);
+      expect(await vm.deleteAllNotifications(), isFalse);
+      expect(repo.deleteAllCalls, isEmpty);
       vm.dispose();
     });
 

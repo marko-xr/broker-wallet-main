@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Broker Wallet logo green: tints the push notification's small icon
+         in the notification shade (status bar icons stay white). -->
+    <color name="notification_accent">#027965</color>
+</resources>

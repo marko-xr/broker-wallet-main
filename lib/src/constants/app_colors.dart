@@ -12,6 +12,10 @@ class AppColors {
   static const Color tilePrimary = Color.fromARGB(255, 230, 237, 235);
   static const Color tileSecondary = Color.fromARGB(255, 206, 212, 212);
 
+  /// Unread-count badge (the bell): the standard alert red, the same in light
+  /// and dark mode; white digits on it meet WCAG AA (about 5:1).
+  static const Color notificationBadge = Color(0xFFD32F2F);
+
   // Dark theme variants
   static const Color darkBackground = Color(0xFF141918);
   static const Color darkSurface = Color(0xFF22292F);

@@ -37,10 +37,25 @@ class NotificationSettingsViewModel extends ChangeNotifier {
   /// starts, so a quick double tap can never persist an older value last.
   Future<void> _saves = Future<void>.value();
 
+  /// The last values loaded or saved in this app run, per account, so the
+  /// screen opens at once with them instead of a loading state.
+  static final Map<String, ({bool enabled, Map<String, bool> toggles})>
+      _lastKnown = {};
+
+  @visibleForTesting
+  static void debugForgetLastKnown() => _lastKnown.clear();
+
+  /// Counts the user's changes, so a server answer that arrives after a
+  /// change never overwrites it.
+  int _changes = 0;
+
   bool get isLoading => _isLoading;
   bool get notificationsEnabled => _notificationsEnabled;
   Map<String, bool> get toggles => _toggles;
 
+  /// Shows the values the app already has (this run's last known values,
+  /// else the signed-in profile's copy) at once, then refreshes them from
+  /// the server without a loading state. Only with neither is there one.
   Future<void> initialize() async {
     final uid = authViewModel.currentUser?.uid;
     if (uid == null) {
@@ -49,18 +64,33 @@ class NotificationSettingsViewModel extends ChangeNotifier {
       return;
     }
 
+    final known = _lastKnown[uid];
+    final profile = authViewModel.currentUser;
+    if (known != null) {
+      _notificationsEnabled = known.enabled;
+      _toggles = Map<String, bool>.from(known.toggles);
+      _uid = uid;
+      _isLoading = false;
+      _notify();
+    } else if (profile != null &&
+        profile.uid == uid &&
+        profile.preferences.isNotEmpty) {
+      _apply(profile.preferences);
+      _uid = uid;
+      _isLoading = false;
+      _notify();
+    }
+
+    final changesAtStart = _changes;
     try {
       final user = await _userRepository.getUserById(uid);
-      if (user != null) {
-        final prefs = user.preferences;
-        _notificationsEnabled = prefs['notificationsEnabled'] as bool? ?? true;
-        final nested = prefs['notifications'] is Map
-            ? Map<String, dynamic>.from(prefs['notifications'] as Map)
-            : const <String, dynamic>{};
-        _toggles = {
-          for (final key in settingKeys) key: nested[key] as bool? ?? true,
-        };
+      if (user != null &&
+          !_disposed &&
+          _changes == changesAtStart &&
+          authViewModel.currentUser?.uid == uid) {
+        _apply(user.preferences);
         _uid = uid;
+        _remember();
       }
     } catch (e) {
       if (kDebugMode) {
@@ -74,14 +104,36 @@ class NotificationSettingsViewModel extends ChangeNotifier {
     }
   }
 
+  void _apply(Map<String, dynamic> prefs) {
+    _notificationsEnabled = prefs['notificationsEnabled'] as bool? ?? true;
+    final nested = prefs['notifications'] is Map
+        ? Map<String, dynamic>.from(prefs['notifications'] as Map)
+        : const <String, dynamic>{};
+    _toggles = {
+      for (final key in settingKeys) key: nested[key] as bool? ?? true,
+    };
+  }
+
+  void _remember() {
+    final uid = _uid;
+    if (uid == null) return;
+    _lastKnown[uid] = (
+      enabled: _notificationsEnabled,
+      toggles: Map<String, bool>.unmodifiable(_toggles),
+    );
+  }
+
   /// Shows the new value at once and reverts it if the save fails.
   Future<void> toggleMaster(bool enabled) {
     final previous = _notificationsEnabled;
+    _changes++;
     _notificationsEnabled = enabled;
+    _remember();
     _notify();
     return _save(onFailure: () {
       if (_notificationsEnabled == enabled) {
         _notificationsEnabled = previous;
+        _remember();
       }
     });
   }
@@ -91,11 +143,14 @@ class NotificationSettingsViewModel extends ChangeNotifier {
   Future<void> toggleSetting(String key, bool value) {
     if (!settingKeys.contains(key)) return Future<void>.value();
     final previous = _toggles[key] ?? true;
+    _changes++;
     _toggles = Map<String, bool>.from(_toggles)..[key] = value;
+    _remember();
     _notify();
     return _save(onFailure: () {
       if (_toggles[key] == value) {
         _toggles = Map<String, bool>.from(_toggles)..[key] = previous;
+        _remember();
       }
     });
   }

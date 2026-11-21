@@ -121,6 +121,19 @@ class SupabaseNotificationRepository implements NotificationRepository {
   }
 
   @override
+  Future<void> deleteAllNotifications(
+    String userId, {
+    required DateTime upTo,
+  }) async {
+    _requireUser(userId);
+    await _client
+        .from('notifications')
+        .delete()
+        .eq('recipient_id', userId)
+        .lte('created_at', upTo.toUtc().toIso8601String());
+  }
+
+  @override
   Future<void> upsertFcmToken(String userId, FcmTokenMetadata metadata) {
     throw UnsupportedError('Push device registration is not configured.');
   }

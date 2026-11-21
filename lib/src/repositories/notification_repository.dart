@@ -33,6 +33,11 @@ abstract class NotificationRepository {
   /// Delete a notification entry
   Future<void> deleteNotification(String userId, String notificationId);
 
+  /// Deletes every notification of [userId] created at or before [upTo] (the
+  /// newest one the user saw), so a notification arriving at that moment is
+  /// never deleted unseen.
+  Future<void> deleteAllNotifications(String userId, {required DateTime upTo});
+
   /// Persist a device token so Cloud Functions can target this device
   Future<void> upsertFcmToken(String userId, FcmTokenMetadata metadata);
 

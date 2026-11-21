@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 import 'details_section.dart';
+import 'reminder_time_sheet.dart';
 
 /// "Follow-up reminder" on a Request or Offer Details screen: the user picks
 /// a date and time; the server creates the inbox notification (and the push)
@@ -155,10 +156,9 @@ class _FollowUpReminderSectionState extends State<FollowUpReminderSection> {
       helpText: loc.translate('followUpPickDate'),
     );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: loc.translate('followUpPickTime'),
+    final time = await showReminderTimeSheet(
+      context,
+      initial: TimeOfDay.fromDateTime(initial),
     );
     if (time == null || !mounted) return;
     final chosen =

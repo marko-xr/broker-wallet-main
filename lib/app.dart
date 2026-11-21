@@ -98,6 +98,7 @@ import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/widgets/brand_splash/brand_splash_gate.dart';
 import 'package:broker_wallet/src/Views/Widgets/fade_through_page.dart';
+import 'package:broker_wallet/src/Views/Screens/home/notifications/notification_target_resolver.dart';
 
 // ===== Global navigator key (kept global for dialogs/global nav helpers) =====
 final GlobalKey<NavigatorState> rootNavigatorKey =
@@ -803,6 +804,44 @@ GoRouter _createRouter(
       GoRoute(
         path: '/offers-details-by-id/:id',
         builder: buildOfferDetailsByIdRoute,
+      ),
+      // Opened from a follow-up reminder in the inbox. The screen starts its
+      // fade through (as the Home list screens do) at once and finds its
+      // record while the motion plays, so there is no wait before it moves
+      // and no loading screen when the record is on the phone. Not found:
+      // the regular by-id screen, with its "not found" state.
+      GoRoute(
+        path: '$notificationRequestRoute/:id',
+        pageBuilder: (context, state) {
+          final id = state.pathParameters['id']?.trim() ?? '';
+          final lookup = NotificationRecordLookup.forAccount(
+              authViewModel.currentUser?.uid);
+          return FadeThroughPage<void>(
+            key: state.pageKey,
+            child: NotificationRecordScreen<RequestModel>(
+              find: () => lookup.findRequest(id),
+              details: (request) => RequestDetailsView(request: request),
+              fallback: (_) => _RequestDetailsLoader(requestId: id),
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: '$notificationOfferRoute/:id',
+        pageBuilder: (context, state) {
+          final id = state.pathParameters['id']?.trim() ?? '';
+          final lookup = NotificationRecordLookup.forAccount(
+              authViewModel.currentUser?.uid);
+          return FadeThroughPage<void>(
+            key: state.pageKey,
+            child: NotificationRecordScreen<OfferModel>(
+              find: () => lookup.findOffer(id),
+              // Like a list-supplied Offer: the screen refreshes it itself.
+              details: (offer) => OffersDetailsView(offer: offer),
+              fallback: (_) => OfferDetailsLoader(offerId: id),
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/owners-details',

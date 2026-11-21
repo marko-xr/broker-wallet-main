@@ -60,6 +60,12 @@ class ControlledNotificationRepository implements NotificationRepository {
   ) async {}
 
   @override
+  Future<void> deleteAllNotifications(
+    String userId, {
+    required DateTime upTo,
+  }) async {}
+
+  @override
   Future<List<NotificationModel>> fetchNotifications(
     String userId, {
     int limit = 25,

@@ -17616,3 +17616,31 @@ After commit `1a240bd`. No Supabase, Firebase, Edge Function or cron change.
 
 Then the iOS/APNs plan.
    - Rollback: `select cron.unschedule('bw-push-dispatch'); select cron.unschedule('bw-fire-follow-up-reminders'); select cron.unschedule('bw-prune-push-delivery-jobs');`
+
+### iOS / APNs code readiness, 2026-11-21: CODE_READY, uncommitted, NOT built, NOT device-tested
+
+The owner registered the iOS app `com.nmodigital.brokerwallet` in Firebase `broker-wallet` and supplied its `GoogleService-Info.plist`. The Apple Developer organization membership is pending (D-U-N-S), so there is no APNs key yet.
+
+- **Plist:** verified before install. PROJECT_ID `broker-wallet` and GCM_SENDER_ID `285578142613` (both equal to Android's `google-services.json`), BUNDLE_ID `com.nmodigital.brokerwallet`, IS_GCM_ENABLED true.
+  - The old `broker-wallet-app` plist is backed up at `%USERPROFILE%\BrokerWallet-Backups\2026-11-21-ios-firebase\`.
+  - Finding: the plist was never referenced in `project.pbxproj`, so it was never bundled. It is now in the Runner group and Resources phase.
+- **`project.pbxproj`** (scripted edit, CRLF kept, verified counts):
+  - 3 Runner bundle IDs set to `com.nmodigital.brokerwallet`, 3 RunnerTests to `.RunnerTests`
+  - `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements` on the 3 Runner configurations
+  - no `com.example.broker-wallet` left
+- **New `ios/Runner/Runner.entitlements`:** `aps-environment development`.
+- **`Info.plist`:** `FirebaseAppDelegateProxyEnabled` false → true, because the official Flutter FCM page says swizzling "is required". `remote-notification` and `fetch` background modes were already present.
+- **`AppDelegate.swift` unchanged:** one `FirebaseApp.configure()`.
+  - The firebase_messaging 16.5.0 native plugin already forwards the APNs token, sets the notification-centre delegate and registers for remote notifications. Adding them again would duplicate them.
+  - firebase_core 4.13.0 `initializeApp()` attaches to the native default app.
+- **`firebase_push_platform.dart`:**
+  - `iosPushReady = true`.
+  - `token()` waits for the APNs token on iOS (`waitForApnsToken`, 0.5/1/2 s), else throws `ApnsTokenUnavailable`, which the service retries.
+  - The Android path is unchanged.
+- **Tests (owner to run):** new `test/notifications/ios_push_config_test.dart`. Its plist reader was run against the real files on the plain Dart VM and returns the expected values.
+- **BLOCKED_EXTERNAL**, details in `docs/NOTIFICATIONS_PRODUCTION_PLAN.md` § "iOS / APNs checklist":
+  - Apple membership → App ID with Push and a .p8 key (Key ID, Team ID)
+  - upload the key to Firebase Cloud Messaging
+  - choose the signing team in Xcode on a Mac
+  - Maps key bundle restriction (if any)
+  - iPhone test

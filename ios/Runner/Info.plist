@@ -82,8 +82,11 @@
             <string>fetch</string>
             <string>remote-notification</string>
     </array>
-            <key>FirebaseAppDelegateProxyEnabled</key>
-    <false/>
+    <!-- Firebase method swizzling must stay ON for firebase_messaging on iOS
+         (it hands the APNs token to FCM and routes notification taps).
+         https://firebase.google.com/docs/cloud-messaging/flutter/client -->
+    <key>FirebaseAppDelegateProxyEnabled</key>
+    <true/>
 
     <!-- Camera and photo library: profile pictures, Offer photos/videos and the Scanner -->
     <key>NSCameraUsageDescription</key>

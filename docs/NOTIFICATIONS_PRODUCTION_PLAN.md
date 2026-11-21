@@ -262,8 +262,9 @@ migration):
 2. **FCM network traffic.** FCM's native networking (token, delivery) does not
    pass through `AppAccessPolicy`. Only the Supabase registration call is
    guarded.
-3. **iOS** still starts the old Firebase project natively. iOS push stays off
-   until the checklist below is done.
+3. **iOS** now starts the `broker-wallet` project natively (2026-11-21), the
+   same project as Android. Delivery waits for the APNs key and an
+   Apple-signed build (checklist below).
 
 ### Deploy runbook (each step needs the owner's approval)
 
@@ -290,26 +291,81 @@ migration):
    - After signing in on another phone, the first phone gets nothing.
    - With Push OFF, the inbox row appears but no push.
 
-### iOS / APNs checklist (owner: Apple Developer and Firebase)
+### iOS / APNs checklist
 
-1. **Choose the final iOS Bundle ID.** Today it is `com.example.broker-wallet`,
-   and it cannot change after the first App Store upload.
-2. **Apple Developer:**
-   - Create an App ID for that bundle with the **Push Notifications**
-     capability.
-   - Create an **APNs Authentication Key (.p8)**. Note its **Key ID** and your
-     **Team ID**.
-3. **Firebase `broker-wallet`:**
-   - Add an iOS app with that bundle ID.
-   - Upload the .p8 with its Key ID and Team ID (Project settings → Cloud
-     Messaging).
-   - Download the new `GoogleService-Info.plist`. The current one belongs to
-     `broker-wallet-app`.
-4. **Then the agent:**
-   - adds `Runner.entitlements` with `aps-environment`
-   - enables `FirebaseAppDelegateProxyEnabled` (or forwards the APNs token)
-   - replaces the plist
-   - sets `iosPushReady` to true
+**Done in code (2026-11-21, source only, uncommitted, not built):**
 
-   The deployment target is already 15.0.
-5. **Test on a real iPhone.** The Simulator does not receive APNs.
+- Bundle ID `com.nmodigital.brokerwallet` (Runner Debug/Release/Profile) and
+  `com.nmodigital.brokerwallet.RunnerTests`. No `com.example.broker-wallet` is
+  left in the Xcode project.
+- The owner registered the iOS app in Firebase `broker-wallet`. Its
+  `GoogleService-Info.plist` is installed in `ios/Runner/`:
+  - PROJECT_ID `broker-wallet` and GCM_SENDER_ID `285578142613` (the same as
+    Android), BUNDLE_ID as above, IS_GCM_ENABLED true.
+  - It is now **referenced in the Xcode project and its Resources phase**.
+    Before, the old plist sat in the folder unreferenced, so it was never
+    bundled.
+  - The old plist (`broker-wallet-app`) is backed up at
+    `%USERPROFILE%\BrokerWallet-Backups\2026-11-21-ios-firebase\`.
+- `ios/Runner/Runner.entitlements` with `aps-environment = development`, set
+  as `CODE_SIGN_ENTITLEMENTS` for all three Runner configurations.
+  - With automatic signing, App Store / TestFlight exports are re-signed
+    with `production`.
+- `Info.plist`: `FirebaseAppDelegateProxyEnabled` is now **true**; it was
+  false. The Firebase Flutter docs say method swizzling "is required" on
+  Apple platforms.
+  - `UIBackgroundModes` already had `fetch` and `remote-notification`.
+  - FCM auto-init stays at its default (on), because firebase_messaging
+    registers for APNs at launch only while auto-init is on. The token still
+    reaches our server only after sign-in and permission, as on Android.
+- `AppDelegate.swift`: unchanged. It already calls `FirebaseApp.configure()`
+  once.
+  - firebase_messaging 16.5.0 itself forwards the APNs token, sets the
+    notification-centre delegate, and calls `registerForRemoteNotifications`
+    (read in the plugin source).
+  - Dart `Firebase.initializeApp()` attaches to the native default app;
+    firebase_core 4.13.0 reads `[FIRApp allApps]`, so there is no second
+    configure.
+- Dart:
+  - `iosPushReady = true`.
+  - `FirebasePushPlatform.token()` waits for the APNs token on iOS (0.5 s,
+    1 s, 2 s), as FCM requires. With none, it throws `ApnsTokenUnavailable`,
+    and the push service's existing retries, the token-refresh listener and
+    the next sign-in try again. Nothing is registered without a token.
+  - Permission (asked when a reminder is set), the foreground count refresh,
+    opening the inbox from a tap (`onMessageOpenedApp` / `getInitialMessage`)
+    and the server-side Arabic/English text are shared with Android.
+  - The server already sends `apns-priority: 10` and `sound: default`.
+- Tests: `test/notifications/ios_push_config_test.dart` reads the real project
+  files and unit-tests the APNs wait.
+
+**BLOCKED_EXTERNAL (owner: Apple Developer membership, D-U-N-S pending):**
+
+1. Apple Developer (paid organization membership):
+   - App ID `com.nmodigital.brokerwallet` with **Push Notifications**.
+   - An **APNs Authentication Key (.p8)**, with its **Key ID** and the **Team
+     ID**.
+2. Firebase `broker-wallet` → Project settings → Cloud Messaging → iOS app →
+   upload the .p8 with its Key ID and Team ID.
+3. On a Mac with Xcode, in `ios/Runner.xcworkspace` → Runner → Signing &
+   Capabilities:
+   - choose the team (this sets `DEVELOPMENT_TEAM`)
+   - check that **Push Notifications** and **Background Modes → Remote
+     notifications** show as enabled (both are already in the files)
+   - `pod install` runs on the first build
+4. A free personal team cannot sign the Push Notifications entitlement, so a
+   real-device build fails until the membership exists. Simulator builds do
+   not need it, but the Simulator is not proof of APNs delivery.
+5. Google Maps: if the iOS Maps API key is restricted by bundle ID, add
+   `com.nmodigital.brokerwallet` in Google Cloud.
+6. Test on a real iPhone: permission prompt, push in the foreground,
+   background and closed states, a tap opening the inbox, Arabic and English
+   text, sign-out / other-device silence, and Android unchanged.
+
+**Backlog (not changed):**
+
+- `firebase.json`'s `flutter` section still names `broker-wallet-app`. No
+  `lib/firebase_options.dart` exists, and nothing reads that section at
+  build or run time.
+- `Info.plist` keeps a Google Sign-In URL scheme for client
+  `460721646511-…`; `google_sign_in` is not used in `lib/`.

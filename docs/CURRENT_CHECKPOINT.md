@@ -17644,3 +17644,101 @@ The owner registered the iOS app `com.nmodigital.brokerwallet` in Firebase `brok
   - choose the signing team in Xcode on a Mac
   - Maps key bundle restriction (if any)
   - iPhone test
+
+### iOS status, 2026-11-21 (documentation only: no code, configuration, build, test or Git change)
+
+**Branches**
+- `notifications-implementation` and `ios-notifications-implementation` both point to `831e7c9` on origin. The iOS branch now tracks `origin/ios-notifications-implementation` (published by the owner).
+- Windows and the Samsung use `notifications-implementation`. The app also runs on Windows from the iOS branch.
+- The iOS branch exists to continue iOS work on the owner's MacBook.
+- The working tree has only the generated `macos/Flutter/GeneratedPluginRegistrant.swift`.
+- There are 4 stashes. The newest, `stash@{0}` (GitHub Desktop, on `ios-notifications-implementation`), holds only that same generated macOS file. All are untouched.
+
+**Status by platform**
+
+| Area | Status | Evidence |
+|---|---|---|
+| Android (Samsung) | **VERIFIED_REAL_DEVICE** | Acceptance groups 1–7 above; production push live since 2026-11-21. |
+| iOS notification code | **CODE_READY** | `831e7c9`: bundle ID, plist bundled, entitlements, swizzling on, APNs token wait. Owner ran `flutter test test/notifications` (90 passed) and analyze (no issues). |
+| iOS Xcode build (Mac) | **BUILD_PASSED (owner, MacBook)** | Reported by the owner: the Xcode build succeeded. |
+| iPhone install / signing | **BLOCKED_EXTERNAL** | See below. |
+| iOS push delivery on an iPhone | **NOT_VERIFIED** | No APNs key, no signed device build. |
+
+**BLOCKED_EXTERNAL: Apple signing and provisioning**
+- Installing on an iPhone failed under the free **Apple Personal Development Team**.
+- A personal team cannot sign the **Push Notifications** capability (`aps-environment` in `Runner.entitlements`), and it has no App ID with Push for `com.nmodigital.brokerwallet`.
+- This is a signing and provisioning limit, **not a confirmed Flutter or app-code failure**.
+- NMO Digital's Apple Developer **Organization** enrollment is waiting for a **D-U-N-S** number.
+- Per owner instruction, Push Notifications and the entitlements were **not** disabled.
+
+**Read-only iOS review: findings independent of signing (nothing changed)**
+1. **RISK TO VERIFY on the Mac: `permission_handler` permission switches.**
+   - The app requests camera, photos/videos, microphone and location-when-in-use through `permission_handler`.
+   - Under **CocoaPods**, `permission_handler_apple` 9.6.1 compiles every permission **out by default** (only notifications are on). Each one needs `PERMISSION_*=1` in the Podfile's `post_install` → `GCC_PREPROCESSOR_DEFINITIONS`.
+   - Under **Swift Package Manager** they are derived from the `NS*UsageDescription` keys, which `Info.plist` has.
+   - `ios/Podfile` is not in the repository; Flutter generates it on the Mac.
+   - **Check on the Mac:** does `ios/Podfile` exist?
+     - If so, the build uses CocoaPods, and camera/photo/location prompts may never appear on iOS.
+     - The fix, `PERMISSION_CAMERA=1`, `PERMISSION_PHOTOS=1`, `PERMISSION_MICROPHONE=1`, `PERMISSION_LOCATION_WHENINUSE=1`, needs the owner's approval.
+   - Push permission is unaffected: `firebase_messaging` asks for it itself.
+   - **Further evidence (read-only, 2026-11-21): likely gap, not yet confirmed on the Mac.**
+     - Flutter's local `.flutter-plugins-dependencies` (untracked; Windows) reports `swift_package_manager_enabled: {ios: false}`.
+     - 8 of the 35 iOS plugins ship no `Package.swift`: fluttertoast, google_maps_flutter_ios, open_filex, path_provider_foundation, printing, smart_auth, video_compress and video_thumbnail. So the Mac build always uses CocoaPods.
+     - `permission_handler` falls back to CocoaPods too unless the Mac has Swift Package Manager enabled. The repo's `project.pbxproj` has neither Pods nor SPM markers: both are added by the first Mac build and were not pushed.
+     - **Confirm on the Mac:**
+       - `flutter config --list` shows `enable-swift-package-manager` false or absent, and
+       - in the Simulator the camera / photo / location prompt never appears, or the permission is reported as permanently denied.
+     - **Corrected fix (pending owner approval).** The app uses `Permission.camera`, `photos`, `videos`, `microphone`, `location` and `locationWhenInUse`. Commit the Mac's generated `ios/Podfile` with this in `post_install` → `GCC_PREPROCESSOR_DEFINITIONS`:
+       - `'PERMISSION_CAMERA=1'`
+       - `'PERMISSION_PHOTOS=1'` (iOS `videos` uses the photos permission)
+       - `'PERMISSION_MICROPHONE=1'`
+       - `'PERMISSION_LOCATION=1'` (covers `location` and `locationWhenInUse`; this replaces the `PERMISSION_LOCATION_WHENINUSE` suggestion above, which alone would not cover `Permission.location`)
+     - `Permission.storage` has no iOS macro, and notifications are on by default.
+2. **App Store backlog** (not needed for a first device test):
+   - `NSAllowsArbitraryLoads` is true (App Review asks for a justification).
+   - `ITSAppUsesNonExemptEncryption` is absent (App Store Connect asks on each upload).
+   - There is no app-level `PrivacyInfo.xcprivacy`; plugins ship their own, and the app-level need was not audited.
+3. **Known stale items** (recorded earlier, still not read at build or run time):
+   - `firebase.json`'s `flutter` section names `broker-wallet-app`.
+   - `Info.plist` has an unused Google Sign-In URL scheme for client `460721646511-…`.
+4. **Consistent:**
+   - The bundle ID is `com.nmodigital.brokerwallet` in all 3 Runner configurations, with `.RunnerTests` for the tests.
+   - The plist identity equals Android (`broker-wallet`, `285578142613`), and the plist is in the Runner Resources phase.
+   - `CODE_SIGN_ENTITLEMENTS` is set in Runner Debug/Release/Profile.
+   - Swizzling is on, and `remote-notification` is in the background modes.
+   - The deployment target is 15.0, which matches firebase_messaging 16.5.0.
+   - The Scanner channel `com.example.broker_wallet/backup_exclusion` matches between `AppDelegate.swift` and `scanner_backup_guard.dart`.
+   - The Supabase deep-link scheme `brokerwallet` is present.
+
+**What can be tested now (no Apple membership)**
+- Android: everything, on Windows and the Samsung (already verified).
+- Mac, iOS **Simulator** build of `ios-notifications-implementation`:
+  - The app starts. This proves `GoogleService-Info.plist` is bundled and `FirebaseApp.configure()` finds it.
+  - Sign-in through Supabase, Home, lists, details, setting a follow-up reminder, and the inbox. The inbox row is created by the server, so it appears without APNs.
+  - Arabic/English and RTL, the reminder time wheels, and the notification settings.
+  - The `permission_handler` risk in item 1 (whether the camera/photo/location prompts appear).
+- The Simulator is **not** evidence of APNs delivery to an iPhone. Push stays NOT_VERIFIED until a signed iPhone build receives a real reminder.
+
+**Remaining steps once the membership exists**
+1. **Apple Developer (organization team):**
+   - Register the App ID `com.nmodigital.brokerwallet` with **Push Notifications**.
+   - Create an **APNs Authentication Key (.p8)**. Note the **Key ID** and **Team ID**; the .p8 is downloadable once and must never be committed.
+2. **Firebase `broker-wallet`** → Project settings → Cloud Messaging → iOS app `com.nmodigital.brokerwallet` → upload the .p8 with its Key ID and Team ID.
+3. **Xcode on the Mac** → `ios/Runner.xcworkspace` → Runner → Signing & Capabilities:
+   - select the organization team (sets `DEVELOPMENT_TEAM`; commit that change from the Mac)
+   - confirm **Push Notifications** and **Background Modes → Remote notifications** are on (both already in the files)
+   - let automatic signing create the development profile
+4. **Google Cloud** (if the iOS Maps key is bundle-restricted): allow `com.nmodigital.brokerwallet`.
+5. **Physical iPhone** (debug build signed with the organization team), the same scenarios as the Android acceptance:
+   - the permission prompt after setting a reminder
+   - a push in the foreground (count only), the background and the terminated state
+   - a tap opens the inbox; the inbox tap opens the Request/Offer
+   - Arabic and English push text
+   - push off → no push but an inbox row
+   - sign out / another device → no push
+   - the server shows `push_devices.platform = 'ios'` bound to the active session
+   - Android unchanged
+6. **Release:** TestFlight / App Store export with automatic signing writes `aps-environment = production`; repeat one delivery check on a TestFlight build.
+
+**NOW:** the owner continues on the MacBook with Simulator testing, including the `permission_handler` check above.
+**NEXT:** after D-U-N-S and enrollment, steps 1–5, then mark iOS push VERIFIED_REAL_DEVICE only after the iPhone checks pass.

@@ -148,14 +148,26 @@ Widget _localized(Widget child, {Locale locale = const Locale('en')}) {
   );
 }
 
+/// A signed-in inbox whose feed has already answered (with no rows), so the
+/// screen is never in its loading state: its spinner never stops moving and
+/// `pumpAndSettle` would wait for it forever.
 ({NotificationViewModel vm, ControlledNotificationRepository repo}) _feed() {
   final repo = ControlledNotificationRepository();
   final vm = NotificationViewModel(repository: repo, isOnline: () => true)
     ..attachUser('user-a');
+  repo.emit(const []);
   return (vm: vm, repo: repo);
 }
 
 void main() {
+  // The app's translations are read from asset files; widget tests need them
+  // cached up front, as the other widget tests do, or no localized screen
+  // ever finishes building.
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await AppLocalizations.preloadAllLanguages();
+  });
+
   group('inbox destination (decided at once)', () {
     test('a Request reminder opens the inbox Request route', () {
       final target = inboxDestination(_reminder(1, requestId: _uuid(60)))!;
@@ -241,7 +253,7 @@ void main() {
     testWidgets('a record found at once shows the details, no loader',
         (tester) async {
       await tester.pumpWidget(screen(() async => _request(_uuid(60))));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('details ${_uuid(60)}'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
@@ -250,6 +262,8 @@ void main() {
         (tester) async {
       final answer = Completer<RequestModel?>();
       await tester.pumpWidget(screen(() => answer.future));
+      // The screen (and its spinner timer) starts once translations load.
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const ValueKey('notification-record-waiting')),
           findsOneWidget);
@@ -264,7 +278,7 @@ void main() {
     testWidgets('nothing found hands over to the regular screen',
         (tester) async {
       await tester.pumpWidget(screen(() async => null));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('fallback'), findsOneWidget);
     });
   });
@@ -307,7 +321,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ListTile));
       // One frame after the tap the details route is already on its way:
-      // nothing was awaited before navigating.
+      // nothing was awaited before navigating (one frame for the router to
+      // apply the push, one for the new page).
+      await tester.pump();
       await tester.pump();
       expect(
           find.byType(NotificationRecordScreen<RequestModel>), findsOneWidget);
@@ -507,7 +523,8 @@ void main() {
         (tester) async {
       TimeOfDay? chosen;
       var closed = false;
-      await tester.pumpWidget(_localized(Builder(
+      await tester.pumpWidget(_localized(Scaffold(
+          body: Builder(
         builder: (context) => TextButton(
           onPressed: () async {
             chosen = await showReminderTimeSheet(
@@ -518,7 +535,8 @@ void main() {
           },
           child: const Text('open'),
         ),
-      )));
+      ))));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(find.byType(CupertinoDatePicker), findsOneWidget);
@@ -531,7 +549,8 @@ void main() {
 
     testWidgets('Cancel returns nothing', (tester) async {
       TimeOfDay? chosen = const TimeOfDay(hour: 1, minute: 1);
-      await tester.pumpWidget(_localized(Builder(
+      await tester.pumpWidget(_localized(Scaffold(
+          body: Builder(
         builder: (context) => TextButton(
           onPressed: () async => chosen = await showReminderTimeSheet(
             context,
@@ -539,7 +558,8 @@ void main() {
           ),
           child: const Text('open'),
         ),
-      )));
+      ))));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('follow-up-time-cancel')));

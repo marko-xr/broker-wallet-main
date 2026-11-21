@@ -12,6 +12,11 @@ Future<TimeOfDay?> showReminderTimeSheet(
   return showModalBottomSheet<TimeOfDay>(
     context: context,
     showDragHandle: true,
+    // The sheet takes the height its content needs (a default sheet stops at
+    // 9/16 of the screen and would cut Save off on short or landscape
+    // screens); the content scrolls if even that does not fit.
+    isScrollControlled: true,
+    useSafeArea: true,
     builder: (_) => ReminderTimeSheet(initial: initial),
   );
 }
@@ -37,7 +42,7 @@ class _ReminderTimeSheetState extends State<ReminderTimeSheet> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,

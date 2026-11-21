@@ -17605,6 +17605,14 @@ After commit `1a240bd`. No Supabase, Firebase, Edge Function or cron change.
   - New cases in `notification_n1_test.dart` (delete all, settings seed). Its settings group now clears the run-wide memory in `setUp`.
   - `r3_test_fakes.dart` gained the new repository method. The other fakes use `noSuchMethod`.
 - **Checks:** `dart format` is clean (only new lines re-wrapped; the committed versions were verified clean with `--language-version=3.5`), and `git diff --check` is clean.
+- **Committed as `f622cec`.** The owner's first test run then failed 13 tests, all in `notification_ux_test.dart`.
+  - The file never called `AppLocalizations.preloadAllLanguages()`, so no localized screen built.
+  - After that fix, 6 tests timed out in `pumpAndSettle` because of the inbox's loading spinner. `_feed()` now answers with an empty list first.
+  - It also exposed a **real defect**: the reminder time sheet overflowed by 35 px on an 800×600 screen. A default sheet stops at 9/16 of the height, which cut Save/Cancel off on short or landscape screens. Fix: `isScrollControlled` + `useSafeArea`, and the content is a `SingleChildScrollView`.
+  - The analyzer's 3 deprecated `Color.red/green/blue` notes in `notification_icon.dart` were fixed with `Colors.grey.withValues(alpha: 0.1)` (same colour).
+  - **Agent-run (owner asked):**
+    - `flutter test test/notifications test/responsive test/auth/route_authorization_test.dart test/home/screen_header_unity_test.dart test/favorites/favorites_screen_ui_test.dart`: **All 1789 tests passed.**
+    - Scoped `flutter analyze` (app.dart, notifications, notification_icon, viewmodels, repositories, ViewDetails widgets, constants, test/notifications): **No issues found.**
 
 Then the iOS/APNs plan.
    - Rollback: `select cron.unschedule('bw-push-dispatch'); select cron.unschedule('bw-fire-follow-up-reminders'); select cron.unschedule('bw-prune-push-delivery-jobs');`

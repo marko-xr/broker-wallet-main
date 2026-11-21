@@ -17,8 +17,7 @@ class NotificationIcon extends StatelessWidget {
     const badgeColor = AppColors.notificationBadge;
     const onBadge = Colors.white;
     // Very light grey background
-    final bgGrey = Color.fromARGB((0.1 * 255).round(), Colors.grey.red,
-        Colors.grey.green, Colors.grey.blue);
+    final bgGrey = Colors.grey.withValues(alpha: 0.1);
 
     return Consumer<NotificationViewModel>(
       builder: (context, vm, _) {

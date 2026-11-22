@@ -8,7 +8,14 @@ import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/phone_verification_viewmodel.dart';
+import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/views/Widgets/otp_code_field.dart';
+import 'package:broker_wallet/src/views/Widgets/phone_otp_dialog.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _uid = '550e8400-e29b-41d4-a716-446655440000';
@@ -467,6 +474,131 @@ void main() {
       expect(PhoneVerificationViewModel.surfacedErrorKeys,
           contains(f.vm.errorKey));
       await f.dispose();
+    });
+  });
+
+  group('Code dialog (shared OTP field)', () {
+    testWidgets(
+        'a complete code is verified exactly once, and a stale code '
+        'is dropped when the session ends', (tester) async {
+      final binding = TestWidgetsFlutterBinding.instance;
+      binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets',
+          (ByteData? message) async {
+        final file = File(utf8.decode(message!.buffer.asUint8List()));
+        if (!file.existsSync()) return null;
+        return ByteData.view(Uint8List.fromList(file.readAsBytesSync()).buffer);
+      });
+      await tester.runAsync(AppLocalizations.preloadAllLanguages);
+
+      final flow = await tester.runAsync(_Flow.signedIn);
+      final f = flow!;
+      addTearDown(() => tester.runAsync(f.dispose));
+      f.gateway.verifyGate = Completer<UserModel>();
+      await tester.runAsync(() => f.vm.sendCode(_phone));
+
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: Scaffold(
+              body: ChangeNotifierProvider<PhoneVerificationViewModel>.value(
+                value: f.vm,
+                child: const PhoneOtpDialog(),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      await tester.enterText(find.byType(OtpCodeField), '123456');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(f.gateway.verified, ['123456'],
+          reason: 'completion and Done do not send twice');
+
+      // The session ends while the check runs: the dialog drops the code.
+      f.auth.emit(null);
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      await tester.pump();
+      final field = tester.widget<OtpCodeField>(find.byType(OtpCodeField));
+      expect(field.controller.text, isEmpty);
+      expect(field.enabled, isFalse);
+      f.gateway.verifyGate!
+          .complete(_identity(phone: _phone, phoneVerified: true));
+      await tester.pump();
+      expect(f.gateway.verified, hasLength(1));
+    });
+  });
+
+  group('Code dialog on a small phone', () {
+    testWidgets('320x568 with the keyboard open and 1.3x text: no overflow',
+        (tester) async {
+      final binding = TestWidgetsFlutterBinding.instance;
+      binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets',
+          (ByteData? message) async {
+        final file = File(utf8.decode(message!.buffer.asUint8List()));
+        if (!file.existsSync()) return null;
+        return ByteData.view(Uint8List.fromList(file.readAsBytesSync()).buffer);
+      });
+      await tester.runAsync(AppLocalizations.preloadAllLanguages);
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.reset);
+
+      final flow = await tester.runAsync(_Flow.signedIn);
+      final f = flow!;
+      addTearDown(() => tester.runAsync(f.dispose));
+      await tester.runAsync(() => f.vm.sendCode(_phone));
+      for (final locale in const [Locale('en'), Locale('ar')]) {
+        await tester.pumpWidget(MaterialApp(
+          locale: locale,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('ar')],
+          home: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                disableAnimations: true,
+                textScaler: const TextScaler.linear(1.3),
+              ),
+              child: Scaffold(
+                body: ChangeNotifierProvider<PhoneVerificationViewModel>.value(
+                  value: f.vm,
+                  child: const PhoneOtpDialog(),
+                ),
+              ),
+            ),
+          ),
+        ));
+        await tester.pump();
+        await tester.enterText(find.byType(OtpCodeField), '12');
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: locale.languageCode);
+        final cell = tester.getSize(find
+            .descendant(
+                of: find.byType(OtpCodeField),
+                matching: find.byType(AnimatedContainer))
+            .first);
+        expect(cell.width, greaterThanOrEqualTo(38),
+            reason:
+                'readable cells on a 320 dp phone (${locale.languageCode})');
+        expect(cell.height, greaterThanOrEqualTo(46));
+      }
     });
   });
 

@@ -15,6 +15,7 @@ import 'package:broker_wallet/src/services/contact_phone_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/change_phone_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/change_phone_codes_dialog.dart';
+import 'package:broker_wallet/src/views/Widgets/otp_code_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -847,17 +848,23 @@ void main() {
       await tester.pumpWidget(dialogApp(vm));
       await tester.pump();
 
-      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.byType(OtpCodeField), findsNWidgets(2));
       expect(find.textContaining('+971501111111'), findsOneWidget);
       expect(find.textContaining('+971507777777'), findsOneWidget);
       ElevatedButton verifyButton() =>
           tester.widget<ElevatedButton>(find.byType(ElevatedButton));
       expect(verifyButton().onPressed, isNull);
-      await tester.enterText(find.byType(TextField).first, '123456');
+      await tester.enterText(find.byType(OtpCodeField).first, '123456');
       await tester.pump();
+      expect(auth.confirms, isEmpty, reason: 'nothing is submitted by itself');
+      final newField = tester.widget<EditableText>(find.descendant(
+          of: find.byType(OtpCodeField).last,
+          matching: find.byType(EditableText)));
+      expect(newField.focusNode.hasFocus, isTrue,
+          reason: 'completing the current code moves to the new one');
       expect(verifyButton().onPressed, isNull,
           reason: 'the new code is missing');
-      await tester.enterText(find.byType(TextField).last, '000000');
+      await tester.enterText(find.byType(OtpCodeField).last, '000000');
       await tester.pump();
       expect(verifyButton().onPressed, isNotNull);
 
@@ -865,10 +872,69 @@ void main() {
       await tester.tap(find.byType(ElevatedButton));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(TextField), findsOneWidget,
+      expect(find.byType(OtpCodeField), findsOneWidget,
           reason: 'the proven current number is not asked again');
       expect(
           find.text(en['phoneCodeInvalidOrExpired'] as String), findsOneWidget);
+    });
+
+    testWidgets(
+        '320 dp phone, keyboard open, 1.3x text: no overflow and '
+        'readable cells in both fields', (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.reset);
+      final auth = _PhoneAuth(_identity());
+      final authVM =
+          AuthViewModel(authRepository: auth, userRepository: _Profiles());
+      await tester.pump();
+      final vm = ChangePhoneViewModel(
+          authViewModel: authVM, resendCooldown: Duration.zero);
+      addTearDown(() {
+        vm.dispose();
+        authVM.dispose();
+      });
+      await tester.runAsync(() => vm.sendCodes(_new));
+      for (final locale in const [Locale('en'), Locale('ar')]) {
+        await tester.pumpWidget(MediaQuery(
+          data: const MediaQueryData(
+            size: Size(320, 568),
+            viewInsets: EdgeInsets.only(bottom: 260),
+            textScaler: TextScaler.linear(1.3),
+            disableAnimations: true,
+          ),
+          child: dialogApp(vm, locale: locale),
+        ));
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: locale.languageCode);
+        // The focused (current-number) field is fully visible above the
+        // keyboard, not cut in half.
+        await tester.enterText(find.byType(OtpCodeField).first, '12');
+        await tester.pump();
+        await tester.pump();
+        final scroll = find
+            .ancestor(
+                of: find.byType(OtpCodeField).first,
+                matching: find.byType(Scrollable))
+            .first;
+        final viewport = tester.getRect(scroll);
+        final focused = tester.getRect(find.byType(OtpCodeField).first);
+        expect(focused.top, greaterThanOrEqualTo(viewport.top - 0.5),
+            reason: locale.languageCode);
+        expect(focused.bottom, lessThanOrEqualTo(viewport.bottom + 0.5),
+            reason: locale.languageCode);
+        for (final field in find.byType(OtpCodeField).evaluate()) {
+          final cell = tester.getSize(find
+              .descendant(
+                  of: find.byWidget(field.widget),
+                  matching: find.byType(AnimatedContainer))
+              .first);
+          expect(cell.width, greaterThanOrEqualTo(38),
+              reason: locale.languageCode);
+          expect(cell.height, greaterThanOrEqualTo(46));
+        }
+      }
     });
 
     testWidgets('Arabic renders the code dialog without overflow',

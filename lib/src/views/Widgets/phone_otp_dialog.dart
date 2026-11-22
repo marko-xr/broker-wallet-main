@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/phone_verification_viewmodel.dart';
+
+import 'otp_code_field.dart';
 
 /// Code-entry step of a phone verification. Pops `true` only when the backend
 /// has confirmed the number; `false` when the user leaves.
@@ -33,9 +34,9 @@ class _PhoneOtpDialogState extends State<PhoneOtpDialog> {
     super.dispose();
   }
 
-  Future<void> _verify(PhoneVerificationViewModel vm) async {
+  Future<void> _verify(PhoneVerificationViewModel vm, [String? code]) async {
     // The typed code is kept on failure so it can be corrected, not retyped.
-    final verified = await vm.verifyCode(_codeController.text);
+    final verified = await vm.verifyCode(code ?? _codeController.text);
     if (verified && mounted) _close(true);
   }
 
@@ -67,6 +68,12 @@ class _PhoneOtpDialogState extends State<PhoneOtpDialog> {
     final colors = theme.colorScheme;
 
     final awaitingCode = vm.phase == PhoneVerificationPhase.awaitingCode;
+    // An abandoned flow (sign-out, account switch) keeps no code on screen.
+    if (vm.phase == PhoneVerificationPhase.idle &&
+        _codeController.text.isNotEmpty) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _codeController.clear());
+    }
     final verifying = vm.phase == PhoneVerificationPhase.verifying;
     final codeComplete =
         _codeController.text.length == PhoneVerificationViewModel.codeLength;
@@ -79,6 +86,14 @@ class _PhoneOtpDialogState extends State<PhoneOtpDialog> {
     final error = vm.errorKey == null ? null : loc.translate(vm.errorKey!);
 
     return AlertDialog(
+      // Small phones with the keyboard open and large text: the content
+      // scrolls instead of overflowing (it overflowed before the shared field
+      // too). No visual change when there is room.
+      scrollable: true,
+      insetPadding: OtpDialogSpacing.insetPadding(context),
+      titlePadding: OtpDialogSpacing.titlePadding(context),
+      contentPadding: OtpDialogSpacing.contentPadding(context),
+      actionsPadding: OtpDialogSpacing.actionsPadding(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text(loc.translate('verifyPhoneNumber')),
       content: Column(
@@ -90,40 +105,19 @@ class _PhoneOtpDialogState extends State<PhoneOtpDialog> {
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          TextField(
+          // Digits only; a pasted SMS keeps just its digits. A complete code
+          // is checked straight away, as before (single-flight in the view
+          // model).
+          OtpCodeField(
             controller: _codeController,
+            semanticLabel: loc.translate('enterOTP'),
             autofocus: true,
             enabled: awaitingCode || verifying,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.done,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            // Digits only, capped at the code length. Pasting "123-456" or a
-            // whole SMS line keeps just the digits.
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(
-                PhoneVerificationViewModel.codeLength,
-              ),
-            ],
-            textAlign: TextAlign.center,
-            textDirection: TextDirection.ltr,
-            style: theme.textTheme.titleLarge?.copyWith(letterSpacing: 8),
-            decoration: InputDecoration(
-              labelText: loc.translate('enterOTP'),
-              counterText: '',
-              errorText: error,
-              errorMaxLines: 3,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onChanged: (value) {
-              setState(() {});
-              if (value.length == PhoneVerificationViewModel.codeLength) {
-                _verify(vm);
-              }
-            },
-            onSubmitted: (_) => _verify(vm),
+            verifying: verifying,
+            errorText: error,
+            smsAutofill: true,
+            onChanged: (_) => setState(() {}),
+            onCompleted: (code) => _verify(vm, code),
           ),
           const SizedBox(height: 8),
           Align(

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/change_phone_viewmodel.dart';
+
+import 'otp_code_field.dart';
 
 /// Code step of Change Phone: the code sent to the current number and the
 /// code sent to the new number, in the same dialog style as Add Phone's code
@@ -26,12 +27,14 @@ class _ChangePhoneCodesDialogState extends State<ChangePhoneCodesDialog> {
 
   final _currentController = TextEditingController();
   final _newController = TextEditingController();
+  final _newFocus = FocusNode();
   bool _closing = false;
 
   @override
   void dispose() {
     _currentController.dispose();
     _newController.dispose();
+    _newFocus.dispose();
     super.dispose();
   }
 
@@ -68,13 +71,19 @@ class _ChangePhoneCodesDialogState extends State<ChangePhoneCodesDialog> {
     Navigator.of(context).pop(changed);
   }
 
+  /// Both codes are entered before Verify; nothing is submitted by itself.
   Widget _codeField({
     required BuildContext context,
     required TextEditingController controller,
     required String label,
     required bool enabled,
+    required bool verifying,
+    required bool hasError,
     required bool autofocus,
-    required VoidCallback onSubmit,
+    FocusNode? focusNode,
+    bool smsAutofill = false,
+    bool closeKeyboardWhenCompleted = true,
+    ValueChanged<String>? onCompleted,
   }) {
     final theme = Theme.of(context);
     final loc = AppLocalizations.of(context);
@@ -83,30 +92,19 @@ class _ChangePhoneCodesDialogState extends State<ChangePhoneCodesDialog> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(label, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 8),
-        TextField(
+        const SizedBox(height: 10),
+        OtpCodeField(
           controller: controller,
+          focusNode: focusNode,
+          semanticLabel: '${loc.translate('enterOTP')}. $label',
           autofocus: autofocus,
           enabled: enabled,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
-          autofillHints: const [AutofillHints.oneTimeCode],
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(ChangePhoneViewModel.codeLength),
-          ],
-          textAlign: TextAlign.center,
-          textDirection: TextDirection.ltr,
-          style: theme.textTheme.titleLarge?.copyWith(letterSpacing: 8),
-          decoration: InputDecoration(
-            labelText: loc.translate('enterOTP'),
-            counterText: '',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+          verifying: verifying,
+          hasError: hasError,
+          smsAutofill: smsAutofill,
+          closeKeyboardWhenCompleted: closeKeyboardWhenCompleted,
           onChanged: (_) => setState(() {}),
-          onSubmitted: (_) => onSubmit(),
+          onCompleted: onCompleted,
         ),
       ],
     );
@@ -120,6 +118,15 @@ class _ChangePhoneCodesDialogState extends State<ChangePhoneCodesDialog> {
     final colors = theme.colorScheme;
 
     final awaiting = vm.phase == ChangePhonePhase.awaitingCodes;
+    // An abandoned flow (sign-out, account switch) keeps no code on screen.
+    if (vm.phase == ChangePhonePhase.idle &&
+        (_currentController.text.isNotEmpty ||
+            _newController.text.isNotEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _currentController.clear();
+        _newController.clear();
+      });
+    }
     final verifying = vm.phase == ChangePhonePhase.verifying;
     final needsCurrent = !vm.currentNumberProven;
     const length = ChangePhoneViewModel.codeLength;
@@ -128,50 +135,63 @@ class _ChangePhoneCodesDialogState extends State<ChangePhoneCodesDialog> {
     final error = vm.errorKey == null ? null : loc.translate(vm.errorKey!);
 
     return AlertDialog(
+      // The whole dialog scrolls (title included) on small phones with the
+      // keyboard open and large or wide fonts. No change when there is room.
+      scrollable: true,
+      insetPadding: OtpDialogSpacing.insetPadding(context),
+      titlePadding: OtpDialogSpacing.titlePadding(context),
+      contentPadding: OtpDialogSpacing.contentPadding(context),
+      actionsPadding: OtpDialogSpacing.actionsPadding(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text(loc.translate('changePhoneNumber')),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (needsCurrent) ...[
-              _codeField(
-                context: context,
-                controller: _currentController,
-                label: loc
-                    .translate('changePhoneCurrentCode')
-                    .replaceAll('{phone}', _isolated(vm.currentPhoneE164)),
-                enabled: awaiting || verifying,
-                autofocus: true,
-                onSubmit: () => _verify(vm),
-              ),
-              const SizedBox(height: 16),
-            ],
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (needsCurrent) ...[
+            // The current number is on this device: Android may offer
+            // its SMS. Completing it moves on to the new number's code.
             _codeField(
               context: context,
-              controller: _newController,
+              controller: _currentController,
               label: loc
-                  .translate('changePhoneNewCode')
-                  .replaceAll('{phone}', _isolated(vm.newPhoneE164)),
+                  .translate('changePhoneCurrentCode')
+                  .replaceAll('{phone}', _isolated(vm.currentPhoneE164)),
               enabled: awaiting || verifying,
-              autofocus: !needsCurrent,
-              onSubmit: () => _verify(vm),
+              verifying: verifying,
+              hasError: vm.errorKey == 'changePhoneCurrentCodeInvalid',
+              autofocus: true,
+              smsAutofill: true,
+              closeKeyboardWhenCompleted: false,
+              onCompleted: (_) => _newFocus.requestFocus(),
             ),
-            if (error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                error,
-                style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
-              ),
-            ],
+            const SizedBox(height: 16),
+          ],
+          _codeField(
+            context: context,
+            controller: _newController,
+            focusNode: _newFocus,
+            label: loc
+                .translate('changePhoneNewCode')
+                .replaceAll('{phone}', _isolated(vm.newPhoneE164)),
+            enabled: awaiting || verifying,
+            verifying: verifying,
+            hasError: vm.errorKey == 'phoneCodeInvalidOrExpired',
+            autofocus: !needsCurrent,
+          ),
+          if (error != null) ...[
             const SizedBox(height: 8),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _ResendControl(vm: vm, onResend: () => _resend(vm)),
+            Text(
+              error,
+              style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
             ),
           ],
-        ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: _ResendControl(vm: vm, onResend: () => _resend(vm)),
+          ),
+        ],
       ),
       actions: [
         TextButton(

@@ -10,6 +10,7 @@ import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/services/account_deletion_service.dart';
 import 'package:broker_wallet/src/viewmodels/delete_account_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
+import 'package:broker_wallet/src/views/Widgets/otp_code_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -127,6 +128,14 @@ Future<DeleteAccountViewModel> _atCodeStep(
   vm.setAcknowledged(true);
   expect(await vm.requestCode(), isTrue);
   return vm;
+}
+
+/// Bounded frames: a focused code field keeps its cursor blinking, so
+/// pumpAndSettle would never return.
+Future<void> _frames(WidgetTester tester) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 void main() {
@@ -506,17 +515,22 @@ void main() {
       expect(find.text(en['deleteAccountCodeDescription'] as String),
           findsOneWidget);
       expect(find.text(_phone), findsOneWidget);
-      expect(find.byType(TextField), findsNothing,
-          reason: 'no password field and no code field before sending');
+      expect(find.byType(OtpCodeField), findsNothing,
+          reason: 'no code field before sending');
+      expect(find.byType(TextField), findsNothing, reason: 'no password field');
       expect(find.text(en['deleteAccountUsePassword'] as String), findsNothing);
       expect(deleteButton(tester).onPressed, isNull);
 
       await tester.tap(find.text(en['deleteAccountSendCode'] as String));
-      await tester.pumpAndSettle();
+      await _frames(tester);
       expect(gateway.codeRequests, [_pat]);
-      expect(find.byType(TextField), findsOneWidget);
+      expect(find.byType(OtpCodeField), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), _code);
+      await tester.enterText(find.byType(OtpCodeField), _code);
+      await _frames(tester);
+      expect(gateway.codeDeletes, isEmpty,
+          reason:
+              'a complete code (typed or autofilled) never deletes by itself');
       await tester.pump();
       expect(deleteButton(tester).onPressed, isNull,
           reason: 'the acknowledgement is still required');
@@ -525,7 +539,7 @@ void main() {
       expect(deleteButton(tester).onPressed, isNotNull);
 
       await tester.tap(find.text(en['deleteAccountConfirmButton'] as String));
-      await tester.pumpAndSettle();
+      await _frames(tester);
       expect(gateway.codeDeletes, [(_pat, _code)]);
       expect(vm.isCompleted, isTrue);
     });
@@ -538,14 +552,18 @@ void main() {
       addTearDown(vm.dispose);
       await openConfirm(tester, vm);
       await tester.tap(find.text(en['deleteAccountSendCode'] as String));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), _code);
+      await _frames(tester);
+      await tester.enterText(find.byType(OtpCodeField), _code);
       await tester.tap(find.byType(Checkbox));
       await tester.pump();
       await tester.tap(find.text(en['deleteAccountConfirmButton'] as String));
-      await tester.pumpAndSettle();
+      await _frames(tester);
       expect(find.text(en['deleteAccountErrorCode'] as String), findsOneWidget);
-      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      expect(
+          tester
+              .widget<OtpCodeField>(find.byType(OtpCodeField))
+              .controller
+              .text,
           isEmpty);
       expect(vm.isCompleted, isFalse);
     });
@@ -586,7 +604,7 @@ void main() {
       await tester.tap(find.text(ar['deleteAccountContinue'] as String));
       await tester.pumpAndSettle();
       await tester.tap(find.text(ar['deleteAccountSendCode'] as String));
-      await tester.pumpAndSettle();
+      await _frames(tester);
       expect(tester.takeException(), isNull);
       expect(find.text(ar['deleteAccountCodeDescription'] as String),
           findsOneWidget);

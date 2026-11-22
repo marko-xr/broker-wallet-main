@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:pinput/pinput.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:broker_wallet/src/views/Widgets/otp_code_field.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
@@ -94,28 +94,6 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
-    final basePinTheme = PinTheme(
-      width: 56,
-      height: 64,
-      textStyle: TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w600,
-        color: colors.onSurface,
-      ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colors.outline.withValues(alpha: 0.3)),
-        color: colors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-    );
-
     return ChangeNotifierProvider(
       create: (ctx) => PhoneOtpViewModel(
         authViewModel: _authOrNull(ctx),
@@ -123,21 +101,6 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
       )..initialize(widget.args),
       child: Consumer<PhoneOtpViewModel>(
         builder: (context, vm, _) {
-          final errorPinTheme = basePinTheme.copyDecorationWith(
-            border: Border.all(color: colors.error),
-          );
-
-          final focusedPinTheme = basePinTheme.copyDecorationWith(
-            border: Border.all(color: colors.primary),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: 0.18),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          );
-
           final subtitle = loc
               .translate('otpSentTo')
               .replaceFirst('{phone}', vm.args.formattedPhone);
@@ -229,34 +192,21 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                                 ),
                               ),
                               const SizedBox(height: 32),
-                              Pinput(
-                                length: 6,
+                              OtpCodeField(
                                 controller: _pinController,
                                 focusNode: _pinFocusNode,
-                                defaultPinTheme: basePinTheme,
-                                focusedPinTheme: focusedPinTheme,
-                                submittedPinTheme: focusedPinTheme,
-                                errorPinTheme: errorPinTheme,
-                                closeKeyboardWhenCompleted: true,
-                                autofillHints: const [
-                                  AutofillHints.oneTimeCode
-                                ],
-                                keyboardType: TextInputType.number,
-                                onChanged: (_) => vm.clearError(),
+                                semanticLabel: loc.translate('enterOTP'),
+                                verifying: vm.isVerifying,
+                                errorText: errorText,
+                                smsAutofill: true,
+                                // Typing clears the error; a programmatic
+                                // clear (Pinput reports it too) does not.
+                                onChanged: (value) {
+                                  if (value.isNotEmpty) vm.clearError();
+                                },
                                 onCompleted: (value) =>
                                     _verify(context, vm, value),
-                                forceErrorState: errorText != null,
                               ),
-                              if (errorText != null) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  errorText,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: colors.error),
-                                ),
-                              ],
                               const SizedBox(height: 32),
                               SizedBox(
                                 width: double.infinity,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +8,8 @@ import 'package:broker_wallet/src/services/account_deletion_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/delete_account_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/password_form_field.dart';
+
+import 'otp_code_field.dart';
 
 /// Opens the Delete Account flow for the signed-in account.
 ///
@@ -328,33 +329,25 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
                 : Text(loc.translate('deleteAccountSendCode')),
           )
         else ...[
-          TextField(
+          // Never submitted by itself: deleting needs the acknowledgement
+          // and the explicit button.
+          OtpCodeField(
             controller: _codeController,
-            enabled: !vm.isDeleting,
+            semanticLabel: loc.translate('enterOTP'),
             autofocus: true,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.done,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
-            ],
-            textAlign: TextAlign.center,
-            textDirection: TextDirection.ltr,
-            style: texts.titleLarge?.copyWith(letterSpacing: 8),
-            decoration: InputDecoration(
-              labelText: loc.translate('enterOTP'),
-              counterText: '',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onChanged: (_) {
-              vm.clearError();
+            enabled: !vm.isDeleting,
+            verifying: vm.isDeleting,
+            hasError: vm.errorKey == 'deleteAccountErrorCode' ||
+                vm.errorKey == 'deleteAccountErrorCodeExpired',
+            smsAutofill: true,
+            // Pinput also reports programmatic changes: clearing a wrong
+            // code must not clear its explanation; typing does.
+            onChanged: (value) {
+              if (value.isNotEmpty) vm.clearError();
               setState(() {});
             },
-            onSubmitted: canSubmit ? (_) => _submitCode() : null,
           ),
+          const SizedBox(height: 4),
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: TextButton(

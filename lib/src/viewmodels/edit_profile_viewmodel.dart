@@ -9,6 +9,26 @@ import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/change_password_viewmodel.dart'
+    show changePasswordErrorKey;
+import 'package:broker_wallet/src/viewmodels/email_change_viewmodel.dart'
+    show emailChangeErrorKey;
+
+/// Maps an Add Email failure to an ARB key, reusing the Email Change and
+/// Change Password messages. Raw provider or exception text never reaches the
+/// screen.
+String addEmailErrorKey(Object error) {
+  if (error is! AuthFailure) return 'emailChangeFailed';
+  switch (error.code) {
+    case AuthFailureCode.weakPassword:
+    case AuthFailureCode.samePassword:
+    case AuthFailureCode.invalidCurrentPassword:
+    case AuthFailureCode.reauthenticationRequired:
+      return changePasswordErrorKey(error.code);
+    default:
+      return emailChangeErrorKey(error.code);
+  }
+}
 
 class EditProfileViewModel extends ChangeNotifier {
   final ThemeViewModel themeVM;

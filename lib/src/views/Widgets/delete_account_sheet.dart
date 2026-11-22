@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 
@@ -23,9 +24,14 @@ Future<void> showDeleteAccountFlow(
   final deletedMessage = localization.translate('deleteAccountDeletedToast');
   final unconfirmedMessage =
       localization.translate('deleteAccountUnconfirmedToast');
+  // A phone account confirms with a code sent to its own sign-in number; a
+  // phone account that also has an email may use its password instead.
+  final signInPhone = authViewModel.signInPhoneE164;
   final viewModel = DeleteAccountViewModel(
     gateway: gateway ?? WorkerAccountDeletionGateway(),
     session: authViewModel,
+    signInPhoneE164: signInPhone,
+    canUsePassword: (authViewModel.currentUser?.email ?? '').trim().isNotEmpty,
   );
 
   try {
@@ -70,10 +76,12 @@ class DeleteAccountSheet extends StatefulWidget {
 
 class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
   final _passwordController = TextEditingController();
+  final _codeController = TextEditingController();
 
   @override
   void dispose() {
     _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -86,7 +94,7 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
       builder: (context, _) {
         final vm = widget.viewModel;
         return PopScope(
-          canPop: !vm.isDeleting,
+          canPop: !vm.isDeleting && !vm.isSendingCode,
           child: Padding(
             padding: EdgeInsets.only(
               bottom: MediaQuery.viewInsetsOf(context).bottom,
@@ -117,6 +125,8 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
                       const SizedBox(height: 18),
                       if (vm.step == DeleteAccountStep.review)
                         _ReviewStep(viewModel: vm)
+                      else if (vm.proof == DeleteAccountProof.phoneCode)
+                        _codeConfirmStep(context, vm)
                       else
                         _confirmStep(context, vm),
                     ],
@@ -244,6 +254,13 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
                   )
                 : Text(loc.translate('deleteAccountConfirmButton')),
           ),
+          if (vm.canSwitchProof)
+            TextButton(
+              onPressed: vm.isDeleting
+                  ? null
+                  : () => vm.useProof(DeleteAccountProof.phoneCode),
+              child: Text(loc.translate('deleteAccountUseCode')),
+            ),
           const SizedBox(height: 4),
           TextButton(
             onPressed: vm.isDeleting ? null : vm.backToReview,
@@ -252,6 +269,199 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
         ],
       ),
     );
+  }
+
+  /// The confirm step for a phone account: the code sent to its own sign-in
+  /// number replaces the password. Same acknowledgement, same buttons.
+  Widget _codeConfirmStep(BuildContext context, DeleteAccountViewModel vm) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final texts = theme.textTheme;
+    final loc = AppLocalizations.of(context);
+    final busy = vm.isDeleting || vm.isSendingCode;
+    final canSubmit = !busy &&
+        vm.acknowledged &&
+        vm.codeSent &&
+        _codeController.text.length == 6;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          loc.translate('deleteAccountConfirmTitle'),
+          style: texts.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          loc.translate('deleteAccountCodeDescription'),
+          style: texts.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 4),
+        ForceDirectionality(
+          direction: TextDirection.ltr,
+          child: Text(
+            vm.signInPhoneE164 ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: Directionality.of(context) == TextDirection.rtl
+                ? TextAlign.right
+                : TextAlign.left,
+            style: texts.bodySmall?.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (!vm.codeSent)
+          OutlinedButton(
+            onPressed: busy ? null : _requestCode,
+            child: vm.isSendingCode
+                ? SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colors.primary,
+                    ),
+                  )
+                : Text(loc.translate('deleteAccountSendCode')),
+          )
+        else ...[
+          TextField(
+            controller: _codeController,
+            enabled: !vm.isDeleting,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            style: texts.titleLarge?.copyWith(letterSpacing: 8),
+            decoration: InputDecoration(
+              labelText: loc.translate('enterOTP'),
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onChanged: (_) {
+              vm.clearError();
+              setState(() {});
+            },
+            onSubmitted: canSubmit ? (_) => _submitCode() : null,
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: busy ? null : _requestCode,
+              child: Text(
+                  loc.translate(vm.isSendingCode ? 'resending' : 'resendCode')),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        CheckboxListTile(
+          value: vm.acknowledged,
+          onChanged:
+              vm.isDeleting ? null : (value) => vm.setAcknowledged(value!),
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeColor: colors.error,
+          title: Text(
+            loc.translate('deleteAccountAcknowledge'),
+            style: texts.bodySmall?.copyWith(color: colors.onSurface),
+          ),
+        ),
+        if (vm.errorKey != null) ...[
+          const SizedBox(height: 4),
+          PasswordErrorLine(messageKey: vm.errorKey!),
+        ],
+        if (vm.isDeleting) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.error,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  loc.translate('deleteAccountDeleting'),
+                  style: texts.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 18),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          onPressed: canSubmit ? _submitCode : null,
+          child: vm.isDeleting
+              ? SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.onError,
+                  ),
+                )
+              : Text(loc.translate('deleteAccountConfirmButton')),
+        ),
+        if (vm.canSwitchProof)
+          TextButton(
+            onPressed:
+                busy ? null : () => vm.useProof(DeleteAccountProof.password),
+            child: Text(loc.translate('deleteAccountUsePassword')),
+          ),
+        const SizedBox(height: 4),
+        TextButton(
+          onPressed: busy ? null : vm.backToReview,
+          child: Text(loc.translate('deleteAccountBack')),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _requestCode() async {
+    FocusScope.of(context).unfocus();
+    final sent = await widget.viewModel.requestCode();
+    if (!mounted) return;
+    if (sent) {
+      _codeController.clear();
+      setState(() {});
+    }
+  }
+
+  Future<void> _submitCode() async {
+    FocusScope.of(context).unfocus();
+    final deleted =
+        await widget.viewModel.submitCode(code: _codeController.text);
+    if (!mounted) return;
+    if (deleted) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    final key = widget.viewModel.errorKey;
+    if (key == 'deleteAccountErrorCode' ||
+        key == 'deleteAccountErrorCodeExpired') {
+      _codeController.clear();
+      setState(() {});
+    }
   }
 
   Future<void> _submit() async {

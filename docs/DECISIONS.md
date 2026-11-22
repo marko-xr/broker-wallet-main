@@ -831,3 +831,51 @@
     document churn runs locally or in an isolated database. The hosted rollback-only candidate is
     `supabase/validation/toolkit_documents_hosted_preflight.sql`; the complete suite is not to be run on the shared project.
   - **A changed migration invalidates every earlier hash and review.** The C2A migration and request hashes are superseded.
+- Phone sign-up policy, B1 (owner decisions, 2026-11-22):
+  - **Phone account creation is server-gated.** It is decided by the Before User Created Postgres hook
+    `public.before_user_created_phone_policy`, never by the app's UI flag.
+  - **UAE mobile only.** Only numbers of the form `+9715XXXXXXXX` may create an account.
+  - **No metadata at creation.** A phone sign-up that carries `user_metadata` is refused. How the name is stored later
+    belongs to the not-yet-approved app stages.
+  - **The mode starts closed.** The mode is `closed` until the owner changes it; `allowlist` and `open` are later,
+    separately approved steps.
+  - **This checkpoint enables nothing.** No hook is enabled in the Dashboard, and no phone sign-up is allowed in
+    production.
+  - **Hook functions follow Supabase's guidance.** They are SECURITY INVOKER with explicit read-only access for
+    `supabase_auth_admin` (it has no BYPASSRLS, so RLS policies grant the read). Sign-ups without a phone must return
+    before any table is read, so the hook can never block email sign-up.
+  - **No OTP tests on the shared project.** No OTP or test-number testing happens on the shared staging/production
+    project, and `supabase config push` must never be used (the local `config.toml` has phone confirmations off).
+  - **P-A2 is not approved.** The account-linking design (Custom Access Token hook plus phone-change authorization)
+    needs an independent security review before B2.
+- Account identity, Model X (owner decision, 2026-11-22; implemented locally in C3, nothing hosted):
+  - **One sign-in identifier per account, fixed at creation.** An account created by email signs in by email; an
+    account created by phone signs in by phone through Supabase Auth. No second identity system.
+  - **An email account's phone is a verified contact number only.** It is never stored in `auth.users.phone`, so it
+    can never sign anyone in. It is verified by the Worker for the account's current app session through an SMS
+    provider's verification API, and stored on the profile by the service role. A provider code never grants Auth
+    access, and there is no custom OTP verifier.
+  - **Supabase's self-service phone change is refused for every account** by a database guard (its confirmation is
+    not bound to the session and issues one to whoever holds the code: F-AP-1). This supersedes the earlier line
+    "phone verification stays on Supabase Auth's own phone-change flow".
+  - **A phone account's sign-in number changes only through the Worker**: proof of the current number (a Supabase code
+    checked server-side, its session revoked) or the password, proof of the new number through the provider, then a
+    single-use database grant consumed when the Worker writes the number with the Auth Admin API.
+  - **One number, one account**, as a sign-in or a contact number.
+  - **No SMS provider is chosen.** The Worker answers `verification_unavailable` until one is approved.
+  - **Not production-ready until proven on a separate Supabase staging project** with a real verification service.
+    Every hosted step (migration, Worker deploy, hook) needs its own approval.
+- Add Email for phone accounts (C3): only the address is requested; the chosen password is held in memory and set
+  only after the server reports that address confirmed for the same account. If it cannot be set then, the email
+  stays added and the user is pointed to "Forgot password".
+- Phone account lifecycle (C4, 2026-11-22; implemented locally, nothing hosted):
+  - **Delete Account for a phone account** is confirmed by a Supabase sign-in code sent to its own sign-in number
+    (taken from the session, never from the request), through a challenge bound to the account and the current app
+    session, single use, 5 attempts, 3 codes per hour. The check session is revoked before anything is deleted; a
+    failed revocation stops the deletion. Email accounts keep the password path unchanged; a phone account that set a
+    password may use either.
+  - **Change Phone** (phone accounts only) uses the C3 Worker routes; the Edit Profile phone row offers "Change" to
+    phone accounts only. An email account's contact number stays read-only there.
+  - **Rollback keeps data.** Rolling Model X back first copies sign-in methods and verified contact numbers into a
+    locked backup table; re-applying Model X restores them where the number is still free and leaves conflicts for the
+    owner. Model X cannot be rolled back while the C4 migration is applied.

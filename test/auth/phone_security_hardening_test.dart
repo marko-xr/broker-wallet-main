@@ -274,10 +274,24 @@ void main() {
       }
     });
 
+    test(
+        'the pgTAP suite asserts that no self-service phone change starts '
+        '(Model X)', () {
+      final suite = _read(_pgTapSuite);
+      expect(
+        RegExp("phone_change_not_allowed").allMatches(suite).length,
+        greaterThanOrEqualTo(2),
+        reason: 'refused for an email account and for a phone account',
+      );
+      expect(suite, contains('phone_identity_not_allowed'));
+    });
+
     test('database re-sends change the token, as Supabase Auth does', () {
       // now() is fixed within a transaction; a re-send that only rewrites
       // now() would take the unchanged re-save path and never reach the guard.
-      for (final path in const [_pgTapSuite, _validationScript]) {
+      // (The pgTAP suite no longer re-sends: Model X refuses every
+      // self-service phone change, re-sends included.)
+      for (final path in const [_validationScript]) {
         final resends = RegExp(
           r'set phone_change = phone_change,[^;]*phone_change_sent_at = now\(\)',
         ).allMatches(_read(path).replaceAll('\r\n', '\n'));

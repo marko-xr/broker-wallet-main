@@ -71,6 +71,112 @@ abstract class PhoneVerificationCapability {
   });
 }
 
+/// The live session's sign-in phone number, from Supabase Auth itself.
+///
+/// Under Model X only an account created by phone holds one: an email
+/// account's phone is a contact number on its profile and never appears here.
+/// This is how the app tells a phone account (Delete Account by code, Change
+/// Phone) from an email account; the server decides again on every request.
+abstract class SignInPhoneSource {
+  /// `+9715XXXXXXXX`, or null for an account that does not sign in by phone.
+  String? get currentSignInPhoneE164;
+}
+
+/// Changes the sign-in number of a phone account (Model X, Worker routes).
+///
+/// Possession of the CURRENT number is proven with a code Supabase sends to
+/// it, and of the NEW number with a code the verification provider sends; the
+/// server checks both for this account's current app session, then changes
+/// the number itself. No session is created for either number.
+abstract class PhoneNumberChangeCapability {
+  /// Sends a code to the current number and one to [newPhoneE164].
+  /// Throws [AuthFailure].
+  Future<void> requestPhoneNumberChange(String newPhoneE164);
+
+  /// Whether the server already accepted the current-number code for the
+  /// pending change (a mistyped new code does not spend it again).
+  bool get currentNumberProven;
+
+  /// Confirms the change. [currentCode] is ignored once
+  /// [currentNumberProven]. Returns the account as the server now reports it.
+  /// Throws [AuthFailure].
+  Future<UserModel> confirmPhoneNumberChange({
+    required String newPhoneE164,
+    required String newCode,
+    String? currentCode,
+  });
+}
+
+/// How Add Email ended once the user came back from the confirmation email.
+enum AddEmailCompletion {
+  /// The server does not yet report the new address as confirmed.
+  notConfirmed,
+
+  /// The address is confirmed and the chosen password is set.
+  completed,
+
+  /// The address is confirmed but the chosen password could not be set (or
+  /// is no longer held, e.g. after an app restart). The account has the email
+  /// and no usable password: the user sets one with "Forgot password".
+  passwordNotSet,
+}
+
+/// Finishes Add Email for an account without an email (phone accounts).
+///
+/// Add Email asks only for the address change. The password the user chose is
+/// held in memory, never stored, and is set only after the server reports the
+/// new address as confirmed for the same account, so a password is never set
+/// on an account whose email was not added.
+abstract class AddEmailCapability {
+  Future<AddEmailCompletion> completeAddEmail();
+}
+
+/// The account a completed phone sign-in landed on.
+class PhoneSignInResult {
+  const PhoneSignInResult({required this.user, required this.accountExisted});
+
+  final UserModel user;
+
+  /// The profile already had a name before this sign-in: the number belonged
+  /// to an account that existed before this flow started.
+  final bool accountExisted;
+}
+
+/// Signs in to, or creates, an account with a phone number.
+///
+/// Supabase Auth generates, sends and verifies the code; implementations never
+/// store it. A verified code is not access by itself: access is granted only
+/// once the resulting session passes the same Single Active Device claim as
+/// every other sign-in, and only then is the identity published.
+///
+/// Separate from [PhoneVerificationCapability], which changes the phone of an
+/// account that is already signed in and can never sign anyone in.
+abstract class PhoneSignInCapability {
+  /// Asks Supabase Auth to send a sign-in code to [phoneE164]. With
+  /// [createAccount] false an unknown number is refused instead of creating an
+  /// account. Calling it again is how a code is resent. Throws [AuthFailure].
+  Future<void> requestPhoneSignInCode({
+    required String phoneE164,
+    required bool createAccount,
+  });
+
+  /// Verifies [code] for [phoneE164] and completes the sign-in. Returns only
+  /// after the session has been authorized for this device. Throws
+  /// [AuthFailure].
+  Future<PhoneSignInResult> verifyPhoneSignInCode({
+    required String phoneE164,
+    required String code,
+  });
+
+  /// Saves [name] as the profile name of the signed-in account [expectedUid]
+  /// when that profile has no name yet; an existing name is never replaced.
+  /// Returns the profile as stored. Throws [AuthFailure].
+  Future<UserModel> completePhoneSignUpName({
+    required String expectedUid,
+    required String name,
+  });
+}
+
 
 /// A password-recovery session that Supabase established from a recovery deep
 /// link.

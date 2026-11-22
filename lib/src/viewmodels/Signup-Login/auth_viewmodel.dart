@@ -696,6 +696,52 @@ class AuthViewModel extends ChangeNotifier implements AccountDeletionSession {
     return repository as PhoneVerificationCapability;
   }
 
+  /// The sign-in number of the live session's account, or null when the
+  /// account does not sign in by phone (Model X: email accounts never do).
+  String? get signInPhoneE164 {
+    final repository = _authRepository;
+    if (repository is! SignInPhoneSource) return null;
+    return (repository as SignInPhoneSource).currentSignInPhoneE164;
+  }
+
+  /// Changing a phone account's sign-in number, where the backend supports it.
+  PhoneNumberChangeCapability? get phoneNumberChange {
+    final repository = _authRepository;
+    if (repository is! PhoneNumberChangeCapability) return null;
+    return repository as PhoneNumberChangeCapability;
+  }
+
+  /// Phone sign-in / sign-up, where the backend can genuinely perform it.
+  PhoneSignInCapability? get phoneSignIn {
+    final repository = _authRepository;
+    if (repository is! PhoneSignInCapability) return null;
+    return repository as PhoneSignInCapability;
+  }
+
+  /// Completes a phone sign-in with [code].
+  ///
+  /// The same bookkeeping as [signInWithEmail]. Access itself is decided by
+  /// the repository: it publishes the identity only after the session passed
+  /// the Single Active Device claim, and this view model becomes
+  /// authenticated from that identity, never from this call.
+  Future<PhoneSignInResult> verifyPhoneSignIn({
+    required String phoneE164,
+    required String code,
+  }) async {
+    final capability = phoneSignIn;
+    if (capability == null) throw AuthFailure.providerUnavailable('Phone');
+    try {
+      _sessionSupersededHandledForCurrentSession = false;
+      _beginOperation(AuthOperation.signingIn);
+      return await capability.verifyPhoneSignInCode(
+        phoneE164: phoneE164,
+        code: code,
+      );
+    } finally {
+      _endOperation();
+    }
+  }
+
   /// Password operations for backends that own passwords themselves.
   PasswordCapability? get passwordCapability {
     final repository = _authRepository;

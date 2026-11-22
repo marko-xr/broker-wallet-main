@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:pinput/pinput.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/phone_otp_viewmodel.dart';
 
 class PhoneOtpView extends StatefulWidget {
   final PhoneOtpArgs args;
-  const PhoneOtpView({super.key, required this.args});
+
+  /// Overrides the build switch for tests only; the app always uses
+  /// `SupabaseConfig.phoneAuthEnabled`.
+  final bool? phoneAuthEnabled;
+
+  const PhoneOtpView({super.key, required this.args, this.phoneAuthEnabled});
 
   @override
   State<PhoneOtpView> createState() => _PhoneOtpViewState();
@@ -24,6 +31,47 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
     _pinController.dispose();
     _pinFocusNode.dispose();
     super.dispose();
+  }
+
+  /// The app-wide [AuthViewModel], or null where none is provided (layout
+  /// tests); without it the screen can only report that phone sign-in is
+  /// unavailable.
+  static AuthViewModel? _authOrNull(BuildContext context) {
+    try {
+      return Provider.of<AuthViewModel>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  void _toast(String message, Color color) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 1,
+      backgroundColor: color,
+      textColor: Colors.white,
+    );
+  }
+
+  /// Home only after the view model reports an authorized sign-in.
+  Future<void> _verify(
+      BuildContext context, PhoneOtpViewModel vm, String code) async {
+    final loc = AppLocalizations.of(context);
+    final outcome = await vm.verifyCode(code);
+    if (!context.mounted || outcome == PhoneOtpOutcome.none) return;
+    if (outcome == PhoneOtpOutcome.signedInToExistingAccount) {
+      _toast(loc.translate('phoneAccountExistsSignedIn'), Colors.green);
+    }
+    context.go('/home');
+  }
+
+  Future<void> _resend(BuildContext context, PhoneOtpViewModel vm) async {
+    final loc = AppLocalizations.of(context);
+    if (await vm.resendCode()) {
+      _toast(loc.translate('otpResent'), Colors.green);
+    }
   }
 
   void _navigateBack(BuildContext context) {
@@ -69,7 +117,10 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
     );
 
     return ChangeNotifierProvider(
-      create: (_) => PhoneOtpViewModel()..initialize(widget.args),
+      create: (ctx) => PhoneOtpViewModel(
+        authViewModel: _authOrNull(ctx),
+        enabled: widget.phoneAuthEnabled,
+      )..initialize(widget.args),
       child: Consumer<PhoneOtpViewModel>(
         builder: (context, vm, _) {
           final errorPinTheme = basePinTheme.copyDecorationWith(
@@ -90,6 +141,9 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
           final subtitle = loc
               .translate('otpSentTo')
               .replaceFirst('{phone}', vm.args.formattedPhone);
+
+          final errorText =
+              vm.errorKey == null ? null : loc.translate(vm.errorKey!);
 
           final timerLabel = vm.secondsRemaining > 0
               ? loc
@@ -190,13 +244,13 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                                 keyboardType: TextInputType.number,
                                 onChanged: (_) => vm.clearError(),
                                 onCompleted: (value) =>
-                                    vm.verifyCode(context, value),
-                                forceErrorState: vm.errorMessage != null,
+                                    _verify(context, vm, value),
+                                forceErrorState: errorText != null,
                               ),
-                              if (vm.errorMessage != null) ...[
+                              if (errorText != null) ...[
                                 const SizedBox(height: 10),
                                 Text(
-                                  vm.errorMessage!,
+                                  errorText,
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodySmall
@@ -210,8 +264,9 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                                 child: ElevatedButton(
                                   onPressed: vm.isVerifying
                                       ? null
-                                      : () => vm.verifyCode(
+                                      : () => _verify(
                                             context,
+                                            vm,
                                             _pinController.text,
                                           ),
                                   style: ElevatedButton.styleFrom(
@@ -256,9 +311,8 @@ class _PhoneOtpViewState extends State<PhoneOtpView> {
                                   ),
                                   const SizedBox(height: 8),
                                   TextButton.icon(
-                                    onPressed: vm.secondsRemaining == 0 &&
-                                            !vm.isResending
-                                        ? () => vm.resendCode(context)
+                                    onPressed: vm.canResend
+                                        ? () => _resend(context, vm)
                                         : null,
                                     icon: vm.isResending
                                         ? SizedBox(

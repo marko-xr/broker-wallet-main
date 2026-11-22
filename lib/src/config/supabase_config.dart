@@ -53,6 +53,17 @@ abstract final class SupabaseConfig {
   static const bool requireCurrentPasswordOnChange =
       bool.fromEnvironment('REQUIRE_CURRENT_PASSWORD');
 
+  /// Whether the Login/Sign-up Phone tabs call Supabase phone OTP.
+  ///
+  /// Off by default: the tabs keep their existing "not available yet"
+  /// messages. This is a client switch only and protects nothing on its own —
+  /// whether a phone number can create an account or sign in is decided by
+  /// the server (the hosted Phone provider setting and the Before User Created
+  /// policy hook). Build with `--dart-define=PHONE_AUTH_ENABLED=true` only for
+  /// a build that is meant to reach a server where phone auth is enabled.
+  static const bool phoneAuthEnabled =
+      bool.fromEnvironment('PHONE_AUTH_ENABLED');
+
   static bool get isConfigured =>
       url.trim().isNotEmpty && publishableKey.trim().isNotEmpty;
 }

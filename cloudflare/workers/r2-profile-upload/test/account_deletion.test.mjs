@@ -20,6 +20,7 @@ import {
   assertPresignedWithin,
   assertUploadsAllowed,
   handleAccountDeletion,
+  handleAccountDeletionChallenge,
   runDeletionFinalizer,
 } from '../account_deletion.js';
 
@@ -31,6 +32,15 @@ const BUCKET = 'broker-wallet-media';
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
 const PASSWORD = 'Correct-Horse-9';
+// Phone accounts (Model X): PAT signs in by phone only; PAM signs in by phone
+// and added an email (with a password).
+const PAT = '33333333-3333-4333-8333-333333333333';
+const PAM = '44444444-4444-4444-8444-444444444444';
+const PAT_PHONE = '971501111111';
+const PAM_PHONE = '971502222222';
+const SMS_CODE = '123456';
+const SESSION_1 = 'aaaaaaaa-0000-4000-8000-000000000001';
+const SESSION_2 = 'aaaaaaaa-0000-4000-8000-000000000002';
 
 const PUT_TTL_MS = SIGNED_PUT_TTL_SECONDS * 1000;
 const START = Date.parse('2026-09-13T08:00:00Z');
@@ -40,8 +50,9 @@ function base64Url(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
-function token(sub, amr = [{ method: 'password', timestamp: 1 }]) {
-  return `${base64Url({ alg: 'HS256' })}.${base64Url({ sub, amr })}.signature`;
+function token(sub, amr = [{ method: 'password', timestamp: 1 }], sessionId) {
+  const claims = sessionId === undefined ? { sub, amr } : { sub, amr, session_id: sessionId };
+  return `${base64Url({ alg: 'HS256' })}.${base64Url(claims)}.signature`;
 }
 
 function respond(body, status, _env, extraHeaders = {}) {
@@ -135,11 +146,24 @@ class FakeSupabase {
     this.users = new Map([
       [ALICE, { id: ALICE, email: 'alice@example.test', identities: [{ provider: 'email' }] }],
       [BOB, { id: BOB, email: 'bob@example.test', identities: [{ provider: 'email' }] }],
+      [PAT, { id: PAT, email: '', phone: PAT_PHONE, phone_confirmed_at: '2026-11-01T00:00:00Z', identities: [{ provider: 'phone' }] }],
+      [PAM, {
+        id: PAM, email: 'pam@example.test', phone: PAM_PHONE, phone_confirmed_at: '2026-11-01T00:00:00Z',
+        identities: [{ provider: 'phone' }, { provider: 'email' }],
+      }],
     ]);
     this.passwords = new Map([
       ['alice@example.test', { password: PASSWORD, userId: ALICE }],
       ['bob@example.test', { password: 'Bob-Password-1', userId: BOB }],
+      ['pam@example.test', { password: 'Pam-Password-1', userId: PAM }],
     ]);
+    // Phone deletion challenges, as the database functions keep them.
+    this.challenges = new Map();
+    this.challengeIssueRefusal = null;
+    this.consumeOverride = undefined;
+    this.otpStatus = 200;
+    this.revokeOk = true;
+    this.verifyUserOverride = null;
     this.validTokens = new Set();
     this.activeSessionAllowed = true;
     this.media = [];
@@ -153,8 +177,8 @@ class FakeSupabase {
     this.beforeAdminDelete = null;
   }
 
-  issue(userId, amr) {
-    const value = token(userId, amr);
+  issue(userId, amr, sessionId) {
+    const value = token(userId, amr, sessionId);
     this.validTokens.add(value);
     return value;
   }
@@ -238,7 +262,28 @@ class FakeSupabase {
       return json({ access_token: 'verification-access-token', user: { id: this.passwordGrantUserOverride ?? record.userId } });
     }
 
-    if (parsed.pathname === '/auth/v1/logout') return new Response(null, { status: 204 });
+    if (parsed.pathname === '/auth/v1/logout') {
+      if (!this.revokeOk && parsed.search.includes('scope=local')) return json({ error_code: 'unexpected_failure' }, 500);
+      return new Response(null, { status: 204 });
+    }
+
+    if (parsed.pathname.startsWith('/rest/v1/rpc/account_deletion_challenge_')) {
+      assert.equal(headers.apikey, SECRET);
+      return this.challengeRpc(parsed.pathname.slice('/rest/v1/rpc/'.length), JSON.parse(init.body));
+    }
+
+    if (parsed.pathname === '/auth/v1/otp') {
+      assert.equal(headers.apikey, PUBLISHABLE);
+      return json({}, this.otpStatus);
+    }
+
+    if (parsed.pathname === '/auth/v1/verify') {
+      assert.equal(headers.apikey, PUBLISHABLE);
+      const { type, phone, token: code } = JSON.parse(init.body);
+      const holder = [...this.users.values()].find((user) => user.phone && user.phone === phone);
+      if (type !== 'sms' || !holder || code !== SMS_CODE) return json({ error_code: 'otp_expired' }, 403);
+      return json({ access_token: 'phone-check-session', user: { id: this.verifyUserOverride ?? holder.id } });
+    }
 
     if (parsed.pathname === '/rest/v1/account_deletion_jobs') {
       assert.equal(headers.apikey, SECRET);
@@ -317,6 +362,36 @@ class FakeSupabase {
 
     throw new Error(`unexpected request ${method} ${parsed.pathname}`);
   };
+
+  challengeRpc(name, args) {
+    const refusal = (message) => json({ code: 'P0001', message }, 400);
+    // Model X: only accounts created by phone hold a sign-in number.
+    const phoneAccount = Boolean(this.users.get(args.p_user)?.phone);
+    if (name === 'account_deletion_challenge_issue') {
+      if (!phoneAccount) return refusal('not_available_for_account');
+      if (this.challengeIssueRefusal) return refusal(this.challengeIssueRefusal);
+      this.challenges.set(args.p_user, { session: args.p_session, attempts: 0, consumed: false, expired: false });
+      return json('issued');
+    }
+    const challenge = this.challenges.get(args.p_user);
+    if (name === 'account_deletion_challenge_attempt') {
+      if (!challenge || challenge.consumed || challenge.session !== args.p_session) return json('challenge_required');
+      if (challenge.expired) return json('challenge_expired');
+      if (challenge.attempts >= 5) {
+        challenge.expired = true;
+        return json('too_many_attempts');
+      }
+      challenge.attempts += 1;
+      return json('ok');
+    }
+    if (name === 'account_deletion_challenge_consume') {
+      if (this.consumeOverride !== undefined) return json(this.consumeOverride);
+      const ok = Boolean(challenge) && !challenge.consumed && !challenge.expired && challenge.session === args.p_session;
+      if (ok) challenge.consumed = true;
+      return json(ok);
+    }
+    throw new Error(`unexpected rpc ${name}`);
+  }
 
   callsTo(path, method) {
     return this.calls.filter((call) => call.path.startsWith(path) && (!method || call.method === method));
@@ -477,7 +552,9 @@ test('a client-supplied user id for another account is refused before anything e
   assert.equal(ctx.supabase.callsTo('/auth/v1/token').length, 0);
   assert.equal(ctx.supabase.jobs.length, 0);
   assert.equal(ctx.bucket.deleteCalls.length, 0);
-  assert.equal(ctx.supabase.users.size, 2);
+  // Nobody was deleted (the fake also holds the phone accounts added in C4).
+  assert.equal(ctx.supabase.users.has(ALICE) && ctx.supabase.users.has(BOB), true);
+  assert.equal(ctx.supabase.users.size, 4);
 });
 
 test('a matching client user id is tolerated but never used', async () => {
@@ -1183,5 +1260,281 @@ test('responses and logs never contain secrets, tokens, passwords, ids or object
       assert.equal(result.text.includes(value), false, `response leaked ${value}`);
       for (const line of lines) assert.equal(line.includes(value), false, `log leaked ${value}`);
     }
+  }
+});
+
+// ===========================================================================
+// Phone accounts (Model X, C4): POST /account/delete/challenge + { code }
+// ===========================================================================
+
+async function callChallenge(ctx, { authorization } = {}) {
+  const headers = new Headers({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.9' });
+  if (authorization !== undefined) headers.set('Authorization', authorization);
+  const request = new Request('https://media-api.test/account/delete/challenge', { method: 'POST', headers, body: '{}' });
+  const response = await handleAccountDeletionChallenge(request, ctx.env, { respond, fetchImpl: ctx.supabase.fetch });
+  const text = await response.text();
+  return { status: response.status, body: text ? JSON.parse(text) : null };
+}
+
+const phoneBearer = (ctx, userId = PAT, sessionId = SESSION_1, amr) =>
+  `Bearer ${ctx.supabase.issue(userId, amr, sessionId)}`;
+
+test('phone: the challenge sends a code to the account\'s own confirmed number, bound to this session', async () => {
+  const ctx = setup();
+  const result = await callChallenge(ctx, { authorization: phoneBearer(ctx) });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { status: 'code_sent', expiresInSeconds: 600 });
+  const issue = ctx.supabase.callsTo('/rest/v1/rpc/account_deletion_challenge_issue')[0];
+  assert.deepEqual(JSON.parse(issue.body), { p_user: PAT, p_session: SESSION_1 });
+  const otp = ctx.supabase.callsTo('/auth/v1/otp');
+  assert.equal(otp.length, 1);
+  assert.deepEqual(JSON.parse(otp[0].body), { phone: PAT_PHONE, create_user: false });
+  assert.equal(otp[0].headers['Sb-Forwarded-For'], '198.51.100.9');
+  assert.equal(ctx.supabase.users.has(PAT), true, 'a challenge deletes nothing');
+});
+
+test('phone: an email account gets no challenge and no SMS', async () => {
+  const ctx = setup();
+  const result = await callChallenge(ctx, { authorization: `Bearer ${ctx.supabase.issue(ALICE, undefined, SESSION_1)}` });
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: 'reauthentication_unsupported' });
+  assert.equal(ctx.supabase.callsTo('/auth/v1/otp').length, 0);
+  assert.equal(ctx.supabase.callsTo('/rest/v1/rpc/account_deletion_challenge_issue').length, 0);
+});
+
+test('phone: a superseded session or a recovery session cannot ask for a code', async () => {
+  const superseded = setup();
+  superseded.supabase.activeSessionAllowed = false;
+  let result = await callChallenge(superseded, { authorization: phoneBearer(superseded) });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'session_superseded' });
+  assert.equal(superseded.supabase.callsTo('/auth/v1/otp').length, 0);
+
+  const recovery = setup();
+  result = await callChallenge(recovery, {
+    authorization: phoneBearer(recovery, PAT, SESSION_1, [{ method: 'recovery', timestamp: 1 }]),
+  });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'recovery_session' });
+  assert.equal(recovery.supabase.callsTo('/auth/v1/otp').length, 0);
+
+  const noToken = setup();
+  result = await callChallenge(noToken, {});
+  assert.equal(result.status, 401);
+  assert.equal(noToken.supabase.calls.length, 0);
+});
+
+test('phone: challenge refusals and SMS failures are fixed outcomes', async () => {
+  const limited = setup();
+  limited.supabase.challengeIssueRefusal = 'too_many_requests';
+  let result = await callChallenge(limited, { authorization: phoneBearer(limited) });
+  assert.equal(result.status, 429);
+  assert.deepEqual(result.body, { error: 'rate_limited' });
+  assert.equal(limited.supabase.callsTo('/auth/v1/otp').length, 0, 'no SMS past the limit');
+
+  const off = setup();
+  off.supabase.otpStatus = 422; // Phone provider off, or the number refused
+  result = await callChallenge(off, { authorization: phoneBearer(off) });
+  assert.equal(result.status, 503);
+  assert.deepEqual(result.body, { error: 'verification_unavailable' });
+
+  const slow = setup();
+  slow.supabase.otpStatus = 429;
+  result = await callChallenge(slow, { authorization: phoneBearer(slow) });
+  assert.equal(result.status, 429);
+
+  const noSession = setup();
+  result = await callChallenge(noSession, { authorization: `Bearer ${noSession.supabase.issue(PAT)}` });
+  assert.equal(result.status, 401, 'a token without a session id is refused');
+});
+
+test('phone: a valid code deletes exactly this account through the existing lifecycle', async () => {
+  const patKey = `profiles/${PAT}/p1.jpg`;
+  const ctx = setup({ bucketKeys: [patKey, `profiles/${ALICE}/a1.jpg`] });
+  ctx.supabase.media = [mediaRow(PAT, 'p1'), mediaRow(ALICE, 'a1')];
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+
+  const result = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+
+  assert.equal(result.status, 200, result.text);
+  assert.deepEqual(result.body, { status: 'deleted', mediaObjectsRemoved: 1 });
+  assert.equal(ctx.supabase.users.has(PAT), false);
+  assert.equal(ctx.supabase.users.has(ALICE), true);
+  assert.equal(ctx.bucket.objects.has(patKey), false);
+  assert.equal(ctx.supabase.job(PAT).status, 'auth_deleted');
+  const verify = ctx.supabase.callsTo('/auth/v1/verify')[0];
+  assert.deepEqual(JSON.parse(verify.body), { type: 'sms', phone: PAT_PHONE, token: SMS_CODE });
+  const revoke = ctx.supabase.callsTo('/auth/v1/logout')[0];
+  assert.equal(revoke.headers.Authorization, 'Bearer phone-check-session', 'the check session is revoked');
+  const order = ctx.supabase.calls.map((call) => call.path);
+  assert.ok(order.indexOf('/auth/v1/logout') < order.indexOf('/rest/v1/rpc/account_deletion_challenge_consume'));
+  assert.ok(order.indexOf('/rest/v1/rpc/account_deletion_challenge_consume') < order.indexOf('/rest/v1/account_deletion_jobs'));
+  assert.equal(ctx.supabase.callsTo('/auth/v1/token').length, 0, 'no password involved');
+});
+
+test('phone: a wrong code deletes nothing and can be corrected', async () => {
+  const ctx = setup();
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  const wrong = await callDelete(ctx, { authorization, body: { code: '999999' } });
+  assert.equal(wrong.status, 403);
+  assert.deepEqual(wrong.body, { error: 'reauthentication_failed' });
+  assert.equal(ctx.supabase.job(PAT), null, 'no job was claimed');
+  assert.equal(ctx.supabase.users.has(PAT), true);
+  const right = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+  assert.equal(right.status, 200);
+  assert.equal(ctx.supabase.challenges.get(PAT).attempts, 2, 'both codes were counted');
+});
+
+test('phone: without a challenge from this session nothing is checked or deleted', async () => {
+  const none = setup();
+  let result = await callDelete(none, { authorization: phoneBearer(none), body: { code: SMS_CODE } });
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: 'challenge_required' });
+  assert.equal(none.supabase.callsTo('/auth/v1/verify').length, 0);
+
+  // The code was requested from session 1; session 2 is now current.
+  const other = setup();
+  await callChallenge(other, { authorization: phoneBearer(other, PAT, SESSION_1) });
+  result = await callDelete(other, { authorization: phoneBearer(other, PAT, SESSION_2), body: { code: SMS_CODE } });
+  assert.equal(result.status, 409);
+  assert.equal(other.supabase.callsTo('/auth/v1/verify').length, 0);
+  assert.equal(other.supabase.users.has(PAT), true);
+});
+
+test('phone: a superseded session cannot use a code, even the right one', async () => {
+  const ctx = setup();
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  ctx.supabase.activeSessionAllowed = false;
+  const result = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'session_superseded' });
+  assert.equal(ctx.supabase.callsTo('/rest/v1/rpc/account_deletion_challenge_attempt').length, 0);
+  assert.equal(ctx.supabase.users.has(PAT), true);
+});
+
+test('phone: an expired or exhausted challenge never reaches Supabase Auth', async () => {
+  const expired = setup();
+  let authorization = phoneBearer(expired);
+  await callChallenge(expired, { authorization });
+  expired.supabase.challenges.get(PAT).expired = true;
+  let result = await callDelete(expired, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 410);
+  assert.deepEqual(result.body, { error: 'challenge_expired' });
+
+  const exhausted = setup();
+  authorization = phoneBearer(exhausted);
+  await callChallenge(exhausted, { authorization });
+  exhausted.supabase.challenges.get(PAT).attempts = 5;
+  result = await callDelete(exhausted, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 429);
+  assert.deepEqual(result.body, { error: 'too_many_attempts' });
+  for (const ctx of [expired, exhausted]) {
+    assert.equal(ctx.supabase.callsTo('/auth/v1/verify').length, 0);
+    assert.equal(ctx.supabase.users.has(PAT), true);
+  }
+});
+
+test('phone: a used challenge cannot be replayed', async () => {
+  const ctx = setup();
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  ctx.supabase.consumeOverride = false; // another request used it first
+  const result = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: 'challenge_required' });
+  assert.equal(ctx.supabase.job(PAT), null);
+  assert.equal(ctx.supabase.users.has(PAT), true);
+});
+
+test('phone: if the check session cannot be revoked, nothing is deleted', async () => {
+  const ctx = setup();
+  ctx.supabase.revokeOk = false;
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  const result = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 503);
+  assert.equal(ctx.supabase.callsTo('/rest/v1/rpc/account_deletion_challenge_consume').length, 0);
+  assert.equal(ctx.supabase.users.has(PAT), true);
+});
+
+test('phone: a check session for another account is revoked and refused', async () => {
+  const ctx = setup();
+  ctx.supabase.verifyUserOverride = BOB;
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  const result = await callDelete(ctx, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'account_mismatch' });
+  assert.equal(ctx.supabase.callsTo('/auth/v1/logout').length, 1);
+  assert.equal(ctx.supabase.users.has(PAT), true);
+  assert.equal(ctx.supabase.users.has(BOB), true);
+});
+
+test('phone: a malformed code is refused before any check', async () => {
+  const ctx = setup();
+  const authorization = phoneBearer(ctx);
+  await callChallenge(ctx, { authorization });
+  for (const code of ['12', 'abcdef', 123456, '', '12345678901']) {
+    const result = await callDelete(ctx, { authorization, body: { code } });
+    assert.equal(result.status, 403, String(code));
+  }
+  assert.equal(ctx.supabase.callsTo('/rest/v1/rpc/account_deletion_challenge_attempt').length, 0);
+  assert.equal(ctx.supabase.callsTo('/auth/v1/verify').length, 0);
+});
+
+test('phone: a phone account that added an email can delete with its password or with a code', async () => {
+  const byPassword = setup();
+  let result = await callDelete(byPassword, {
+    authorization: phoneBearer(byPassword, PAM), body: { password: 'Pam-Password-1' },
+  });
+  assert.equal(result.status, 200, result.text);
+  assert.equal(byPassword.supabase.callsTo('/auth/v1/otp').length, 0);
+
+  // No password set (or forgotten): the code still works.
+  const byCode = setup();
+  byCode.supabase.passwords.delete('pam@example.test');
+  const authorization = phoneBearer(byCode, PAM);
+  const noPassword = await callDelete(byCode, { authorization, body: { password: 'anything' } });
+  assert.equal(noPassword.status, 403);
+  await callChallenge(byCode, { authorization });
+  result = await callDelete(byCode, { authorization, body: { code: SMS_CODE } });
+  assert.equal(result.status, 200, result.text);
+  assert.deepEqual(JSON.parse(byCode.supabase.callsTo('/auth/v1/otp')[0].body), { phone: PAM_PHONE, create_user: false });
+});
+
+test('phone: an email account sending a code gets nothing new; its password path is unchanged', async () => {
+  const ctx = setup();
+  const result = await callDelete(ctx, { authorization: `Bearer ${ctx.supabase.issue(ALICE, undefined, SESSION_1)}`, body: { code: SMS_CODE } });
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: 'reauthentication_unsupported' });
+  assert.equal(ctx.supabase.callsTo('/auth/v1/verify').length, 0);
+  assert.equal(ctx.supabase.users.has(ALICE), true);
+
+  // A body with a password always takes the password path, a code alongside is ignored.
+  const both = setup();
+  const deleted = await callDelete(both, {
+    authorization: `Bearer ${both.supabase.issue(ALICE)}`, body: { password: PASSWORD, code: SMS_CODE },
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal(both.supabase.callsTo('/auth/v1/verify').length, 0);
+  assert.equal(both.supabase.callsTo('/auth/v1/token').length, 1);
+});
+
+test('phone: nothing about the number, code or session is logged', async () => {
+  const ctx = setup();
+  const authorization = phoneBearer(ctx);
+  const { lines } = await captureConsoleErrors(async () => {
+    await callChallenge(ctx, { authorization });
+    await callDelete(ctx, { authorization, body: { code: '999999' } });
+    ctx.supabase.otpStatus = 422;
+    await callChallenge(ctx, { authorization });
+  });
+  const text = lines.join('\n');
+  assert.ok(lines.length >= 2);
+  for (const secret of [PAT_PHONE, '999999', SMS_CODE, PAT, SESSION_1, 'phone-check-session', 'Bearer']) {
+    assert.equal(text.includes(secret), false, secret);
   }
 });

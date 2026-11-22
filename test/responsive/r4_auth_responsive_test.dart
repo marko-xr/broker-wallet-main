@@ -160,7 +160,6 @@ void main() {
         home: const PhoneOtpView(
             args: PhoneOtpArgs(
           phoneNumber: '+971501234567',
-          verificationId: 'layout-only',
           isSignup: false,
         )),
       );
@@ -342,7 +341,6 @@ void main() {
         home: const PhoneOtpView(
             args: PhoneOtpArgs(
           phoneNumber: '+971501234567',
-          verificationId: 'layout-only',
           isSignup: false,
         )));
     final action = find.byType(ElevatedButton);
@@ -351,7 +349,7 @@ void main() {
         listen: false);
     await tester.tap(action.first);
     await tester.pump();
-    expect(vm.errorMessage, isNotNull);
+    expect(vm.errorKey, isNotNull);
     expectNoLayoutException(tester, scenario);
     await tester.pumpWidget(const SizedBox.shrink());
   });

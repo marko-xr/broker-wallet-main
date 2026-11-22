@@ -9,6 +9,8 @@ import 'package:broker_wallet/src/Views/Widgets/change_password_sheet.dart';
 import 'package:broker_wallet/src/Views/Widgets/email_verification_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_addition_dialog.dart';
 import 'package:broker_wallet/src/Views/Widgets/phone_otp_dialog.dart';
+import 'package:broker_wallet/src/Views/Widgets/change_phone_codes_dialog.dart';
+import 'package:broker_wallet/src/viewmodels/change_phone_viewmodel.dart';
 import 'package:broker_wallet/src/Views/Widgets/current_user_avatar.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:broker_wallet/src/common/utils/rtl_utils.dart';
@@ -755,7 +757,7 @@ class _EditProfileViewState extends State<EditProfileView> {
               if (sheetContext.mounted) Navigator.of(sheetContext).pop();
 
               if (mounted) {
-                final verified = await showDialog<bool>(
+                final outcome = await showDialog<Object>(
                   context: context,
                   barrierDismissible: false,
                   builder: (BuildContext context) {
@@ -763,10 +765,22 @@ class _EditProfileViewState extends State<EditProfileView> {
                         email: email, password: password);
                   },
                 );
+                final verified = outcome == true ||
+                    outcome == AddEmailCompletion.completed ||
+                    outcome == AddEmailCompletion.passwordNotSet;
 
-                if (verified == true) {
-                  _showToast('Email successfully added to your account!',
-                      Colors.green);
+                if (verified) {
+                  if (outcome == AddEmailCompletion.passwordNotSet) {
+                    // The email is added; the password could not be set after
+                    // confirmation, so point to "Forgot password".
+                    _showToast(
+                        AppLocalizations.of(context)
+                            .translate('emailAddedSetPasswordWithReset'),
+                        Colors.orange);
+                  } else {
+                    _showToast('Email successfully added to your account!',
+                        Colors.green);
+                  }
                   await context.read<AuthViewModel>().syncUserFromRepository();
                   if (context.canPop())
                     context.pop();
@@ -780,7 +794,10 @@ class _EditProfileViewState extends State<EditProfileView> {
             } catch (e) {
               if (sheetContext.mounted) Navigator.of(sheetContext).pop();
               if (mounted) {
-                _showToast('Failed to send verification email: ${e.toString()}',
+                // A fixed localized message: raw exception or provider text
+                // never reaches the screen.
+                _showToast(
+                    AppLocalizations.of(context).translate(addEmailErrorKey(e)),
                     Colors.red);
               }
             }
@@ -904,6 +921,57 @@ class _EditProfileViewState extends State<EditProfileView> {
         _phoneController.text = _localUaeDisplay(confirmedPhone);
       });
       _showToast(loc.translate('phoneVerifiedSuccessfully'), Colors.green);
+    } finally {
+      flow.dispose();
+    }
+  }
+
+  /// Changes a phone account's sign-in number (Model X). The same two steps as
+  /// Add Phone — number, then codes — with a code for the current number and
+  /// one for the new number. The server changes the number; nothing here
+  /// writes it.
+  Future<void> _changeSignInPhone(AuthViewModel authVM) async {
+    final loc = AppLocalizations.of(context);
+    final flow = ChangePhoneViewModel(authViewModel: authVM);
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PhoneAdditionDialog(
+          titleKey: 'changePhoneNumber',
+          infoKey: 'changePhoneInfo',
+          onSubmit: (phoneNumber) async {
+            final sent = await flow.sendCodes(phoneNumber);
+            if (!sent) {
+              final key = flow.errorKey;
+              if (key != null) _showToast(loc.translate(key), Colors.red);
+              // Keeps the number dialog open so it can be corrected.
+              throw StateError('Verification codes were not sent.');
+            }
+            _showToast(loc.translate('otpSent'), Colors.green);
+          },
+        ),
+      );
+
+      if (!mounted || flow.phase != ChangePhonePhase.awaitingCodes) return;
+
+      final changed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ChangeNotifierProvider<ChangePhoneViewModel>.value(
+          value: flow,
+          child: const ChangePhoneCodesDialog(),
+        ),
+      );
+      if (changed != true || !mounted) return;
+
+      final newPhone = flow.newPhoneE164 ?? '';
+      setState(() {
+        _originalPhone = newPhone;
+        _phoneController.text = _localUaeDisplay(newPhone);
+      });
+      _showToast(loc.translate('phoneChangedSuccessfully'), Colors.green);
     } finally {
       flow.dispose();
     }
@@ -1354,9 +1422,13 @@ class _EditProfileViewState extends State<EditProfileView> {
       );
     }
 
-    // Confirmed number. Read-only here by design: the number is owned by
-    // Supabase Auth's own verification flow, not by this form's Save.
-    return Container(
+    // Confirmed number. Never edited by this form's Save. A phone account
+    // (Model X: it signs in with this number) can change it through its own
+    // verified flow; an email account's contact number stays read-only here.
+    final authVM = context.read<AuthViewModel>();
+    final canChange =
+        authVM.signInPhoneE164 != null && authVM.phoneNumberChange != null;
+    final row = Container(
       width: double.infinity,
       padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 12, 12),
       decoration: _fieldCardDecoration(colors),
@@ -1391,12 +1463,35 @@ class _EditProfileViewState extends State<EditProfileView> {
               ],
             ),
           ),
-          Icon(
-            Icons.lock_outline,
-            color: colors.onSurfaceVariant,
-            size: 16,
-          ),
+          if (canChange) ...[
+            Text(
+              loc.translate('change'),
+              style: texts.labelLarge?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: colors.primary,
+            ),
+          ] else
+            Icon(
+              Icons.lock_outline,
+              color: colors.onSurfaceVariant,
+              size: 16,
+            ),
         ],
+      ),
+    );
+    if (!canChange) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _changeSignInPhone(authVM),
+        child: row,
       ),
     );
   }

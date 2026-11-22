@@ -28,7 +28,9 @@ import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.
  *
  * ORDER (POST /account/delete)
  *   1. verify token; refuse a mismatched body id or a recovery session
- *   2. re-verify the password server-side (the device session is untouched)
+ *   2. re-verify the password server-side (the device session is untouched);
+ *      or, for an account that signs in by phone and sends `{ code }` without
+ *      a password, the phone proof (PHONE ACCOUNTS below)
  *   3. claim the job row (status `quarantined`) -> /authorize stops signing
  *   4. inventory media by `owner_id` = verified id plus the R2 prefix; refuse
  *      unknown locations; delete; prove the prefix empty
@@ -66,11 +68,29 @@ import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.
  *   Authorization header. A user's JWT travels only as `Authorization: Bearer`,
  *   paired with the publishable key.
  *
+ * PHONE ACCOUNTS (Model X, C4)
+ *   An account that signs in by phone confirms deletion with a Supabase
+ *   sign-in code for its OWN confirmed number, taken from the verified
+ *   identity, never from the request:
+ *     POST /account/delete/challenge   records a challenge bound to this
+ *       account and this app session (database, service role) and asks
+ *       Supabase Auth to send the code (`create_user: false`);
+ *     POST /account/delete { code }    counts an attempt on that challenge,
+ *       checks the code with `/auth/v1/verify`, revokes the session that
+ *       check created (a failed revocation stops here), requires the same
+ *       account, uses the challenge up (single use), then continues at 3.
+ *   A superseded or stolen older session is refused before anything is sent
+ *   and cannot use a challenge another session asked for; a code is useful
+ *   once. An email account keeps the password path; a phone account that set
+ *   a password through Add Email may use it too.
+ *
  * Responses carry only fixed error codes. Nothing here logs a token, password,
  * email, user id, object key, signed URL or error object.
  */
 
 export const ACCOUNT_DELETE_PATH = '/account/delete';
+export const ACCOUNT_DELETE_CHALLENGE_PATH = '/account/delete/challenge';
+export const DELETION_CHALLENGE_TTL_SECONDS = 600;
 
 const JOBS_PATH = '/rest/v1/account_deletion_jobs';
 const PROFILE_OBJECT_PREFIX = 'profiles/';
@@ -128,6 +148,10 @@ export const DeletionErrorCode = Object.freeze({
   mediaCleanupFailed: 'media_cleanup_failed',
   serverDeleteFailed: 'server_delete_failed',
   serviceUnavailable: 'service_unavailable',
+  challengeRequired: 'challenge_required',
+  challengeExpired: 'challenge_expired',
+  tooManyAttempts: 'too_many_attempts',
+  verificationUnavailable: 'verification_unavailable',
   unknown: 'unknown',
 });
 
@@ -195,7 +219,11 @@ async function deleteCallingAccount(request, env, fetchImpl, now) {
     throw new AccountDeletionError(DeletionErrorCode.recoverySession, 403);
   }
 
-  await verifyAccountPassword(identity, body.password, env, fetchImpl);
+  if (usesPhoneCode(body)) {
+    await verifyPhoneDeletionCode(identity, body.code, authorization, env, fetchImpl);
+  } else {
+    await verifyAccountPassword(identity, body.password, env, fetchImpl);
+  }
 
   await claimDeletionJob(userId, env, fetchImpl);
 
@@ -349,6 +377,182 @@ export async function verifyAccountPassword(identity, password, env, fetchImpl) 
   await bestEffortRevokeSession(session?.access_token, env, fetchImpl);
   if (session?.user?.id !== identity.id) {
     throw new AccountDeletionError(DeletionErrorCode.accountMismatch, 403);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phone accounts (see PHONE ACCOUNTS above)
+// ---------------------------------------------------------------------------
+
+const PHONE_CODE_PATTERN = /^[0-9]{6,10}$/;
+const UAE_SIGN_IN_PHONE = /^9715[0-9]{8}$/;
+
+/** `{ code }` without a password selects the phone proof; anything else keeps the password path. */
+function usesPhoneCode(body) {
+  return Object.prototype.hasOwnProperty.call(body, 'code') &&
+    !Object.prototype.hasOwnProperty.call(body, 'password');
+}
+
+/** The account's confirmed sign-in number as Supabase stores it, or ''. Under
+ *  Model X only accounts created by phone hold one. */
+function confirmedSignInPhone(identity) {
+  const phone = typeof identity.phone === 'string' ? identity.phone.replace(/^\+/, '') : '';
+  return UAE_SIGN_IN_PHONE.test(phone) && identity.phone_confirmed_at ? phone : '';
+}
+
+function tokenSessionId(authorization) {
+  const sessionId = decodeTokenClaims(authorization)?.session_id;
+  if (!isUserId(sessionId)) throw new AccountDeletionError(DeletionErrorCode.sessionExpired, 401);
+  return sessionId;
+}
+
+const CHALLENGE_REFUSALS = Object.freeze({
+  not_available_for_account: [DeletionErrorCode.reauthenticationUnsupported, 409],
+  too_many_requests: [DeletionErrorCode.rateLimited, 429],
+  invalid_request: [DeletionErrorCode.invalidRequest, 400],
+});
+
+async function deletionChallengeRpc(name, args, env, fetchImpl) {
+  let response;
+  try {
+    response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${name}`, {
+      method: 'POST',
+      headers: adminHeaders(env),
+      body: JSON.stringify(args),
+    });
+  } catch (_) {
+    throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+  }
+  const body = await readJsonOrNull(response);
+  if (response.ok) return body;
+  const refusal = response.status < 500 && typeof body?.message === 'string' ? CHALLENGE_REFUSALS[body.message] : null;
+  if (refusal) throw new AccountDeletionError(refusal[0], refusal[1]);
+  throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+}
+
+/**
+ * POST /account/delete/challenge. Always resolves to a Response.
+ */
+export async function handleAccountDeletionChallenge(request, env, { respond, fetchImpl = fetch }) {
+  try {
+    const result = await issueDeletionChallenge(request, env, fetchImpl);
+    return respond(result, 200, env, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    if (error instanceof AccountDeletionError) {
+      console.error('[account-delete] challenge refused', error.code);
+      return respond({ error: error.code }, error.status, env, { 'Cache-Control': 'no-store' });
+    }
+    console.error('[account-delete] challenge unexpected failure');
+    return respond({ error: DeletionErrorCode.unknown }, 500, env, { 'Cache-Control': 'no-store' });
+  }
+}
+
+async function issueDeletionChallenge(request, env, fetchImpl) {
+  requireDeletionConfiguration(env);
+  const authorization = request.headers.get('Authorization') || '';
+  if (!authorization.startsWith('Bearer ') || authorization.length <= 'Bearer '.length) {
+    throw new AccountDeletionError(DeletionErrorCode.sessionExpired, 401);
+  }
+  const identity = await loadVerifiedIdentity(authorization, env, fetchImpl);
+  let current;
+  try {
+    current = await isCurrentAppSession(authorization, env, fetchImpl);
+  } catch (error) {
+    if (error instanceof ActiveSessionUnavailable) {
+      throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+    }
+    throw error;
+  }
+  if (!current) throw new AccountDeletionError(DeletionErrorCode.sessionSuperseded, 403);
+  if (tokenCarriesRecoveryMethod(authorization)) {
+    throw new AccountDeletionError(DeletionErrorCode.recoverySession, 403);
+  }
+  const phone = confirmedSignInPhone(identity);
+  if (!phone) throw new AccountDeletionError(DeletionErrorCode.reauthenticationUnsupported, 409);
+  const sessionId = tokenSessionId(authorization);
+
+  const issued = await deletionChallengeRpc('account_deletion_challenge_issue', {
+    p_user: identity.id,
+    p_session: sessionId,
+  }, env, fetchImpl);
+  if (issued !== 'issued') throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+
+  const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' };
+  const clientIp = request.headers.get('CF-Connecting-IP');
+  if (clientIp) headers['Sb-Forwarded-For'] = clientIp;
+  let response;
+  try {
+    response = await fetchImpl(`${env.SUPABASE_URL}/auth/v1/otp`, {
+      method: 'POST',
+      headers,
+      // create_user:false — this can only ever reach the existing account.
+      body: JSON.stringify({ phone, create_user: false }),
+    });
+  } catch (_) {
+    throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+  }
+  if (response.status === 429) throw new AccountDeletionError(DeletionErrorCode.rateLimited, 429);
+  if (!response.ok) throw new AccountDeletionError(DeletionErrorCode.verificationUnavailable, 503);
+  return { status: 'code_sent', expiresInSeconds: DELETION_CHALLENGE_TTL_SECONDS };
+}
+
+/**
+ * The phone proof for POST /account/delete. Throws AccountDeletionError;
+ * returns only when this account's own number answered with a valid code for
+ * a challenge this session asked for, and that challenge is now used up.
+ */
+async function verifyPhoneDeletionCode(identity, code, authorization, env, fetchImpl) {
+  const phone = confirmedSignInPhone(identity);
+  if (!phone) throw new AccountDeletionError(DeletionErrorCode.reauthenticationUnsupported, 409);
+  if (typeof code !== 'string' || !PHONE_CODE_PATTERN.test(code)) {
+    throw new AccountDeletionError(DeletionErrorCode.reauthenticationFailed, 403);
+  }
+  const sessionId = tokenSessionId(authorization);
+  const args = { p_user: identity.id, p_session: sessionId };
+
+  const attempt = await deletionChallengeRpc('account_deletion_challenge_attempt', args, env, fetchImpl);
+  if (attempt === 'challenge_expired') throw new AccountDeletionError(DeletionErrorCode.challengeExpired, 410);
+  if (attempt === 'too_many_attempts') throw new AccountDeletionError(DeletionErrorCode.tooManyAttempts, 429);
+  if (attempt === 'challenge_required') throw new AccountDeletionError(DeletionErrorCode.challengeRequired, 409);
+  if (attempt !== 'ok') throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+
+  let response;
+  try {
+    response = await fetchImpl(`${env.SUPABASE_URL}/auth/v1/verify`, {
+      method: 'POST',
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'sms', phone, token: code }),
+    });
+  } catch (_) {
+    throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+  }
+  if (response.status === 429) throw new AccountDeletionError(DeletionErrorCode.rateLimited, 429);
+  if (response.status >= 500) throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+  if (!response.ok) throw new AccountDeletionError(DeletionErrorCode.reauthenticationFailed, 403);
+
+  const session = await readJsonOrNull(response);
+  // The check session must not survive, whatever else happens.
+  const revoked = await revokeCheckSession(session?.access_token, env, fetchImpl);
+  if (session?.user?.id !== identity.id) {
+    throw new AccountDeletionError(DeletionErrorCode.accountMismatch, 403);
+  }
+  if (!revoked) throw new AccountDeletionError(DeletionErrorCode.serviceUnavailable, 503);
+
+  const consumed = await deletionChallengeRpc('account_deletion_challenge_consume', args, env, fetchImpl);
+  if (consumed !== true) throw new AccountDeletionError(DeletionErrorCode.challengeRequired, 409);
+}
+
+/** Unlike the password check's best-effort revocation, the phone proof needs to know. */
+async function revokeCheckSession(accessToken, env, fetchImpl) {
+  if (typeof accessToken !== 'string' || !accessToken) return false;
+  try {
+    const response = await fetchImpl(`${env.SUPABASE_URL}/auth/v1/logout?scope=local`, {
+      method: 'POST',
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
+    });
+    return response.ok;
+  } catch (_) {
+    return false;
   }
 }
 

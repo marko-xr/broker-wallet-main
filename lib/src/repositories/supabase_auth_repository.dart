@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:broker_wallet/src/common/utils/email_validator.dart';
+import 'package:broker_wallet/src/common/utils/password_policy.dart';
 import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
@@ -10,6 +12,7 @@ import 'package:broker_wallet/src/services/offline_auth_service.dart';
 import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/services/app_session_check_outcome.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
+import 'package:broker_wallet/src/services/contact_phone_service.dart';
 import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -23,6 +26,10 @@ class SupabaseAuthRepository
     implements
         AuthRepository,
         PhoneVerificationCapability,
+        PhoneSignInCapability,
+        AddEmailCapability,
+        SignInPhoneSource,
+        PhoneNumberChangeCapability,
         EmailChangeCapability,
         PasswordCapability,
         AccountExistenceProbe,
@@ -31,10 +38,36 @@ class SupabaseAuthRepository
   SupabaseAuthRepository({
     required UserRepository userRepository,
     SupabaseClient? client,
+    ContactPhoneGateway? contactPhones,
+    PhoneNumberChangeGateway? phoneNumberChanges,
   })  : _userRepository = userRepository,
-        _client = client ?? Supabase.instance.client;
+        _client = client ?? Supabase.instance.client,
+        _contactPhonesOverride = contactPhones,
+        _phoneNumberChangesOverride = phoneNumberChanges;
 
   final SupabaseClient _client;
+
+  final ContactPhoneGateway? _contactPhonesOverride;
+  late final ContactPhoneGateway _contactPhones =
+      _contactPhonesOverride ?? WorkerContactPhoneGateway();
+
+  final PhoneNumberChangeGateway? _phoneNumberChangesOverride;
+  late final PhoneNumberChangeGateway _phoneNumberChanges =
+      _phoneNumberChangesOverride ?? WorkerContactPhoneGateway();
+
+  /// The sign-in number change this repository started, if any.
+  _PendingPhoneChange? _pendingPhoneChange;
+
+  /// A sign-in number this session changed, until the cached user catches up.
+  ({String uid, String phoneE164})? _changedSignInPhone;
+
+  /// The contact-number verification this repository started, if any. It
+  /// belongs to the account and session that started it.
+  _PendingContactPhone? _pendingContactPhone;
+
+  /// The password chosen in Add Email, held in memory only until the server
+  /// reports the new address confirmed for the same account.
+  _PendingAddEmail? _pendingAddEmail;
 
   /// OFF-2b-3: the process's one offline pass lifecycle (and lease).
   final OfflinePassLifecycle _offlinePass = OfflinePassLifecycle.shared;
@@ -841,6 +874,11 @@ class SupabaseAuthRepository
     if (kDebugMode) {
       print('🚀 Supabase logout started');
     }
+    // Nothing started by this account outlives its session.
+    _pendingAddEmail = null;
+    _pendingContactPhone = null;
+    _pendingPhoneChange = null;
+    _changedSignInPhone = null;
     // OFF-2b-3: offline access ends first, even with no network. Nothing
     // below runs before the revocation is durable (or, failing that, the
     // pass is deleted or its delete has failed).
@@ -1146,62 +1184,417 @@ class SupabaseAuthRepository
     return _emailChangeFromAuthUser(user);
   }
 
+  /// Adds an email address, with a password for it, to a signed-in account
+  /// that has no email yet — a phone-primary account.
+  ///
+  /// Email accounts never use this and are refused here: they change their
+  /// address through [requestEmailChange] (Secure Email Change).
+  ///
+  /// The password is set first, then the address is requested with the app
+  /// callback. GoTrue sends one confirmation to the new address (an account
+  /// without an email has nothing to double-confirm) and creates the email
+  /// identity only when that link is opened; until then the account signs in
+  /// exactly as before. Retrying after a failed address step is safe: setting
+  /// the same password again reports `same_password`, which is accepted.
+  ///
+  /// Every failure is a typed [AuthFailure] without provider text.
   @override
   Future<void> addEmailToAccount({
     required String email,
     required String password,
   }) async {
-    if (_client.auth.currentUser == null) {
-      throw AuthException('No authenticated Supabase user.');
+    final session = _client.auth.currentSession;
+    final user = _client.auth.currentUser;
+    final ownerUid = user?.id;
+    if (session == null ||
+        user == null ||
+        ownerUid == null ||
+        !_appSession.isAuthorized(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    if ((user.email ?? '').trim().isNotEmpty) {
+      throw const AuthFailure(
+        code: AuthFailureCode.operationNotAllowed,
+        message: 'This account already has an email address.',
+      );
     }
 
-    await _client.auth.updateUser(
-      UserAttributes(email: email.trim().toLowerCase()),
+    final normalizedEmail = email.trim().toLowerCase();
+    if (!EmailValidator.isValidFormat(normalizedEmail)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.invalidEmail,
+        message: 'The email address is not valid.',
+      );
+    }
+    if (!PasswordPolicy.validate(password).isValid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.weakPassword,
+        message: 'The password does not meet the password policy.',
+      );
+    }
+
+    // Only the address change is requested now. The password is set by
+    // [completeAddEmail] after the address is confirmed, so a failure at any
+    // step can never leave a password on an account without its email.
+    _pendingAddEmail = null;
+    try {
+      await _client.auth.updateUser(
+        UserAttributes(email: normalizedEmail),
+        emailRedirectTo: SupabaseConfig.authCallbackUri,
+      );
+    } catch (error) {
+      throw AuthFailure.fromSupabaseEmailChange(error);
+    }
+    _requireAccount(ownerUid);
+    _pendingAddEmail = _PendingAddEmail(
+      uid: ownerUid,
+      email: normalizedEmail,
+      password: password,
     );
-    await _client.auth.updateUser(UserAttributes(password: password));
   }
 
-  /// Phone verification is a Supabase **phone change** on the signed-in
-  /// account, never a phone sign-in:
+  @override
+  Future<AddEmailCompletion> completeAddEmail() async {
+    final session = _client.auth.currentSession;
+    if (session == null || !_appSession.isAuthorized(session)) {
+      _pendingAddEmail = null;
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    // The server's view of the account, not the cached one.
+    final User user;
+    try {
+      final fetched = (await _client.auth.getUser()).user;
+      if (fetched == null) throw AuthSessionMissingException();
+      user = fetched;
+    } catch (error) {
+      throw AuthFailure.fromSupabaseEmailChange(error);
+    }
+
+    final pending = _pendingAddEmail;
+    if (pending != null && pending.uid != user.id) {
+      _pendingAddEmail = null;
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+    final email = (user.email ?? '').trim().toLowerCase();
+    final confirmed = email.isNotEmpty &&
+        user.emailConfirmedAt != null &&
+        (pending == null || email == pending.email);
+    if (!confirmed) return AddEmailCompletion.notConfirmed;
+    if (pending == null) return AddEmailCompletion.passwordNotSet;
+
+    try {
+      await _client.auth.updateUser(UserAttributes(password: pending.password));
+    } catch (error) {
+      final failure = AuthFailure.fromSupabasePassword(error);
+      switch (failure.code) {
+        case AuthFailureCode.samePassword:
+          break;
+        case AuthFailureCode.network:
+        case AuthFailureCode.tooManyRequests:
+        case AuthFailureCode.unknown:
+          // Transient: keep the password for another try.
+          throw failure;
+        case AuthFailureCode.sessionExpired:
+          _pendingAddEmail = null;
+          throw failure;
+        default:
+          // Refused for good (policy, reauthentication required, ...): the
+          // email stays added and the user sets a password with a reset.
+          _pendingAddEmail = null;
+          return AddEmailCompletion.passwordNotSet;
+      }
+    }
+    _pendingAddEmail = null;
+    _requireAccount(pending.uid);
+    return AddEmailCompletion.completed;
+  }
+
+  void _requireAccount(String ownerUid) {
+    if (_client.auth.currentUser?.id != ownerUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.accountChanged,
+        message: 'The authenticated account changed.',
+      );
+    }
+  }
+
+  /// Add Phone verifies a CONTACT number for the signed-in account (Model X).
   ///
-  ///  * `updateUser(phone:)` requires the current session — it throws when
-  ///    there is none — so the pending number is recorded against that
-  ///    account, server-side. Supabase holds it apart from the confirmed
-  ///    `auth.users.phone` until verified, so an unverified number is never
-  ///    persisted as the account's phone, and the `auth.users` → profiles sync
-  ///    trigger does not fire for it.
-  ///  * `verifyOTP(type: phoneChange)` confirms it for that same account. It
-  ///    cannot create a user; phone sign-up is disabled in this project.
+  ///  * It never uses Supabase Auth's phone change (`updateUser(phone:)` /
+  ///    `verifyOTP(type: phoneChange)`): that confirmation is not bound to the
+  ///    account's session and issues a session to whoever holds the code, and
+  ///    the database now refuses it for every account.
+  ///  * The Worker checks the code with the SMS provider for this account's
+  ///    current app session only, and stores the number on the profile as a
+  ///    contact number. It is never `auth.users.phone`, so it can never be
+  ///    used to sign in, and no session is ever created or returned.
+  ///  * A phone account's sign-in number is not changed here.
   ///
-  /// Nothing here touches `public.profiles`. The existing
-  /// `sync_auth_identity_to_profile` trigger copies the confirmed phone and
-  /// `phone_confirmed_at` across, and `is_phone_verified` is not writable by
-  /// clients at all.
+  /// Nothing here writes `public.profiles`; the server does, and
+  /// `is_phone_verified` is not writable by clients at all.
   @override
   Future<void> requestPhoneVerification(String phoneE164) async {
-    try {
-      final phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
-      await _client.auth.updateUser(UserAttributes(phone: phone));
-    } catch (e) {
-      throw AuthFailure.fromSupabasePhoneVerification(e);
+    final phone = _normalizedContactPhone(phoneE164);
+    final session = _authorizedSessionForContactPhone();
+    _pendingContactPhone = null;
+    final verificationId = await _contactPhones.startContactPhone(
+      accessToken: session.accessToken,
+      phoneE164: phone,
+    );
+    // Only for the account and session that asked, if still signed in.
+    if (AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+        AppSessionCoordinator.sessionId(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
     }
+    _pendingContactPhone = _PendingContactPhone(
+      uid: session.user.id,
+      sessionId: AppSessionCoordinator.sessionId(session),
+      phoneE164: phone,
+      verificationId: verificationId,
+    );
   }
 
+  /// A new code is a new verification: the server supersedes the previous
+  /// one, so an older code can no longer be used.
   @override
-  Future<void> resendPhoneVerification(String phoneE164) async {
-    try {
-      final phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
-      if (_client.auth.currentSession == null) {
-        throw AuthSessionMissingException();
-      }
-      await _client.auth.resend(phone: phone, type: OtpType.phoneChange);
-    } catch (e) {
-      throw AuthFailure.fromSupabasePhoneVerification(e);
-    }
-  }
+  Future<void> resendPhoneVerification(String phoneE164) =>
+      requestPhoneVerification(phoneE164);
 
   @override
   Future<UserModel> confirmPhoneVerification({
+    required String phoneE164,
+    required String code,
+  }) async {
+    final phone = _normalizedContactPhone(phoneE164);
+    final session = _authorizedSessionForContactPhone();
+    final pending = _pendingContactPhone;
+    if (pending == null ||
+        pending.uid != session.user.id ||
+        pending.sessionId != AppSessionCoordinator.sessionId(session) ||
+        pending.phoneE164 != phone) {
+      throw const AuthFailure(
+        code: AuthFailureCode.otpInvalidOrExpired,
+        message: 'No pending verification for this number.',
+      );
+    }
+
+    final confirmed = await _contactPhones.confirmContactPhone(
+      accessToken: session.accessToken,
+      verificationId: pending.verificationId,
+      code: code,
+    );
+    if (identical(_pendingContactPhone, pending)) _pendingContactPhone = null;
+
+    // Only the server reporting this exact number counts.
+    if (!_isSamePhone(confirmed, phone)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'The server did not confirm the phone number.',
+      );
+    }
+    final user = _client.auth.currentUser;
+    if (user == null || user.id != pending.uid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    final profile = await _profileOrNull(user.id);
+    if (profile != null &&
+        profile.isPhoneVerified &&
+        _isSamePhone(profile.phoneNumber, phone)) {
+      return profile;
+    }
+    // The server confirmed it; the profile read is only presentation and may
+    // lag or fail. The view model re-reads the profile afterwards.
+    return (profile ?? _fromAuthUser(user))
+        .copyWith(phoneNumber: phone, isPhoneVerified: true);
+  }
+
+  // -------------------------------------------------------------------------
+  // Phone accounts: sign-in number (Model X)
+  // -------------------------------------------------------------------------
+
+  /// Only an account created by phone holds `auth.users.phone` (Model X), so
+  /// this is null for every email account, whatever contact number it has.
+  @override
+  String? get currentSignInPhoneE164 {
+    final user = _client.auth.currentUser;
+    final changed = _changedSignInPhone;
+    if (user != null && changed != null && changed.uid == user.id) {
+      return changed.phoneE164;
+    }
+    final phone = user?.phone;
+    if (phone == null || phone.trim().isEmpty) return null;
+    try {
+      return PhoneNumberNormalizer.normalizeUaeMobile(phone);
+    } on PhoneValidationException {
+      return null;
+    }
+  }
+
+  @override
+  bool get currentNumberProven => _pendingPhoneChange?.currentProven ?? false;
+
+  @override
+  Future<void> requestPhoneNumberChange(String newPhoneE164) async {
+    final phone = _normalizedContactPhone(newPhoneE164);
+    final session = _authorizedSessionForContactPhone();
+    final current = currentSignInPhoneE164;
+    if (current == null || current == phone) {
+      throw const AuthFailure(
+        code: AuthFailureCode.operationNotAllowed,
+        message: 'This account cannot change its sign-in number to this one.',
+      );
+    }
+    _pendingPhoneChange = null;
+    final verificationId = await _phoneNumberChanges.startSignInNumberChange(
+      accessToken: session.accessToken,
+      newPhoneE164: phone,
+    );
+    if (AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+        AppSessionCoordinator.sessionId(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    _pendingPhoneChange = _PendingPhoneChange(
+      uid: session.user.id,
+      sessionId: AppSessionCoordinator.sessionId(session),
+      phoneE164: phone,
+      verificationId: verificationId,
+    );
+  }
+
+  @override
+  Future<UserModel> confirmPhoneNumberChange({
+    required String newPhoneE164,
+    required String newCode,
+    String? currentCode,
+  }) async {
+    final phone = _normalizedContactPhone(newPhoneE164);
+    final session = _authorizedSessionForContactPhone();
+    final pending = _pendingPhoneChange;
+    if (pending == null ||
+        pending.uid != session.user.id ||
+        pending.sessionId != AppSessionCoordinator.sessionId(session) ||
+        pending.phoneE164 != phone) {
+      throw const AuthFailure(
+        code: AuthFailureCode.otpInvalidOrExpired,
+        message: 'No pending number change for this number.',
+      );
+    }
+
+    final String confirmed;
+    try {
+      confirmed = await _phoneNumberChanges.confirmSignInNumberChange(
+        accessToken: session.accessToken,
+        verificationId: pending.verificationId,
+        newCode: newCode,
+        currentCode: pending.currentProven ? null : currentCode,
+      );
+    } on NewNumberCodeRejected {
+      pending.currentProven = true;
+      rethrow;
+    }
+    if (identical(_pendingPhoneChange, pending)) _pendingPhoneChange = null;
+    if (!_isSamePhone(confirmed, phone)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'The server did not confirm the phone number.',
+      );
+    }
+
+    // The server changed the number. This session's token and cached user
+    // still carry the old one until the SDK's next regular refresh; no refresh
+    // is forced here, because a refused refresh signs the user out. Until
+    // then the confirmed number is remembered for this account.
+    final user = _client.auth.currentUser;
+    if (user == null || user.id != pending.uid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    _changedSignInPhone = (uid: user.id, phoneE164: phone);
+    final profile = await _profileOrNull(user.id);
+    if (profile != null && _isSamePhone(profile.phoneNumber, phone)) {
+      return profile;
+    }
+    return (profile ?? _fromAuthUser(user))
+        .copyWith(phoneNumber: phone, isPhoneVerified: true);
+  }
+
+  String _normalizedContactPhone(String phoneE164) {
+    try {
+      return PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
+    } catch (e) {
+      throw AuthFailure.fromSupabasePhoneVerification(e);
+    }
+  }
+
+  Session _authorizedSessionForContactPhone() {
+    final session = _client.auth.currentSession;
+    if (session == null || !_appSession.isAuthorized(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'No active session.',
+      );
+    }
+    return session;
+  }
+
+  // -------------------------------------------------------------------------
+  // Phone sign-in / sign-up (Supabase OTP)
+  // -------------------------------------------------------------------------
+
+  /// Sends a sign-in code. Supabase Auth generates and stores it; the app
+  /// never sees it. No user metadata is sent: the server-side sign-up policy
+  /// refuses phone accounts created with metadata, and the name is written
+  /// only after verification.
+  ///
+  /// Resending is this same call. GoTrue's `/resend` with `type: sms` answers
+  /// success **without sending anything** for an already-confirmed number, so
+  /// using it for sign-in would report a code that never left the server.
+  @override
+  Future<void> requestPhoneSignInCode({
+    required String phoneE164,
+    required bool createAccount,
+  }) async {
+    try {
+      final phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
+      await _client.auth.signInWithOtp(
+        phone: phone,
+        shouldCreateUser: createAccount,
+      );
+    } catch (e) {
+      throw AuthFailure.fromSupabasePhoneSignIn(e);
+    }
+  }
+
+  /// Verifies the code and completes the sign-in.
+  ///
+  /// A verified code is not access. The session Supabase returns goes through
+  /// the same `claim: true` Single Active Device authorization as
+  /// [signInWithEmailAndPassword], and the identity is published only once
+  /// that claim succeeds. A claim that fails or is superseded ends the local
+  /// session there (inside [_authorizeAndPublish]) and is reported, so a
+  /// caller can never reach Home on a session the server did not accept.
+  @override
+  Future<PhoneSignInResult> verifyPhoneSignInCode({
     required String phoneE164,
     required String code,
   }) async {
@@ -1209,32 +1602,121 @@ class SupabaseAuthRepository
     final AuthResponse response;
     try {
       phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneE164);
-      if (_client.auth.currentSession == null) {
-        throw AuthSessionMissingException();
+      // gotrue checks its own arguments only with asserts, which do not run in
+      // release builds, so a malformed code never reaches the network.
+      if (!RegExp(r'^[0-9]{6}$').hasMatch(code)) {
+        throw const AuthFailure(
+          code: AuthFailureCode.otpInvalidOrExpired,
+          message: 'The verification code is malformed.',
+        );
       }
       response = await _client.auth.verifyOTP(
         phone: phone,
         token: code,
-        type: OtpType.phoneChange,
+        type: OtpType.sms,
       );
     } catch (e) {
-      throw AuthFailure.fromSupabasePhoneVerification(e);
+      throw AuthFailure.fromSupabasePhoneSignIn(e);
     }
 
-    // An accepted code is not, by itself, proof of confirmation: a secure
-    // two-step change accepts the first code without confirming anything.
-    // Only the server reporting this exact number as the account's confirmed
-    // phone counts.
-    final user = response.user ?? _client.auth.currentUser;
-    if (user == null ||
-        user.phoneConfirmedAt == null ||
-        !_isSamePhone(user.phone, phone)) {
+    final session = response.session;
+    final user = response.user ?? session?.user;
+    if (session == null || user == null) {
       throw const AuthFailure(
         code: AuthFailureCode.unknown,
-        message: 'Supabase did not confirm the phone number.',
+        message: 'Supabase did not return a session.',
       );
     }
-    return _fromAuthUser(user);
+
+    // The session must belong to the number that was verified. Anything else
+    // is never kept.
+    if (user.phoneConfirmedAt == null || !_isSamePhone(user.phone, phone)) {
+      await _endLocalSessionIfCurrent(session);
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Supabase did not confirm this phone number.',
+      );
+    }
+
+    if (!(await _authorizeAndPublish(session, claim: true))) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'This sign-in session is no longer active.',
+      );
+    }
+
+    // Another sign-in may have replaced the session while this one was being
+    // authorized; then this result describes nothing current.
+    if (AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+        AppSessionCoordinator.sessionId(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'The session changed during sign-in.',
+      );
+    }
+
+    final profile = await _profileOrNull(user.id);
+    return PhoneSignInResult(
+      user: profile ?? _fromAuthUser(user),
+      accountExisted: profile != null && profile.name.trim().isNotEmpty,
+    );
+  }
+
+  @override
+  Future<UserModel> completePhoneSignUpName({
+    required String expectedUid,
+    required String name,
+  }) async {
+    const notSaved = AuthFailure(
+      code: AuthFailureCode.unknown,
+      message: 'The profile name was not saved.',
+    );
+    final user = _client.auth.currentUser;
+    if (user == null || user.id != expectedUid) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'The account changed before the name was saved.',
+      );
+    }
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw notSaved;
+
+    final UserModel? existing;
+    try {
+      existing = await _userRepository.getUserById(user.id);
+    } catch (_) {
+      throw notSaved;
+    }
+    // An account that already has a name keeps it.
+    if (existing != null && existing.name.trim().isNotEmpty) return existing;
+
+    try {
+      await updateUserProfile(name: trimmed);
+      return await _userRepository.getUserById(user.id) ?? _fromAuthUser(user);
+    } catch (_) {
+      throw notSaved;
+    }
+  }
+
+  Future<UserModel?> _profileOrNull(String uid) async {
+    try {
+      return await _userRepository.getUserById(uid);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _endLocalSessionIfCurrent(Session session) async {
+    if (AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+        AppSessionCoordinator.sessionId(session)) {
+      return;
+    }
+    try {
+      await _client.auth.signOut(scope: SignOutScope.local);
+    } catch (_) {
+      // The session is still ended locally by the SDK on most failures; the
+      // caller reports the refusal either way.
+    }
   }
 
   /// Supabase Auth may store phones without the leading `+`, so compare the
@@ -1322,4 +1804,50 @@ class SupabaseAuthRepository
       features: const [],
     );
   }
+}
+
+/// A contact-number verification started by this repository.
+class _PendingContactPhone {
+  const _PendingContactPhone({
+    required this.uid,
+    required this.sessionId,
+    required this.phoneE164,
+    required this.verificationId,
+  });
+
+  final String uid;
+  final String? sessionId;
+  final String phoneE164;
+  final String verificationId;
+}
+
+/// A sign-in number change started by this repository.
+class _PendingPhoneChange {
+  _PendingPhoneChange({
+    required this.uid,
+    required this.sessionId,
+    required this.phoneE164,
+    required this.verificationId,
+  });
+
+  final String uid;
+  final String? sessionId;
+  final String phoneE164;
+  final String verificationId;
+
+  /// The server accepted the current-number code for this verification.
+  bool currentProven = false;
+}
+
+/// Add Email waiting for the user to confirm the new address.
+class _PendingAddEmail {
+  const _PendingAddEmail({
+    required this.uid,
+    required this.email,
+    required this.password,
+  });
+
+  final String uid;
+  final String email;
+  final String password;
 }

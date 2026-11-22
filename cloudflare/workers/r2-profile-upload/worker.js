@@ -1,5 +1,6 @@
 import { AwsClient } from 'aws4fetch';
 import {
+  ACCOUNT_DELETE_CHALLENGE_PATH,
   ACCOUNT_DELETE_PATH,
   AccountDeletionError,
   MAX_SIGNING_DELAY_MS,
@@ -7,10 +8,12 @@ import {
   assertPresignedWithin,
   assertUploadsAllowed,
   handleAccountDeletion,
+  handleAccountDeletionChallenge,
   runDeletionFinalizer,
 } from './account_deletion.js';
 import { stagingRequestAllowed } from './staging_gate.js';
 import { ActiveSessionUnavailable, isCurrentAppSession } from './active_session.js';
+import { PHONE_VERIFICATION_PATHS, handlePhoneVerificationRequest } from './phone_verification.js';
 import {
   TOOLKIT_PUT_SIGNED_HEADERS,
   handleToolkitDocumentRequest,
@@ -50,6 +53,10 @@ import { toHex } from './toolkit_content.js';
  *                          (Toolkit cloud documents; see toolkit_documents.js.
  *                          Answer 404 unless TOOLKIT_DOCUMENTS_ENABLED is "true")
  *   POST /account/delete   (see account_deletion.js)
+ *   POST /account/delete/challenge (phone accounts' deletion code; see account_deletion.js)
+ *   POST /account/contact-phone/start|confirm, /account/phone-identity/start|confirm
+ *                          (Model X phone numbers; see phone_verification.js.
+ *                          Answer 503 until an SMS verification provider is set)
  *
  * Scheduled:
  *   account deletion finalizer (see account_deletion.js)
@@ -313,6 +320,14 @@ export default {
       const deletion = handleAccountDeletion(request, env, { respond: corsResponse });
       ctx?.waitUntil?.(deletion);
       return deletion;
+    }
+    if (request.method === 'POST' && path === ACCOUNT_DELETE_CHALLENGE_PATH) {
+      // Phone accounts: sends the deletion code. Never rejects.
+      return handleAccountDeletionChallenge(request, env, { respond: corsResponse });
+    }
+    if (request.method === 'POST' && PHONE_VERIFICATION_PATHS.includes(path)) {
+      // Never rejects; returns only fixed error codes.
+      return handlePhoneVerificationRequest(request, env, { respond: corsResponse });
     }
     try {
       if (request.method === 'POST' && path === '/authorize') return await handleAuthorize(request, env);

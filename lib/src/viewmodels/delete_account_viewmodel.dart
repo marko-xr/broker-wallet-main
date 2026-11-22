@@ -39,6 +39,16 @@ enum DeleteAccountStep {
   completed,
 }
 
+/// How the account proves it is the one being deleted.
+enum DeleteAccountProof {
+  /// The account password (email accounts; phone accounts that set one).
+  password,
+
+  /// A code Supabase sends to the account's own sign-in number (phone
+  /// accounts, Model X). The number comes from the session, never from here.
+  phoneCode,
+}
+
 /// Runs permanent deletion of the signed-in account.
 ///
 /// Authority is layered, and no layer trusts the one above it:
@@ -55,10 +65,17 @@ class DeleteAccountViewModel extends ChangeNotifier {
     required AccountDeletionGateway gateway,
     required AccountDeletionSession session,
     AccountDeletionMarkers markers = const AccountDeletionMarkers(),
+    String? signInPhoneE164,
+    bool canUsePassword = true,
   })  : _gateway = gateway,
         _session = session,
         _markers = markers,
-        _ownerUid = session.currentUserId;
+        _ownerUid = session.currentUserId,
+        _signInPhone = signInPhoneE164,
+        _canUsePassword = canUsePassword,
+        _proof = signInPhoneE164 != null
+            ? DeleteAccountProof.phoneCode
+            : DeleteAccountProof.password;
 
   final AccountDeletionGateway _gateway;
   final AccountDeletionSession _session;
@@ -67,12 +84,28 @@ class DeleteAccountViewModel extends ChangeNotifier {
   /// The account this flow was opened for. Never replaced.
   final String? _ownerUid;
 
+  /// The account's sign-in number when it signs in by phone, else null.
+  final String? _signInPhone;
+  final bool _canUsePassword;
+  DeleteAccountProof _proof;
+  bool _codeSent = false;
+  bool _sendingCode = false;
+
   DeleteAccountStep _step = DeleteAccountStep.review;
   bool _acknowledged = false;
   String? _errorKey;
   bool _disposed = false;
 
   DeleteAccountStep get step => _step;
+  DeleteAccountProof get proof => _proof;
+
+  /// Shown so the user knows where the code goes. Display only.
+  String? get signInPhoneE164 => _signInPhone;
+
+  /// A phone account that also has an email may use its password instead.
+  bool get canSwitchProof => _signInPhone != null && _canUsePassword;
+  bool get codeSent => _codeSent;
+  bool get isSendingCode => _sendingCode;
   bool get acknowledged => _acknowledged;
   String? get errorKey => _errorKey;
 
@@ -118,6 +151,53 @@ class DeleteAccountViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Switches between the code and the password (phone accounts with an
+  /// email only). Never while a request runs.
+  void useProof(DeleteAccountProof proof) {
+    if (proof == _proof || isDeleting || _sendingCode) return;
+    if (proof == DeleteAccountProof.password && !canSwitchProof) return;
+    if (proof == DeleteAccountProof.phoneCode && _signInPhone == null) return;
+    _proof = proof;
+    _errorKey = null;
+    _notify();
+  }
+
+  /// Phone accounts: asks the server to send the deletion code. Returns
+  /// whether it was sent. The server applies its own limits.
+  Future<bool> requestCode() async {
+    if (_step != DeleteAccountStep.confirm ||
+        _proof != DeleteAccountProof.phoneCode ||
+        isDeleting ||
+        _sendingCode) {
+      return false;
+    }
+    final gateway = _gateway;
+    if (gateway is! PhoneAccountDeletionGateway) {
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.unavailable));
+      return false;
+    }
+    final ownerUid = _refuseLocally();
+    if (ownerUid == null) return false;
+
+    _sendingCode = true;
+    _errorKey = null;
+    _notify();
+    var sent = false;
+    try {
+      await (gateway as PhoneAccountDeletionGateway)
+          .requestDeletionCode(expectedUid: ownerUid);
+      sent = true;
+    } on AccountDeletionFailure catch (error) {
+      _errorKey = deleteAccountErrorKey(error.code, proof: _proof);
+    } catch (_) {
+      _errorKey = deleteAccountErrorKey(AccountDeletionFailureCode.unknown);
+    }
+    _sendingCode = false;
+    if (sent) _codeSent = true;
+    _notify();
+    return sent;
+  }
+
   void clearError() {
     if (_errorKey == null) return;
     _errorKey = null;
@@ -133,6 +213,59 @@ class DeleteAccountViewModel extends ChangeNotifier {
       return Future.value(false);
     }
     return _submission = _submit(password: password);
+  }
+
+  /// Phone accounts: deletes the account with the code sent to its number.
+  /// Same guarantees as [submit].
+  Future<bool> submitCode({required String code}) {
+    if (isDeleting || _sendingCode) return Future.value(false);
+    return _submission = _submitCode(code.trim());
+  }
+
+  Future<bool> _submitCode(String code) async {
+    if (_step != DeleteAccountStep.confirm ||
+        _proof != DeleteAccountProof.phoneCode) {
+      return false;
+    }
+    if (!_acknowledged) {
+      _fail('deleteAccountErrorAcknowledge');
+      return false;
+    }
+    if (!_codeSent || !RegExp(r'^[0-9]{6}$').hasMatch(code)) {
+      _fail('deleteAccountErrorCodeRequired');
+      return false;
+    }
+    final gateway = _gateway;
+    if (gateway is! PhoneAccountDeletionGateway) {
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.unavailable));
+      return false;
+    }
+    final ownerUid = _refuseLocally();
+    if (ownerUid == null) return false;
+    return _run(
+      ownerUid,
+      () => (gateway as PhoneAccountDeletionGateway)
+          .deleteAccountWithCode(expectedUid: ownerUid, code: code),
+    );
+  }
+
+  /// The account-level refusals shared by every request. Returns the owner
+  /// when the request may proceed.
+  String? _refuseLocally() {
+    final ownerUid = _ownerUid;
+    if (ownerUid == null || ownerUid.isEmpty) {
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.sessionExpired));
+      return null;
+    }
+    if (_session.isPasswordRecoveryActive) {
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.recoverySession));
+      return null;
+    }
+    if (_session.currentUserId != ownerUid) {
+      _fail(deleteAccountErrorKey(AccountDeletionFailureCode.accountChanged));
+      return null;
+    }
+    return ownerUid;
   }
 
   Future<bool>? _submission;
@@ -180,6 +313,14 @@ class DeleteAccountViewModel extends ChangeNotifier {
       return false;
     }
 
+    return _run(
+      ownerUid,
+      () => _gateway.deleteAccount(expectedUid: ownerUid, password: password),
+    );
+  }
+
+  /// The deletion lifecycle shared by both proofs.
+  Future<bool> _run(String ownerUid, Future<void> Function() request) async {
     _errorKey = null;
     _step = DeleteAccountStep.deleting;
     _notify();
@@ -198,7 +339,7 @@ class DeleteAccountViewModel extends ChangeNotifier {
 
     AccountDeletionFailureCode? failure;
     try {
-      await _gateway.deleteAccount(expectedUid: ownerUid, password: password);
+      await request();
     } on AccountDeletionFailure catch (error) {
       failure = error.code;
     } catch (_) {
@@ -230,7 +371,8 @@ class DeleteAccountViewModel extends ChangeNotifier {
     }
 
     _step = DeleteAccountStep.confirm;
-    _fail(deleteAccountErrorKey(failure));
+    if (failure == AccountDeletionFailureCode.codeExpired) _codeSent = false;
+    _fail(deleteAccountErrorKey(failure, proof: _proof));
     return false;
   }
 
@@ -257,10 +399,17 @@ class DeleteAccountViewModel extends ChangeNotifier {
 }
 
 /// Maps a deletion failure to an ARB key. Server text never reaches here.
-String deleteAccountErrorKey(AccountDeletionFailureCode code) {
+String deleteAccountErrorKey(
+  AccountDeletionFailureCode code, {
+  DeleteAccountProof proof = DeleteAccountProof.password,
+}) {
   switch (code) {
     case AccountDeletionFailureCode.reauthenticationFailed:
-      return 'deleteAccountErrorPassword';
+      return proof == DeleteAccountProof.phoneCode
+          ? 'deleteAccountErrorCode'
+          : 'deleteAccountErrorPassword';
+    case AccountDeletionFailureCode.codeExpired:
+      return 'deleteAccountErrorCodeExpired';
     case AccountDeletionFailureCode.reauthenticationUnsupported:
       return 'deleteAccountErrorUnsupported';
     case AccountDeletionFailureCode.sessionExpired:

@@ -513,21 +513,19 @@ GoRouter _createRouter(
           final extra = state.extra;
           PhoneOtpArgs? args;
 
-          if (extra is Map<String, dynamic>) {
-            // New format from ViewModels
-            args = PhoneOtpArgs(
-              phoneNumber: extra['phoneNumber'] ?? '',
-              verificationId: extra['verificationId'] ?? '',
-              isSignup: extra['isSignup'] ?? false,
-              displayName: extra['displayName'],
-              resendToken: extra['resendToken'],
-            );
-          } else if (extra is PhoneOtpArgs) {
-            // Legacy format
+          if (extra is PhoneOtpArgs) {
             args = extra;
+          } else if (extra is Map<String, dynamic>) {
+            args = PhoneOtpArgs(
+              phoneNumber: extra['phoneNumber'] as String? ?? '',
+              isSignup: extra['isSignup'] as bool? ?? false,
+              displayName: extra['displayName'] as String?,
+            );
           }
 
-          if (args == null) {
+          // No number means there is no pending code to verify (for example
+          // after the process was restarted): start again from Sign in.
+          if (args == null || args.phoneNumber.isEmpty) {
             return const SignInView();
           }
           return PhoneOtpView(args: args);

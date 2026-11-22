@@ -31,6 +31,16 @@ enum AuthFailureCode {
   /// SMS could not be sent: no SMS provider, or the provider failed.
   smsUnavailable,
 
+  /// Phone sign-in was asked for a number that has no account.
+  phoneNotRegistered,
+
+  /// The server refused phone sign-up or sign-in for this number or account
+  /// (phone sign-ups closed, a policy hook refusal, or sign-ups disabled).
+  phoneAuthNotAllowed,
+
+  /// The server required a CAPTCHA that was missing or rejected.
+  captchaFailed,
+
   /// The session that started the operation is gone or no longer valid.
   sessionExpired,
   appSessionUnavailable,
@@ -245,6 +255,113 @@ class AuthFailure implements Exception {
       }
     }
     return typed(AuthFailureCode.unknown, 'Phone verification failed.');
+  }
+
+  /// Maps a Supabase phone **sign-in / sign-up** failure to a typed outcome.
+  ///
+  /// Kept apart from [AuthFailure.fromSupabase] on purpose: that mapping
+  /// matches the text "not confirmed" and would report a phone problem as an
+  /// unconfirmed email. As with [AuthFailure.fromSupabasePhoneVerification],
+  /// only the code is carried: the message is a fixed internal string and the
+  /// original exception is not attached, so no provider text, token or code
+  /// can reach a screen.
+  factory AuthFailure.fromSupabasePhoneSignIn(Object exception) {
+    if (exception is AuthFailure) return exception;
+
+    AuthFailure typed(AuthFailureCode code, String message) =>
+        AuthFailure(code: code, message: message);
+
+    if (exception is PhoneValidationException) {
+      return typed(
+        AuthFailureCode.invalidPhoneNumber,
+        'The phone number is not a valid UAE mobile number.',
+      );
+    }
+    if (exception is TimeoutException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    // No status: the server was not reached. A 5xx: gotrue drops the error
+    // code, so it is read from the body (never shown).
+    if (exception is sb.AuthRetryableFetchException) {
+      if (exception.statusCode == null) {
+        return typed(AuthFailureCode.network, 'The request did not complete.');
+      }
+      final serverCode = _errorCodeInBody(exception.message);
+      if (serverCode == 'sms_send_failed' ||
+          serverCode == 'hook_timeout' ||
+          serverCode == 'hook_timeout_after_retry') {
+        return typed(AuthFailureCode.smsUnavailable, 'SMS is unavailable.');
+      }
+      return typed(AuthFailureCode.unknown, 'Phone sign-in failed.');
+    }
+    if (exception is sb.AuthException) {
+      switch (exception.code) {
+        case 'otp_expired':
+          return typed(
+            AuthFailureCode.otpInvalidOrExpired,
+            'The verification code is invalid or has expired.',
+          );
+        // GoTrue's answer to a sign-in code request for an unknown number
+        // when accounts may not be created ("Signups not allowed for otp").
+        case 'otp_disabled':
+          return typed(
+            AuthFailureCode.phoneNotRegistered,
+            'No account uses this phone number.',
+          );
+        case 'over_sms_send_rate_limit':
+        case 'over_request_rate_limit':
+        case 'too_many_requests':
+          return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+        case 'sms_send_failed':
+        case 'phone_provider_disabled':
+        case 'provider_disabled':
+        case 'hook_timeout':
+        case 'hook_timeout_after_retry':
+          return typed(AuthFailureCode.smsUnavailable, 'SMS is unavailable.');
+        case 'signup_disabled':
+          return typed(
+            AuthFailureCode.phoneAuthNotAllowed,
+            'Phone sign-up is not allowed.',
+          );
+        case 'captcha_failed':
+          return typed(AuthFailureCode.captchaFailed, 'CAPTCHA failed.');
+        case 'user_banned':
+          return typed(AuthFailureCode.userDisabled, 'The account is disabled.');
+        case 'validation_failed':
+          return typed(
+            AuthFailureCode.invalidPhoneNumber,
+            'The phone number was rejected.',
+          );
+        case 'session_not_found':
+        case 'session_expired':
+        case 'session_missing':
+        case 'bad_jwt':
+        case 'user_not_found':
+          return typed(AuthFailureCode.sessionExpired, 'Session is invalid.');
+      }
+      // A Supabase Auth hook refusal arrives with the hook's status and
+      // message and no error code. These two messages are this project's own:
+      // the Before User Created phone policy, and a server-side sign-in
+      // method policy if one is ever adopted.
+      if (exception.message == 'phone_signup_not_allowed' ||
+          exception.message == 'sign_in_method_not_allowed') {
+        return typed(
+          AuthFailureCode.phoneAuthNotAllowed,
+          'Phone sign-in or sign-up is not allowed.',
+        );
+      }
+      if (exception.statusCode == '429') {
+        return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+      }
+      final message = exception.message.toLowerCase();
+      if (message.contains('network') ||
+          message.contains('connection') ||
+          message.contains('socket') ||
+          message.contains('failed host lookup')) {
+        return typed(AuthFailureCode.network, 'The request did not complete.');
+      }
+    }
+    return typed(AuthFailureCode.unknown, 'Phone sign-in failed.');
   }
 
   /// Maps email-change failures to fixed domain outcomes.

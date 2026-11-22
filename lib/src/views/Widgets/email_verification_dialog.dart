@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
@@ -261,13 +262,20 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog> {
     setState(() => _isVerifying = true);
 
     try {
-      // Check if the email has been verified with the auth backend
+      // Check if the email has been verified with the auth backend. Where
+      // supported, this also sets the chosen password, only now that the
+      // address is confirmed (AddEmailCapability).
       final authRepo = RepositoryProvider.instance.authRepository;
-      final success = await authRepo.checkEmailVerificationAndUpdate();
+      final Object outcome = authRepo is AddEmailCapability
+          ? await (authRepo as AddEmailCapability).completeAddEmail()
+          : await authRepo.checkEmailVerificationAndUpdate();
+      final success = outcome == true ||
+          outcome == AddEmailCompletion.completed ||
+          outcome == AddEmailCompletion.passwordNotSet;
 
       if (mounted) {
         if (success) {
-          Navigator.of(context).pop(true);
+          Navigator.of(context).pop(outcome);
         } else {
           // Show error message via toast
           Fluttertoast.showToast(
@@ -281,10 +289,13 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog> {
           );
         }
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
+        // A fixed localized message: raw exception text never reaches the
+        // screen.
         Fluttertoast.showToast(
-          msg: 'Verification check failed: ${e.toString()}',
+          msg:
+              AppLocalizations.of(context).translate('emailChangeNetworkError'),
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
           backgroundColor: Colors.red,

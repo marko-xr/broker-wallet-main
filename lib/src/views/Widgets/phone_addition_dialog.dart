@@ -5,9 +5,16 @@ import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
 class PhoneAdditionDialog extends StatefulWidget {
   final Future<void> Function(String phoneNumber) onSubmit;
 
+  /// ARB keys for the title and the info line. The defaults are Add Phone's;
+  /// Change Phone reuses the same dialog with its own texts.
+  final String titleKey;
+  final String infoKey;
+
   const PhoneAdditionDialog({
     super.key,
     required this.onSubmit,
+    this.titleKey = 'addPhoneNumber',
+    this.infoKey = 'phoneAdditionInfo',
   });
 
   @override
@@ -53,7 +60,7 @@ class _PhoneAdditionDialogState extends State<PhoneAdditionDialog> {
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  loc.translate('addPhoneNumber'),
+                  loc.translate(widget.titleKey),
                   style:
                       texts.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                   overflow: TextOverflow.ellipsis,
@@ -70,7 +77,7 @@ class _PhoneAdditionDialogState extends State<PhoneAdditionDialog> {
                 // Info message (subtle, compact)
                 _InfoBanner(
                   icon: Icons.info_outline,
-                  text: loc.translate('phoneAdditionInfo'),
+                  text: loc.translate(widget.infoKey),
                   background: colors.primary.withValues(alpha: 0.08),
                   foreground: colors.primary,
                   borderColor: colors.primary.withValues(alpha: 0.15),

@@ -17742,3 +17742,333 @@ The owner registered the iOS app `com.nmodigital.brokerwallet` in Firebase `brok
 
 **NOW:** the owner continues on the MacBook with Simulator testing, including the `permission_handler` check above.
 **NEXT:** after D-U-N-S and enrollment, steps 1–5, then mark iOS push VERIFIED_REAL_DEVICE only after the iPhone checks pass.
+
+## PHONE AUTH B1 — PHONE SIGN-UP POLICY (2026-11-22, branch `notifications-implementation`)
+
+Status: CODE_PROVEN on a local PostgreSQL 17 engine (PGlite) with a pgTAP emulation. NOT applied to the hosted
+project, NOT run as real pgTAP or on a real Supabase stack, and the hook is NOT enabled. Uncommitted. Phone sign-up and
+login remain unavailable in production. B2–B7 and the P-A2 account-linking design are NOT approved; P-A2 needs an
+independent security review before B2.
+
+**A0 read-only facts (2026-11-22, no setting changed, no secret read).** Sources: the public `/auth/v1/settings` and
+`/auth/v1/health` endpoints, plus SELECT-only counts through the Supabase connector.
+- GoTrue: v2.198.0.
+- Auth settings:
+  - `external.phone=false`: phone sign-up and login are closed at the API.
+  - `phone_autoconfirm=false`: phone confirmations are on.
+  - `sms_provider=twilio`: the `phone_change` path can send SMS, because `PUT /user` does not check the phone provider toggle.
+- Data: 5 users, all with an email identity, 0 phone numbers, 0 pending phone changes. Every session's `amr` is `password`.
+- Database:
+  - `auth.users.phone` is UNIQUE (`users_phone_key`).
+  - `supabase_auth_admin` has USAGE on `public` and no BYPASSRLS.
+  - `postgres` cannot `SET ROLE supabase_auth_admin`.
+  - pg_cron is installed, but `clear_stale_phone_changes` is not scheduled.
+  - The hosted bodies of `claim_current_app_session`, `is_current_app_session`, `guard_pending_phone_change`,
+    `handle_new_auth_user`, `sync_auth_identity_to_profile`, `clear_stale_phone_changes` and `phone_change_grace_period`
+    match the repository byte for byte (md5 of `prosrc`).
+- Security advisor: leaked password protection is disabled.
+- Dashboard-only items still to be read by the owner: OTP expiry/length, test phone numbers, rate limits, sessions,
+  hooks, IP forwarding, and Twilio Geo permissions / account type.
+
+**Files (new only; no existing table, function, trigger, policy, grant or row is changed):**
+- `supabase/migrations/20261122120000_phone_signup_policy.sql` (LF SHA-256 `d2b6f0b88c598b47d149db21288754e5458badd523297fb92c794abfa9941748`):
+  - `public.phone_auth_policy` (single row, default `closed`, modes `closed|allowlist|open`)
+  - `public.phone_auth_allowlist` (`+9715XXXXXXXX` only)
+  - `public.before_user_created_phone_policy(jsonb)`, a Before User Created Postgres hook:
+    - SECURITY INVOKER, STABLE, `search_path=''`
+    - a sign-up without a phone returns `{}` before any table is read
+    - phone numbers must be UAE mobile (`+` optional)
+    - metadata at creation is refused
+    - every refusal is the same `403 phone_signup_not_allowed`
+    - any error refuses phone only
+  - Access: RLS on both tables with SELECT-only policies for `supabase_auth_admin`, EXECUTE for `supabase_auth_admin`
+    only, nothing for anon/authenticated/service_role.
+- `supabase/tests/phone_signup_policy_test.sql`: pgTAP, 44 assertions.
+- `supabase/validation/phone_signup_policy_validation.sql`: rollback-only, for the owner to run hosted as postgres.
+- `supabase/validation/phone_signup_policy_rollback.sql`: drops only the three new objects. Disable the hook first if it
+  was ever enabled. Migration history repair is a separate owner step.
+
+**Local evidence (agent-run on PGlite 0.3.14; scripts in the session scratchpad, not in the repository):**
+- Setup and the new tests:
+  - All 22 migrations applied in order with no failure. Supabase-only pieces are stand-ins: auth schema, roles, cron/net schemas.
+  - The existing `phone_security_test.sql` passes under the same emulation (control).
+  - `phone_signup_policy_test.sql` passes 44/44.
+- Role checks, run as the real roles:
+  - `supabase_auth_admin` reads the policy and allowlist only through the new RLS policies.
+  - Without the policy, or without SELECT, phone sign-ups are refused while email sign-ups are still allowed.
+  - anon, authenticated and service_role cannot execute the hook or read or change either table.
+  - `supabase_auth_admin` cannot change the mode or the allowlist.
+- Catalog and scripts:
+  - The catalog diff shows additions only for the three new objects.
+  - The rollback script restores the catalog exactly; a second run stops at its preflight.
+  - The validation script prints PASS, leaves nothing behind, and refuses a database where the objects already exist.
+- Mutations: 15 of 15 caught by the pgTAP file and by the validation script.
+
+**Not proven (needs the hosted rollback-only validation and, later, an isolated staging project — never OTP tests on the
+shared project):**
+- Supabase Auth actually calling the hook.
+- The error shape the app receives.
+- The exact phone format and `user_metadata` content in the real payload. If GoTrue adds metadata keys, `open` mode would
+  refuse every phone sign-up until this is adjusted.
+- Real pgTAP and Supabase-managed role grants.
+
+**NOW:** the owner reviews the B1 diff. Nothing hosted is to be run without a separate approval.
+**NEXT:** on approval, either the owner runs `supabase/validation/phone_signup_policy_validation.sql` on the hosted
+project (rollback-only), or B1 stays local. B2 starts only after the independent P-A2 security review.
+
+B1 status update (2026-11-22): treated as complete locally by the owner. The hosted rollback-only validation stays open
+for the owner to run with psql; the agent took a catalog-only "before" snapshot and cannot connect psql itself (no
+credential is held or requested).
+
+## PHONE AUTH C1 — PHONE SIGN-IN / SIGN-UP IN THE APP, BEHIND A SWITCH (2026-11-22)
+
+Status: CODE_PROVEN (focused + regression tests, scoped analyzer). Uncommitted. NOT active for any user:
+`PHONE_AUTH_ENABLED` defaults to false, the hosted Phone provider is off, the B1 hook is not enabled, and no SMS was
+sent. P-A2, Delete Account for phone accounts, phone-change authorization, Add Email and the change-number entry are NOT
+part of C1 and NOT approved.
+
+**What C1 adds (Supabase-native, provider-independent):**
+- `SupabaseConfig.phoneAuthEnabled` (`--dart-define=PHONE_AUTH_ENABLED`, default false). This is a client switch only;
+  the server decides.
+- `PhoneSignInCapability` in `auth_repository.dart`, implemented by `SupabaseAuthRepository`:
+  - `requestPhoneSignInCode`: `signInWithOtp`. `shouldCreateUser` is true only for sign-up. No metadata is sent.
+    Resend is the same call, because GoTrue `/resend type=sms` sends nothing for a confirmed number.
+  - `verifyPhoneSignInCode`: a 6-digit check before the network, then `verifyOTP(type: sms)`.
+    - The returned user must be the verified number; otherwise the session is ended locally.
+    - Then `_authorizeAndPublish(session, claim: true)`, the same Single Active Device path as email sign-in. The
+      identity is published only after the claim succeeds; a refused or superseded claim ends the local session and is
+      reported.
+    - Finally, a check that the current session is still the claimed one.
+  - `completePhoneSignUpName`: writes the profile name only when the profile has none, never replacing an existing one,
+    and only for the signed-in account it expects.
+- `AuthFailure.fromSupabasePhoneSignIn`, plus the codes `phoneNotRegistered`, `phoneAuthNotAllowed` and `captchaFailed`.
+  - It maps `otp_disabled` (unknown number on sign-in), rate limits, SMS/provider failures, `signup_disabled`, CAPTCHA,
+    and the B1 hook refusal message `phone_signup_not_allowed`.
+  - It carries no provider text and no original exception.
+- `AuthViewModel.phoneSignIn` and `verifyPhoneSignIn` (same bookkeeping as `signInWithEmail`).
+- Login / Sign-up view models:
+  - With the switch off, the existing "not available yet" messages are unchanged.
+  - With it on, they validate (UAE mobile via `PhoneNumberNormalizer`; a name on sign-up), request the code, and open
+    `/phone-otp` only after the code was sent.
+  - Both screens still open on Email.
+- `PhoneOtpArgs` is now `{phoneNumber (E.164), isSignup, displayName?, codeSentAt?}`; the Firebase `verificationId` and
+  `resendToken` are removed. The `/phone-otp` route falls back to Sign in without a number.
+- `PhoneOtpViewModel` (rewritten, context-free):
+  - Verification:
+    - One verification at a time.
+    - Success only once `AuthViewModel` reports that same uid as authenticated (bounded wait; otherwise
+      `appSessionCheckFailed`).
+  - Sign-up:
+    - The name is written only for a new account.
+    - A failed name save is retried without a second verification.
+    - An existing account keeps its name and gets the notice `phoneAccountExistsSignedIn`.
+  - Resend:
+    - A display-only countdown from `codeSentAt`.
+    - Resend re-requests the code.
+    - A rate-limit refusal restarts the countdown.
+  - Errors surface only as ARB keys.
+- `PhoneOtpView`: wiring only, no visual change. Home is opened only after a signed-in outcome.
+- New ARB key `phoneAccountExistsSignedIn` (EN/AR). Every other message reuses an existing key.
+
+**Unchanged:** email sign-in/sign-up, Add Phone (`phone_change`), Delete Account, Single Active Device
+(`claim_current_app_session`/`is_current_app_session`), the router, and every screen layout.
+
+**Evidence (agent-run, 2026-11-22):**
+- New `test/auth/phone_sign_in_test.dart`: 34/34 pass. It uses a real `SupabaseClient` on a recording loopback HTTP
+  client with a throwing Realtime transport, and a real `AuthViewModel`. It covers:
+  - exact `/otp` and `/verify` requests;
+  - claim before publish;
+  - refused/superseded claim ends the session with no identity published;
+  - wrong-number session discarded;
+  - error mapping without provider text;
+  - name write only into an empty profile;
+  - success only after authentication;
+  - single-flight verify, name retry, resend/countdown;
+  - the build default, logging and EN/AR guards.
+- Regression `flutter test test/auth test/account test/responsive/r4_auth_responsive_test.dart`: **718/718 pass**, no
+  failure (the r4 test was updated for the new `PhoneOtpArgs` and `errorKey`).
+- `flutter analyze --no-pub lib`: 0 errors, 0 warnings, 81 pre-existing infos (none in C1 files). The changed and new
+  test files analyze clean.
+- `git diff --check` is clean. The generated plugin registrant and the four stashes are unchanged.
+
+**Not proven:** anything against real Supabase Auth, including:
+- the real error shapes, in particular how a hook refusal reaches the SDK;
+- real SMS delivery;
+- a device run.
+
+These need an isolated staging project with test numbers (never the shared project) and, later, the SMS provider.
+
+**NOW:** the owner reviews the C1 diff. Nothing hosted is to be run without a separate approval.
+**NEXT:** the owner decides on P-A2 (after its independent security review) and on Delete Account for phone accounts
+before any phone sign-in is enabled anywhere.
+
+## PHONE AUTH C2 — PHONE ACCOUNT LIFECYCLE (2026-11-22)
+
+Status: code CODE_PROVEN (tests + analyzer). Uncommitted. Designs are PROPOSALS ONLY in
+`docs/PHONE_ACCOUNT_SECURITY_DESIGN.md`. No Worker change, no session-rule or hook change, no hosted change. Phone auth
+stays behind `PHONE_AUTH_ENABLED=false`.
+
+**Code:**
+- **Add Email** (`SupabaseAuthRepository.addEmailToAccount`, reachable only from the Edit Profile entry shown to accounts
+  without an email). It now:
+  - requires a Single-Active-Device-authorized session;
+  - refuses accounts that already have an email, so email accounts keep Email Change unchanged;
+  - checks the address format and the one `PasswordPolicy` before any request;
+  - sets the password first, then requests the address with `emailRedirectTo: authCallbackUri` (PKCE, like Email
+    Change);
+  - accepts `same_password` so a retry is safe;
+  - returns typed failures without provider text.
+- `addEmailErrorKey` (in `edit_profile_viewmodel.dart`) reuses the existing `emailChange*` / `passwordChange*` keys.
+  The Edit Profile Add Email failure toast and the email verification dialog's check-failure toast no longer show raw
+  exception text.
+- Test seams: `SignInViewModel(phoneAuthEnabled:)`, `SignUpViewModel(phoneAuthEnabled:)` and
+  `PhoneOtpView(phoneAuthEnabled:)`. These are tests only; the app uses the build switch.
+
+**Evidence (agent-run):**
+- New `test/auth/phone_account_lifecycle_test.dart`:
+  - D1–D9: Add Email on a real SupabaseClient with PKCE storage.
+  - W1–W9: the real code screen and the Login/Sign-up code requests under GoRouter. Home only after an authorized
+    sign-in; a refused, slow or failing sign-in stays on the code screen; one verification at a time.
+- With `phone_sign_in_test.dart`: 52/52.
+- Regression `test/auth test/account test/profile test/responsive`: **2,382/2,382 pass**.
+- `flutter analyze lib`: 0 errors, 0 warnings, 81 pre-existing infos (none in C1/C2 files).
+- `git diff --check` is clean. The generated registrant and the four stashes are unchanged.
+
+**Pre-existing findings (not fixed; see the design doc), from GoTrue v2.198.0 source:**
+- **F-AP-1 (High):** a `phone_change` confirmation needs no session and issues one to whoever has the code, so a
+  mistyped or recycled new number can take over the account (`verify.go`).
+- **F-AP-2 (Medium):** the Add Phone "resend" looks the account up by its *confirmed* phone and silently sends nothing
+  for a first phone (`resend.go`).
+
+**Independent P-A2 review:** do not adopt P-A2 as written. Recommended: Model X (email-primary accounts never hold
+`auth.users.phone`). Owner decision pending.
+
+**NOW:** the owner reviews the C2 diff and decides between Model X, revised P-A2, or deferring; and on the interim
+protection for Add Phone (design doc §5).
+**NEXT:** implement the approved model's provider-independent parts (database guard, Worker skeleton with a provider
+interface, client wiring), then the staging tests in design doc §6.
+
+## PHONE AUTH C3 — MODEL X, LOCAL IMPLEMENTATION (2026-11-22)
+
+Status: CODE_PROVEN locally (tests, analyzer, mutation checks). Uncommitted. **Nothing hosted**: no migration applied,
+no Worker deployed, no hook, no SMS, no Supabase or Twilio setting changed. `PHONE_AUTH_ENABLED` stays false.
+Owner decision: Model X (see `docs/DECISIONS.md`). Not production-ready until proven on a separate Supabase staging
+project with a real verification service.
+
+**Database** — `supabase/migrations/20261122130000_phone_identity_model_x.sql` (additive except two replaced
+function bodies: `sync_auth_identity_to_profile` and the B1 hook):
+- Refuses to install if any email account holds `auth.users.phone`; clears every pending self-service phone change.
+- `account_sign_in_methods` (email | phone, fixed by an AFTER INSERT trigger; existing accounts backfilled; clients
+  read their own row only from the current app session).
+- `guard_auth_phone_identity` (BEFORE INSERT/UPDATE OF phone, phone_change, phone_change_token, phone_change_sent_at
+  on `auth.users`): no email+phone at creation; **no self-service phone change or re-send for any account (closes
+  F-AP-1 and F-AP-2 server-side)**; an email account never gets a sign-in number; a phone account's number changes
+  only against an unexpired, unconsumed, single-use grant for exactly that number and is never cleared; one number,
+  one account (advisory lock per number).
+- The identity sync no longer overwrites an email account's contact number.
+- `phone_verifications` + service-role-only functions (start with per-account and per-number ceilings of 5/hour,
+  attach provider reference, attempt cap 5 and expiry kept as results, contact confirm idempotent, current-number
+  proof, grant). Every record is bound to (account, session).
+- B1 hook also refuses a number that already belongs to an account.
+- `supabase/tests/phone_identity_model_x_test.sql` (pgTAP, 97 assertions); `phone_security_test.sql` rewritten for
+  Model X (24); rollback-only `supabase/validation/phone_identity_model_x_validation.sql` (includes B1 first when B1 is
+  not applied, via psql `\if`) and `phone_identity_model_x_rollback.sql` (restores both replaced bodies byte for byte).
+
+**Worker** — `cloudflare/workers/r2-profile-upload/phone_verification.js` (no package imports), routed in `worker.js`
+behind the staging gate: `/account/contact-phone/start|confirm`, `/account/phone-identity/start|confirm`. Verified
+token + `session_id` + Single Active Device + no recovery session; provider adapter interface (`start`, `check`);
+`providerFromEnv` returns null, so every route answers 503 `verification_unavailable` before writing anything. The
+current number is taken from the verified identity, its Supabase check session must be revoked, the new number is
+written with the Auth Admin API only after the database grant. Fixed error codes, nothing sensitive logged.
+
+**App** — Add Phone (`SupabaseAuthRepository.request/resend/confirmPhoneVerification`) now uses
+`lib/src/services/contact_phone_service.dart` (Worker) and never `updateUser(phone)` / `verifyOTP(phoneChange)` /
+`resend(phoneChange)`. The verification belongs to the account and session that started it. One text changed:
+`phoneAdditionInfo` (EN/AR) now says the number is a contact number that cannot be used to sign in.
+**Add Email (C2 review)**: only the address is requested; the chosen password is held in memory and set by
+`completeAddEmail()` only after `GET /auth/v1/user` reports that address confirmed for the same account. A transient
+failure keeps it for a retry; a permanent refusal leaves the email added and shows the new
+`emailAddedSetPasswordWithReset` hint ("Forgot password"). No screen layout changed.
+
+**Evidence (agent-run, local):**
+- PGlite (real PostgreSQL 17 engine, pgTAP emulation — not Supabase, not GoTrue): the full 23-migration chain applies;
+  phone pgTAP files 24 + 44 + 97 pass; the other suites unchanged (`rls_test.sql` fails at #3 identically with and
+  without Model X: pre-existing Single Active Device gate in that older test); GoTrue-role checks (as
+  `supabase_auth_admin`); install-time checks; rollback restores the catalog exactly; validation prints PASS with and
+  without B1 and leaves nothing behind. SQL mutations: 35/35 caught.
+- Worker: `node --test` 343/343 (43 new). Worker mutations: 20/20 caught.
+- Flutter: new `test/auth/contact_phone_test.dart`; D-group of `phone_account_lifecycle_test.dart` rewritten
+  (D1–D16); focused phone/auth files 134/134; regression `test/auth test/account test/profile test/responsive`:
+  **2,403/2,403 pass**. `flutter analyze` on every changed Dart file: no issues.
+- `git diff --check` clean; generated registrant and the four stashes unchanged.
+
+**Not proven:** real GoTrue behaviour (Admin API phone write and the guard's error shape, `/verify type=sms` check
+sessions and their revocation, `Sb-Forwarded-For`, Secure-password-change behaviour for `completeAddEmail`), any SMS
+provider, a device run.
+
+**Hosted steps that each need the owner's approval (none done):**
+1. Rollback-only validation of B1 + Model X with psql (`phone_identity_model_x_validation.sql`).
+2. Applying the two migrations (staging project first, once one exists).
+3. Deploying the Worker with the new routes (they answer 503 until a provider is configured).
+4. Choosing an SMS verification provider, its adapter and secrets.
+
+**NOW:** the owner reviews the C3 diff.
+**NEXT:** a separate Supabase staging project; then the approved hosted steps above; then Delete Account for phone
+accounts and a screen for changing a phone account's number (both need owner design approval).
+
+## PHONE AUTH C4 — PHONE ACCOUNT LIFECYCLE (2026-11-22, branch `phone-auth-implementation`)
+
+Status: CODE_PROVEN locally (tests, analyzer, mutation checks). Uncommitted. **Nothing hosted.** Not
+VERIFIED_HOSTED, not VERIFIED_REAL_DEVICE. `PHONE_AUTH_ENABLED` stays false.
+
+**Branch:** at the owner's request all B1–C4 work moved from `notifications-implementation` to the new branch
+`phone-auth-implementation`, created at the same commit `6f65a6f` (uncommitted changes carried over; nothing
+committed; `notifications-implementation` unchanged; stashes and the generated registrant untouched).
+
+**Delete Account, phone accounts:**
+- Migration `20261122140000_phone_account_deletion.sql`: `account_deletion_challenges` (account, session, attempts,
+  hourly count, expiry, used; no number, code or token), service-role functions `account_deletion_challenge_issue`
+  (phone accounts only, 3 per hour), `_attempt` (bound to the session; 5 attempts; outcomes returned, not raised) and
+  `_consume` (single use). pgTAP `phone_account_deletion_test.sql` (43), rollback-only validation (includes B1 and Model
+  X when not applied, via psql `\if`) and rollback scripts.
+- Worker (`account_deletion.js`, routed in `worker.js`): `POST /account/delete/challenge` (verified token, current app
+  session, no recovery session, the account's own confirmed number from the identity, challenge recorded before the
+  Supabase code is requested with `create_user:false`). `POST /account/delete { code }` without a password: attempt on
+  this session's challenge, `/auth/v1/verify type=sms`, the check session revoked (a failed revocation stops it), same
+  account, challenge used up, then the existing deletion lifecycle unchanged. A body with a password always takes the
+  unchanged password path.
+- App: `PhoneAccountDeletionGateway` on `WorkerAccountDeletionGateway`; `DeleteAccountViewModel` with
+  `DeleteAccountProof.phoneCode` (same lifecycle as the password path: offline revocation first, unknown outcomes
+  settled through Supabase Auth); the sheet's confirm step for phone accounts (phone line, Send code, code field,
+  same acknowledgement and button; "Use my password instead" when the account has an email).
+
+**Change Phone (phone accounts):** `PhoneNumberChangeCapability` + `SignInPhoneSource` on `SupabaseAuthRepository`
+(the sign-in number comes from Supabase Auth, so email accounts never qualify), `ChangePhoneViewModel`,
+`ChangePhoneCodesDialog` (current-number code + new-number code; once the current code was accepted only the new one
+is asked again), `PhoneAdditionDialog` reused with title/info keys. Edit Profile's phone row shows "Change" for phone
+accounts only; email accounts keep the locked contact-number row. No session refresh is forced after a change (a
+refused refresh signs the user out); the repository remembers the new number until the regular refresh.
+
+**Model X rollback data plan:** `phone_identity_model_x_rollback.sql` now copies every sign-in method and every email
+account's verified contact number into `public.model_x_rollback_backup` (RLS on, no client or service-role access,
+rows removed with their account) before dropping anything, and refuses to run while C4 is applied. Re-applying
+`20261122130000` honours the backup (phone accounts that added an email are not refused or re-classified) and
+restores contact numbers that are still free; a number taken meanwhile stays in the backup with a notice. Proven on
+PGlite (R1–R7), including the risk itself (the restored pre-Model X sync clears a contact number at the next identity
+update).
+
+**Evidence (agent-run, local):**
+- PGlite (real PostgreSQL 17 engine, pgTAP emulation — not Supabase, not GoTrue): the 25-migration chain applies;
+  phone pgTAP 24 + 44 + 97 + 43 pass; other suites unchanged (`rls_test.sql` #3 pre-existing, identical with and
+  without the new migrations); C4 rollback restores the catalog exactly; validation PASS in all three starting states
+  and leaves nothing. SQL mutations: C4 + rollback data plan 25/25, Model X 35/35.
+- Worker: `node --test` 359/359 (16 new phone deletion tests); phone deletion mutations 14/14.
+- Flutter: new `test/account/delete_account_phone_test.dart` (24) and `test/auth/change_phone_test.dart` (26); regression
+  `test/auth test/account test/profile test/responsive`: **2,453/2,453 pass**; analyzer: no issues on every changed file.
+- Screens rendered for review (scratch PNGs, EN/AR): Delete Account phone step, Change Phone number and code dialogs.
+
+**Not proven:** real GoTrue (`/otp` + `/verify type=sms` for deletion, check-session revocation, Admin API phone write,
+error shapes), any SMS, the screens on a device.
+
+**NOW:** the owner reviews the C4 diff and the screenshots.
+**NEXT:** separate Supabase staging project, then the approved hosted steps, then real-device tests.

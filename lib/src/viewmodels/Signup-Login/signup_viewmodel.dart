@@ -1,17 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/password_policy.dart';
+import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/repositories/auth_failure.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/phone_otp_viewmodel.dart';
 
 enum SignupMethod { phone, email }
 
 class SignUpViewModel extends ChangeNotifier {
+  /// [phoneAuthEnabled] overrides the build switch for tests only; the app
+  /// always uses [phoneSignUpSupported].
+  SignUpViewModel({bool? phoneAuthEnabled})
+      : _phoneAuthEnabled = phoneAuthEnabled ?? phoneSignUpSupported;
+
+  final bool _phoneAuthEnabled;
+
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
@@ -45,22 +57,20 @@ class SignUpViewModel extends ChangeNotifier {
   String get email => emailController.text;
   String get password => passwordController.text;
   String get confirmPassword => confirmPasswordController.text;
-  /// Whether phone registration can actually complete.
+  /// Whether this build attempts phone registration (Supabase OTP).
   ///
-  /// It is not implemented with Supabase as the auth authority: an account is
-  /// created by email and a phone number is verified for it afterwards from
-  /// Edit Profile.
+  /// Off unless the build sets `PHONE_AUTH_ENABLED`; then [signUpWithPhone]
+  /// keeps its existing "not available yet" message. This is a client switch
+  /// only: the server's sign-up policy decides whether an account is created.
   ///
   /// This reports capability only. It deliberately does **not** hide the Phone
-  /// tab: the product owner owns that UI. Where registration cannot complete,
-  /// [signUpWithPhone] says so plainly.
-  static bool get phoneSignUpSupported => !SupabaseConfig.useSupabaseAuth;
+  /// tab: the product owner owns that UI.
+  static bool get phoneSignUpSupported =>
+      SupabaseConfig.useSupabaseAuth && SupabaseConfig.phoneAuthEnabled;
 
-  /// Email is the initially selected method wherever phone registration cannot
-  /// complete, so the screen never *opens* on a method that cannot finish. The
-  /// Phone tab is still present and selectable.
-  static SignupMethod get initialSignupMethod =>
-      phoneSignUpSupported ? SignupMethod.phone : SignupMethod.email;
+  /// The screen opens on Email. Opening on Phone instead is a product-owner
+  /// UI decision that has not been made; the Phone tab stays selectable.
+  static SignupMethod get initialSignupMethod => SignupMethod.email;
 
   SignupMethod signupMethod = initialSignupMethod;
 
@@ -366,16 +376,69 @@ class SignUpViewModel extends ChangeNotifier {
     }
   }
 
+  /// Requests a phone sign-up code and, once it was sent, opens the code
+  /// screen. Sending a code is not registration: the account is usable only
+  /// after the code is verified and the session is authorized. The name is
+  /// carried to the code screen and saved only after that, never sent with
+  /// the code request.
   Future<void> signUpWithPhone(BuildContext context) async {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
+    final gateway =
+        _phoneAuthEnabled ? context.read<AuthViewModel>().phoneSignIn : null;
 
-    if (!phoneSignUpSupported) {
+    if (gateway == null) {
       _phoneError = translate('phoneSignUpUnavailable');
       _setLoading(false);
       _showToast(_phoneError!, Colors.orange);
       if (!_disposed) notifyListeners();
       return;
+    }
+    if (_isLoading) return;
+
+    _clearErrors();
+    var valid = true;
+    final displayName = name.trim();
+    if (displayName.isEmpty) {
+      _nameError = translate('nameRequired');
+      valid = false;
+    }
+    String? phoneE164;
+    try {
+      phoneE164 = PhoneNumberNormalizer.normalizeUaeMobile(phone);
+    } on PhoneValidationException {
+      _phoneError = translate('invalidUAEPhoneNumber');
+      valid = false;
+    }
+    if (!valid || phoneE164 == null) {
+      if (!_disposed) notifyListeners();
+      return;
+    }
+
+    _setLoading(true);
+    try {
+      await gateway.requestPhoneSignInCode(
+        phoneE164: phoneE164,
+        createAccount: true,
+      );
+      if (context.mounted) {
+        unawaited(context.push(
+          '/phone-otp',
+          extra: PhoneOtpArgs(
+            phoneNumber: phoneE164,
+            isSignup: true,
+            displayName: displayName,
+            codeSentAt: DateTime.now(),
+          ),
+        ));
+      }
+    } on AuthFailure catch (e) {
+      _phoneError =
+          translate(PhoneOtpViewModel.errorKeyFor(e, isSignup: true));
+    } catch (_) {
+      _phoneError = translate('verificationFailed');
+    } finally {
+      if (!_disposed) _setLoading(false);
     }
   }
 

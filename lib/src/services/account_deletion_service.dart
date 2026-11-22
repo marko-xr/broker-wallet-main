@@ -54,6 +54,11 @@ enum AccountDeletionFailureCode {
   /// Account deletion is not available from this server. Nothing was deleted.
   unavailable,
 
+  /// Phone accounts: there is no usable deletion code for this session (none
+  /// requested from it, already used, or expired). A new code is needed.
+  /// Nothing was deleted.
+  codeExpired,
+
   unknown,
 }
 
@@ -70,6 +75,7 @@ const Set<AccountDeletionFailureCode> accountDeletionNotAttempted = {
   AccountDeletionFailureCode.serverDeleteFailed,
   AccountDeletionFailureCode.rateLimited,
   AccountDeletionFailureCode.unavailable,
+  AccountDeletionFailureCode.codeExpired,
 };
 
 class AccountDeletionFailure implements Exception {
@@ -92,6 +98,22 @@ abstract class AccountDeletionGateway {
   Future<void> deleteAccount({
     required String expectedUid,
     required String password,
+  });
+}
+
+/// Deletion confirmed by a code sent to a phone account's own sign-in number
+/// (Model X). The number is never sent: the server takes it from the session.
+abstract class PhoneAccountDeletionGateway {
+  /// Asks the server to send a deletion code for the live session, which
+  /// must be [expectedUid]. Throws [AccountDeletionFailure].
+  Future<void> requestDeletionCode({required String expectedUid});
+
+  /// Deletes the account of the live session with [code]. Completes normally
+  /// only when the server reported the account deleted. Throws
+  /// [AccountDeletionFailure].
+  Future<void> deleteAccountWithCode({
+    required String expectedUid,
+    required String code,
   });
 }
 
@@ -168,7 +190,8 @@ class AccountDeletionCredentials {
 /// a Supabase Auth user. This client sends the live session's access token and
 /// the password the user just typed, and nothing else — no user id, no object
 /// key. The password is neither stored nor logged.
-class WorkerAccountDeletionGateway implements AccountDeletionGateway {
+class WorkerAccountDeletionGateway
+    implements AccountDeletionGateway, PhoneAccountDeletionGateway {
   WorkerAccountDeletionGateway({
     http.Client? httpClient,
     AccountDeletionCredentials? Function()? readCredentials,
@@ -197,6 +220,54 @@ class WorkerAccountDeletionGateway implements AccountDeletionGateway {
     required String expectedUid,
     required String password,
   }) async {
+    final (response, token) = await _post(
+      '/account/delete',
+      {'password': password},
+      expectedUid: expectedUid,
+    );
+    interpretAccountDeletionResponse(
+      response.statusCode,
+      response.body,
+      accessToken: token,
+    );
+  }
+
+  @override
+  Future<void> requestDeletionCode({required String expectedUid}) async {
+    final (response, token) = await _post(
+      '/account/delete/challenge',
+      const <String, Object?>{},
+      expectedUid: expectedUid,
+    );
+    interpretDeletionChallengeResponse(
+      response.statusCode,
+      response.body,
+      accessToken: token,
+    );
+  }
+
+  @override
+  Future<void> deleteAccountWithCode({
+    required String expectedUid,
+    required String code,
+  }) async {
+    final (response, token) = await _post(
+      '/account/delete',
+      {'code': code},
+      expectedUid: expectedUid,
+    );
+    interpretAccountDeletionResponse(
+      response.statusCode,
+      response.body,
+      accessToken: token,
+    );
+  }
+
+  Future<(http.Response, String)> _post(
+    String path,
+    Map<String, Object?> payload, {
+    required String expectedUid,
+  }) async {
     if (!R2Config.isConfigured) {
       throw const AccountDeletionFailure(
         AccountDeletionFailureCode.unavailable,
@@ -218,28 +289,50 @@ class WorkerAccountDeletionGateway implements AccountDeletionGateway {
       );
     }
 
-    final http.Response response;
     try {
-      response = await _http
+      final response = await _http
           .post(
-            Uri.parse('${R2Config.workerUrl}/account/delete'),
+            Uri.parse('${R2Config.workerUrl}$path'),
             headers: {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',
             },
-            body: jsonEncode({'password': password}),
+            body: jsonEncode(payload),
           )
           .timeout(requestTimeout);
+      return (response, token);
     } on TimeoutException {
       throw const AccountDeletionFailure(AccountDeletionFailureCode.network);
     } catch (_) {
       throw const AccountDeletionFailure(AccountDeletionFailureCode.network);
     }
+  }
+}
 
-    interpretAccountDeletionResponse(
-      response.statusCode, response.body, accessToken: token,
+/// Accepts only the exact challenge success; anything else becomes a fixed
+/// failure read from the `error` code alone.
+void interpretDeletionChallengeResponse(int statusCode, String body,
+    {String? accessToken}) {
+  String? status;
+  String? error;
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map) {
+      final rawStatus = decoded['status'];
+      final rawError = decoded['error'];
+      if (rawStatus is String) status = rawStatus;
+      if (rawError is String) error = rawError;
+    }
+  } catch (_) {}
+
+  if (statusCode == 200 && status == 'code_sent') return;
+  if (error == 'session_superseded' && accessToken != null) {
+    AppSessionCoordinator.reportBackendError(
+      'session_superseded',
+      accessToken: accessToken,
     );
   }
+  throw AccountDeletionFailure(_failureCodeFor(statusCode, error));
 }
 
 /// Accepts only the exact success response; anything else becomes a fixed
@@ -290,6 +383,13 @@ AccountDeletionFailureCode _failureCodeFor(int statusCode, String? error) {
       return AccountDeletionFailureCode.rateLimited;
     case 'service_unavailable':
       return AccountDeletionFailureCode.network;
+    case 'challenge_required':
+    case 'challenge_expired':
+      return AccountDeletionFailureCode.codeExpired;
+    case 'too_many_attempts':
+      return AccountDeletionFailureCode.rateLimited;
+    case 'verification_unavailable':
+      return AccountDeletionFailureCode.unavailable;
   }
   if (statusCode == 401) return AccountDeletionFailureCode.sessionExpired;
   if (statusCode == 429) return AccountDeletionFailureCode.rateLimited;

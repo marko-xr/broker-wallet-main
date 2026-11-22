@@ -1,20 +1,31 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/email_validator.dart';
+import 'package:broker_wallet/src/common/utils/phone_number_normalizer.dart';
+import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/phone_otp_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/password_reset_request_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/password_reset_request_sheet.dart';
 
 enum LoginMethod { phone, email }
 
 class SignInViewModel extends ChangeNotifier {
+  /// [phoneAuthEnabled] overrides the build switch for tests only; the app
+  /// always uses [phoneSignInSupported].
+  SignInViewModel({bool? phoneAuthEnabled})
+      : _phoneAuthEnabled = phoneAuthEnabled ?? phoneSignInSupported;
+
+  final bool _phoneAuthEnabled;
 
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
@@ -27,22 +38,20 @@ class SignInViewModel extends ChangeNotifier {
   String? _passwordError;
   String? _phoneError;
   String _countryCode = '+971';
-  /// Whether phone sign-in can actually complete.
+  /// Whether this build attempts phone sign-in (Supabase OTP).
   ///
-  /// It is not implemented with Supabase as the auth authority: a phone number
-  /// is verified for an already signed-in account from Edit Profile instead.
+  /// Off unless the build sets `PHONE_AUTH_ENABLED`; then [sendOTP] keeps its
+  /// existing "not available yet" message. This is a client switch only: the
+  /// server decides whether a phone sign-in can actually happen.
   ///
   /// This reports capability only. It deliberately does **not** hide the Phone
-  /// tab: the product owner owns that UI. Where sign-in cannot complete,
-  /// [sendOTP] says so plainly rather than the screen pretending the option
-  /// does not exist.
-  static bool get phoneSignInSupported => !SupabaseConfig.useSupabaseAuth;
+  /// tab: the product owner owns that UI.
+  static bool get phoneSignInSupported =>
+      SupabaseConfig.useSupabaseAuth && SupabaseConfig.phoneAuthEnabled;
 
-  /// Email is the initially selected method wherever phone sign-in cannot
-  /// complete, so the screen never *opens* on a method that cannot finish.
-  /// The Phone tab is still present and selectable.
-  static LoginMethod get initialLoginMethod =>
-      phoneSignInSupported ? LoginMethod.phone : LoginMethod.email;
+  /// The screen opens on Email. Opening on Phone instead is a product-owner
+  /// UI decision that has not been made; the Phone tab stays selectable.
+  static LoginMethod get initialLoginMethod => LoginMethod.email;
 
   LoginMethod loginMethod = initialLoginMethod;
 
@@ -153,15 +162,60 @@ class SignInViewModel extends ChangeNotifier {
     );
   }
 
+  /// Requests a phone sign-in code and, once it was sent, opens the code
+  /// screen. Never creates an account: an unknown number is reported.
   Future<void> sendOTP(BuildContext context) async {
     final loc = AppLocalizations.of(context);
     final translate = loc.translate;
+    final gateway =
+        _phoneAuthEnabled ? context.read<AuthViewModel>().phoneSignIn : null;
 
-    if (!phoneSignInSupported) {
+    if (gateway == null) {
       _phoneError = translate('phoneSignInUnavailable');
       _showToast(_phoneError!, Colors.orange);
       if (!_disposed) notifyListeners();
       return;
+    }
+    if (_isLoading) return;
+
+    final String phone;
+    try {
+      phone = PhoneNumberNormalizer.normalizeUaeMobile(phoneController.text);
+    } on PhoneValidationException {
+      _phoneError = translate('invalidUAEPhoneNumber');
+      if (!_disposed) notifyListeners();
+      return;
+    }
+
+    _isLoading = true;
+    _phoneError = null;
+    if (!_disposed) notifyListeners();
+
+    try {
+      await gateway.requestPhoneSignInCode(
+        phoneE164: phone,
+        createAccount: false,
+      );
+      if (context.mounted) {
+        unawaited(context.push(
+          '/phone-otp',
+          extra: PhoneOtpArgs(
+            phoneNumber: phone,
+            isSignup: false,
+            codeSentAt: DateTime.now(),
+          ),
+        ));
+      }
+    } on AuthFailure catch (e) {
+      _phoneError =
+          translate(PhoneOtpViewModel.errorKeyFor(e, isSignup: false));
+    } catch (_) {
+      _phoneError = translate('verificationFailed');
+    } finally {
+      if (!_disposed) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 

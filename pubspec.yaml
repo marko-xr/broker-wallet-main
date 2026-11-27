@@ -191,7 +191,7 @@ flutter:
           weight: 400
     - family: NotoNaskhArabicBold
       fonts:
-        - asset: assets/fonts/Noto_Naskh_Arabic_Bold/NotoNaskhArabic-VariableFont_wght.ttf
+        - asset: assets/fonts/Noto_Naskh_Arabic/NotoNaskhArabic-VariableFont_wght.ttf
           weight: 700
     - family: NotoSans
       fonts:
@@ -202,7 +202,7 @@ flutter:
           style: italic
     - family: NotoSansBold
       fonts:
-        - asset: assets/fonts/Noto_Sans_Bold/NotoSans-VariableFont_wdth,wght.ttf
+        - asset: assets/fonts/Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf
           weight: 700
   #
   # For details regarding fonts from package dependencies,

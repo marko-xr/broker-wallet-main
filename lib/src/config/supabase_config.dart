@@ -64,6 +64,44 @@ abstract final class SupabaseConfig {
   static const bool phoneAuthEnabled =
       bool.fromEnvironment('PHONE_AUTH_ENABLED');
 
+  /// Whether saves and quota checks use the server-authoritative subscription
+  /// functions. Off by default because no hosted database has that migration
+  /// yet. It must be turned on in the same rollout that applies it, since the
+  /// migration removes the direct client writes the off path uses.
+  static const bool subscriptionBackendEnabled =
+      bool.fromEnvironment('SUBSCRIPTION_BACKEND');
+
+  /// The hosted production project. A build pointing at it is never Staging,
+  /// whatever its flags say.
+  static const String productionProjectRef = 'rbvcnvqpdqrhywcgxkne';
+
+  static const String deploymentEnvironment =
+      String.fromEnvironment('BW_DEPLOYMENT_ENV');
+
+  /// Only decides whether the debug test control is drawn. The Staging backend
+  /// makes the real decision and refuses everywhere else.
+  static bool get isStagingBackend =>
+      deploymentEnvironment == 'staging' &&
+      !url.contains(productionProjectRef);
+
+  /// Set only on the build that goes to the public stores.
+  static const bool isPublicRelease = bool.fromEnvironment('BW_PUBLIC_RELEASE');
+
+  /// Why this build must not start as a public release, or null. A public build
+  /// must never silently fall back to the old client-side quota paths or point
+  /// at Staging, so the app refuses to start instead.
+  static String? get publicReleaseProblem {
+    if (!isPublicRelease) return null;
+    if (!subscriptionBackendEnabled) return 'SUBSCRIPTION_BACKEND must be true';
+    if (deploymentEnvironment != 'production') {
+      return 'BW_DEPLOYMENT_ENV must be production';
+    }
+    if (!url.contains(productionProjectRef)) {
+      return 'SUPABASE_URL must be the production project';
+    }
+    return null;
+  }
+
   static bool get isConfigured =>
       url.trim().isNotEmpty && publishableKey.trim().isNotEmpty;
 }

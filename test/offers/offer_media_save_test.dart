@@ -85,7 +85,8 @@ class _FakeEntities extends SupabaseCoreEntitiesService {
   }
 
   @override
-  Future<String> saveOffer(OfferModel model, {String? offerId}) async {
+  Future<String> saveOffer(OfferModel model,
+      {String? offerId, List<String?> mediaIds = const []}) async {
     log.add('save');
     if (failSave) throw StateError('row refused');
     rows[offerId!] = model.copyWith(id: offerId);
@@ -93,7 +94,8 @@ class _FakeEntities extends SupabaseCoreEntitiesService {
   }
 
   @override
-  Future<void> updateOffer(String id, OfferModel model) async {
+  Future<void> updateOffer(String id, OfferModel model,
+      {List<String?> mediaIds = const []}) async {
     log.add('update');
     rows[id] = model.copyWith(id: id);
   }

@@ -13,6 +13,8 @@ import 'package:broker_wallet/src/viewmodels/profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_labels.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_scope.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key, this.userRepository});
@@ -174,6 +176,9 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.workspace_premium_outlined,
                               title: localization.translate('myPlan'),
+                              subtitle: localization.planLine(
+                                SubscriptionScope.of(context),
+                              ),
                               onTap: () => context.push('/my-plan'),
                             ),
                             SettingsTile(
@@ -182,6 +187,8 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.card_membership_outlined,
                               title: localization.translate('subscriptions'),
+                              subtitle:
+                                  localization.translate('subCompareSubtitle'),
                               onTap: () => context.push('/subscription'),
                             ),
                             SettingsTile(
@@ -190,6 +197,9 @@ class ProfileView extends StatelessWidget {
                               isSvg: false,
                               materialIcon: Icons.receipt_long_outlined,
                               title: localization.translate('billingPayments'),
+                              subtitle: localization.billingLine(
+                                SubscriptionScope.of(context),
+                              ),
                               onTap: () => context.push('/billing-payments'),
                             ),
                           ],

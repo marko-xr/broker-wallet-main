@@ -57,15 +57,16 @@ class FeedbackService {
     try {
       final deviceInfo = DeviceInfoPlugin();
 
-      if (Platform.isAndroid) {
+      // The browser check comes first: Platform throws in a browser.
+      if (kIsWeb) {
+        final webInfo = await deviceInfo.webBrowserInfo;
+        return '${webInfo.browserName} ${webInfo.appVersion}';
+      } else if (Platform.isAndroid) {
         final androidInfo = await deviceInfo.androidInfo;
         return '${androidInfo.brand} ${androidInfo.model} (Android ${androidInfo.version.release})';
       } else if (Platform.isIOS) {
         final iosInfo = await deviceInfo.iosInfo;
         return '${iosInfo.name} ${iosInfo.model} (iOS ${iosInfo.systemVersion})';
-      } else if (kIsWeb) {
-        final webInfo = await deviceInfo.webBrowserInfo;
-        return '${webInfo.browserName} ${webInfo.appVersion}';
       }
       return 'Unknown Device';
     } catch (e) {

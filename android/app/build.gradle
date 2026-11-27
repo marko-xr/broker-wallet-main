@@ -48,7 +48,8 @@ android {
     defaultConfig {
         applicationId = "com.nmodigital.brokerwallet"
         minSdkVersion flutter.minSdkVersion
-        targetSdk = 35  // Update to latest
+        // Google Play requires API 36 for new apps and updates since 31 August 2026.
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled true  // Add this for large apps

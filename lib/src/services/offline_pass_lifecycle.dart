@@ -74,10 +74,19 @@ class OfflinePassLifecycle {
       revocationMarker: FileOfflinePassRevocationMarker(),
     ),
   );
+
+  /// A browser has no `Platform` and no durable journal file.
+  static final OfflinePassLifecycle _browser = OfflinePassLifecycle(
+    OfflineSessionLease(
+      store: SecureOfflinePassStore(),
+      revocationMarker: FileOfflinePassRevocationMarker(),
+    ),
+  );
   static OfflinePassLifecycle? _override;
 
   /// The single instance every caller uses (OFF-2b-4 admits through it).
-  static OfflinePassLifecycle get shared => _override ?? _platform;
+  static OfflinePassLifecycle get shared =>
+      _override ?? (kIsWeb ? _browser : _platform);
 
   @visibleForTesting
   static set debugShared(OfflinePassLifecycle? value) => _override = value;

@@ -32,8 +32,10 @@ class OfficeService {
     }
   }
 
-  Future<String?> saveOffice(OfficeModel office) async {
-    return _supabase.saveOffice(office);
+  String newRecordId() => _supabase.generateId();
+
+  Future<String?> saveOffice(OfficeModel office, {String? recordId}) async {
+    return _supabase.saveOffice(office, recordId: recordId);
   }
 
   Future<void> updateOffice(String officeId, OfficeModel office) async {

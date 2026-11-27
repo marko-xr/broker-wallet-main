@@ -29,10 +29,20 @@ select is(
   'email confirmation syncs to profile verification state'
 );
 
+-- Each identity holds its account's active app session (Single Active Device).
+insert into auth.sessions (id, user_id, created_at, updated_at)
+values
+  ('a1a1a1a1-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', now(), now()),
+  ('b2b2b2b2-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', now(), now());
+insert into public.user_active_sessions (user_id, active_session_id)
+values
+  ('11111111-1111-4111-8111-111111111111', 'a1a1a1a1-1111-4111-8111-111111111111'),
+  ('22222222-2222-4222-8222-222222222222', 'b2b2b2b2-2222-4222-8222-222222222222');
+
 -- Create one B-owned request as B.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
-select set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"b2b2b2b2-2222-4222-8222-222222222222"}', true);
 
 select lives_ok($$
   insert into public.requests (id, owner_id, request_type, status, min_price, max_price)
@@ -41,7 +51,7 @@ $$, 'user B can insert own request');
 
 -- Switch JWT identity to A while remaining in authenticated role.
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
-select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"a1a1a1a1-1111-4111-8111-111111111111"}', true);
 
 select lives_ok($$
   insert into public.requests (id, owner_id, request_type, status, min_price, max_price)

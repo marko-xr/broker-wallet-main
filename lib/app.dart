@@ -48,6 +48,8 @@ import 'package:broker_wallet/src/Views/Screens/home/Profile/profile_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/share_app_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_routes.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/subscription_backend_scope.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/my_plan_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/Profile/notification_settings_view.dart';
 import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
@@ -69,6 +71,8 @@ import 'package:broker_wallet/src/Views/Screens/home/analytics/analytics_view.da
 import 'package:broker_wallet/src/Views/Screens/home/notifications/notifications_list_view.dart';
 import 'package:broker_wallet/src/Views/Screens/home/notifications/match_details_view.dart';
 
+import 'package:broker_wallet/src/services/subscription/payment_navigation.dart';
+import 'package:broker_wallet/src/services/web_start_route.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
 
@@ -229,7 +233,9 @@ class _MyAppState extends State<MyApp> {
                   bottom: true,
                   left: false,
                   right: false,
-                  child: child ?? const SizedBox.shrink(),
+                  child: SubscriptionBackendScope(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             );
@@ -476,17 +482,37 @@ GoRouter _createRouter(
     refreshListenable: Listenable.merge(
       [authViewModel, passwordRecoveryViewModel],
     ),
-    redirect: (context, state) => resolveAuthRedirect(
-      authViewModel.status,
-      state.uri.path,
+    redirect: (context, state) {
       // Two sources, and deliberately so. `AuthViewModel` answers for a live
       // recovery *session* and publishes that answer in the same notification
       // as the session itself, which is what removes the race. The view model
       // answers only for a recovery that has no session at all — a dead link —
       // where there is nothing for the router to mistake for a login.
-      passwordRecoveryActive: authViewModel.isPasswordRecoveryActive ||
-          passwordRecoveryViewModel.holdsRoute,
-    ),
+      final recovering = authViewModel.isPasswordRecoveryActive ||
+          passwordRecoveryViewModel.holdsRoute;
+      final target = resolveAuthRedirect(
+        authViewModel.status,
+        state.uri.path,
+        passwordRecoveryActive: recovering,
+      );
+      final signedIn =
+          authViewModel.status == AuthStatus.authenticated && !recovering;
+      if (target != null) {
+        // A refreshed browser goes back to its page, not to Home. Its route
+        // is then checked by this same redirect.
+        if (target != '/home' || !signedIn) return target;
+        return PaymentReturnStore.redirectFor(target, isAuthenticated: true) ??
+            WebStartRoute.pending ??
+            target;
+      }
+      if (signedIn) WebStartRoute.arrived(state.uri.path);
+      // The auth gates always win; only then may a browser finish its return
+      // from Tap, whose result the server still verifies.
+      return PaymentReturnStore.redirectFor(
+        state.uri.path,
+        isAuthenticated: signedIn,
+      );
+    },
     routes: [
       GoRoute(
         path: '/',
@@ -927,6 +953,7 @@ GoRouter _createRouter(
         path: '/billing-payments',
         builder: (context, state) => const BillingPaymentsView(),
       ),
+      ...subscriptionProfileRoutes(),
       GoRoute(
         path: '/export-data',
         builder: (context, state) => const ExportDataView(),

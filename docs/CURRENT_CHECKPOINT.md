@@ -18072,3 +18072,252 @@ error shapes), any SMS, the screens on a device.
 
 **NOW:** the owner reviews the C4 diff and the screenshots.
 **NEXT:** separate Supabase staging project, then the approved hosted steps, then real-device tests.
+
+## Subscriptions Profile UI (UI only, 2026-11-23)
+
+**Branch:** `feature/subscriptions-profile-ui`, created from `phone-auth-implementation` at `ceb488d`. The UI work is
+uncommitted. The branch ref exists on origin at the same `ceb488d`, so none of this work is on the remote.
+
+**Built (Profile only):** My Plan (every state), Choose Your Plan, Compare Plans, How Limits Work, Usage Details, Manage
+Subscription, Cancellation Information, Billing & Payments, Restore Purchases, purchase-flow state screens, and a
+debug-only state preview. Module: `lib/src/views/Screens/home/Profile/SubscriptionPlan/`.
+
+**Production behaviour:** no trusted subscription source exists, so every screen receives
+`SubscriptionPresentation.unavailable()`. Purchase, restore, cancel and store-management actions are disabled. Sample
+data lives only in `subscription_preview_view.dart`, is labelled on screen, and its routes are registered only under
+`kDebugMode`.
+
+**Design evidence:** `Broker Wallet Full.pdf` pages 9-31 (exported 2026-11-22). The live Figma file was NOT inspected.
+The app keeps its teal primary (`AppColors.primary`) where the PDF shows an olive accent.
+
+**Evidence (agent-run, local, final code):** subscription UI tests 50/50; regression batch 1,762/1,762; phone, account
+and password batch 140/140; scoped analyzer: no issues. An earlier run of `test/auth test/account test/profile
+test/responsive` passed 2,514/2,514 before the last Profile-module-only fixes. Layout rendered in EN/AR, light/dark,
+320 px at 200% text.
+
+**Not proven:** physical Android or iOS, a release build, the full test suite, any billing or entitlement behaviour.
+
+**DEFERRED - NOT IMPLEMENTED:** billing SDK, RevenueCat, Apple/Google purchase setup, Stripe decision, server
+entitlements, lifetime creation counters, per-item edit counters, webhooks, Supabase enforcement, and limit messages in
+Owners, Offers, Requests, Watchmen, Offices, Brokers, Quotations and Toolkit. The existing `quota_helper` dialogs outside
+Profile still use the old wording until that phase.
+
+**NOW:** the owner reviews the Profile subscription UI visually.
+**NEXT:** after visual approval, a separately approved backend subscriptions and quotas phase.
+
+## Subscriptions Profile UI: payment sheet refinement (UI only, 2026-11-23)
+
+**Branch:** `feature/subscriptions-profile-ui` at `ceb488d`. All work is uncommitted.
+
+**Design evidence:** the live Figma file is now readable through the connector (frame index plus C1, C2a, C2b, D9 and E1
+inspected, read-only). It still shows the old AED 19.99 / 180 prices. The six Spotify screenshots named in the owner's
+brief were NOT received in the session, so the layout follows the brief's written description of each reference.
+
+**Built:** `subscription_plan_sheet.dart` (Android payment-method sheet, iPhone plan-information sheet) and
+`subscription_platform_policy.dart` (platform and provider rules). Plans, review, Manage, Billing, Cancellation, My Plan
+and the debug preview now use them.
+
+**Android:** production offers Google Play only and its Continue action is disabled. Card (Tap Payments) appears only in
+a labelled debug sample, or after a future server-verified `tapCardEligibilityVerified`, which nothing in the app can set.
+
+**iPhone:** plan details only. No provider, payment method, link, checkout or website text. Whether the app may ship
+without StoreKit is an OPEN App Store decision, including whether AED prices may be displayed.
+
+**Evidence (agent-run, local):** subscription UI tests 93/93 on the final code; related regression batch 1,957/1,957;
+scoped analyzer: no issues. Sheets rendered in EN/AR, light/dark and 320 px at 200% text.
+
+**Not proven:** physical Android or iPhone, a profile or release build, the full test suite, any billing behaviour.
+
+**DEFERRED - NOT IMPLEMENTED:** Google alternative-billing eligibility, Google Play Billing, RevenueCat, Tap Payments,
+StoreKit decision, web app, webhooks, server entitlements, counters and quota enforcement.
+
+**NOW:** the owner reviews the Android and iPhone UI through Profile > My Plan > Preview subscription states (debug build).
+**NEXT:** after approval, a separately authorized payment architecture and backend phase.
+
+## Subscription backend, quotas and Staging test mode (local only, 2026-11-23)
+
+**Branch:** `feature/subscriptions-profile-ui` at `ceb488d`. All work is uncommitted. Nothing was applied, deployed or
+run against a hosted service.
+
+**Built:** migration `20261123100000_subscription_entitlements_quotas.sql` (provider records, billing events, per-item
+edits, usage events, media grants, isolated Staging test source; atomic `create_core_entity`, `update_core_entity`,
+quota-charged `save_quotation`, Toolkit quota triggers; direct client content writes removed). Edge Functions
+`subscription-webhooks` and `subscription-test-control`. Worker quota mapping and a media gate. Flutter server state,
+account-scoped controller, save paths and the debug-only My Plan test switch.
+
+**Switches, all off by default:** app `SUBSCRIPTION_BACKEND`, app `BW_DEPLOYMENT_ENV`, Worker
+`SUBSCRIPTION_ENFORCEMENT`. The migration and a `SUBSCRIPTION_BACKEND=true` build must ship together, because the
+migration removes the direct writes the flag-off path uses.
+
+**Evidence (agent-run, local):** full Flutter suite 8,422 passed, 12 skipped, 0 failed; Worker 372/372; Deno 25/25;
+`subscription_quotas_test.sql` 134 assertions on PGlite with an emulated pgTAP; 26/26 SQL mutations caught; 50/50
+end-to-end checks driving the real webhook and test-control handlers against the real migration chain on PGlite;
+rollback restored the catalog exactly.
+
+**Not proven:** two truly concurrent connections at 4/5 (PGlite has one connection and the installed PostgreSQL has no
+server files); PostgREST, GoTrue and real pgTAP; any real provider event; any hosted Staging run; any device.
+`supabase/tests/rls_test.sql` already failed at assertion 3 before this work and still asserts a direct insert.
+
+**Tap:** the webhook hash is verified but never grants access, because Tap's retrieve-charge contract is unconfirmed.
+
+**Owner decisions open:** baseline for accounts already above 5 (they become read-only on apply; run
+`supabase/validation/subscription_quota_preflight.sql`); whether status-only changes stay free; whether a Quotation
+logo change stays uncharged; whether Delete Account plus re-signup may restart the allowance; offline Toolkit creation.
+
+**NOW:** the owner reviews this checkpoint.
+**NEXT:** with approval, create an isolated Staging Supabase project (staging and production share one project today),
+apply the migration there, deploy the two functions and a staging Worker, then run the device flow.
+
+## Real production subscription system: P1-P4 and P7 preparation (local only, 2026-11-23)
+
+Supersedes the "NOW / NEXT" of the section above. The owner clarified that this is the real production system and the
+Free/Plus switch is only a private pre-launch test tool. Release procedure: `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md`.
+
+**Branch:** `feature/subscriptions-profile-ui` at `ceb488d`. All work is uncommitted. Nothing hosted was touched.
+
+**Design change:** the migrations are now additive, so existing builds keep working. Enforcement is the explicit
+`subscription_cutover()`, reversible with `subscription_cutback()`. The Staging test facility moved to
+`supabase/staging/` and is not part of the production schema. `20261123120000` adds store reconciliation and Tap billing.
+
+**Source complete:** entitlements, quotas, 11 categories, RevenueCat webhook and reconciliation, Tap checkout, webhook,
+renewal, cancel and refund server logic, Flutter store-purchase orchestration behind a closed gateway, public-release guard.
+
+**Local tests:** full Flutter suite 8,433 passed, 13 skipped, 0 failed; Worker 372/372; Deno 41/41; `subscription_test_mode` widget test in three build modes.
+
+**Real PostgreSQL 17.12, independent connections (pgTAP functions emulated):** 13/13 SQL files, 65 concurrency and bypass
+checks, 36 rollout and rollback checks, 57 billing checks (fake providers), 43 end-to-end checks, 33/33 mutations caught,
+and a race proof that holds with the shipped locks and breaks 10/10 rounds with them removed. `rls_test.sql` is fixed: it
+predated the Single Active Device gate.
+
+**Not verified:** PostgREST and GoTrue, hosted Staging, any payment sandbox, any real provider, physical devices.
+
+**External blockers:** isolated Staging project; RevenueCat and Play products; `purchases_flutter` dependency; Tap test
+key, Save Card and merchant-initiated activation, charge-retrieval contract; a web app for Tap checkout; Apple decision.
+
+**NOW:** the owner reviews this report and approves or declines each external step.
+**NEXT:** P5 hosted Staging acceptance, only after that approval.
+
+## Final payment architecture: Tap, direct Google Play and Flutter Web (local only, 2026-11-24)
+
+Supersedes the provider parts of the section above. The owner finalized the architecture: Tap Payments for cards and web,
+Google Play Billing directly, Supabase authoritative. RevenueCat, Stripe and Ziina are not dependencies. Release
+procedure and store-policy findings: `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md`.
+
+**Branch:** `feature/subscriptions-profile-ui` at `ceb488d`. All work is uncommitted. Nothing hosted was touched.
+
+**Source complete:** migration `20261124100000` (Play purchases with encrypted tokens and one-account ownership, Tap card
+changes, customer billing view); Google Play verification, acknowledgement, notifications, reconciliation, voided purchases
+and cancellation for deleted accounts; Tap session, token checkout, return verification, card change, missed-webhook
+recovery and safe renewal retry; web checkout, return, billing and renewal screens; platform gates.
+
+**Defects fixed in the earlier Tap code:** a replayed decline counted as another failed attempt; a renewal whose response
+was lost could never retry; a renewal could overwrite the saved card; a missed webhook had no recovery.
+
+**Web:** the app showed a white screen at startup. It now boots, signs in, keeps its page on refresh and completes the
+billing journey in a local browser. File-based areas are not ported (runbook section 9).
+
+**Local tests:** Flutter 8,466 passed, 13 skipped, 0 failed; Deno 58/58; release web build compiles. The Worker was not
+changed or rerun (372/372 on 2026-11-23). `test/lists/list_refresh_test.dart` failed once in a full run under load and
+passed alone three times and in the final full run: treat it as intermittent.
+
+**Real PostgreSQL 17.12 (pgTAP functions emulated, providers fake):** 14/14 SQL files, 65 concurrency and bypass checks, 36
+rollout checks, 50 Tap checks, 43 end-to-end checks, 115 payment-channel checks, race proof 3/3, mutations 33/33.
+
+**Not verified:** PostgREST and GoTrue, hosted Staging, the real Tap component and API, Google Play, physical devices.
+
+**Blockers:** isolated Staging; `in_app_purchase_android` not added (needs the owner's go-ahead); Play Console setup; Tap
+test keys, Save Card and merchant-initiated activation, domain registration; Apple has no identified approved basis for the
+no-IAP iPhone model; Tap in the Android app is not allowed in the UAE today; web file features; tax invoice decision.
+
+**NOW:** the owner approves or declines each external step.
+**NEXT:** add the Play Billing plugin and its gateway, then P7 hosted Staging after approval.
+
+## Production completion pass: Google Play in the app, VAT documents, hosted preflight (local only, 2026-11-26)
+
+Supersedes the NOW / NEXT above. Details, configuration matrix, console steps and release order:
+`docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md`.
+
+**Branch:** `feature/subscriptions-profile-ui` at `ceb488d`, all uncommitted. Nothing hosted was changed.
+
+**New:** `in_app_purchase_android` 0.5.5 added (pubspec); `GooglePlayStoreGateway` with Play's own price, purchase
+under the server's account reference, restore, no client acknowledgement; Play review and restore screens; server
+channel policy for the Android card choice (off); UAE VAT tax invoices and credit notes for Tap sales with a gapless
+number, gated on a complete supplier tax profile; offline Toolkit starts now counted against the last confirmed state.
+
+**Hosted read-only preflight:** production is at `20261121090000`; phone-auth and subscription migrations not applied;
+no backup listed and PITR off; 5 accounts; several accounts already exceed the Free limit (runbook section 1).
+
+**Local verification:** Flutter 8,490 passed, 13 skipped, 0 failed; Deno 59/59; PostgreSQL 14/14 SQL files and 65 + 36 + 50 + 43 + 115 checks,
+race 3/3, mutations 33/33. The debug APK build was blocked by the owner's store-compliance hook, so the Android compile of
+the billing plugin is not verified.
+
+**Web audit:** Scanner and Document Signature crash on open in a browser; the map picker fails; media upload, Quotation
+PDF and sharing are unverified. The rest of the main flows and the billing journey work locally.
+
+**Blockers:** annual price (199.20 vs 180), backup, Apple model, Play UAE eligibility for Tap, Play Console and Tap setup,
+store-compliance findings (targetSdk 36, all-files permission, privacy manifest), web file features.
+
+**NOW:** the owner confirms the annual price and approves the backup and the external steps one by one.
+**NEXT:** Android build check by the owner, then hosted Staging.
+
+## Final Plus prices and store blockers (local only, 2026-11-26)
+
+Supersedes the Blockers / NOW / NEXT just above. Details: `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md` sections 4, 7, 10.
+
+**Prices (owner decision, final):** Plus Monthly AED 20.00; Plus Yearly AED 180.00 charged once a year; 25%; AED 15.00 a
+month; VAT included (8.57 inside 180.00). Changed together: `tap_price()` and the `tap_orders_amount` check in the
+unapplied `20261123120000`, `SubscriptionPolicy`, the `/tap/session` display amount, tests and the runbook. No paid
+subscription exists, so nothing is changed retroactively.
+
+**Store blockers:** `targetSdk` 36 with predictive back pinned off; iOS `PrivacyInfo.xcprivacy` added and registered;
+the all-files-access finding was a comment. The compliance hook has one critical left, a gitignored local report, which
+still blocks `flutter build`. Open: Sign in with Apple, the export-compliance answer, R8, App Links.
+
+**Web:** browser location permission fixed; Maps script loads from `GOOGLE_MAPS_WEB_API_KEY` (none set yet). Toolkit tools
+on the web wait for the owner's design decision.
+
+**Local verification:** Flutter 8,490 passed, 13 skipped, 0 failed; Deno 59/59; PostgreSQL 14/14 SQL files, 65 + 36 + 50 + 43 + 115 checks, race 3/3,
+mutations 36/36.
+
+**NOW:** owner actions in the runbook (backup, Play Console base plans at 20.00 / 180.00, Maps web key, the hook's local
+folder, Apple decision). **NEXT:** Android build on the owner's machine, then hosted Staging.
+
+## Task 01: production database backup (2026-11-26)
+
+Details and commands: `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md`.
+
+**Status: BLOCKED.** Project `rbvcnvqpdqrhywcgxkne` has no managed backup (`backups: null`) and PITR off. The
+logical-dump method (Supabase CLI script run with the local PostgreSQL 17 tools, no Docker, no password handled) was
+rehearsed without personal data: roles, schema and migration history restored on an isolated loopback PostgreSQL with
+only the 9 expected platform errors and every object count equal to production. The rehearsal files were deleted.
+**The full data backup was not created**: no secure destination is approved. Not in any database dump: R2 media, the
+Vault secret, function/Worker secrets, auth settings, Firestore.
+
+**NOW:** the owner approves an encrypted destination (or runs runbook section 4) and an isolated restore target.
+Nothing hosted changed except the CLI's temporary login role.
+
+## Task 01 result: encrypted production backup created (2026-11-26)
+
+Supersedes the Task 01 status just above. Record: `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md` section 9.
+
+**Status: PARTIALLY VERIFIED.** `F:\BrokerWallet\ProductionBackups\20261126T194340Z\` holds
+`broker-wallet-production-20261126T194340Z.sql.gpg` (142,461 bytes; GnuPG AES-256 + MDC, owner's passphrase kept in
+the owner's password manager) with `SHA256SUMS` and `MANIFEST.txt`. Streamed dump to encryption, no plaintext file.
+Decrypted with the saved passphrase; plaintext SHA-256 equal; schema and every public/auth/storage row count equal to
+production; 21 migration rows. Cron jobs are not in a data dump but are byte-identical to
+`supabase/deploy/notifications_n2_schedule.sql`. Not performed: an isolated full restore (needs authorization).
+Tooling: `supabase/backup/` (backup script, verifier, baseline and cron queries). Nothing hosted changed except the
+CLI's temporary login role.
+
+**NOW:** owner review of Task 01. **NEXT:** isolated restore test only if the owner authorizes a target.
+
+## Task 01B: full restore test (2026-11-27)
+
+**Status: BLOCKED, awaiting the owner's approval of a temporary hosted Supabase recovery project.** Plan, cost and
+isolation: `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md` section 10. The encrypted backup on F: was re-checked
+(`sha256sum -c` OK) and is unchanged. A structure-only rehearsal on a throwaway local PostgreSQL (since deleted) gave
+only the 4 expected extension errors. Finding: the CLI dump omits the 3 project triggers on `auth.users`
+(`on_auth_user_created` and two others); they live in migrations `20260821000100`, `20260822000400`,
+`20260911181112` and must be re-created after any restore. No customer data was restored anywhere.
+
+**NOW:** owner decides plan tier / project creation. **NEXT:** the approved restore test, then deletion of the project.

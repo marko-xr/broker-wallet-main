@@ -310,6 +310,8 @@ class AddOfficesViewModel extends ChangeNotifier
     }
   }
 
+  String? _pendingCreateId;
+
   // Handle add mode
   Future<bool> _handleAddMode(BuildContext context, OfficeModel office) async {
     final canAdd = await CoreEntityQuotaBridge.canCreate(
@@ -318,10 +320,14 @@ class AddOfficesViewModel extends ChangeNotifier
     );
     if (!canAdd) return false;
 
-    final newOfficeId = await _officeService.saveOffice(office);
+    // Kept across retries: a lost answer can then never create a second one.
+    _pendingCreateId ??= _officeService.newRecordId();
+    final newOfficeId =
+        await _officeService.saveOffice(office, recordId: _pendingCreateId);
     if (newOfficeId == null) {
       throw Exception('Failed to save office');
     }
+    _pendingCreateId = null;
     await CoreEntityQuotaBridge.recordCreated(section: 'offices');
     return true;
   }

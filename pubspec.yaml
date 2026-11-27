@@ -127,6 +127,8 @@ dependencies:
   # own (see AuthCallbackCoordinator). `AppLinks()` is a singleton, so this
   # shares supabase_flutter's stream rather than adding a native listener.
   app_links: 7.2.1
+  in_app_purchase_android: 0.5.5
+  in_app_purchase_platform_interface: 1.4.1
 
 
 dev_dependencies:

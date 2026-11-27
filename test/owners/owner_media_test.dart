@@ -234,14 +234,16 @@ class _FakeEntities extends SupabaseCoreEntitiesService {
   }
 
   @override
-  Future<String> saveOwner(OwnerModel model, {String? ownerRecordId}) async {
+  Future<String> saveOwner(OwnerModel model,
+      {String? ownerRecordId, List<String?> mediaIds = const []}) async {
     log.add('save');
     rows[ownerRecordId!] = model.copyWith(id: ownerRecordId);
     return ownerRecordId;
   }
 
   @override
-  Future<void> updateOwner(String id, OwnerModel model) async {
+  Future<void> updateOwner(String id, OwnerModel model,
+      {List<String?> mediaIds = const []}) async {
     log.add('update');
     rows[id] = model.copyWith(id: id);
   }

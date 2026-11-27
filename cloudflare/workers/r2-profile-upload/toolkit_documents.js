@@ -382,15 +382,24 @@ async function confirm(request, { env, deps, userId }) {
     sha256Verified = true;
   }
 
-  const result = await rpc(deps, env, 'confirm_toolkit_document_upload', {
-    p_user_id: userId,
-    p_document_id: documentId,
-    p_bucket: env.R2_BUCKET_NAME,
-    p_observed_size: object.size,
-    p_observed_content_type: object.httpMetadata.contentType,
-    p_observed_etag: typeof object.etag === 'string' ? object.etag : null,
-    p_sha256_verified: sha256Verified,
-  });
+  let result;
+  try {
+    result = await rpc(deps, env, 'confirm_toolkit_document_upload', {
+      p_user_id: userId,
+      p_document_id: documentId,
+      p_bucket: env.R2_BUCKET_NAME,
+      p_observed_size: object.size,
+      p_observed_content_type: object.httpMetadata.contentType,
+      p_observed_etag: typeof object.etag === 'string' ? object.etag : null,
+      p_sha256_verified: sha256Verified,
+    });
+  } catch (error) {
+    // The plan does not allow this document: its bytes are not kept.
+    if (error?.code === QUOTA_REFUSED_CODE) {
+      await deleteIfUnchanged(env, doc.object_key, object.etag);
+    }
+    throw error;
+  }
   switch (result?.outcome) {
     case 'confirmed':
       return noStore(deps, env, { documentId, version: result.version, sha256Verified });
@@ -832,9 +841,30 @@ async function rpc(deps, env, name, args) {
   return (await rpcRows(deps, env, name, args))[0] ?? null;
 }
 
+// The database's subscription decisions (see the subscription migration).
+const QUOTA_REFUSED_CODE = 'document_limit_reached';
+
+async function throwQuotaRefusal(deps, response) {
+  let code = null;
+  try {
+    code = (await response.json())?.code ?? null;
+  } catch {
+    // Not a PostgREST error body: handled as an unreachable backend below.
+  }
+  if (code === 'PBQ01' || code === 'PBQ03') {
+    throw new deps.WorkerError('The plan does not allow another document', 409, QUOTA_REFUSED_CODE);
+  }
+  if (code === 'PBQ06') {
+    throw new deps.WorkerError('The plan could not be verified', 503, 'session_check_unavailable');
+  }
+}
+
 async function rpcRows(deps, env, name, args) {
   const response = await deps.supabase(env, 'POST', `/rest/v1/rpc/${name}`, args, { preferRepresentation: true });
-  if (!response.ok) throw new deps.WorkerError('Failed to reach document metadata', 502);
+  if (!response.ok) {
+    await throwQuotaRefusal(deps, response);
+    throw new deps.WorkerError('Failed to reach document metadata', 502);
+  }
   const body = await response.json();
   if (Array.isArray(body)) return body;
   // A scalar function (purge) answers a bare value.

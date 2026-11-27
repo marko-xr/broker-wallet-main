@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
@@ -11,6 +12,11 @@ class CleanPermissionService {
       CleanPermissionService._internal();
   factory CleanPermissionService() => _instance;
   CleanPermissionService._internal();
+
+  /// A browser has one location permission, which the plugin names
+  /// [Permission.location]; asking it for "when in use" throws there.
+  static Permission get _location =>
+      kIsWeb ? Permission.location : Permission.locationWhenInUse;
 
   // ============================================================================
   // 📸 CAMERA PERMISSION
@@ -181,7 +187,7 @@ class CleanPermissionService {
     final loc = AppLocalizations.of(context);
 
     // Check current status
-    final currentStatus = await Permission.locationWhenInUse.status;
+    final currentStatus = await _location.status;
 
     if (currentStatus.isGranted) {
       return currentStatus;
@@ -211,7 +217,7 @@ class CleanPermissionService {
     }
 
     // Request the permission
-    final result = await Permission.locationWhenInUse.request();
+    final result = await _location.request();
 
     // Handle the result
     if (result.isPermanentlyDenied) {
@@ -359,7 +365,7 @@ class CleanPermissionService {
 
   /// Check if location permission is granted
   Future<bool> hasLocationPermission() async {
-    final status = await Permission.locationWhenInUse.status;
+    final status = await _location.status;
     return status.isGranted;
   }
 

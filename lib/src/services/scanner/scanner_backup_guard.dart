@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Keeps the Scanner's private documents and working files out of cloud and
@@ -21,7 +22,8 @@ abstract interface class ScannerBackupGuard {
 class PlatformScannerBackupGuard implements ScannerBackupGuard {
   PlatformScannerBackupGuard({MethodChannel? channel, bool? isIOS})
       : _channel = channel ?? const MethodChannel(channelName),
-        _isIOS = isIOS ?? Platform.isIOS;
+        // `Platform` throws in a browser, and a browser has no device backup.
+        _isIOS = isIOS ?? (!kIsWeb && Platform.isIOS);
 
   /// The channel `AppDelegate.swift` answers on.
   static const String channelName =

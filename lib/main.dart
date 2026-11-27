@@ -29,6 +29,8 @@ import 'src/viewmodels/theme_viewmodel.dart';
 import 'src/viewmodels/locale_viewmodel.dart';
 import 'src/viewmodels/fast_upload_viewmodel.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:broker_wallet/src/services/web_maps_loader.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:broker_wallet/src/services/media_pick_recovery.dart';
@@ -255,8 +257,12 @@ void _initializeAnalyticsServiceAsync() {
 void main() => http.runWithClient(_main, AppAccessPolicy.newZoneClient);
 
 Future<void> _main() async {
+  // Maps in a browser need Google's script; it loads while the services start.
+  final webMaps = kIsWeb ? loadGoogleMapsForWeb() : null;
+
   // Ensure all services are initialized before running the app
   await initializeAppServices();
+  await webMaps;
   _mark('services');
   // Before runApp, so the first account attach is not missed; not awaited.
   _startPush();

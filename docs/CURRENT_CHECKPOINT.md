@@ -1,6 +1,6 @@
 # Current checkpoint
 
-Updated 2026-11-28 (task 01E, documentation only). This page is the one source of truth for **current status**. Keep it
+Updated 2026-11-28 (task 01F, local integration; nothing hosted). This page is the one source of truth for **current status**. Keep it
 short: replace a status when it changes, and move long evidence into the topic document it belongs to.
 
 The full history up to 2026-11-27 (18,323 lines, every dated section, evidence, version ids and rollback notes) is
@@ -26,7 +26,13 @@ Never promote a status without the evidence named in this page or in a linked do
   `backend-implementation`, `perf/phase-1-startup-baseline`, notifications, iOS, splash, phone auth (`ceb488d`) and the
   repo-cleanup chain (`57d0c5e` → `27869bb` → `8012e84` → `29cfa57` → `6951b29`). `main` (`c29115e`, 2026-09-10) is far
   behind.
-- **Not in the base** (cut from `ceb488d`, local only unless marked):
+- **Integration branch (task 01F, local, not pushed):** `integration/broker-wallet-consolidated`, cut from
+  `docs/project-context-refresh` `46e931f`, merges `feature/subscriptions-payments-flutter` `f7d2ffa`,
+  `chore/store-compliance-targetsdk36` `950bb2b` and `ops/production-backup-tooling` `b8917a8` (histories kept), plus
+  two fixes (remaining import casing, S4 doc guard). LOCAL_TESTED; record, conflicts and WIP reconciliation in
+  `docs/INTEGRATION_01F_2026-11-28.md`. The WIP `2118fea` was not merged.
+- **Not in the base `46e931f`** (cut from `ceb488d`, local only unless marked; all of them are in the integration
+  branch, either directly or through `f7d2ffa`):
 
 | Branch | Commit | Content |
 |---|---|---|
@@ -73,7 +79,7 @@ registration) before any hosted step. No OTP tests on the shared project.
 | Area | Code | Local | Hosted | Device |
 |---|---|---|---|---|
 | Server entitlements, quotas, cutover/cutback | `feature/subscriptions-backend-quotas` | Yes (real PostgreSQL 17, emulated pgTAP, mutation and race checks) | **No**: no subscription object exists on production | No |
-| Flutter plan screens and quota client | `feature/subscriptions-payments-flutter` | Yes (WIP full suite 8,490 pass / 13 skip, 2026-11-26; branch re-check 2,032 pass, 1 known Windows Hive flake) | – | No |
+| Flutter plan screens and quota client | `feature/subscriptions-payments-flutter`, integration branch | Yes (integration branch full suite 8,489 pass / 13 skip, 2026-11-28, on a case-sensitive export; WIP 8,490 / 13 on 2026-11-26) | – | No |
 
 On the base branch quotas are **not** enforced: core entities always allow creation, and the four Toolkit usage gates
 plus `quota_helper` still call legacy Firestore without a Firebase session. That is a known production gap, closed only
@@ -93,7 +99,7 @@ used. No real payment has been made.
 
 | Code | Local | Hosted |
 |---|---|---|
-| `feature/flutter-web-foundation` (also merged into the Flutter subscription branch) | Boots, signs in, keeps its page on refresh and completes the billing journey in a local browser with fakes; release web build compiled 2026-11-24 | `app.brokerwallet.ae` serves an older build (1.0.0+1); its Cloudflare project was not inspected |
+| `feature/flutter-web-foundation` (also merged into the Flutter subscription branch and the integration branch) | Boots, signs in, keeps its page on refresh and completes the billing journey in a local browser with fakes; release web build compiled 2026-11-24, and again from the integration branch 2026-11-28 | `app.brokerwallet.ae` serves an older build (1.0.0+1); its Cloudflare project was not inspected |
 
 Not web-ready: Scanner and Signature crash on open, Images to PDF and Combine PDFs are expected to, Maps need
 `GOOGLE_MAPS_WEB_API_KEY`, media upload, Quotation PDF, sharing and web realtime are unverified. The Toolkit web design
@@ -113,7 +119,8 @@ them).
   documents), rollback `96783f3d`; not re-read since. Staging Worker `r2-profile-upload-staging`. No phone or subscription
   Worker code is deployed.
 - **Android:** application id `com.nmodigital.brokerwallet`. Base branch is `targetSdk` 35; Play requires 36
-  (fixed only on `chore/store-compliance-targetsdk36`).
+  (fixed on `chore/store-compliance-targetsdk36` and the integration branch). No Android build of the integration
+  branch yet: the store-compliance hook blocked it (see the 01F record).
 - **Store gates open:** Apple has no identified basis for the no-IAP iPhone model (UAE); Google Play UAE billing choice
   for Tap; Sign in with Apple; export-compliance answer; R8; App Links; store privacy answers; the store-compliance
   hook blocks `flutter build` while a gitignored local report exists.
@@ -126,6 +133,7 @@ R1–R8A, offline-first performance work (`docs/PERFORMANCE_OFFLINE_FIRST_MASTER
 
 ## NOW / NEXT
 
-**NOW:** the owner reviews task 01E (this documentation refresh) on `docs/project-context-refresh`.
-**NEXT:** task 01F Final Integration: decide the order in which the six extracted branches join the base, integrate them
-one branch at a time with the local checks, and keep every hosted, store and payment step behind its own approval.
+**NOW:** the owner reviews task 01F on `integration/broker-wallet-consolidated` (local) and runs the Android build
+that the store-compliance hook blocked for the agent.
+**NEXT:** the owner decides whether the integration branch becomes the new base (push, PR to `main`); every hosted,
+store and payment step stays behind its own approval.

@@ -57,18 +57,7 @@ class ProfileTextField extends StatelessWidget {
                     BlendMode.srcIn,
                   ),
                 )
-              : Icon(
-                  IconData(
-                    // ignore: non_const_argument_for_const_parameter
-                    int.parse(iconAsset),
-                    fontFamily: 'MaterialIcons',
-                  ),
-                  color: Color.fromARGB(
-                      (0.6 * 255).round(),
-                      colors.onSurface.red,
-                      colors.onSurface.green,
-                      colors.onSurface.blue),
-                ),
+              : const SizedBox.square(dimension: 20),
         ),
         suffixIcon: isPassword
             ? IconButton(

@@ -10,7 +10,6 @@ import 'package:broker_wallet/src/views/Screens/home/Profile/export_data_view.da
 import 'package:broker_wallet/src/views/Screens/home/Profile/help_support_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/legal_information_view.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/my_plan_view.dart';
-import 'package:broker_wallet/src/views/Screens/home/Profile/profile_feature_widgets.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/security_view.dart';
 import 'package:broker_wallet/src/views/Widgets/settings_tile.dart';
 import 'package:flutter/material.dart';
@@ -240,7 +239,7 @@ void main() {
           : TextDirection.ltr;
       final screens = <(Widget, String)>[
         (const MyPlanView(), 'planStatusUnavailable'),
-        (const SubscriptionView(), 'subscriptionPlansUnavailable'),
+        (const SubscriptionView(), 'subPurchasesNotConnected'),
         (const BillingPaymentsView(), 'billingUnavailable'),
         (const ExportDataView(), 'exportUnavailable'),
       ];
@@ -249,10 +248,13 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(localized[statusKey] as String), findsOneWidget);
         expect(
-          Directionality.of(tester.element(find.byType(ProfileFeatureScaffold))),
+          Directionality.of(tester.element(find.byType(Scaffold).first)),
           direction,
         );
-        expect(find.textContaining('AED'), findsNothing);
+        // The plans screen shows the approved prices; the others show none.
+        if (screen is! SubscriptionView) {
+          expect(find.textContaining('AED'), findsNothing);
+        }
       }
     });
   }

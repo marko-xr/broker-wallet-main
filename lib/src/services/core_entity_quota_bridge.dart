@@ -1,12 +1,13 @@
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/quota_helper.dart';
 import 'package:flutter/material.dart';
 
 /// Bridge for the core-entity quota UI.
 ///
-/// RevenueCat entitlement mapping and final paid quota limits are not yet
-/// configured, so nothing here enforces a limit: [canCreate] allows creation
-/// and [recordCreated] records nothing. The database remains the source of
-/// truth for entity rows and RLS ownership. A server-authoritative quota must
-/// replace this class; it is a known production gap, not a security control.
+/// With the subscription backend on, [canCreate] asks the server first so the
+/// user gets the right message before filling nothing in vain; the database
+/// function that performs the write is still what enforces the limit. With it
+/// off, nothing here enforces a limit and creation is allowed as before.
 class CoreEntityQuotaBridge {
   const CoreEntityQuotaBridge._();
 
@@ -14,8 +15,10 @@ class CoreEntityQuotaBridge {
     required BuildContext context,
     required String section,
   }) async {
-    return true;
+    if (!SupabaseConfig.subscriptionBackendEnabled) return true;
+    return QuotaHelper.checkOnServer(context: context, section: section);
   }
 
+  /// The database counts a creation in the same transaction that saves it.
   static Future<void> recordCreated({required String section}) async {}
 }

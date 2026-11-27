@@ -116,6 +116,7 @@ class OwnerService implements PrivateMediaStore {
     List<OfferMediaDraft> newMedia = const <OfferMediaDraft>[],
     List<String> removedMediaIds = const <String>[],
     List<String> cancelledUploadIds = const <String>[],
+    bool planChanged = false,
   }) async {
     if (!SupabaseConfig.useSupabaseAuth) {
       throw StateError('saveOwnerWithMedia is the Supabase media path.');
@@ -125,11 +126,19 @@ class OwnerService implements PrivateMediaStore {
       throw StateError('A Supabase session is required.');
     }
 
+    // One save is one edit however many files it changes. A null entry stands
+    // for the plan file, whose id is only chosen when it is sent.
+    final mediaIds = <String?>[
+      for (final draft in newMedia) draft.mediaObjectId,
+      ...removedMediaIds,
+      if (planChanged) null,
+    ];
     final existing = await _supabase.getOwner(ownerRecordId);
     if (existing == null) {
-      await _supabase.saveOwner(owner, ownerRecordId: ownerRecordId);
+      await _supabase.saveOwner(owner,
+          ownerRecordId: ownerRecordId, mediaIds: mediaIds);
     } else {
-      await _supabase.updateOwner(ownerRecordId, owner);
+      await _supabase.updateOwner(ownerRecordId, owner, mediaIds: mediaIds);
     }
 
     final queue = _uploadQueue;

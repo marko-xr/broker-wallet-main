@@ -32,8 +32,10 @@ class BrokerService {
     }
   }
 
-  Future<String?> saveBroker(BrokerModel broker) async {
-    return _supabase.saveBroker(broker);
+  String newRecordId() => _supabase.generateId();
+
+  Future<String?> saveBroker(BrokerModel broker, {String? recordId}) async {
+    return _supabase.saveBroker(broker, recordId: recordId);
   }
 
   Future<void> updateBroker(String brokerId, BrokerModel broker) async {

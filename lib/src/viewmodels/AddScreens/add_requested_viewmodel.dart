@@ -518,6 +518,8 @@ class AddRequestedViewModel extends ChangeNotifier {
     }
   }
 
+  String? _pendingCreateId;
+
   /// Handle add mode
   Future<void> _handleAddMode(BuildContext context) async {
     final canAdd = await CoreEntityQuotaBridge.canCreate(
@@ -527,9 +529,13 @@ class AddRequestedViewModel extends ChangeNotifier {
     if (!canAdd) return;
 
     final request = _createRequestModel();
-    final requestId = await _requestService.saveRequest(request);
+    // Kept across retries: a lost answer can then never create a second one.
+    _pendingCreateId ??= _requestService.newRecordId();
+    final requestId =
+        await _requestService.saveRequest(request, recordId: _pendingCreateId);
 
     if (requestId != null) {
+      _pendingCreateId = null;
       await CoreEntityQuotaBridge.recordCreated(section: 'requests');
 
       if (context.mounted) {

@@ -96,6 +96,7 @@ class _FakeOfferService extends OfferService {
     List<OfferMediaDraft> newMedia = const <OfferMediaDraft>[],
     List<String> removedMediaIds = const <String>[],
     List<String> cancelledUploadIds = const <String>[],
+    bool planChanged = false,
   }) async {
     saves.add((
       offerId: offerId,

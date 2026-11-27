@@ -5,6 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/services/legacy_quota_store.dart';
 import 'package:broker_wallet/src/common/utils/app_notifier.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
+import 'package:broker_wallet/src/config/supabase_config.dart';
+import 'package:broker_wallet/src/services/subscription/subscription_server_state.dart';
+import 'package:broker_wallet/src/viewmodels/subscription_state_controller.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_presentation.dart';
+import 'package:provider/provider.dart';
 
 /// Helper class to show quota-related dialogs and handle quota checks
 /// FREE PLAN LIMIT: 3 items per section
@@ -19,6 +24,26 @@ class QuotaHelper {
     String?
         toolName, // Optional: for toolkit features like "Scanner", "Signature", etc.
   }) async {
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      // Offline read-only, the last state the server confirmed in this session
+      // decides, counting every new item started since: a sixth item can never
+      // be started without the server, and an unknown state is never Plus.
+      if (!AppAccessPolicy.isOnline) {
+        final controller = context.read<SubscriptionStateController>();
+        return _explain(
+          context,
+          controller,
+          controller.decideWithoutServer(section),
+          section,
+          toolName,
+        );
+      }
+      return checkOnServer(
+        context: context,
+        section: section,
+        toolName: toolName,
+      );
+    }
     // OFF-2b-2: offline read-only the legacy quota is not read (no Firestore
     // request); the answer is the one it already gives when it cannot read:
     // allowed, so the local tools keep working.
@@ -61,6 +86,59 @@ class QuotaHelper {
     } catch (e) {
       return true; // Fail open for better UX
     }
+  }
+
+  /// The server's fresh decision for one new item. Fails closed: when the
+  /// state cannot be verified, nothing new is started and the user is told.
+  static Future<bool> checkOnServer({
+    required BuildContext context,
+    required String section,
+    String? toolName,
+  }) async {
+    final controller = context.read<SubscriptionStateController>();
+    final decision = await controller.checkCreate(section);
+    if (decision == QuotaDecision.allowed) return true;
+    if (!context.mounted) return false;
+    return _explain(context, controller, decision, section, toolName);
+  }
+
+  /// Shows why a new item may not start. Returns whether it may.
+  static Future<bool> _explain(
+    BuildContext context,
+    SubscriptionStateController controller,
+    QuotaDecision decision,
+    String section,
+    String? toolName,
+  ) async {
+    if (decision == QuotaDecision.allowed) return true;
+    final localization = AppLocalizations.of(context);
+    switch (decision) {
+      case QuotaDecision.limitReached:
+        final category = SubscriptionServerState.categoryOf(section);
+        await _showQuotaExceededDialog(
+          context,
+          section,
+          controller.serverState?.created[category] ??
+              SubscriptionPolicy.freeCreationsPerCategory,
+          SubscriptionPolicy.freeCreationsPerCategory,
+          toolName: toolName,
+        );
+      case QuotaDecision.readOnly:
+        AppNotifier.show(
+          context,
+          localization.translate('quotaAccountReadOnly'),
+          isError: true,
+        );
+      case QuotaDecision.unavailable:
+        AppNotifier.show(
+          context,
+          localization.translate('quotaCheckUnavailable'),
+          isError: true,
+        );
+      case QuotaDecision.allowed:
+        break;
+    }
+    return false;
   }
 
   /// Translate section or toolkit name to localized version
@@ -151,6 +229,9 @@ class QuotaHelper {
               message,
               style: theme.textTheme.bodyLarge,
             ),
+            // The legacy block names old prices and features. The server path
+            // links to the plans screen, which shows the approved ones.
+            if (!SupabaseConfig.subscriptionBackendEnabled) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -190,6 +271,7 @@ class QuotaHelper {
                 ],
               ),
             ),
+            ],
           ],
         ),
         actions: [

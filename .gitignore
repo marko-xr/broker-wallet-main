@@ -47,3 +47,10 @@ supabase/.branches/
 # Dart / Codex analysis cache
 .codex_dart_data/
 .dartServer/
+
+# IDE module files
+*.iml
+
+# Local tool debug output (pub get -v, supabase start --debug)
+/pubget-verbose*.txt
+/supabase-start-debug*.txt

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/views/Widgets/input_phone_validation.dart';
 
 class PhoneAdditionDialog extends StatefulWidget {
   final Future<void> Function(String phoneNumber) onSubmit;

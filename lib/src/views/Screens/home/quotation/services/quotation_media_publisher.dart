@@ -11,12 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/pdf_generation_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/pdf_generation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 
 /// Renders a Quotation to a local PDF file and returns its path.
 typedef QuotationPublishPdfGenerator = Future<String>

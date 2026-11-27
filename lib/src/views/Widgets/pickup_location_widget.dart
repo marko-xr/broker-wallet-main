@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:broker_wallet/src/Views/Widgets/map_picker_view.dart';
+import 'package:broker_wallet/src/views/Widgets/map_picker_view.dart';
 import 'package:broker_wallet/src/common/data/picked_location_gate.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';

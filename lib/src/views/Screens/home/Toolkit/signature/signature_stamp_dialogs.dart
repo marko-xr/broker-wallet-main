@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
 
 /// What the user chose in the "add" sheet.
 enum AddStampChoice {

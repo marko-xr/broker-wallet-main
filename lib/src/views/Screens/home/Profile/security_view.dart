@@ -1,8 +1,8 @@
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/delete_account_sheet.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_section_header.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_tile.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/delete_account_sheet.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_card.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_header.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_tile.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/data/models/user_model.dart';

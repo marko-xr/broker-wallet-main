@@ -9,9 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_to_pdf_view.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/image_to_pdf_view.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_executor.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';

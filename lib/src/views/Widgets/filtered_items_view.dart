@@ -7,7 +7,7 @@ import 'package:broker_wallet/src/viewmodels/home_filter_controller.dart';
 import 'package:broker_wallet/src/viewmodels/home_filter_rules.dart'
     show HomeFilterKind;
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Widgets/filtered_tiles.dart';
+import 'package:broker_wallet/src/views/Widgets/filtered_tiles.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart'
     show DelayedReveal;
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';

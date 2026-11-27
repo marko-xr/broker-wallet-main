@@ -12,9 +12,9 @@ import 'package:broker_wallet/src/constants/constants.dart';
 // Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
 
 import '../../../viewmodels/Signup-Login/auth_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
-import 'package:broker_wallet/src/Views/Widgets/email_suggestion_hint.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/views/Widgets/email_suggestion_hint.dart';
 
 class SignUpView extends StatefulWidget {
   const SignUpView({super.key});

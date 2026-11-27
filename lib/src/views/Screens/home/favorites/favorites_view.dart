@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
+import 'package:broker_wallet/src/views/Widgets/empty_state.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart'
     show DelayedReveal;
 import 'package:broker_wallet/src/views/Widgets/user_screen_header.dart';
@@ -9,12 +9,12 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_filter_chips.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_card.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_item_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/widgets/image_cache_manager.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_result_card.dart'
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_filter_chips.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_card.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/widgets/image_cache_manager.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/widgets/search_result_card.dart'
     show SearchResultCard;
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 

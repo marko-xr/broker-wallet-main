@@ -10,11 +10,11 @@ import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
-// The app (and AuthViewModel) reach Favorites through `src/Views/…`; another
+// The app (and AuthViewModel) reach Favorites through `src/views/…`; another
 // spelling would be a second copy of the library with its own generation.
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_item_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_viewmodel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;

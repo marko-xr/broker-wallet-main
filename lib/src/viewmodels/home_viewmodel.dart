@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../data/models/user_model.dart';

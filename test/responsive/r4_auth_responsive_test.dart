@@ -4,7 +4,7 @@ import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/password_reset_request_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/phone_otp_view.dart';
 import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/reset_password_view.dart';
-import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/splash_screen.dart';
+import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/splash_screen.dart';
 import 'package:broker_wallet/src/views/Widgets/password_reset_request_sheet.dart';
 import 'package:broker_wallet/src/views/Widgets/password_form_field.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';

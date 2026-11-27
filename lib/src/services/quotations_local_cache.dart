@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 
 import 'encrypted_account_list_cache.dart';
 

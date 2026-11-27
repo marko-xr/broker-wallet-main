@@ -16,7 +16,7 @@ import 'package:broker_wallet/src/services/clean_media_service.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/common/enums/add_owners_mode.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_screening.dart'

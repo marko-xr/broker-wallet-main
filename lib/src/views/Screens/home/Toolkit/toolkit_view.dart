@@ -2,7 +2,7 @@ import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 

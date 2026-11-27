@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:flutter/material.dart';
 
 class ProfileFeatureScaffold extends StatelessWidget {

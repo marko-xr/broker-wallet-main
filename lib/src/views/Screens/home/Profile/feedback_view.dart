@@ -5,9 +5,9 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/feedback_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Widgets/feedback_success_bottom_sheet.dart';
-import '../../../widgets/rating_bar.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/feedback_success_bottom_sheet.dart';
+import '../../../Widgets/rating_bar.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 
 class FeedbackView extends StatelessWidget {
   const FeedbackView({super.key});

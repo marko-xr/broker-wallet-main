@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../Views/Screens/home/favorites/favorites_service.dart';
+import '../views/Screens/home/favorites/favorites_service.dart';
 import 'app_access_policy.dart';
 
 /// Optimistic favorites manager with offline support and error rollback

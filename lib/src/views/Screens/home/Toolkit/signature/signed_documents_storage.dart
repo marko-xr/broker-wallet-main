@@ -4,7 +4,7 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_library_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
 
 /// The one preference this tool keeps outside the signed-in account: whether the
 /// library is shown as a list or a grid. It is a view setting, not a document, so

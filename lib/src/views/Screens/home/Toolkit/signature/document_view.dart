@@ -5,12 +5,12 @@ import 'package:broker_wallet/src/services/signature/signature_page_renderer.dar
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/services/signature/signature_wiring.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_pad_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_page_canvas.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_preview_screen.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_stamp_dialogs.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_pad_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_page_canvas.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_preview_screen.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_stamp_dialogs.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 
 /// The editing screen of one picked PDF: its pages, with signatures, initials,
 /// dates and texts placed on them.

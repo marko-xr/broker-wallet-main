@@ -5,12 +5,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_cache.dart';
 import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
 import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart'
     show AccountCacheKeyStore;

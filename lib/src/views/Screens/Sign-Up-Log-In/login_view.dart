@@ -8,9 +8,9 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/app_control_sizes.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
-import 'package:broker_wallet/src/Views/Widgets/email_suggestion_hint.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/views/Widgets/email_suggestion_hint.dart';
 
 // Enforce LTR for phone/email/ID fields in Arabic UI (safe, minimal change).
 

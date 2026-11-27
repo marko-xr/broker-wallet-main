@@ -6,7 +6,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_section.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_section.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offer_media_picker.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_file_picker.dart';

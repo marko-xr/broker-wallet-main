@@ -10,13 +10,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_cache.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_files.dart';
 import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/services/deleted_account_local_data_cleaner.dart';
 import 'package:broker_wallet/src/services/encrypted_account_list_cache.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart'

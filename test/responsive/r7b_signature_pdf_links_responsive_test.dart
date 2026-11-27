@@ -1,9 +1,9 @@
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/document_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_pad_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_stamp_dialogs.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/uae_links_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/document_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_pad_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_stamp_dialogs.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/uae_links_view.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/uae_links_catalogue.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';

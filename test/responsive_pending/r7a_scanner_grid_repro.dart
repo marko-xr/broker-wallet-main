@@ -1,7 +1,7 @@
 // Explicit manual repro, intentionally OUTSIDE the required green responsive
 // suite and without an _test.dart discovery suffix. Run this file explicitly.
 // OWNER_DECISION_REQUIRED: never change the protected card to satisfy this test.
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

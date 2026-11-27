@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_files.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:broker_wallet/src/services/app_access_policy.dart';

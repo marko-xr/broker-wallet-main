@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';

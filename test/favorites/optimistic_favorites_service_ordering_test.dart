@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // -----------------------------------------------------------------------------

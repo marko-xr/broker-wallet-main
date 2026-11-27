@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/views/Widgets/save_cancel_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

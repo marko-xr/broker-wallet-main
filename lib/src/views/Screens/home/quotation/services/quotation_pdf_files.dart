@@ -13,7 +13,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/services/quotations_local_cache.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_backup_guard.dart';
 import 'package:path/path.dart' as p;

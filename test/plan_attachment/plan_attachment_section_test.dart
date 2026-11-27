@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_section.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_section.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:broker_wallet/src/viewmodels/plan_attachment_form.dart';

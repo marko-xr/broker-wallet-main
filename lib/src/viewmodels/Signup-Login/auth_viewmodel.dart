@@ -22,9 +22,9 @@ import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/offer_media_session.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart'
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_cache_manager.dart'
     show MediaCacheManager;
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
 import 'package:image_picker/image_picker.dart' show XFile;
 

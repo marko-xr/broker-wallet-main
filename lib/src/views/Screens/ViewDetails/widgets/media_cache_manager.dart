@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:flutter/material.dart';

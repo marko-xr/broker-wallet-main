@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_actions.dart';
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_section.dart'
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_actions.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_section.dart'
     show PlanPreview, planFileSize, planKindLabel;
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';

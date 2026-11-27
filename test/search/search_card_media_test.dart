@@ -643,24 +643,25 @@ void main() {
     });
 
     test('the Search card names its media type and its resolver one way', () {
-      // Both come from one spelling (`Views`, as the card's other imports), so
-      // what the resolver returns is the type the card holds.
+      // Both come from one spelling (`views`, the casing on disk, as the
+      // card's other imports), so what the resolver returns is the type the
+      // card holds.
       final source = _read(card);
       expect(
           source.contains(
-              "package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart"),
-          isTrue);
-      expect(
-          source.contains(
-              "package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart"),
-          isTrue);
-      expect(
-          source.contains(
               "package:broker_wallet/src/views/Screens/home/favorites/favorite_card_media.dart"),
-          isFalse);
+          isTrue);
       expect(
           source.contains(
               "package:broker_wallet/src/views/Screens/home/search/search_card_media.dart"),
+          isTrue);
+      expect(
+          source.contains(
+              "package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart"),
+          isFalse);
+      expect(
+          source.contains(
+              "package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart"),
           isFalse);
     });
 

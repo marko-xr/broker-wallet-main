@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_viewmodel.dart';
 
 enum PaymentMethod { creditCard, applePay, googlePay, paypal }
 

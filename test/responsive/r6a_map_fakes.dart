@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_card_media.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/map_data_cache_service.dart';
 import 'package:broker_wallet/src/services/map_filter.dart';

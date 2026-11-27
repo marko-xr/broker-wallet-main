@@ -6,10 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
-import 'package:broker_wallet/src/Views/Widgets/action_bottom_sheet.dart';
-import 'package:broker_wallet/src/Views/Widgets/bottom_nav_bar.dart';
-import 'package:broker_wallet/src/Views/Widgets/glowing_fab.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_media_publisher.dart';
+import 'package:broker_wallet/src/views/Widgets/action_bottom_sheet.dart';
+import 'package:broker_wallet/src/views/Widgets/bottom_nav_bar.dart';
+import 'package:broker_wallet/src/views/Widgets/glowing_fab.dart';
 import 'package:broker_wallet/src/viewmodels/home_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 

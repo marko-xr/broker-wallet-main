@@ -8,7 +8,7 @@
 // The header is a complete replacement with exactly 18 keys. Media ids,
 // owner, version and timestamps are server-controlled and are never sent.
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 
 /// Why a form cannot become a valid aggregate, detected before any request.
 enum QuotationValidationReason {

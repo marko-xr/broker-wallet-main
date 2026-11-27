@@ -7,10 +7,10 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_bar.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/widgets/search_filter_chips.dart';
-import 'package:broker_wallet/src/Views/Widgets/empty_state.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/widgets/search_bar.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/widgets/search_filter_chips.dart';
+import 'package:broker_wallet/src/views/Widgets/empty_state.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_viewmodel.dart';
 import 'widgets/search_result_card.dart';
 
 class SearchView extends StatelessWidget {

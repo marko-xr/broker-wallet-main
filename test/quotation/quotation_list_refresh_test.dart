@@ -8,11 +8,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotation_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotations_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotation_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotations_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/themes/app_theme.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';

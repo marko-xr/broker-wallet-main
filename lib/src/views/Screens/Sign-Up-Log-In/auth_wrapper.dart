@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 
-import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/splash_screen.dart';
+import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/splash_screen.dart';
 
 /// Bootstrap gate rendered at `/` while [AuthStatus] is still `unknown`.
 ///

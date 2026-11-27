@@ -10,7 +10,7 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/edit_profile_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/locale_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/theme_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Profile/edit_profile_view.dart'
+import 'package:broker_wallet/src/views/Screens/home/Profile/edit_profile_view.dart'
     show profileSaveFeedbackKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

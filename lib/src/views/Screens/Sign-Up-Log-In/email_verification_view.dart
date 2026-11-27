@@ -7,7 +7,7 @@ import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/email_verification_completion.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 
 class EmailVerificationView extends StatefulWidget {
   final String email;

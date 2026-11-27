@@ -3,7 +3,7 @@ import 'package:signature/signature.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
 
 /// A signature capture pad: draw with a finger or stylus, pick a pen colour and
 /// thickness, undo, redo and clear, and confirm.

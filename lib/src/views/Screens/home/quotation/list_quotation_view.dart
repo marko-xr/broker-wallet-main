@@ -1,9 +1,9 @@
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -11,7 +11,7 @@ import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
 import 'package:broker_wallet/src/views/Widgets/delete_confirmation_dialog.dart';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'list_quotations_viewmodel.dart';
 import '../Toolkit/pdf_viewer_screen.dart';
 

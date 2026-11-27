@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_review_screen.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_to_pdf_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_review_screen.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_image_viewer.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/image_to_pdf_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/image_pdf_settings_sheet.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/image_to_pdf/image_pdf_models.dart';
 import 'package:broker_wallet/src/services/scanner/scan_models.dart';

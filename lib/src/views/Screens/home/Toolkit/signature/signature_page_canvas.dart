@@ -7,7 +7,7 @@ import 'package:broker_wallet/src/services/signature/signature_geometry.dart';
 import 'package:broker_wallet/src/services/signature/signature_models.dart';
 import 'package:broker_wallet/src/services/signature/signature_page_renderer.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
 
 /// A scale recognizer that claims the gesture the moment a finger lands on it, so
 /// a drag or a pinch that starts on a placed item belongs to the item and never

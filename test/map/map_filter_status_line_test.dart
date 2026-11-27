@@ -4,7 +4,7 @@
 // how a device renders it. (The view model's side, that the count is the
 // published draw's own, is pinned in map_ux_phase1_test.dart.)
 
-import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_status_line.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_filter_status_line.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';

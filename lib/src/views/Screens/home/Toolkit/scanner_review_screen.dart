@@ -6,8 +6,8 @@ import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/services/scanner/scan_models.dart';
 import 'package:broker_wallet/src/services/scanner/scan_result.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_image_viewer.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_image_viewer.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 
 /// The step between scanning and saving: every page that will be stored, in
 /// order, the real page count, and a name. Nothing is stored until Save; Discard

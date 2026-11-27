@@ -6,8 +6,8 @@
 // fields never sent, a unique positive downpayment sequence, an explicit-offset
 // timestamp, the strict payment enum, and no stored row for an empty section.
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _id = '3f2c9d0a-5b7e-4c1a-9a55-0d6f8e1b2a44';

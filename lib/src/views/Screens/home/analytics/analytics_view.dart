@@ -1,7 +1,7 @@
 // lib/src/Views/Screens/home/analytics/analytics_view.dart
 
 import 'package:flutter/material.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
 

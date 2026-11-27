@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:broker_wallet/src/services/map_location_data.dart';
-import 'package:broker_wallet/src/Views/Screens/home/map/map_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_bar.dart';
-import 'package:broker_wallet/src/Views/Screens/home/map/map_filter_status_line.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_filter_bar.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_filter_status_line.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:flutter/material.dart';

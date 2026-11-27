@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/private_media_images.dart';

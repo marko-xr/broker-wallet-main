@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/views/Widgets/list_loading_indicator.dart';
 import 'package:broker_wallet/src/views/Widgets/entity_delete_progress.dart';
 import 'package:broker_wallet/src/widgets/contact_actions_row.dart';

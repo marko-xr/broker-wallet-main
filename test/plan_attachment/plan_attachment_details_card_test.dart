@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_actions.dart';
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_actions.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_details_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:flutter/material.dart';

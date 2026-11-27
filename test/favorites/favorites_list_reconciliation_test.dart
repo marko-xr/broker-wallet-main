@@ -18,9 +18,9 @@ import 'dart:async';
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';
 import 'package:broker_wallet/src/services/ScreenServices/offer_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_item_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_viewmodel.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 typedef MetadataMap = Map<String, List<FavoriteMetadata>>;

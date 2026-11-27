@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:broker_wallet/src/services/share/share_live.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/images.dart';
 import 'package:broker_wallet/src/common/utils/share_app_icons.dart';

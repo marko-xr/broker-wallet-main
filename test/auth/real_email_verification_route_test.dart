@@ -7,7 +7,7 @@ import 'package:broker_wallet/src/repositories/supabase_auth_repository.dart';
 import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/email_verification_completion.dart';
-import 'package:broker_wallet/src/Views/Screens/Sign-Up-Log-In/email_verification_view.dart';
+import 'package:broker_wallet/src/views/Screens/Sign-Up-Log-In/email_verification_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

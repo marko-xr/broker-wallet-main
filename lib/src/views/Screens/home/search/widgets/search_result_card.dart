@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_viewmodel.dart';
 import 'package:broker_wallet/src/utils/text_highlighter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -14,10 +14,10 @@ import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/private_card_media.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
+import 'package:broker_wallet/src/views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/views/Widgets/private_card_media.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorite_card_media.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_card_media.dart';
 
 // Models (same as FavoriteCard uses)
 import 'package:broker_wallet/src/data/models/ScreensModel/offers_model.dart';

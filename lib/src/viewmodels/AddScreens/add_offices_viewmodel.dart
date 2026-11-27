@@ -6,7 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/core_entity_quota_bridge.dart';
-import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/views/Widgets/pickup_location_widget.dart';
 import '../../common/localization/localization_delegate.dart';
 import '../../common/enums/add_offices_mode.dart';
 import '../../data/models/ScreensModel/offices_model.dart';

@@ -13,7 +13,7 @@ import 'package:broker_wallet/src/services/app_access_policy.dart';
 import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/realtime_access_guard.dart';
 // Same URI casing as the app's own imports of this file.
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;

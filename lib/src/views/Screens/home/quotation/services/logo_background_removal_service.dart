@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/logo_optimization_service.dart'
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/logo_optimization_service.dart'
     show quotationLogoMaxDimension;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;

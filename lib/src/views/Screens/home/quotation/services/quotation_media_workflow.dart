@@ -12,7 +12,7 @@
 
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/r2_quotation_media_service.dart';
 import 'package:broker_wallet/src/services/image_signature_detector.dart';
 import 'package:uuid/uuid.dart';
 

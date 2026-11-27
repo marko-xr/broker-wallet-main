@@ -5,7 +5,7 @@
 // whose real implementation is deferred to a later checkpoint. This screen
 // never invents policy or legal content; Contact Us has its own real route.
 import 'package:flutter/material.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/info_placeholder_args.dart';
 

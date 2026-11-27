@@ -28,10 +28,10 @@ import 'dart:math' as math;
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/services/private_media_images.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_card_media.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_viewmodel.dart';
 import 'package:broker_wallet/src/views/Screens/home/search/widgets/search_result_card.dart';
-import 'package:broker_wallet/src/Views/Widgets/private_card_media.dart';
+import 'package:broker_wallet/src/views/Widgets/private_card_media.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

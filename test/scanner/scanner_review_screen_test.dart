@@ -10,7 +10,7 @@ import 'package:broker_wallet/src/common/localization/localization_delegate.dart
 import 'package:broker_wallet/src/services/scanner/scan_models.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_document_store.dart';
 import 'package:broker_wallet/src/viewmodels/scanner/scanner_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/scanner_review_screen.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/scanner_review_screen.dart';
 
 import 'scanner_harness.dart';
 

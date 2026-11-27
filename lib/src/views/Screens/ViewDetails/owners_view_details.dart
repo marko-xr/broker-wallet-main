@@ -1,6 +1,6 @@
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_details_card.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_gallery_widget.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_details_card.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/services/plan_attachment/plan_attachment_models.dart';
 import 'package:broker_wallet/src/services/plan_attachment/r2_plan_attachment_service.dart';
@@ -17,7 +17,7 @@ import 'package:broker_wallet/src/common/utils/map_coordinates.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/services/ScreenServices/owner_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';
 import 'package:broker_wallet/src/services/details_contact_actions.dart';
 import 'package:broker_wallet/src/services/share/share_models.dart';

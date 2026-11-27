@@ -7,7 +7,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/owners_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/watchmen_model.dart';
-import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
+import 'package:broker_wallet/src/views/Widgets/property_status_indicator.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:go_router/go_router.dart';

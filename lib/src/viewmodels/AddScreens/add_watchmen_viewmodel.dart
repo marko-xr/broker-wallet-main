@@ -11,7 +11,7 @@ import 'package:geocoding/geocoding.dart';
 
 import '../../data/models/ScreensModel/watchmen_model.dart';
 import '../../services/ScreenServices/watchmen_service.dart';
-import '../../Views/Widgets/pickup_location_widget.dart';
+import '../../views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/common/routes/leave_form.dart';
 
 class AddWatchmenViewModel extends ChangeNotifier

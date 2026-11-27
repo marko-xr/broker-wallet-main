@@ -9,7 +9,7 @@
 
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/map/map_opening.dart';
+import 'package:broker_wallet/src/views/Screens/home/map/map_opening.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -17,10 +17,10 @@ import 'package:broker_wallet/src/services/owners_local_cache.dart';
 import 'package:broker_wallet/src/services/quotations_local_cache.dart';
 import 'package:broker_wallet/src/services/requests_local_cache.dart';
 import 'package:broker_wallet/src/services/watchmen_local_cache.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart'
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart'
     show FavoriteService;
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_files.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_publisher.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_files.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_media_publisher.dart';
 import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
 
 typedef ProfileMediaForgetter = Future<void> Function({

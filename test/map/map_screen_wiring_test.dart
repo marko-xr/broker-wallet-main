@@ -1854,19 +1854,20 @@ void main() {
     test('the media type and resolver are named one way, so the types agree',
         () {
       // `Views` and `views` are different libraries to Dart; both files name the
-      // resolver, and the screen the media type, through `Views`.
+      // resolver, and the screen the media type, through `views` (the casing
+      // on disk).
       const resolver =
-          'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
-      const lower =
           'package:broker_wallet/src/views/Screens/home/search/search_card_media.dart';
+      const wrongCase =
+          'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
       for (final path in [view, viewModel]) {
         final text = _read(path);
         expect(text.contains(resolver), isTrue, reason: path);
-        expect(text.contains(lower), isFalse, reason: path);
+        expect(text.contains(wrongCase), isFalse, reason: path);
       }
       expect(
         _read(view).contains(
-          'package:broker_wallet/src/Views/Screens/home/favorites/favorite_card_media.dart',
+          'package:broker_wallet/src/views/Screens/home/favorites/favorite_card_media.dart',
         ),
         isTrue,
       );
@@ -1877,12 +1878,12 @@ void main() {
       );
       // The bar and the screen name the view model the same way.
       const modelImport =
-          'package:broker_wallet/src/Views/Screens/home/map/map_viewmodel.dart';
+          'package:broker_wallet/src/views/Screens/home/map/map_viewmodel.dart';
       expect(_read(view).contains(modelImport), isTrue);
       expect(_read(bar).contains(modelImport), isTrue);
       expect(
         _read(view).contains(
-          'package:broker_wallet/src/Views/Screens/home/map/map_filter_bar.dart',
+          'package:broker_wallet/src/views/Screens/home/map/map_filter_bar.dart',
         ),
         isTrue,
       );

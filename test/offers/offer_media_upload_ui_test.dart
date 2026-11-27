@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Widgets/media_upload_widget.dart';
-import 'package:broker_wallet/src/Views/Widgets/unified_media_preview_grid.dart';
+import 'package:broker_wallet/src/views/Widgets/media_upload_widget.dart';
+import 'package:broker_wallet/src/views/Widgets/unified_media_preview_grid.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';

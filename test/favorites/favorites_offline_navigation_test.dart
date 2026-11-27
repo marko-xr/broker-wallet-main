@@ -13,8 +13,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_card.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_item_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_card.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_item_model.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/offices_model.dart';

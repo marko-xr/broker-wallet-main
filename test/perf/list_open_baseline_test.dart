@@ -35,10 +35,10 @@ import 'package:broker_wallet/src/viewmodels/ListScreens/list_requests_viewmodel
 import 'package:broker_wallet/src/views/Screens/ViewLists/offers_list_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/owners_list_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/requests_list_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotation_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotations_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotation_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotations_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_service.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

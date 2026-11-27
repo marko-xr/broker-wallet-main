@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:broker_wallet/src/Views/Widgets/home_filter_chips.dart';
-import 'package:broker_wallet/src/Views/Widgets/grid_item_card.dart';
-import 'package:broker_wallet/src/Views/Widgets/filtered_items_view.dart';
+import 'package:broker_wallet/src/views/Widgets/home_filter_chips.dart';
+import 'package:broker_wallet/src/views/Widgets/grid_item_card.dart';
+import 'package:broker_wallet/src/views/Widgets/filtered_items_view.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/views/Widgets/user_screen_header.dart';
 import '../../viewmodels/home_viewmodel.dart';

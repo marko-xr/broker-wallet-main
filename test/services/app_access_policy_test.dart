@@ -21,8 +21,8 @@ import 'package:broker_wallet/src/services/r2_profile_upload_service.dart';
 import 'package:broker_wallet/src/services/scanner/scanner_usage_gate.dart';
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/services/toolkit_documents/toolkit_cloud_library.dart';
-// Same URI casing as optimistic_favorites_service.dart ('../Views/...').
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
+// Same URI casing as optimistic_favorites_service.dart ('../views/...').
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';

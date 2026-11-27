@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../common/localization/localization_delegate.dart';
 import '../views/Screens/ViewDetails/widgets/offer_details_style.dart';
 import '../data/models/ScreensModel/request_model.dart';
-import '../Views/Widgets/property_status_indicator.dart';
+import '../views/Widgets/property_status_indicator.dart';
 import 'compact_property_labels.dart';
 
 /// 🔍 Compact request card widget for use in lists and carousels

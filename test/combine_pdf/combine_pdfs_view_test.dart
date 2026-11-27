@@ -8,9 +8,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pages_screen.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/combine_pdfs_view.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/combine_pages_screen.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/combine_pdfs_view.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_executor.dart';
 import 'package:broker_wallet/src/services/combine_pdf/combine_pdf_platform.dart';

@@ -8,7 +8,7 @@ import 'package:broker_wallet/src/repositories/user_repository.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/notification_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/favorites/favorites_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/favorites/favorites_service.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 

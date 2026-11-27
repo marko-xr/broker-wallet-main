@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media.dart';
-import 'package:broker_wallet/src/Views/Screens/home/search/search_card_media_source.dart';
-import 'package:broker_wallet/src/Views/Widgets/custom_map_pin.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_card_media.dart';
+import 'package:broker_wallet/src/views/Screens/home/search/search_card_media_source.dart';
+import 'package:broker_wallet/src/views/Widgets/custom_map_pin.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/location_colors.dart';
 import 'package:broker_wallet/src/services/device_location_platform.dart';

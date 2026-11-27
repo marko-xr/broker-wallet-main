@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/input_phone_validation.dart';
-import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
-import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/input_phone_validation.dart';
+import 'package:broker_wallet/src/views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/views/Widgets/save_cancel_buttons.dart';
 import 'package:provider/provider.dart';
 import 'package:broker_wallet/src/constants/app_colors.dart';
 import 'package:broker_wallet/src/constants/constants.dart';

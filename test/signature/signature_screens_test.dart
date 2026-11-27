@@ -11,9 +11,9 @@ import 'package:broker_wallet/src/services/signature/signature_pdf_engine.dart';
 import 'package:broker_wallet/src/services/signature/signature_platform.dart';
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/document_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_view.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/document_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_view.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 
 import 'signature_fixtures.dart';
 import 'signature_test_support.dart';

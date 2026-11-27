@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
 import 'package:broker_wallet/src/common/data/owner_location_codec.dart';
 import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/common/data/owner_property_types.dart';

@@ -1,6 +1,6 @@
 import 'package:broker_wallet/src/services/share/share_sources.dart';
 import 'package:broker_wallet/src/views/Widgets/share_options_dialog.dart';
-import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
+import 'package:broker_wallet/src/views/Widgets/property_status_indicator.dart';
 import 'package:broker_wallet/src/common/data/room_count.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
@@ -8,7 +8,7 @@ import 'package:broker_wallet/src/data/models/ScreensModel/request_model.dart';
 import 'package:broker_wallet/src/data/models/property_status.dart';
 import 'package:broker_wallet/src/services/ScreenServices/request_service.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
-import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/views/Widgets/favorite_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';

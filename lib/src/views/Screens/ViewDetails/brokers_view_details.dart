@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Widgets/favorite_button.dart';
+import 'package:broker_wallet/src/views/Widgets/favorite_button.dart';
 import 'package:broker_wallet/src/services/optimistic_favorites_service.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/data/models/ScreensModel/brokers_model.dart';

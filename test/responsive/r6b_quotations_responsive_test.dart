@@ -1,9 +1,9 @@
-import 'package:broker_wallet/src/Views/Screens/home/quotation/add_quotation_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotation_view.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/list_quotations_viewmodel.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/add_quotation_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotation_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/list_quotations_viewmodel.dart';
 import 'package:provider/provider.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Widgets/save_cancel_buttons.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';

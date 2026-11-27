@@ -13,12 +13,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_media_workflow.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_pdf_cache.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_media_workflow.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_pdf_cache.dart';
 import 'package:broker_wallet/src/services/quotation_pdf_vault.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/r2_quotation_media_service.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/r2_quotation_media_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';

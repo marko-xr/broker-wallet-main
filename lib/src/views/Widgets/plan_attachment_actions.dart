@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:open_filex/open_filex.dart';
 
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
-import 'package:broker_wallet/src/Views/Widgets/plan_attachment_section.dart'
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/views/Widgets/plan_attachment_section.dart'
     show planKindLabel;
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart'

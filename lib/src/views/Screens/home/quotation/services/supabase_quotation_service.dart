@@ -10,8 +10,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/quotation_supabase_mapper.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:broker_wallet/src/services/list_session_check.dart';

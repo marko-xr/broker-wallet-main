@@ -1,6 +1,6 @@
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_section_header.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_card.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_header.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';

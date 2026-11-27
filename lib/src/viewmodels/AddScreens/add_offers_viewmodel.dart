@@ -9,7 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:broker_wallet/src/Views/Widgets/pickup_location_widget.dart';
+import 'package:broker_wallet/src/views/Widgets/pickup_location_widget.dart';
 import 'package:broker_wallet/src/common/data/uae_area_catalog.dart';
 import 'package:broker_wallet/src/services/map_city_geography.dart';
 import 'package:broker_wallet/src/services/phone_input_service.dart';

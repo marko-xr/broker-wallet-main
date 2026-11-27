@@ -5,7 +5,7 @@ import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/constants/constants.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
-import 'package:broker_wallet/src/Views/Widgets/unified_media_preview_grid.dart';
+import 'package:broker_wallet/src/views/Widgets/unified_media_preview_grid.dart';
 
 class MediaUploadWidget extends StatelessWidget {
   /// Offer media only: every item — on the server, in the upload queue, or

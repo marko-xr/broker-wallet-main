@@ -7,8 +7,8 @@ import 'package:broker_wallet/src/viewmodels/ListScreens/list_requests_viewmodel
 import 'package:broker_wallet/src/views/Screens/ViewAdd/add_requested_view.dart';
 import 'package:broker_wallet/src/views/Screens/ViewDetails/requested_view_details.dart';
 import 'package:broker_wallet/src/views/Screens/ViewLists/requests_list_view.dart';
-import 'package:broker_wallet/src/Views/Widgets/property_status_indicator.dart';
-import 'package:broker_wallet/src/Views/Widgets/save_cancel_buttons.dart';
+import 'package:broker_wallet/src/views/Widgets/property_status_indicator.dart';
+import 'package:broker_wallet/src/views/Widgets/save_cancel_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:broker_wallet/src/services/signature/signature_store.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
 
 const String signatureViews = 'lib/src/views/Screens/home/Toolkit/signature';
 const String signatureServices = 'lib/src/services/signature';

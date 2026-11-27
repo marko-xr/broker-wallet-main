@@ -1,7 +1,7 @@
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_cache_manager.dart';
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
-import 'package:broker_wallet/src/Views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/pdf_viewer_screen.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_cache_manager.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/full_screen_media_viewer.dart';
+import 'package:broker_wallet/src/views/Screens/ViewDetails/widgets/media_loading_placeholder.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/pdf_viewer_screen.dart';
 import 'package:broker_wallet/src/services/offer_media_cache_identity.dart';
 import 'package:broker_wallet/src/services/offer_media_diagnostics.dart';
 import 'package:broker_wallet/src/services/offline_media_service.dart';

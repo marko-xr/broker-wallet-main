@@ -11,8 +11,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:broker_wallet/src/Views/Screens/home/quotation/quotation_model.dart';
-import 'package:broker_wallet/src/Views/Screens/home/quotation/services/supabase_quotation_service.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/quotation_model.dart';
+import 'package:broker_wallet/src/views/Screens/home/quotation/services/supabase_quotation_service.dart';
 import 'package:broker_wallet/src/services/core_entity_mutation_notifier.dart';
 import 'package:broker_wallet/src/services/list_session_check.dart';
 import 'package:flutter_test/flutter_test.dart';

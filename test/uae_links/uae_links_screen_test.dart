@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:broker_wallet/src/data/models/uae_links_catalogue.dart';
 import 'package:broker_wallet/src/data/models/uae_links_model.dart';
 import 'package:broker_wallet/src/services/uae_links/uae_link_launcher.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/uae_links_view.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/uae_links_view.dart';
 
 import 'uae_links_test_support.dart';
 

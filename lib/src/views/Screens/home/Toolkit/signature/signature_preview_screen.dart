@@ -8,8 +8,8 @@ import 'package:broker_wallet/src/services/signature/signature_page_renderer.dar
 import 'package:broker_wallet/src/services/signature/signature_usage_gate.dart';
 import 'package:broker_wallet/src/services/signature/signature_wiring.dart';
 import 'package:broker_wallet/src/viewmodels/signature/signature_editor_viewmodel.dart';
-import 'package:broker_wallet/src/Views/Screens/home/Toolkit/signature/signature_ui_support.dart';
-import 'package:broker_wallet/src/Views/Widgets/tool_progress_overlay.dart';
+import 'package:broker_wallet/src/views/Screens/home/Toolkit/signature/signature_ui_support.dart';
+import 'package:broker_wallet/src/views/Widgets/tool_progress_overlay.dart';
 
 /// The last step before a signed document is kept: the signed copy itself, drawn
 /// page by page by the same renderer that draws every PDF, with a name field and

@@ -586,10 +586,10 @@ void main() {
           File('lib/src/repositories/auth_repository.dart').readAsStringSync();
       final viewModel = File('lib/src/viewmodels/email_change_viewmodel.dart')
           .readAsStringSync();
-      final sheet = File('lib/src/Views/Widgets/email_change_sheet.dart')
+      final sheet = File('lib/src/views/Widgets/email_change_sheet.dart')
           .readAsStringSync();
       final pendingSheet =
-          File('lib/src/Views/Widgets/email_change_pending_sheet.dart')
+          File('lib/src/views/Widgets/email_change_pending_sheet.dart')
               .readAsStringSync();
       expect(capability, isNot(contains('cancelEmailChange')));
       for (final source in [viewModel, sheet, pendingSheet]) {

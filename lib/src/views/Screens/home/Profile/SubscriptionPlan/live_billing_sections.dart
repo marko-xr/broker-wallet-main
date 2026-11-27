@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/services/subscription/billing_availability.dart';
 import 'package:broker_wallet/src/services/subscription/billing_backend.dart';

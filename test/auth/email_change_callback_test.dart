@@ -482,7 +482,7 @@ void main() {
       for (final path in [
         'lib/src/repositories/auth_repository.dart',
         'lib/src/viewmodels/email_change_viewmodel.dart',
-        'lib/src/Views/Widgets/email_change_pending_sheet.dart',
+        'lib/src/views/Widgets/email_change_pending_sheet.dart',
       ]) {
         expect(File(path).readAsStringSync(),
             isNot(contains('cancelEmailChange')));

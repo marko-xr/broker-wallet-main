@@ -1,4 +1,4 @@
-import 'package:broker_wallet/src/Views/Widgets/settings_section_card.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_card.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/live_billing_sections.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_labels.dart';

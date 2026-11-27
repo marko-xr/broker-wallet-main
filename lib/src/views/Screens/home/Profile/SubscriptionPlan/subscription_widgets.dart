@@ -1,6 +1,6 @@
-import 'package:broker_wallet/src/Views/Widgets/back_arrow_button.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_section_header.dart';
-import 'package:broker_wallet/src/Views/Widgets/settings_tile.dart';
+import 'package:broker_wallet/src/views/Widgets/back_arrow_button.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_section_header.dart';
+import 'package:broker_wallet/src/views/Widgets/settings_tile.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
 import 'package:broker_wallet/src/common/utils/svg_icon.dart';
 import 'package:broker_wallet/src/views/Screens/home/Profile/SubscriptionPlan/subscription_labels.dart';

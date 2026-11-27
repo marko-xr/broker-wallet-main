@@ -140,8 +140,13 @@ select ok(
 );
 
 select ok(
-  (select count(*) from public.plan_limits) = 0,
-  'production quota limits are intentionally not seeded'
+  (select count(*) from public.plan_limits) = 11
+  and not exists (
+    select 1 from public.plan_limits
+    where plan_code <> 'free' or limit_value <> 5
+      or counter_basis <> 'lifetime_created' or reset_period <> 'lifetime'
+  ),
+  'only the approved Free limits are seeded: 5 lifetime creations in each of 11 sections'
 );
 
 

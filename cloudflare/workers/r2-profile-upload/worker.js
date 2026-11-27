@@ -672,6 +672,7 @@ async function handleMediaAuthorize(request, env, parent) {
   }
 
   await assertOwnsParent(parent, parentId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, subscriptionSectionOf(parent), parentId, requestedId);
   await bestEffortCleanupAbandonedPending(userId, env, parentCleanupScope(parent, userId, parentId));
 
   const mediaObjectId = requestedId ?? crypto.randomUUID();
@@ -1194,6 +1195,7 @@ async function handleMediaRemove(request, env, parent) {
   const mediaObjectId = requireUuid(body.mediaObjectId, 'mediaObjectId');
 
   await assertOwnsParent(parent, parentId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, subscriptionSectionOf(parent), parentId, mediaObjectId);
   const ids = { [parent.idField]: parentId, mediaObjectId };
 
   // Every write below is guarded by the status it expects, so a concurrent
@@ -1326,6 +1328,7 @@ async function handleQuotationAuthorize(request, env) {
     throw new WorkerError('Invalid quotation media size', 400, 'media_too_large');
   }
   const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, 'quotations', quotationId, requestedId);
   if (quotation[QUOTATION_ROLE_COLUMNS[role].column] !== expectedMediaId) {
     throw new WorkerError('Quotation media changed', 409, 'stale_replacement');
   }
@@ -1523,6 +1526,7 @@ async function handleQuotationRemove(request, env) {
   const expectedMediaId = expectedQuotationMediaId(body);
   const pendingId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
   const quotation = await loadOwnedQuotation(quotationId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, 'quotations', quotationId, pendingId);
   if (pendingId) {
     const pending = await findOwnedMedia(pendingId, userId, env);
     if (pending && (pending.bucket !== env.R2_BUCKET_NAME ||
@@ -1732,6 +1736,7 @@ async function handlePlanAuthorize(request, env, plan) {
   }
 
   const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, subscriptionSectionOf(plan), parentId, requestedId);
   // A retry whose confirm already went through finds this very upload as the
   // plan: it is answered as ready below rather than refused as stale.
   const isThisUpload = requestedId !== null && parent.plan_media_id === requestedId;
@@ -2509,6 +2514,7 @@ async function handlePlanRemove(request, env, plan) {
   const expectedMediaId = expectedPlanMediaId(body);
   const candidateId = body.mediaObjectId == null ? null : requireUuid(body.mediaObjectId, 'mediaObjectId');
   const parent = await loadOwnedPlanParent(plan, parentId, userId, env);
+  await assertSubscriptionAllowsMediaChange(env, userId, subscriptionSectionOf(plan), parentId, candidateId);
   const ids = { [plan.idField]: parentId };
 
   if (candidateId) {
@@ -2669,6 +2675,32 @@ async function completeMediaRemoval(parent, row, env) {
  * [parentId]. The 404 is only ever answered after the ownership query itself
  * succeeded, so the app may treat it as authoritative.
  */
+function subscriptionSectionOf(parent) {
+  return parent.idField === 'offerId' ? 'offers' : 'owners';
+}
+
+/**
+ * Whether the account's plan lets this media change happen. Off unless the
+ * deployment sets SUBSCRIPTION_ENFORCEMENT="on", which must ship together with
+ * the subscription migration. When on, a backend that cannot answer refuses.
+ */
+export async function assertSubscriptionAllowsMediaChange(env, userId, section, itemId, mediaId) {
+  if (env.SUBSCRIPTION_ENFORCEMENT !== 'on') return;
+  const res = await supabaseServiceFetch(env, 'POST', '/rest/v1/rpc/subscription_authorize_media_change', {
+    p_user: userId,
+    p_section: section,
+    p_item: itemId,
+    p_media: mediaId ?? null,
+  }, { preferRepresentation: true });
+  if (!res.ok) throw new WorkerError('The plan could not be verified', 503, 'session_check_unavailable');
+  const decision = await res.json();
+  if (decision === 'allowed') return;
+  if (decision === 'read_only') {
+    throw new WorkerError('Adding and editing are paused on this plan', 403, 'subscription_read_only');
+  }
+  throw new WorkerError('This change is not covered by a saved edit', 403, 'subscription_edit_required');
+}
+
 async function assertOwnsParent(parent, parentId, userId, env) {
   const parentRes = await supabaseServiceFetch(
     env,

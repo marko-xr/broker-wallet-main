@@ -375,7 +375,11 @@ void main() {
 
   group('documentation of the limits', () {
     test('the checkpoint says what is not verified and what the quota is', () {
-      final doc = read('docs/CURRENT_CHECKPOINT.md');
+      // Task 01E moved the dated checkpoint sections, S4 included, into the
+      // frozen archive; docs/CURRENT_CHECKPOINT.md is now a short status page.
+      final doc = read(
+        'docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md',
+      );
       final section = doc.indexOf('CHECKPOINT S4');
       expect(section, greaterThan(0));
       final text = doc.substring(section);

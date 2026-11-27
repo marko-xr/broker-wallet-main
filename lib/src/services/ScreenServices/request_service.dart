@@ -32,8 +32,10 @@ class RequestService {
     }
   }
 
-  Future<String?> saveRequest(RequestModel request) async {
-    return _supabase.saveRequest(request);
+  String newRecordId() => _supabase.generateId();
+
+  Future<String?> saveRequest(RequestModel request, {String? recordId}) async {
+    return _supabase.saveRequest(request, requestId: recordId);
   }
 
   Future<void> updateRequest(String requestId, RequestModel request) async {

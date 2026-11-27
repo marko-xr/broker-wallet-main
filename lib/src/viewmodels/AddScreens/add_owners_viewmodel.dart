@@ -719,6 +719,7 @@ class AddOwnersViewModel extends ChangeNotifier
       newMedia: media.drafts,
       removedMediaIds: removed,
       cancelledUploadIds: cancelled,
+      planChanged: _plan?.hasPendingChange ?? false,
     );
 
     if (!editing && _createdOwnerId == null) {

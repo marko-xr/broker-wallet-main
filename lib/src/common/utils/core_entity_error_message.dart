@@ -67,6 +67,23 @@ class CoreEntityErrorMessage {
       return localized('saveErrorSessionExpired',
           'Your session has expired. Please sign in again.');
     }
+    // The server's quota decisions. Each is exact, and none saved anything.
+    if (error is PostgrestException) {
+      switch (error.code) {
+        case 'PBQ01':
+          return localized('quotaCreationLimitReached',
+              'You have used all 5 Free creations in this section.');
+        case 'PBQ02':
+          return localized('quotaEditLimitReached',
+              'You have used all 3 Free edits for this item.');
+        case 'PBQ03':
+          return localized('quotaAccountReadOnly',
+              'Your plan has ended and this account is over the Free limits, so adding and editing are paused.');
+        case 'PBQ06':
+          return localized('quotaCheckUnavailable',
+              'Your plan could not be verified. Nothing was saved. Please try again.');
+      }
+    }
     if (error is AuthException ||
         (error is PostgrestException && error.code == '42501')) {
       return localized('saveErrorNoPermission',

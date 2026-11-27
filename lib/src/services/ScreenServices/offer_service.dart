@@ -114,6 +114,7 @@ class OfferService {
     List<OfferMediaDraft> newMedia = const <OfferMediaDraft>[],
     List<String> removedMediaIds = const <String>[],
     List<String> cancelledUploadIds = const <String>[],
+    bool planChanged = false,
   }) async {
     if (!SupabaseConfig.useSupabaseAuth) {
       throw StateError('saveOfferWithMedia is the Supabase media path.');
@@ -123,11 +124,18 @@ class OfferService {
       throw StateError('A Supabase session is required.');
     }
 
+    // One save is one edit however many files it changes. A null entry stands
+    // for the plan file, whose id is only chosen when it is sent.
+    final mediaIds = <String?>[
+      for (final draft in newMedia) draft.mediaObjectId,
+      ...removedMediaIds,
+      if (planChanged) null,
+    ];
     final existing = await _supabase.getOfferMetadata(offerId);
     if (existing == null) {
-      await _supabase.saveOffer(offer, offerId: offerId);
+      await _supabase.saveOffer(offer, offerId: offerId, mediaIds: mediaIds);
     } else {
-      await _supabase.updateOffer(offerId, offer);
+      await _supabase.updateOffer(offerId, offer, mediaIds: mediaIds);
     }
 
     final queue = _uploadQueue;

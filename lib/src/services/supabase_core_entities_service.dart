@@ -10,6 +10,7 @@ import '../data/models/ScreensModel/offices_model.dart';
 import '../data/models/ScreensModel/owners_model.dart';
 import '../data/models/ScreensModel/request_model.dart';
 import '../data/models/ScreensModel/watchmen_model.dart';
+import '../config/supabase_config.dart';
 import '../data/models/property_status.dart';
 import 'app_session_coordinator.dart';
 import 'bounded_tasks.dart';
@@ -193,19 +194,25 @@ class SupabaseCoreEntitiesService {
       id: id,
       ownerId: ownerId,
     );
-    await _insert('request.create', 'requests', payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('request.create', 'requests', id, payload,
+          areas: model.selectedAreas);
+    } else {
+      await _insert('request.create', 'requests', payload);
 
-    try {
-      await _replaceAreas(
-          'request_areas', 'request_id', id, model.selectedAreas);
-    } catch (error, stackTrace) {
       try {
-        await _softDelete('requests', id);
-        _debugLog('request.create', 'child write failed; parent rolled back');
-      } catch (cleanupError, cleanupStackTrace) {
-        _debugError('request.create.rollback', cleanupError, cleanupStackTrace);
+        await _replaceAreas(
+            'request_areas', 'request_id', id, model.selectedAreas);
+      } catch (error, stackTrace) {
+        try {
+          await _softDelete('requests', id);
+          _debugLog('request.create', 'child write failed; parent rolled back');
+        } catch (cleanupError, cleanupStackTrace) {
+          _debugError(
+              'request.create.rollback', cleanupError, cleanupStackTrace);
+        }
+        Error.throwWithStackTrace(error, stackTrace);
       }
-      Error.throwWithStackTrace(error, stackTrace);
     }
     CoreEntityMutationNotifier.notify(CoreEntityKind.request);
     return id;
@@ -216,15 +223,20 @@ class SupabaseCoreEntitiesService {
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.request(model, id: id, ownerId: ownerId),
     );
-    await _updateWithAreas(
-      operation: 'request.update',
-      table: 'requests',
-      areaTable: 'request_areas',
-      foreignKey: 'request_id',
-      id: id,
-      payload: payload,
-      areas: model.selectedAreas,
-    );
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('request.update', 'requests', id, payload,
+          areas: model.selectedAreas);
+    } else {
+      await _updateWithAreas(
+        operation: 'request.update',
+        table: 'requests',
+        areaTable: 'request_areas',
+        foreignKey: 'request_id',
+        id: id,
+        payload: payload,
+        areas: model.selectedAreas,
+      );
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.request);
   }
 
@@ -305,7 +317,11 @@ class SupabaseCoreEntitiesService {
   // Offers
   // -------------------------------------------------------------------------
 
-  Future<String> saveOffer(OfferModel model, {String? offerId}) async {
+  Future<String> saveOffer(
+    OfferModel model, {
+    String? offerId,
+    List<String?> mediaIds = const [],
+  }) async {
     final ownerId = _requireUserId();
     final id = offerId ?? generateId();
     final payload = CoreEntityPayloadBuilder.offer(
@@ -313,36 +329,50 @@ class SupabaseCoreEntitiesService {
       id: id,
       ownerId: ownerId,
     );
-    await _insert('offer.create', 'offers', payload);
-    try {
-      await _replaceAreas('offer_areas', 'offer_id', id, model.selectedAreas);
-    } catch (error, stackTrace) {
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('offer.create', 'offers', id, payload,
+          areas: model.selectedAreas, mediaIds: mediaIds);
+    } else {
+      await _insert('offer.create', 'offers', payload);
       try {
-        await _softDelete('offers', id);
-        _debugLog('offer.create', 'child write failed; parent rolled back');
-      } catch (cleanupError, cleanupStackTrace) {
-        _debugError('offer.create.rollback', cleanupError, cleanupStackTrace);
+        await _replaceAreas('offer_areas', 'offer_id', id, model.selectedAreas);
+      } catch (error, stackTrace) {
+        try {
+          await _softDelete('offers', id);
+          _debugLog('offer.create', 'child write failed; parent rolled back');
+        } catch (cleanupError, cleanupStackTrace) {
+          _debugError('offer.create.rollback', cleanupError, cleanupStackTrace);
+        }
+        Error.throwWithStackTrace(error, stackTrace);
       }
-      Error.throwWithStackTrace(error, stackTrace);
     }
     CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
     return id;
   }
 
-  Future<void> updateOffer(String id, OfferModel model) async {
+  Future<void> updateOffer(
+    String id,
+    OfferModel model, {
+    List<String?> mediaIds = const [],
+  }) async {
     final ownerId = _requireUserId();
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.offer(model, id: id, ownerId: ownerId),
     );
-    await _updateWithAreas(
-      operation: 'offer.update',
-      table: 'offers',
-      areaTable: 'offer_areas',
-      foreignKey: 'offer_id',
-      id: id,
-      payload: payload,
-      areas: model.selectedAreas,
-    );
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('offer.update', 'offers', id, payload,
+          areas: model.selectedAreas, mediaIds: mediaIds);
+    } else {
+      await _updateWithAreas(
+        operation: 'offer.update',
+        table: 'offers',
+        areaTable: 'offer_areas',
+        foreignKey: 'offer_id',
+        id: id,
+        payload: payload,
+        areas: model.selectedAreas,
+      );
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.offer);
   }
 
@@ -899,7 +929,11 @@ class SupabaseCoreEntitiesService {
   // Owners
   // -------------------------------------------------------------------------
 
-  Future<String> saveOwner(OwnerModel model, {String? ownerRecordId}) async {
+  Future<String> saveOwner(
+    OwnerModel model, {
+    String? ownerRecordId,
+    List<String?> mediaIds = const [],
+  }) async {
     final ownerId = _requireUserId();
     final id = ownerRecordId ?? generateId();
     final payload = CoreEntityPayloadBuilder.owner(
@@ -907,17 +941,31 @@ class SupabaseCoreEntitiesService {
       id: id,
       ownerId: ownerId,
     );
-    await _insert('owner.create', 'owners', payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('owner.create', 'owners', id, payload,
+          mediaIds: mediaIds);
+    } else {
+      await _insert('owner.create', 'owners', payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
     return id;
   }
 
-  Future<void> updateOwner(String id, OwnerModel model) async {
+  Future<void> updateOwner(
+    String id,
+    OwnerModel model, {
+    List<String?> mediaIds = const [],
+  }) async {
     final ownerId = _requireUserId();
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.owner(model, id: id, ownerId: ownerId),
     );
-    await _update('owner.update', 'owners', id, payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('owner.update', 'owners', id, payload,
+          mediaIds: mediaIds);
+    } else {
+      await _update('owner.update', 'owners', id, payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.owner);
   }
 
@@ -969,15 +1017,19 @@ class SupabaseCoreEntitiesService {
   // Offices
   // -------------------------------------------------------------------------
 
-  Future<String> saveOffice(OfficeModel model) async {
+  Future<String> saveOffice(OfficeModel model, {String? recordId}) async {
     final ownerId = _requireUserId();
-    final id = generateId();
+    final id = recordId ?? generateId();
     final payload = CoreEntityPayloadBuilder.office(
       model,
       id: id,
       ownerId: ownerId,
     );
-    await _insert('office.create', 'offices', payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('office.create', 'offices', id, payload);
+    } else {
+      await _insert('office.create', 'offices', payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.office);
     return id;
   }
@@ -987,7 +1039,11 @@ class SupabaseCoreEntitiesService {
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.office(model, id: id, ownerId: ownerId),
     );
-    await _update('office.update', 'offices', id, payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('office.update', 'offices', id, payload);
+    } else {
+      await _update('office.update', 'offices', id, payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.office);
   }
 
@@ -1035,15 +1091,19 @@ class SupabaseCoreEntitiesService {
   // Brokers
   // -------------------------------------------------------------------------
 
-  Future<String> saveBroker(BrokerModel model) async {
+  Future<String> saveBroker(BrokerModel model, {String? recordId}) async {
     final ownerId = _requireUserId();
-    final id = generateId();
+    final id = recordId ?? generateId();
     final payload = CoreEntityPayloadBuilder.broker(
       model,
       id: id,
       ownerId: ownerId,
     );
-    await _insert('broker.create', 'brokers', payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('broker.create', 'brokers', id, payload);
+    } else {
+      await _insert('broker.create', 'brokers', payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
     return id;
   }
@@ -1053,7 +1113,11 @@ class SupabaseCoreEntitiesService {
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.broker(model, id: id, ownerId: ownerId),
     );
-    await _update('broker.update', 'brokers', id, payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('broker.update', 'brokers', id, payload);
+    } else {
+      await _update('broker.update', 'brokers', id, payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.broker);
   }
 
@@ -1095,15 +1159,19 @@ class SupabaseCoreEntitiesService {
   // Watchmen
   // -------------------------------------------------------------------------
 
-  Future<String> saveWatchman(WatchmenModel model) async {
+  Future<String> saveWatchman(WatchmenModel model, {String? recordId}) async {
     final ownerId = _requireUserId();
-    final id = generateId();
+    final id = recordId ?? generateId();
     final payload = CoreEntityPayloadBuilder.watchman(
       model,
       id: id,
       ownerId: ownerId,
     );
-    await _insert('watchman.create', 'watchmen', payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _createOnServer('watchman.create', 'watchmen', id, payload);
+    } else {
+      await _insert('watchman.create', 'watchmen', payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
     return id;
   }
@@ -1113,7 +1181,11 @@ class SupabaseCoreEntitiesService {
     final payload = CoreEntityPayloadBuilder.forUpdate(
       CoreEntityPayloadBuilder.watchman(model, id: id, ownerId: ownerId),
     );
-    await _update('watchman.update', 'watchmen', id, payload);
+    if (SupabaseConfig.subscriptionBackendEnabled) {
+      await _updateOnServer('watchman.update', 'watchmen', id, payload);
+    } else {
+      await _update('watchman.update', 'watchmen', id, payload);
+    }
     CoreEntityMutationNotifier.notify(CoreEntityKind.watchman);
   }
 
@@ -1520,6 +1592,70 @@ class SupabaseCoreEntitiesService {
           'child write succeeded count=${normalizedAreas.length}');
     } catch (error, stackTrace) {
       _debugError('$table.replace', error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// One atomic create on the server: the row, its areas and its lifetime
+  /// charge commit together or not at all. [id] is the identity of this form's
+  /// create, so a retry after a lost answer cannot count twice.
+  Future<void> _createOnServer(
+    String operation,
+    String table,
+    String id,
+    Map<String, dynamic> payload, {
+    List<String> areas = const [],
+    List<String?> mediaIds = const [],
+  }) async {
+    final content = CoreEntityPayloadBuilder.forUpdate(payload);
+    try {
+      await _client.rpc<dynamic>('create_core_entity', params: {
+        'p_section': table,
+        'p_id': id,
+        'p_payload': content,
+        'p_areas': CoreEntityPayloadBuilder.areas(areas),
+        'p_media_ids': mediaIds,
+      });
+      _debugLog(operation, 'server create succeeded');
+    } on PostgrestException catch (error, stackTrace) {
+      // PBQ05: an earlier attempt of this form did land (its answer was lost)
+      // and the user has changed the form since. This is now an edit of that
+      // same record, never a second one.
+      if (error.code != 'PBQ05') {
+        _debugError(operation, error, stackTrace);
+        rethrow;
+      }
+      await _updateOnServer(operation, table, id, content,
+          areas: areas, mediaIds: mediaIds);
+    } catch (error, stackTrace) {
+      _debugError(operation, error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// One atomic update on the server. Every call has its own request id; a
+  /// retry after a lost answer sends the same content, which the server sees
+  /// as no change and does not charge.
+  Future<void> _updateOnServer(
+    String operation,
+    String table,
+    String id,
+    Map<String, dynamic> payload, {
+    List<String> areas = const [],
+    List<String?> mediaIds = const [],
+  }) async {
+    try {
+      await _client.rpc<dynamic>('update_core_entity', params: {
+        'p_section': table,
+        'p_id': id,
+        'p_request_id': generateId(),
+        'p_payload': payload,
+        'p_areas': CoreEntityPayloadBuilder.areas(areas),
+        'p_media_ids': mediaIds,
+      });
+      _debugLog(operation, 'server update succeeded');
+    } catch (error, stackTrace) {
+      _debugError(operation, error, stackTrace);
       rethrow;
     }
   }

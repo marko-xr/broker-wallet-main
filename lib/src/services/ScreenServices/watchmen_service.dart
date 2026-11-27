@@ -32,8 +32,10 @@ class WatchmenService {
     }
   }
 
-  Future<String?> saveWatchmen(WatchmenModel watchmen) async {
-    return _supabase.saveWatchman(watchmen);
+  String newRecordId() => _supabase.generateId();
+
+  Future<String?> saveWatchmen(WatchmenModel watchmen, {String? recordId}) async {
+    return _supabase.saveWatchman(watchmen, recordId: recordId);
   }
 
   Future<void> updateWatchmen(String watchmenId, WatchmenModel watchmen) async {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:broker_wallet/src/services/platform_http_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -163,8 +164,10 @@ abstract final class AppAccessPolicy {
 
   /// The client factory for `http.runWithClient` in `main()`: every
   /// `http.Client()` and top-level `http.get` in the app's zone is guarded.
-  /// Its transport is an [IOClient], so it never recurses into the zone.
-  static http.Client newZoneClient() => PolicyGuardedClient(IOClient());
+  /// Its transport is the platform's raw client, so it never recurses into
+  /// the zone.
+  static http.Client newZoneClient() =>
+      PolicyGuardedClient(kIsWeb ? newBrowserTransport() : IOClient());
 
   /// A shared guarded client for one-off requests (replaces top-level
   /// `http.get`).

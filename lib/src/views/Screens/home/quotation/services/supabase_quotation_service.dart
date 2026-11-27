@@ -40,6 +40,18 @@ enum QuotationFailure {
   /// The id already belongs to a different Quotation (PQT06).
   idConflict,
 
+  /// All Free creations of Quotations are used (PBQ01).
+  creationLimit,
+
+  /// All Free edits of this Quotation are used (PBQ02).
+  editLimit,
+
+  /// The plan ended over the Free limits: adding and editing are paused (PBQ03).
+  accountReadOnly,
+
+  /// The plan could not be verified, so nothing was saved (PBQ06).
+  planUnavailable,
+
   /// The session may not do this (RLS / permission).
   permissionDenied,
 
@@ -414,6 +426,14 @@ class SupabaseQuotationService implements QuotationRemote {
           return const QuotationException(QuotationFailure.invalidPayload);
         case 'PQT06':
           return const QuotationException(QuotationFailure.idConflict);
+        case 'PBQ01':
+          return const QuotationException(QuotationFailure.creationLimit);
+        case 'PBQ02':
+          return const QuotationException(QuotationFailure.editLimit);
+        case 'PBQ03':
+          return const QuotationException(QuotationFailure.accountReadOnly);
+        case 'PBQ06':
+          return const QuotationException(QuotationFailure.planUnavailable);
         case '42501':
           return const QuotationException(QuotationFailure.permissionDenied);
       }

@@ -426,6 +426,8 @@ class AddWatchmenViewModel extends ChangeNotifier
     }
   }
 
+  String? _pendingCreateId;
+
   // Handle add mode
   Future<bool> _handleAddMode(
       BuildContext context, WatchmenModel watchmen) async {
@@ -435,10 +437,14 @@ class AddWatchmenViewModel extends ChangeNotifier
     );
     if (!canAdd) return false;
 
-    final watchmenId = await _watchmenService.saveWatchmen(watchmen);
+    // Kept across retries: a lost answer can then never create a second one.
+    _pendingCreateId ??= _watchmenService.newRecordId();
+    final watchmenId = await _watchmenService.saveWatchmen(watchmen,
+        recordId: _pendingCreateId);
     if (watchmenId == null) {
       throw Exception('Failed to save watchmen information');
     }
+    _pendingCreateId = null;
     await CoreEntityQuotaBridge.recordCreated(section: 'watchmen');
     return true;
   }

@@ -16,6 +16,7 @@ import 'package:broker_wallet/src/services/push/push_messaging_service.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/viewmodels/password_recovery_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/subscription_state_controller.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/signup_viewmodel.dart';
 import 'package:broker_wallet/src/common/localization/localization_delegate.dart';
@@ -29,6 +30,10 @@ import 'src/viewmodels/theme_viewmodel.dart';
 import 'src/viewmodels/locale_viewmodel.dart';
 import 'src/viewmodels/fast_upload_viewmodel.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:broker_wallet/src/services/subscription/payment_navigation.dart';
+import 'package:broker_wallet/src/services/web_start_route.dart';
+import 'package:broker_wallet/src/services/web_maps_loader.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:broker_wallet/src/services/media_pick_recovery.dart';
@@ -255,8 +260,23 @@ void _initializeAnalyticsServiceAsync() {
 void main() => http.runWithClient(_main, AppAccessPolicy.newZoneClient);
 
 Future<void> _main() async {
+  // A misconfigured public build must fail here, not run on the old quota path.
+  final releaseProblem = SupabaseConfig.publicReleaseProblem;
+  if (releaseProblem != null) throw StateError(releaseProblem);
+
+  // A browser coming back from Tap's secure page. Taken before routing, which
+  // would drop the query on its way through the startup and sign-in gates.
+  if (kIsWeb) {
+    PaymentReturnStore.capture(Uri.base);
+    WebStartRoute.capture(Uri.base);
+  }
+
+  // Maps in a browser need Google's script; it loads while the services start.
+  final webMaps = kIsWeb ? loadGoogleMapsForWeb() : null;
+
   // Ensure all services are initialized before running the app
   await initializeAppServices();
+  await webMaps;
   _mark('services');
   // Before runApp, so the first account attach is not missed; not awaited.
   _startPush();
@@ -334,6 +354,21 @@ Future<void> _main() async {
             service ??= OptimisticFavoritesService();
             service.syncAccountGeneration();
             return service;
+          },
+        ),
+        // The server-confirmed plan of the signed-in account. It follows the
+        // canonical identity, so a sign-out or account switch clears it.
+        ChangeNotifierProxyProvider<AuthViewModel, SubscriptionStateController>(
+          lazy: true,
+          create: (_) => SubscriptionStateController(),
+          update: (_, authVM, controller) {
+            controller ??= SubscriptionStateController();
+            if (SupabaseConfig.subscriptionBackendEnabled) {
+              controller.attachUser(
+                authVM.isPasswordRecoveryActive ? null : authVM.currentUser?.uid,
+              );
+            }
+            return controller;
           },
         ),
         ChangeNotifierProxyProvider<AuthViewModel, NotificationViewModel>(

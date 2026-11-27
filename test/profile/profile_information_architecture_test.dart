@@ -118,7 +118,8 @@ void main() {
   test('deferred screens expose no fabricated plan, checkout, or export', () {
     expect(myPlan, contains("loc.translate('planInformationUnavailable')"));
     expect(myPlan, isNot(contains('FirebaseFirestore')));
-    expect(subscriptions, contains("loc.translate('storeProductsNotConnected')"));
+    expect(
+        subscriptions, contains("loc.translate('subPurchasesNotConnected')"));
     expect(subscriptions, contains('onPressed: null'));
     expect(subscriptions, isNot(contains('SubscriptionViewModel')));
     expect(billing, contains("loc.translate('billingStoreExplanation')"));

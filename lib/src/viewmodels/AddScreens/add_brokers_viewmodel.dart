@@ -241,6 +241,8 @@ class AddBrokersViewModel extends ChangeNotifier {
     }
   }
 
+  String? _pendingCreateId;
+
   // Handle add mode
   Future<void> _handleAddMode(BuildContext context) async {
     final canAdd = await CoreEntityQuotaBridge.canCreate(
@@ -250,9 +252,13 @@ class AddBrokersViewModel extends ChangeNotifier {
     if (!canAdd) return;
 
     final broker = _createBrokerModel();
-    final savedBrokerId = await _brokerService.saveBroker(broker);
+    // Kept across retries: a lost answer can then never create a second one.
+    _pendingCreateId ??= _brokerService.newRecordId();
+    final savedBrokerId =
+        await _brokerService.saveBroker(broker, recordId: _pendingCreateId);
 
     if (savedBrokerId != null) {
+      _pendingCreateId = null;
       await CoreEntityQuotaBridge.recordCreated(section: 'brokers');
 
       // Success - navigate back

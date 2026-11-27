@@ -12,13 +12,23 @@ class PluginDeviceLocationPlatform implements DeviceLocationPlatform {
   @override
   Future<bool> servicesEnabled() => Geolocator.isLocationServiceEnabled();
 
+  /// True in a browser build: the constant Flutter's `kIsWeb` is made of, so
+  /// this file stays plain Dart.
+  static const bool _inBrowser =
+      bool.fromEnvironment('dart.library.js_interop');
+
+  /// A browser has one location permission, which the plugin names
+  /// [Permission.location]; asking it for "when in use" throws there.
+  static Permission get _location =>
+      _inBrowser ? Permission.location : Permission.locationWhenInUse;
+
   @override
   Future<DevicePermission> permission() async =>
-      _read(await Permission.locationWhenInUse.status);
+      _read(await _location.status);
 
   @override
   Future<DevicePermission> requestPermission() async =>
-      _read(await Permission.locationWhenInUse.request());
+      _read(await _location.request());
 
   @override
   Future<DevicePoint?> lastKnownPosition() async {

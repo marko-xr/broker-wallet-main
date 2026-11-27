@@ -134,6 +134,14 @@ class QuotationSaveOutcome {
             return 'quotationSessionExpired';
           case QuotationFailure.network:
             return 'quotationNetworkError';
+          case QuotationFailure.creationLimit:
+            return 'quotaCreationLimitReached';
+          case QuotationFailure.editLimit:
+            return 'quotaEditLimitReached';
+          case QuotationFailure.accountReadOnly:
+            return 'quotaAccountReadOnly';
+          case QuotationFailure.planUnavailable:
+            return 'quotaCheckUnavailable';
           case QuotationFailure.idConflict:
           case QuotationFailure.unknown:
           case null:

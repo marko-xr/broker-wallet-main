@@ -1425,6 +1425,7 @@ class AddOffersViewModel extends ChangeNotifier
       newMedia: drafts,
       removedMediaIds: removed,
       cancelledUploadIds: cancelled,
+      planChanged: _plan?.hasPendingChange ?? false,
     );
 
     if (!editing && _createdOfferId == null) {

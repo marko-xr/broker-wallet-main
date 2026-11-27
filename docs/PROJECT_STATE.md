@@ -1,6 +1,21 @@
 # Project state
 
-Broker Wallet is in a staged Firebase → Supabase migration. This is not a full Supabase cutover; Firebase behavior remains for sections not yet migrated.
+This file describes how the verified behaviour works and how it was verified.
+Current status of every feature, and the Git map, live only in
+`docs/CURRENT_CHECKPOINT.md`; when this file and the checkpoint disagree on a
+status, the checkpoint wins. Paragraphs below carry the date of their evidence.
+
+Corrected 2026-11-28: the Firebase → Supabase migration is complete for auth,
+profiles and data. Supabase Auth is the only auth authority and Firebase Auth,
+Firebase Storage and Cloud Functions code are removed (Firebase removal phases,
+2026-10/11). Firebase remains only for FCM push transport (`firebase_core`,
+`firebase_messaging`) and for the legacy Firestore Toolkit usage gates and
+`quota_helper` (`cloud_firestore`), which call Firestore without a Firebase
+session; quotas are therefore not enforced until the server-side subscription
+system lands (`docs/LEGACY_FIRESTORE_QUOTA_REMOVAL_PLAN.md`). Until 2026-10 this
+file said: "Broker Wallet is in a staged Firebase → Supabase migration. This is
+not a full Supabase cutover; Firebase behavior remains for sections not yet
+migrated."
 
 The existing-account Supabase Email Change flow is VERIFIED_RUNTIME. It failed
 its first real-device test, was fixed, and the product owner has since confirmed
@@ -16,11 +31,21 @@ profile image save, Email Change entry and Add Phone entry all confirmed
 working and no reported regression.
 
 Phone Login and Phone Sign-up UI is present and selectable on both screens at
-the product owner's request, and that restoration is VERIFIED_UI. Phone
-authentication itself is NOT implemented and NOT runtime verified in Supabase
-mode: it is legacy-Firebase only, and the screens say so in EN/AR. The
-signed-in Add Phone / verification flow is preserved, and real UAE SMS delivery
-remains externally deferred.
+the product owner's request, and that restoration is VERIFIED_UI. Until
+2026-11-22 phone authentication was NOT implemented in Supabase mode (it was
+legacy-Firebase only, and the screens said so in EN/AR), and the signed-in Add
+Phone flow used Supabase Auth's own phone change.
+
+Corrected 2026-11-28: phone accounts are now implemented in code as Model X
+(phone auth B1–C4, commits `5d15ddb` and `ceb488d`, design in
+`docs/PHONE_ACCOUNT_SECURITY_DESIGN.md`): phone sign-up and sign-in through
+Supabase OTP behind `PHONE_AUTH_ENABLED` (default false, so the screens keep the
+"not available yet" message), an email account's phone as a verified contact
+number through the Worker (`contact_phone_service.dart`), Change Phone and
+Delete Account for phone accounts. It is LOCAL_TESTED only: the three
+migrations `20261122120000`, `20261122130000` and `20261122140000` are not
+applied, no auth hook is enabled, the Worker phone routes are not deployed, and
+nothing is device-verified. Real UAE SMS delivery remains externally deferred.
 
 Password is VERIFIED_RUNTIME. The product owner confirmed on a real device
 Change Password, Forgot Password, the dedicated recovery callback, recovery
@@ -118,7 +143,7 @@ Auth what happened, and always ends that session on the device, reporting a
 deletion only when Supabase Auth says the account is gone. The job-table
 migration is applied and hosted-verified, and the production Worker is deployed.
 That lost-response path has not been exercised at runtime (NOT RUN / DEFERRED;
-see `docs/CURRENT_CHECKPOINT.md`).
+see `docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md`).
 
 Offer private media is accepted by the product owner (VERIFIED_REAL_DEVICE,
 Samsung, 2026-09-27): selecting images and videos, one combined Gallery
@@ -141,7 +166,7 @@ Offer-media sweeps `off`. Interruption, account switching, permission refusal,
 process death, iOS and sweep scenarios are NOT RUN (`MEDIA-12`…`MEDIA-26` in
 the deferred master test plan). Private Offer documents (Task C) are deferred.
 
-Owner private media is the active checkpoint (2026-09-28): the Offer media
+Owner private media was the active checkpoint on 2026-09-28: the Offer media
 lifecycle for Owner records, under the same rules (owner decision). Source is
 written for all three layers — the `confirm_owner_media_upload` migration with
 its pgTAP and rollback-only validation, the Worker's Owner routes with
@@ -158,8 +183,16 @@ and production `6387e2c0-db49-43eb-a0e0-edaca76e3e5e` (rollback
 `ecaf125d-a0e3-4c26-add6-5f2c684c2516`), whose smoke tests passed; every media
 sweep stays `off`. Still open: the second, day-later phase of the F1 staging
 check, and all Owner media device acceptance, including F2's lost-picker
-scenario (see `docs/CURRENT_CHECKPOINT.md`). The milestone is committed
-locally on `feature/owner-private-media`.
+scenario (see `docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md`). The
+milestone is committed locally on `feature/owner-private-media`.
+
+Corrected 2026-11-28: Owner private media was closed on 2026-10-12 as checklist
+item #6 after a hosted/current-state re-verification. That closure does not
+promote the Owner Samsung scenarios (`MEDIA-29`…`MEDIA-32`, `MEDIA-34`) or the
+F1 day-later check (`MEDIA-33`): they remain not device-verified. The Worker
+version ids in this file are the ones live on each paragraph's date; the
+production Worker has been redeployed since (last recorded: `64a9589b`,
+2026-10-21, see `docs/CURRENT_CHECKPOINT.md`).
 
 The Realtime `RealtimeSubscribeException` on `public.notifications` observed
 during the first failed recovery test did not reproduce after the quarantine
@@ -173,4 +206,23 @@ lifecycle (`EntityListState`) so a delete, a status change or a refresh no
 longer blanks the screen, with a visible loading placeholder and item-level
 delete progress. Owner-run verification: 43/43 targeted regression tests
 PASS, Flutter analyzer accepted, and Samsung physical-device acceptance PASS.
-No push, deployment or merge occurred; see `docs/CURRENT_CHECKPOINT.md`.
+No push, deployment or merge occurred; see
+`docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md`.
+
+Later work, in brief (status in `docs/CURRENT_CHECKPOINT.md`, details in the
+named documents):
+
+- Notifications (2026-11-20/21): Postgres `public.notifications` is the source
+  of truth; follow-up reminders and FCM HTTP v1 push are sent by the
+  `push-dispatch` Edge Function under a pg_cron scheduler with single-use
+  dispatch nonces. Applied to the hosted project and accepted on the Samsung;
+  iOS push waits for Apple. `docs/NOTIFICATIONS_PRODUCTION_PLAN.md`.
+- Toolkit cloud documents (2026-10-19/22): migration `20261019100000` applied;
+  the production Worker serves the routes since 2026-10-21. Real-phone check
+  owed. `docs/toolbox/`.
+- Subscriptions, payments and Flutter Web (2026-11-23/26): implemented and
+  tested locally with fake providers on branches outside the base (Git map in
+  the checkpoint); nothing hosted. `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md`.
+- Production database backup (2026-11-26): an encrypted, verified logical
+  backup exists; an isolated full restore has not been done.
+  `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md`.

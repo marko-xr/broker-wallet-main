@@ -6,15 +6,17 @@
 - Never introduce arbitrary hard-coded colors/fonts.
 - Preserve Arabic + English localization and RTL.
 - Do not hard-code production UI strings when localization exists.
-- Supabase Auth is target auth authority in Supabase mode.
+- Supabase Auth is the only auth authority (Firebase Auth code is removed).
 - `AuthRepository.currentUserId` is canonical identity.
 - `auth.users.id = public.profiles.id`.
 - `public.profiles` is canonical profile data.
 - Never create `public.users` or Firebase/Supabase UID mappings.
 - Never weaken RLS/security/authentication to make a feature pass.
 - No fake success, swallowed authoritative failures, placeholders or demo behavior.
-- Preserve Firebase behavior only for sections not yet migrated.
-- One checkpoint/problem at a time.
+- Firebase remains only for FCM push transport (`firebase_core`,
+  `firebase_messaging`) and the legacy Firestore quota gates
+  (`docs/LEGACY_FIRESTORE_QUOTA_REMOVAL_PLAN.md`). Add no new Firebase use.
+- One checkpoint/problem at a time (see "Work rules" below).
 - Do not modify unrelated features.
 - Do not remove, hide, redesign or alter existing user-facing UI or features
   unless the product owner explicitly authorized that UI change. A feature whose
@@ -29,13 +31,41 @@
 - Before coding, read `AGENTS.md`, `CLAUDE.md` when present, and
   `docs/CURRENT_CHECKPOINT.md`.
 - Before finishing a task, update the relevant durable docs when a checkpoint,
-  architecture, decision, blocker or verification status changed.
+  architecture, decision, blocker or verification status changed, following
+  `docs/README.md`: replace the status in `docs/CURRENT_CHECKPOINT.md` (keep it
+  short), put long evidence in the topic document, and never edit `docs/archive/`.
 - Database/security migrations are never production-safe from source review or
   Flutter/Dart tests alone. Exercise them against a real or disposable database
   (pgTAP locally, or a rollback-only validation script) before any hosted PASS.
 - Every handoff states NOW (the exact action to perform now) and NEXT (the exact
   action after that succeeds).
 - Do not mark CODE_PROVEN work as VERIFIED_RUNTIME.
+
+## Work rules (owner, 2026-11-28)
+
+- **One task per branch and per AI chat.** Each task gets its own branch, cut
+  from the base the owner names. Do not mix tasks in one branch or one chat. Stop
+  after the task's report and wait for the next instruction.
+- **Reports in Arabic.** Every explanation, report and question to the owner is
+  in Arabic. Code, identifiers, commit messages and repository documents stay in
+  English.
+- **Preserve Git work.** Never `reset`, `clean`, `restore`/`checkout` over
+  existing changes, drop or pop a stash, delete a branch, `rebase`, `merge`,
+  `push`, force-push or amend a commit that may be on origin, unless the owner
+  asks for that exact action in the current task. Stage explicit paths only
+  (never `git add .` or `-A`). Never commit the generated plugin registrants. No
+  Git worktrees unless the owner asks. Preserve unfinished work as a Git branch
+  and commit, not as an archive file. The owner pushes and pulls with GitHub
+  Desktop at any time: check the branch and HEAD at the start of every task.
+- **No unauthorized hosted changes.** Staging and production share one Supabase
+  project, so every hosted write is a production write. Applying a migration,
+  any SQL write, auth/config changes, Edge Functions, secrets, Workers, R2, cron,
+  store consoles and payment providers each need the owner's explicit approval of
+  that exact step. Read-only checks run only when the task allows them.
+- **Report status honestly.** Use the status vocabulary in
+  `docs/CURRENT_CHECKPOINT.md` (CODE, LOCAL_TESTED, HOSTED_VERIFIED,
+  DEVICE_VERIFIED, PRODUCTION_READY) and name the evidence. Never call anything
+  production-ready without it.
 
 ## Graphify (supporting tool only)
 

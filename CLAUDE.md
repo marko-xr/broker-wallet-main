@@ -2,16 +2,21 @@
 
 Read `AGENTS.md` and `docs/CURRENT_CHECKPOINT.md` first. Read `docs/PROJECT_STATE.md` and `docs/DECISIONS.md` only when relevant.
 
+Follow the "Work rules" section of `AGENTS.md`: one task per branch and per chat, reports to the owner in Arabic, preserve all Git work (branches, commits, stashes, uncommitted changes), and no production or staging change without the owner's explicit approval of that exact step.
+
+Documentation map: `docs/README.md`. History lives in `docs/archive/` (18,000+ lines): search it for a specific section, never read it whole, and never edit it.
+
 Graphify: read and follow the "Graphify (supporting tool only)" section of `AGENTS.md` before using anything in `graphify-out/`. It is a navigation aid, never evidence; do not run or rebuild Graphify unless the owner asks.
 
 Known trap: Flutter commands rewrite the generated plugin registrant files under `linux/flutter/`, `macos/Flutter/` and `windows/flutter/`, so they show as modified in `git status` even when `git diff` shows no content change. Never include them in a feature commit and never edit them by hand; report them rather than restoring them unless the owner asks.
 
 Known trap: do not run a bare `dart format` on `lib/` or on already-tracked
 files. The package language version is 3.5, so the formatter uses the old short
-style, but three files still carry pre-existing deviations from it —
-`lib/src/viewmodels/Signup-Login/auth_viewmodel.dart`,
-`lib/src/views/Screens/home/Profile/edit_profile_view.dart` and
-`lib/src/repositories/firebase_auth_repository.dart`. Formatting them injects
+style, but files still carry pre-existing deviations from it —
+`lib/src/viewmodels/Signup-Login/auth_viewmodel.dart` and
+`lib/src/views/Screens/home/Profile/edit_profile_view.dart` (the third one
+named here, `lib/src/repositories/firebase_auth_repository.dart`, was deleted
+in Firebase removal phase 1, `19e964a`). Formatting them injects
 unrelated churn into a feature diff. Format only genuinely new files, and
 verify with `dart format --output=none --set-exit-if-changed` first.
 

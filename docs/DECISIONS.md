@@ -1,13 +1,28 @@
 # Durable decisions
 
-- Migration is staged.
-- Supabase is the canonical identity/profile authority in Supabase mode.
+Decisions are listed in the order they were made and are never deleted. A
+decision that was later replaced stays, marked **Superseded (date)** with a
+pointer to what replaced it. Current status is in `docs/CURRENT_CHECKPOINT.md`.
+A "see `docs/CURRENT_CHECKPOINT.md`" written before 2026-11-28 means that
+section of `docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md`.
+
+- Migration is staged. **Superseded (2026-11-28 review):** the migration is
+  complete for auth, profiles and data; Firebase remains only for FCM push
+  transport and the legacy Firestore quota gates
+  (`docs/LEGACY_FIRESTORE_QUOTA_REMOVAL_PLAN.md`).
+- Supabase is the canonical identity/profile authority in Supabase mode
+  (Supabase mode is now the only mode).
 - Production media target is private Cloudflare R2.
 - Do not weaken security.
 - Require a real-device gate after every checkpoint.
 - Use a one-small-change workflow.
 - Facebook authentication is removed. Google and Apple sign-in are deferred.
-- Phone verification stays on Supabase Auth's own phone-change flow. Real SMS
+- **Superseded in part (2026-11-22) by "Account identity, Model X" below:**
+  Supabase's self-service phone change is refused for every account and an
+  email account's phone is a Worker-verified contact number. The SMS-provider
+  deferral, "no fake SMS credentials" and "no custom OTP system" still hold.
+  Original decision:
+  Phone verification stays on Supabase Auth's own phone-change flow. Real SMS
   provider setup is deferred until the business/trade license and UAE sender
   registration exist; paying for production SMS just to unblock development is
   not justified. Until then:
@@ -281,7 +296,8 @@
   account lifecycle.
 - Product owner decisions, 2026-09-13: device-local Toolkit PDFs are preserved
   on account deletion; RevenueCat data retention is deferred until RevenueCat is
-  live; retained audit/security history must not contain direct personal
+  live (2026-11-24: RevenueCat is not used; billing-record retention for Google
+  Play and Tap is part of the subscription design); retained audit/security history must not contain direct personal
   identifiers (email, phone, name) — a SET NULL foreign key is not enough if the
   payload names the person; Google, Apple and phone reauthentication for
   deletion is future provider-specific work. No UAE retention requirement has
@@ -294,6 +310,8 @@
   and are kept. Never replace it with a wipe of all app storage.
 - Deleting an account is not a subscription cancellation or refund, and the UI
   says so. Any future RevenueCat integration must not infer one from a deletion.
+  (2026-11-24: RevenueCat is not used; the same rule applies to Google Play and
+  Tap. See "Subscriptions and payments" below.)
 - Offer media identity is a UUID v4 `mediaObjectId` generated on the device when
   the file is picked. It is the same id in the upload queue, the Worker,
   `media_objects`, the R2 object key and the local cache, and every Worker step
@@ -452,6 +470,9 @@
   claim and the Auth API call. Premium authorization must require both paid
   entitlement and an active Broker Wallet session. Source and migration are
   not deployed or runtime verified; see `docs/CURRENT_CHECKPOINT.md`.
+  (Later: hosted rollout 2026-10-06, production Worker parity 2026-10-12,
+  checklist #5 closed; history in
+  `docs/archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md`.)
 
 - Offer / Owner land / plot plan (decided 2026-10-13; checkpoint #7 closed
   2026-10-17: migration applied and verified, staging and production Worker
@@ -731,7 +752,8 @@
     conflict that overwrites neither side; renames are compare-and-swap on the version, retried once.
   - **Limits are anti-abuse, not entitlements.** Per-PDF, per-account bytes and count, pending uploads, uploads per hour
     and attempts per upload are configurable Worker variables with hard ceilings enforced by the database; paid-plan
-    quotas (RevenueCat) stay separate future work.
+    quotas (RevenueCat) stay separate future work. (2026-11-24: paid-plan quotas are Supabase entitlements, not
+    RevenueCat; see "Subscriptions and payments".)
   - **Not end-to-end encrypted; the local cache is not encrypted.** The Privacy Policy, Terms and the store data
     disclosures must be updated before cloud document storage is enabled; existing legal decisions stand until then.
   - **Inactive until reviewed.** Every route answers 404 unless `TOOLKIT_DOCUMENTS_ENABLED` is exactly `"true"` (ships
@@ -794,7 +816,8 @@
     tombstone.
   - **Limits stay anti-abuse and non-final.** Recommended starting profile: PDF 50 MiB, image 25 MiB, account 1 GiB, 1,000
     documents, 5 pending, 120 new per hour, 10 attempts; hard ceilings 250 MiB / 64 MiB / 20 GiB / 5,000 / 20 / 1,000 / 100.
-    The owner decides the numbers; they are Worker variables, not RevenueCat entitlements. The Free database size, not R2
+    The owner decides the numbers; they are Worker variables, not RevenueCat entitlements (RevenueCat is not used since
+    2026-11-24). The Free database size, not R2
     cost, is the first ceiling.
   - **Nothing hosted without a separate approval of the exact, frozen migration.** Staging and production share one
     Supabase project; the ordered sequence, stop conditions and rollback are in `docs/toolbox/cloud-documents-rollout.md`.
@@ -879,3 +902,36 @@
   - **Rollback keeps data.** Rolling Model X back first copies sign-in methods and verified contact numbers into a
     locked backup table; re-applying Model X restores them where the number is still free and leaves conflicts for the
     owner. Model X cannot be rolled back while the C4 migration is applied.
+- Notifications (owner decisions 2026-11-20/21; full plan in `docs/NOTIFICATIONS_PRODUCTION_PLAN.md`):
+  - Postgres `public.notifications` is the source of truth; push is only a delivery. FCM HTTP v1 is sent by the
+    Supabase Edge Function `push-dispatch`. OneSignal is not used. No `system` category; the user picks the follow-up
+    date and time.
+  - Single Active Device is enforced when a push is claimed: the device row must join the active app session.
+  - **No long-lived secret in a pg_net header**: on this project `anon` and `authenticated` can read the pg_net queue
+    and `postgres` cannot revoke it. The scheduler authenticates with single-use dispatch nonces instead.
+  - The scheduler SQL (`supabase/deploy/notifications_n2_schedule.sql`) is a deploy script, not a migration. Rollback:
+    unschedule the three jobs.
+- Subscriptions and payments (owner decisions 2026-11-23 to 2026-11-26; code on branches outside the base, see the Git
+  map in `docs/CURRENT_CHECKPOINT.md`; procedure in `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md`):
+  - **Supabase is the only authority** for entitlements and quotas. **Tap Payments** bills cards on the web;
+    **Google Play Billing** is used directly (`in_app_purchase_android`). RevenueCat, Stripe and Ziina are not
+    dependencies. Never add `in_app_purchase` (links StoreKit on iOS) or `checkout_flutter` (compiles Tap into iOS).
+  - This is the real production system; the Free/Plus switch is only a private pre-launch test tool. The Staging test
+    facility (`supabase/staging/`, `subscription-test-control`) is never deployed to production.
+  - **Migrations are additive**; enforcement is the explicit `subscription_cutover()`, reversed by
+    `subscription_cutback('RESTORE DIRECT WRITES')`. A paid result is granted only after the server reads it back from
+    the provider.
+  - **Final prices (2026-11-26, not to be reopened):** Plus Monthly AED 20.00, Plus Yearly AED 180.00 charged once a
+    year (AED 15.00 a month, 25%), UAE VAT 5% included. AED 199.20 and 17% are obsolete. The price lives in four places
+    that change together (runbook section 4).
+  - **Store gates are blockers, never worked around:** Apple has no identified basis for the no-IAP iPhone model on the
+    UAE storefront; Tap inside the Android app stays off (`billing_channel_policy`) without a recorded basis.
+- Production backups (owner decisions 2026-11-26/27; `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md`):
+  - Production personal data leaves the hosted project only encrypted (GnuPG, streamed, no plaintext file) to an
+    owner-approved destination. The passphrase is typed by the owner and kept only in the owner's password manager.
+  - A backup is taken and verified before any hosted migration while the plan has no managed backup or PITR.
+  - A full restore is tested only on an isolated target the owner approves, never on the production project. After any
+    restore the three project triggers on `auth.users` must be re-created from their migrations.
+- Working method (owner, 2026-11-27/28; rules in `AGENTS.md` "Work rules"): one task per branch and per AI chat;
+  reports in Arabic; unfinished work is preserved as Git branches and commits, not archive files; no hosted, store or
+  payment step without the owner's approval of that exact step.

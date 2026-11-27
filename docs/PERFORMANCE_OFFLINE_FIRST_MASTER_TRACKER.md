@@ -5665,7 +5665,7 @@ R-OFF2-REVOKE (إلغاء/إزاحة/حذف عن بعد يتأخر ≤ W)؛ R-OF
 (AUTH-ROUTE-1), matching GitHub and the local tracking ref. Read-only Git
 verified merge base `45d51b0` and Details chain
 `c582b46 → abd9c5d → a8b7211 → 7f84ebf → 285a173`. HEAD, the index
-and the three stashes were preserved. See [the checkpoint](CURRENT_CHECKPOINT.md#details-port-1-2026-11-18)
+and the three stashes were preserved. See [the checkpoint](archive/CURRENT_CHECKPOINT_HISTORY_TO_2026-11-27.md#details-port-1-2026-11-18)
 for the file inventory and evidence.
 
 Ported the approved six-screen Details UI and interactions, including

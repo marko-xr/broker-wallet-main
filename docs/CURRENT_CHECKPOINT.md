@@ -1,6 +1,6 @@
 # Current checkpoint
 
-Updated 2026-11-28 (task 01F.1, local Android release build of the integration branch; nothing hosted). This page is the one source of truth for **current status**. Keep it
+Updated 2026-11-28 (task 01G, task 01 final handoff; documentation only, nothing hosted). This page is the one source of truth for **current status**. Keep it
 short: replace a status when it changes, and move long evidence into the topic document it belongs to.
 
 The full history up to 2026-11-27 (18,323 lines, every dated section, evidence, version ids and rollback notes) is
@@ -22,6 +22,10 @@ Never promote a status without the evidence named in this page or in a linked do
 
 ## Git map (read 2026-11-28, no fetch)
 
+- **Baseline for task 02 (task 01G, on origin):** `chore/task01-final-handoff`, a documentation-only commit on
+  `fix/android-build-readiness` `8feca38`; its code is the integration tree `2cf3602`. Handoff, integrity check and
+  external security-file status: `docs/TASK_01_FINAL_HANDOFF.md`. Pushing it uploaded the commits of the branches
+  below as its history; those branches themselves stay local.
 - **Integration base:** `fix/import-path-casing` at `6951b29` (on origin). It contains every older branch: `main`,
   `backend-implementation`, `perf/phase-1-startup-baseline`, notifications, iOS, splash, phone auth (`ceb488d`) and the
   repo-cleanup chain (`57d0c5e` → `27869bb` → `8012e84` → `29cfa57` → `6951b29`). `main` (`c29115e`, 2026-09-10) is far
@@ -139,8 +143,9 @@ R1–R8A, offline-first performance work (`docs/PERFORMANCE_OFFLINE_FIRST_MASTER
 
 ## NOW / NEXT
 
-**NOW:** the owner reviews tasks 01F and 01F.1 (`integration/broker-wallet-consolidated`,
-`fix/android-build-readiness`, both local). The integration branch is LOCAL_TESTED, including a debug-signed Android
-release APK; it is **not** PRODUCTION_READY.
-**NEXT:** the owner decides whether the integration branch becomes the new base (push, PR to `main`); every hosted,
-store and payment step stays behind its own approval.
+**NOW:** task 01 is handed off (`docs/TASK_01_FINAL_HANDOFF.md`). The baseline `chore/task01-final-handoff` is
+LOCAL_TESTED, including a debug-signed Android release APK; it is **not** PRODUCTION_READY. Two external files (a
+plaintext passphrase note and the unencrypted 01B repository snapshot) await the owner's confirmation and deletion
+approval.
+**NEXT:** task 02, cut from `chore/task01-final-handoff`. Whether and when `main` is updated is the owner's decision;
+every hosted, store and payment step stays behind its own approval.

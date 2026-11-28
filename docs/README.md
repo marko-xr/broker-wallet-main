@@ -24,6 +24,7 @@ One topic, one source of truth. When two documents disagree, the one named here 
 | `docs/BROKER_WALLET_MASTER_TEST_PLAN_DEFERRED_2026-09-18.md` | Deferred device test scenarios (`MEDIA-*` and others) |
 | `docs/OFFER_MEDIA_DEVICE_ISSUES.md` | Offer media device issues |
 | `docs/INTEGRATION_01F_2026-11-28.md` | Task 01F integration: commits, conflict resolutions, WIP reconciliation, local verification |
+| `docs/TASK_01_FINAL_HANDOFF.md` | Task 01 closeout: baseline for task 02, branch map, integrity check, external security-file status |
 | `docs/LEGACY_FIRESTORE_QUOTA_REMOVAL_PLAN.md` | Remaining legacy Firestore quota code and its removal |
 | `docs/toolbox/` | Toolkit cloud documents rollout and production enablement, UAE links verification |
 | `docs/backend-migration-plan.md`, `docs/backend-schema-decisions.md` | Original Firebase → Supabase migration plan and schema decisions (historical; the migration is complete except FCM and the legacy quota gates) |

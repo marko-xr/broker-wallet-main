@@ -328,7 +328,7 @@ class _FakePlugin implements GoogleSignIn {
 PluginGoogleIdTokenSource _adapter(_FakePlugin plugin) =>
     PluginGoogleIdTokenSource(
       webClientId: 'web-client.apps.googleusercontent.com',
-      platformSupported: true,
+      platform: TargetPlatform.android,
       googleSignIn: plugin,
     );
 
@@ -590,9 +590,14 @@ void main() {
         () async {
       final plugin = _FakePlugin();
       final noId = PluginGoogleIdTokenSource(
-          webClientId: '  ', platformSupported: true, googleSignIn: plugin);
+          webClientId: '  ',
+          platform: TargetPlatform.android,
+          googleSignIn: plugin);
       final noPlatform = PluginGoogleIdTokenSource(
-          webClientId: 'id', platformSupported: false, googleSignIn: plugin);
+          webClientId: 'id',
+          iosEnabled: true,
+          platform: TargetPlatform.windows,
+          googleSignIn: plugin);
       expect(noId.isConfigured, isFalse);
       expect(noPlatform.isConfigured, isFalse);
       expect(
@@ -600,16 +605,63 @@ void main() {
       expect(plugin.calls, isEmpty);
     });
 
-    test('B2 only Android is a supported platform today', () {
+    test('B2 Android needs the Web client ID; iOS needs its build flag', () {
       expect(PluginGoogleIdTokenSource(webClientId: 'id').isConfigured, isTrue,
           reason: 'flutter_test defaults to Android');
+      expect(
+          PluginGoogleIdTokenSource(webClientId: '', iosEnabled: true)
+              .isConfigured,
+          isFalse,
+          reason: 'the iOS flag never turns Android on');
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       try {
         expect(
-            PluginGoogleIdTokenSource(webClientId: 'id').isConfigured, isFalse);
+            PluginGoogleIdTokenSource(webClientId: 'id').isConfigured, isFalse,
+            reason: 'iOS stays off by default, even with the Web client ID');
+        expect(
+            PluginGoogleIdTokenSource(webClientId: '', iosEnabled: true)
+                .isConfigured,
+            isTrue);
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
+    });
+
+    test('B8 the plugin: Android names the Web client, iOS names none', () {
+      final android = PluginGoogleIdTokenSource.createPlugin(
+          TargetPlatform.android, 'web.apps.googleusercontent.com');
+      expect(android.serverClientId, 'web.apps.googleusercontent.com');
+      expect(android.clientId, isNull);
+
+      // iOS takes GIDClientID and its URL scheme from Info.plist, so Dart
+      // never names a client whose scheme could be missing.
+      final ios = PluginGoogleIdTokenSource.createPlugin(
+          TargetPlatform.iOS, 'web.apps.googleusercontent.com');
+      expect(ios.clientId, isNull);
+      expect(ios.serverClientId, isNull);
+    });
+
+    test('B9 an iOS sign-in uses the same flow and clears the plugin',
+        () async {
+      final plugin = _FakePlugin()..next = _FakeAccount();
+      final ios = PluginGoogleIdTokenSource(
+        webClientId: '',
+        iosEnabled: true,
+        platform: TargetPlatform.iOS,
+        googleSignIn: plugin,
+      );
+      final tokens = await ios.obtain();
+      expect(tokens!.idToken, 'plugin-id-token');
+      expect(plugin.calls, ['signIn', 'signOut']);
+
+      final cancelled = _FakePlugin()
+        ..signInError = PlatformException(code: 'sign_in_canceled');
+      final iosCancel = PluginGoogleIdTokenSource(
+        iosEnabled: true,
+        platform: TargetPlatform.iOS,
+        googleSignIn: cancelled,
+      );
+      expect(await iosCancel.obtain(), isNull);
     });
 
     test('B3 a picked account gives its tokens; the plugin state is cleared',
@@ -847,6 +899,36 @@ void main() {
       expect(RegExp(r'\n  google_sign_in: \^6\.').hasMatch(pubspec), isTrue);
       expect(_read('android/settings.gradle'),
           contains('"com.android.application" version "8.11.1"'));
+    });
+
+    test('D5 iOS client ID and URL scheme come from one xcconfig value', () {
+      final plist = _read('ios/Runner/Info.plist').replaceAll('\r\n', '\n');
+      expect(
+          plist,
+          contains('<key>GIDClientID</key>\n    <string>'
+              r'$(GOOGLE_IOS_CLIENT_ID_PREFIX).apps.googleusercontent.com'
+              '</string>'));
+      final schemes =
+          RegExp(r'<string>(com\.googleusercontent\.apps\.[^<]*)</string>')
+              .allMatches(plist)
+              .map((m) => m.group(1))
+              .toList();
+      expect(schemes,
+          [r'com.googleusercontent.apps.$(GOOGLE_IOS_CLIENT_ID_PREFIX)'],
+          reason:
+              'one Google scheme, never a hard-coded client of any project');
+      expect(plist, isNot(contains('GIDServerClientID')));
+
+      final xcconfig = _read('ios/Flutter/GoogleSignIn.xcconfig');
+      expect(
+          RegExp(r'^GOOGLE_IOS_CLIENT_ID_PREFIX =', multiLine: true)
+              .hasMatch(xcconfig),
+          isTrue);
+      for (final config in ['Debug', 'Release']) {
+        expect(_read('ios/Flutter/$config.xcconfig'),
+            contains('#include "GoogleSignIn.xcconfig"'),
+            reason: '$config (Profile uses Release)');
+      }
     });
   });
 }

@@ -78,6 +78,17 @@ abstract final class SupabaseConfig {
   static const String googleWebClientId =
       String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
 
+  /// Whether this iOS build signs in with Google.
+  ///
+  /// On iOS the client ID is not a Dart value: `ios/Flutter/GoogleSignIn.xcconfig`
+  /// sets it once, and `Info.plist` derives both `GIDClientID` and the URL
+  /// scheme the Google SDK requires from it, so the two can never disagree (a
+  /// missing scheme makes the SDK abort the app). This flag only says that the
+  /// xcconfig value has been filled in:
+  /// `--dart-define=GOOGLE_SIGN_IN_IOS=true`. Off (the default) means the
+  /// Google button reports "not available" on iOS. Android ignores it.
+  static const bool googleSignInIos = bool.fromEnvironment('GOOGLE_SIGN_IN_IOS');
+
   /// Whether saves and quota checks use the server-authoritative subscription
   /// functions. Off by default because no hosted database has that migration
   /// yet. It must be turned on in the same rollout that applies it, since the

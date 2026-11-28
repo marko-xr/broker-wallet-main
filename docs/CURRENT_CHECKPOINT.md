@@ -1,6 +1,6 @@
 # Current checkpoint
 
-Updated 2026-11-28 (task 02A.1 integrated into `integration/broker-wallet-development`; documentation only, nothing hosted changed). This page is the one source of truth for **current status**. Keep it
+Updated 2026-11-28 (task 02A.2, Google sign-in on iOS, source only; nothing hosted changed). This page is the one source of truth for **current status**. Keep it
 short: replace a status when it changes, and move long evidence into the topic document it belongs to.
 
 The full history up to 2026-11-27 (18,323 lines, every dated section, evidence, version ids and rollback notes) is
@@ -29,6 +29,8 @@ Never promote a status without the evidence named in this page or in a linked do
   back into it; `main` is not involved.
 - **Task 02A.1:** `feature/auth-google-signin` `1e41c2c` (on origin), cut from `f01bcc9`: Google sign-in for
   Android (see Authentication below). Merged into the development baseline above.
+- **Task 02A.2 (local, not pushed, not merged):** `feature/auth-google-ios`, cut from the development baseline
+  `2621654`: Google sign-in on iOS (see Authentication below).
 - **Previous baseline for task 02 (task 01G; not on origin as its own branch, 2026-11-28):** `chore/task01-final-handoff`, a documentation-only commit on
   `fix/android-build-readiness` `8feca38`; its code is the integration tree `2cf3602`. Handoff, integrity check and
   external security-file status: `docs/TASK_01_FINAL_HANDOFF.md`. Pushing it uploaded the commits of the branches
@@ -76,7 +78,8 @@ Never promote a status without the evidence named in this page or in a linked do
 | Delete Account, email accounts | Base | Yes | Yes | Yes (production, 2026-09-14) | Lost-response path NOT RUN |
 | Single Active Device | Base | Yes | Yes (Worker parity 2026-10-12) | Runtime-verified on staging | Authenticated production A-B test not run |
 | Phone accounts, Model X (B1–C4) | Base (`5d15ddb`, `ceb488d`) | Yes (PGlite, Worker 359/359, Flutter 2,453) | **No** | **No** | `PHONE_AUTH_ENABLED` defaults to false. Migrations `20261122120000`, `130000`, `140000` NOT applied; no hook enabled; Worker phone routes NOT deployed. `docs/PHONE_ACCOUNT_SECURITY_DESIGN.md` |
-| Google sign-in / sign-up, Android (task 02A.1) | `feature/auth-google-signin` (`cadd04f`) | Yes (26 Google tests; 204 with related auth files, 2026-11-28) | Yes: owner set up the Google clients (debug SHA-1 only, OAuth app in Testing) and the Supabase Google provider; read-only integrity check after the device test: 2 Google test accounts, one user, profile and identity each, no duplicates or linking | Yes (owner, Samsung, 2026-11-28): new user, Sign-up screen, logout, returning login, cancel, network failure, restart, Arabic/English, second device, email/password regression | **Release blocker: Google-only accounts cannot use Delete Account** (Worker refuses, fail-closed). Off unless built with `GOOGLE_WEB_CLIENT_ID`; iOS and web report "not available". `docs/GOOGLE_SIGN_IN_ANDROID.md` |
+| Google sign-in / sign-up, Android (task 02A.1) | `feature/auth-google-signin` (`cadd04f`) | Yes (26 Google tests; 204 with related auth files, 2026-11-28) | Yes: owner set up the Google clients (debug SHA-1 only, OAuth app in Testing) and the Supabase Google provider; read-only integrity check after the device test: 2 Google test accounts, one user, profile and identity each, no duplicates or linking | Yes (owner, Samsung, 2026-11-28): new user, Sign-up screen, logout, returning login, cancel, network failure, restart, Arabic/English, second device, email/password regression | **Release blocker: Google-only accounts cannot use Delete Account** (Worker refuses, fail-closed). Off unless built with `GOOGLE_WEB_CLIENT_ID`; web reports "not available". `docs/GOOGLE_SIGN_IN_ANDROID.md` |
+| Google sign-in / sign-up, iOS (task 02A.2) | `feature/auth-google-ios` | Yes on Windows only (29 Google tests, 41 with auth boundary/contract, 2026-11-28); no iOS build | **No**: no iOS OAuth client yet; Supabase needs the iOS client ID and "Skip nonce check" (owner approval) | No (needs a Mac, Xcode and an iPhone) | Off unless built with `GOOGLE_SIGN_IN_IOS=true`; client ID and URL scheme from `ios/Flutter/GoogleSignIn.xcconfig` (empty). Release also needs Sign in with Apple (guideline 4.8) and the deletion blocker above. `docs/GOOGLE_SIGN_IN_IOS.md` |
 | Apple sign-in | None | – | – | – | Task 02B |
 
 Phone accounts need a separate Supabase staging project and a real SMS/verify provider (business licence and UAE sender
@@ -159,7 +162,10 @@ approval.
 (owner, Samsung) on `feature/auth-google-signin`. It is **not** PRODUCTION_READY: Google-only accounts cannot delete
 themselves (mandatory release blocker), and two Google test accounts now exist in production.
 It is integrated into the development baseline `integration/broker-wallet-development` (merge `6d2fcf4`).
-**NEXT:** task 02A.2 (Google sign-in on iOS), then web verification where it applies, each on its own branch cut from
-the tip of `integration/broker-wallet-development`. Google-only account deletion needs its own design task before any
-release. Whether and when `main` is updated is the owner's decision; every hosted, store and payment step stays
+**Task 02A.2 (2026-11-28):** Google sign-in on iOS is LOCAL_TESTED on Windows only, on `feature/auth-google-ios`; it
+was not built for iOS or run on an iPhone.
+**NEXT:** the owner creates the iOS OAuth client, approves the Supabase step (iOS client ID, "Skip nonce check") and
+runs the iPhone acceptance on a Mac (`docs/GOOGLE_SIGN_IN_IOS.md`); then web verification where it applies. Each task
+gets its own branch from the tip of `integration/broker-wallet-development`. Google-only account deletion needs its
+own design task before any release. Whether and when `main` is updated is the owner's decision; every hosted, store and payment step stays
 behind its own approval.

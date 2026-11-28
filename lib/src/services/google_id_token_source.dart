@@ -50,9 +50,14 @@ abstract class GoogleIdTokenSource {
 
 /// [GoogleIdTokenSource] on the `google_sign_in` plugin (6.x).
 ///
-/// Android only for now. iOS needs its own client ID and URL scheme, and the
-/// web plugin does not return an ID token from a button of the app's own;
-/// both report "not configured" rather than starting a flow that cannot end.
+/// - Android: the ID token is issued to the Web client ID (`serverClientId`).
+/// - iOS: the client ID and its URL scheme come from `Info.plist`, both built
+///   from one value in `ios/Flutter/GoogleSignIn.xcconfig`; the Dart side
+///   passes no client ID, so it can never name a client whose scheme is
+///   missing (the Google SDK aborts the app in that case). The
+///   `GOOGLE_SIGN_IN_IOS` build flag turns it on.
+/// - Web and other platforms report "not configured": the web plugin does not
+///   return an ID token from a button of the app's own.
 ///
 /// The plugin's own signed-in state is not kept: Supabase holds the session.
 /// It is cleared after every attempt, so the next sign-in shows the account
@@ -60,25 +65,41 @@ abstract class GoogleIdTokenSource {
 class PluginGoogleIdTokenSource implements GoogleIdTokenSource {
   PluginGoogleIdTokenSource({
     String? webClientId,
-    bool? platformSupported,
+    bool? iosEnabled,
+    TargetPlatform? platform,
     @visibleForTesting GoogleSignIn? googleSignIn,
   })  : _webClientId = (webClientId ?? SupabaseConfig.googleWebClientId).trim(),
-        _platformSupported = platformSupported ??
-            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android),
+        _iosEnabled = iosEnabled ?? SupabaseConfig.googleSignInIos,
+        _platform = kIsWeb ? null : (platform ?? defaultTargetPlatform),
         _googleSignInOverride = googleSignIn;
 
   final String _webClientId;
-  final bool _platformSupported;
+  final bool _iosEnabled;
+
+  /// Null on the web.
+  final TargetPlatform? _platform;
   final GoogleSignIn? _googleSignInOverride;
 
   // Created only when used, so an unconfigured build never touches the
-  // plugin. The default scopes (`openid`, email, profile) are all an ID token
-  // for Supabase needs.
+  // plugin.
   late final GoogleSignIn _google =
-      _googleSignInOverride ?? GoogleSignIn(serverClientId: _webClientId);
+      _googleSignInOverride ?? createPlugin(_platform, _webClientId);
+
+  /// The plugin as each platform needs it. The default scopes (`openid`,
+  /// email, profile) are all an ID token for Supabase needs.
+  @visibleForTesting
+  static GoogleSignIn createPlugin(
+          TargetPlatform? platform, String webClientId) =>
+      platform == TargetPlatform.iOS
+          ? GoogleSignIn()
+          : GoogleSignIn(serverClientId: webClientId);
 
   @override
-  bool get isConfigured => _platformSupported && _webClientId.isNotEmpty;
+  bool get isConfigured => switch (_platform) {
+        TargetPlatform.android => _webClientId.isNotEmpty,
+        TargetPlatform.iOS => _iosEnabled,
+        _ => false,
+      };
 
   @override
   Future<GoogleIdTokens?> obtain() async {

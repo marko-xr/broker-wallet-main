@@ -51,8 +51,7 @@ moving to 7.x is its own checkpoint before a public release; only `PluginGoogleI
 ## Platforms
 
 - **Android:** implemented.
-- **iOS:** reports "not available" (no picker opens). Needs an iOS OAuth client, `GIDClientID` and the reversed client
-  ID URL scheme in `Info.plist`, and Supabase "Skip nonce check" (the iOS SDK adds a nonce). Not in this task.
+- **iOS:** task 02A.2, `docs/GOOGLE_SIGN_IN_IOS.md` (off unless built with `GOOGLE_SIGN_IN_IOS=true`).
 - **Web:** reports "not available". The web plugin does not return an ID token from the app's own button.
 
 ## Owner setup (no secret goes into Git or a chat)

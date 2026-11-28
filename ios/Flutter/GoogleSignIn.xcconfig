@@ -1,0 +1,12 @@
+// Google Sign-In for iOS (task 02A.2). Included by Debug.xcconfig and
+// Release.xcconfig (Profile uses Release.xcconfig).
+//
+// GOOGLE_IOS_CLIENT_ID_PREFIX is the iOS OAuth client ID of Google Cloud
+// project broker-wallet (bundle com.nmodigital.brokerwallet) WITHOUT the
+// ".apps.googleusercontent.com" suffix, for example 285578142613-abc123.
+// It is a public identifier, not a secret; never put a client secret here.
+//
+// Info.plist builds both GIDClientID and the Google URL scheme from this one
+// value, so they always match. Empty means no iOS client yet: keep the app's
+// GOOGLE_SIGN_IN_IOS build flag off until it is filled in.
+GOOGLE_IOS_CLIENT_ID_PREFIX =

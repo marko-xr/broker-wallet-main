@@ -56,7 +56,11 @@
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>This app needs access to your location to show property locations on the map.</string>
     
-    <!-- Google Sign-In URL Scheme Configuration -->
+    <!-- Google Sign-In (task 02A.2): the client ID and its reversed URL scheme
+         both come from GOOGLE_IOS_CLIENT_ID_PREFIX in Flutter/GoogleSignIn.xcconfig,
+         so the Google SDK always finds the scheme for the client it uses. -->
+    <key>GIDClientID</key>
+    <string>$(GOOGLE_IOS_CLIENT_ID_PREFIX).apps.googleusercontent.com</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -64,7 +68,7 @@
             <string>com.googleusercontent.apps</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.googleusercontent.apps.460721646511-7pv4bplsdnqifr9mj4s1khvgofkf5sle</string>
+                <string>com.googleusercontent.apps.$(GOOGLE_IOS_CLIENT_ID_PREFIX)</string>
             </array>
         </dict>
         <dict>

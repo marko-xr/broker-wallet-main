@@ -1,6 +1,6 @@
 # Current checkpoint
 
-Updated 2026-11-28 (task 02A.1 closeout, Google sign-in on Android; documentation only, nothing hosted changed). This page is the one source of truth for **current status**. Keep it
+Updated 2026-11-28 (task 02A.1 integrated into `integration/broker-wallet-development`; documentation only, nothing hosted changed). This page is the one source of truth for **current status**. Keep it
 short: replace a status when it changes, and move long evidence into the topic document it belongs to.
 
 The full history up to 2026-11-27 (18,323 lines, every dated section, evidence, version ids and rollback notes) is
@@ -22,10 +22,14 @@ Never promote a status without the evidence named in this page or in a linked do
 
 ## Git map (read 2026-11-28, no fetch)
 
-- **Task 02A.1:** `feature/auth-google-signin`, cut from `chore/task01-final-handoff` `f01bcc9`: Google sign-in for
-  Android (see Authentication below). Code commit `cadd04f` is on origin; the closeout documentation commit on top of
-  it is local. Not merged anywhere.
-- **Baseline for task 02 (task 01G; not on origin per `git ls-remote`, 2026-11-28):** `chore/task01-final-handoff`, a documentation-only commit on
+- **Development baseline (from task 02A.2 on; local, not pushed):** the tip of
+  `integration/broker-wallet-development`. Merge `6d2fcf4` = `chore/task01-final-handoff` `f01bcc9` +
+  `feature/auth-google-signin` (`cadd04f` code, `1e41c2c` device-acceptance docs), with no conflicts; its tree equals
+  `1e41c2c`'s, the tested and device-verified tree. Cut each new task branch from this tip and merge accepted tasks
+  back into it; `main` is not involved.
+- **Task 02A.1:** `feature/auth-google-signin` `1e41c2c` (on origin), cut from `f01bcc9`: Google sign-in for
+  Android (see Authentication below). Merged into the development baseline above.
+- **Previous baseline for task 02 (task 01G; not on origin as its own branch, 2026-11-28):** `chore/task01-final-handoff`, a documentation-only commit on
   `fix/android-build-readiness` `8feca38`; its code is the integration tree `2cf3602`. Handoff, integrity check and
   external security-file status: `docs/TASK_01_FINAL_HANDOFF.md`. Pushing it uploaded the commits of the branches
   below as its history; those branches themselves stay local.
@@ -154,6 +158,8 @@ approval.
 **Task 02A.1 (2026-11-28, closed):** Google sign-in for Android is LOCAL_TESTED, HOSTED_VERIFIED and DEVICE_VERIFIED
 (owner, Samsung) on `feature/auth-google-signin`. It is **not** PRODUCTION_READY: Google-only accounts cannot delete
 themselves (mandatory release blocker), and two Google test accounts now exist in production.
-**NEXT:** the owner decides on merging `feature/auth-google-signin` into the integration line and on a design task
-for Google-only account deletion; task 02B (Apple) starts from the approved integration tip. Whether and when `main` is
-updated is the owner's decision; every hosted, store and payment step stays behind its own approval.
+It is integrated into the development baseline `integration/broker-wallet-development` (merge `6d2fcf4`).
+**NEXT:** task 02A.2 (Google sign-in on iOS), then web verification where it applies, each on its own branch cut from
+the tip of `integration/broker-wallet-development`. Google-only account deletion needs its own design task before any
+release. Whether and when `main` is updated is the owner's decision; every hosted, store and payment step stays
+behind its own approval.

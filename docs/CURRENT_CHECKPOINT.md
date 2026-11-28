@@ -1,6 +1,6 @@
 # Current checkpoint
 
-Updated 2026-11-28 (task 01F, local integration; nothing hosted). This page is the one source of truth for **current status**. Keep it
+Updated 2026-11-28 (task 01F.1, local Android release build of the integration branch; nothing hosted). This page is the one source of truth for **current status**. Keep it
 short: replace a status when it changes, and move long evidence into the topic document it belongs to.
 
 The full history up to 2026-11-27 (18,323 lines, every dated section, evidence, version ids and rollback notes) is
@@ -31,6 +31,9 @@ Never promote a status without the evidence named in this page or in a linked do
   `chore/store-compliance-targetsdk36` `950bb2b` and `ops/production-backup-tooling` `b8917a8` (histories kept), plus
   two fixes (remaining import casing, S4 doc guard). LOCAL_TESTED; record, conflicts and WIP reconciliation in
   `docs/INTEGRATION_01F_2026-11-28.md`. The WIP `2118fea` was not merged.
+- **Task 01F.1 branch (local, not pushed):** `fix/android-build-readiness`, cut from the integration tip `2cf3602`;
+  documentation only (this record). The release APK was built from a `git archive` export of `2cf3602` with no source,
+  dependency or hook change.
 - **Not in the base `46e931f`** (cut from `ceb488d`, local only unless marked; all of them are in the integration
   branch, either directly or through `f7d2ffa`):
 
@@ -90,7 +93,7 @@ by the subscription work. Release procedure: `docs/SUBSCRIPTION_PRODUCTION_RUNBO
 | Area | Code | Local | Hosted / sandbox | Device |
 |---|---|---|---|---|
 | Tap Payments (web cards), UAE VAT invoices | `feature/payment-backend-tap-play` + Flutter branch | Yes, fake Tap only | **No**: no Tap test key, no sandbox run | – |
-| Google Play Billing (direct, `in_app_purchase_android` 0.5.5) | Same | Yes, fake Play only | **No**: no Play Console product | Android compile of the plugin NOT verified |
+| Google Play Billing (direct, `in_app_purchase_android` 0.5.5) | Same | Yes, fake Play only | **No**: no Play Console product | No. LOCAL_TESTED only: compiled and packaged in the 01F.1 release APK (Billing Library 9.1.0, `BILLING` permission, `ProxyBillingActivity`); no purchase ever run |
 
 Final prices (owner, 2026-11-26): AED 20.00 monthly, AED 180.00 yearly, VAT included. RevenueCat, Stripe and Ziina are not
 used. No real payment has been made.
@@ -119,11 +122,14 @@ them).
   documents), rollback `96783f3d`; not re-read since. Staging Worker `r2-profile-upload-staging`. No phone or subscription
   Worker code is deployed.
 - **Android:** application id `com.nmodigital.brokerwallet`. Base branch is `targetSdk` 35; Play requires 36
-  (fixed on `chore/store-compliance-targetsdk36` and the integration branch). No Android build of the integration
-  branch yet: the store-compliance hook blocked it (see the 01F record).
+  (fixed on `chore/store-compliance-targetsdk36` and the integration branch). **Release APK of `2cf3602`: build PASS,
+  LOCAL_TESTED** (01F.1, 2026-11-28): `targetSdk`/`compileSdk` 36, **debug-key signed** (no release keystore used; not
+  uploadable), 16 KB alignment OK, store-compliance hook 0 critical. Not installed on any device; no release-key,
+  public-release (`BW_PUBLIC_RELEASE`) or App Bundle build. Evidence and remaining findings: the 01F record.
 - **Store gates open:** Apple has no identified basis for the no-IAP iPhone model (UAE); Google Play UAE billing choice
-  for Tap; Sign in with Apple; export-compliance answer; R8; App Links; store privacy answers; the store-compliance
-  hook blocks `flutter build` while a gitignored local report exists.
+  for Tap; Sign in with Apple; export-compliance answer; R8; App Links; store privacy answers; release signing. The
+  store-compliance hook scans the main checkout unless the command starts with a `cd` into a folder inside it; an
+  iOS build of the integration tree is still blocked by its Apple-only `supabase/config.toml` finding (owner decision).
 
 ## Other areas (details in the archive and topic docs)
 
@@ -133,7 +139,8 @@ R1–R8A, offline-first performance work (`docs/PERFORMANCE_OFFLINE_FIRST_MASTER
 
 ## NOW / NEXT
 
-**NOW:** the owner reviews task 01F on `integration/broker-wallet-consolidated` (local) and runs the Android build
-that the store-compliance hook blocked for the agent.
+**NOW:** the owner reviews tasks 01F and 01F.1 (`integration/broker-wallet-consolidated`,
+`fix/android-build-readiness`, both local). The integration branch is LOCAL_TESTED, including a debug-signed Android
+release APK; it is **not** PRODUCTION_READY.
 **NEXT:** the owner decides whether the integration branch becomes the new base (push, PR to `main`); every hosted,
 store and payment step stays behind its own approval.

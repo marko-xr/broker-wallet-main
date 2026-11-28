@@ -64,6 +64,20 @@ abstract final class SupabaseConfig {
   static const bool phoneAuthEnabled =
       bool.fromEnvironment('PHONE_AUTH_ENABLED');
 
+  /// The Google Cloud OAuth **Web** client ID that Supabase's Google provider
+  /// accepts as an ID-token audience (first entry of its "Client IDs").
+  ///
+  /// Android asks Google for an ID token issued to this client
+  /// (`serverClientId`), and Supabase Auth verifies that audience. A client
+  /// ID is public, not a secret, but it belongs to one Google Cloud project,
+  /// so it is a build setting rather than source:
+  /// `--dart-define=GOOGLE_WEB_CLIENT_ID=<id>.apps.googleusercontent.com`.
+  /// Empty (the default) means Google sign-in reports "not available" and
+  /// never opens Google's account picker. The client secret is never part of
+  /// the app.
+  static const String googleWebClientId =
+      String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+
   /// Whether saves and quota checks use the server-authoritative subscription
   /// functions. Off by default because no hosted database has that migration
   /// yet. It must be turned on in the same rollout that applies it, since the

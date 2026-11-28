@@ -3823,5 +3823,8 @@
   "subInvoiceNet": "Amount excluding VAT",
   "subInvoiceVat": "VAT {rate}",
   "subInvoiceTotal": "Total including VAT",
-  "subCreditNoteTitle": "Tax credit note"
+  "subCreditNoteTitle": "Tax credit note",
+  "googleSignInUnavailable": "Google sign-in isn't available right now. Please sign in with your email and password.",
+  "googleSignInNetworkError": "Couldn't reach Google. Check your connection and try again.",
+  "googleSignInFailed": "Google sign-in didn't complete. Please try again."
 }

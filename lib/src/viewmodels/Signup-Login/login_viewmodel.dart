@@ -13,6 +13,7 @@ import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/repositories/auth_repository.dart';
 import 'package:broker_wallet/src/repositories/repository_provider.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/google_sign_in_flow.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/phone_otp_viewmodel.dart';
 import 'package:broker_wallet/src/viewmodels/password_reset_request_viewmodel.dart';
 import 'package:broker_wallet/src/views/Widgets/password_reset_request_sheet.dart';
@@ -32,6 +33,7 @@ class SignInViewModel extends ChangeNotifier {
   final TextEditingController phoneController = TextEditingController();
 
   bool _isLoading = false;
+  bool _googleInProgress = false;
   bool _showPassword = false;
   bool _disposed = false;
   String? _emailError;
@@ -57,6 +59,10 @@ class SignInViewModel extends ChangeNotifier {
 
   // Getters
   bool get isLoading => _isLoading;
+
+  /// True while "Continue with Google" runs: the account picker, Supabase
+  /// Auth and the device check.
+  bool get isGoogleSignInInProgress => _googleInProgress;
   bool get showPassword => _showPassword;
   /// A localization key; the screen translates it.
   String? get emailError => _emailError;
@@ -176,7 +182,7 @@ class SignInViewModel extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return;
     }
-    if (_isLoading) return;
+    if (_isLoading || _googleInProgress) return;
 
     final String phone;
     try {
@@ -220,6 +226,7 @@ class SignInViewModel extends ChangeNotifier {
   }
 
   Future<void> signIn(BuildContext context) async {
+    if (_googleInProgress) return;
     if (!_validateEmailForm()) return;
 
     _isLoading = true;
@@ -305,8 +312,26 @@ class SignInViewModel extends ChangeNotifier {
     }
   }
 
+  /// "Continue with Google". One sign-in at a time: it does nothing while an
+  /// email or phone request is running, and those do nothing while it runs.
   Future<void> signInWithGoogle(BuildContext context) async {
-    _showToast('Google sign in coming soon', Colors.orange);
+    if (_isLoading || _googleInProgress) return;
+    final authVM = context.read<AuthViewModel>();
+    _googleInProgress = true;
+    if (!_disposed) notifyListeners();
+
+    final result = await GoogleSignInFlow.run(authVM);
+
+    if (!_disposed) {
+      _googleInProgress = false;
+      notifyListeners();
+    }
+    if (!context.mounted) return;
+    GoogleSignInFlow.apply(
+      context,
+      result,
+      showError: (message) => _showToast(message, Colors.red),
+    );
   }
 
   /// Opens the password-reset request sheet.

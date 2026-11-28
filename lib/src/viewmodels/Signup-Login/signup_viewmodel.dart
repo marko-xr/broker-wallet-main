@@ -12,6 +12,7 @@ import 'package:broker_wallet/src/config/supabase_config.dart';
 import 'package:broker_wallet/src/data/models/phone_otp_args.dart';
 import 'package:broker_wallet/src/repositories/auth_failure.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/auth_viewmodel.dart';
+import 'package:broker_wallet/src/viewmodels/Signup-Login/google_sign_in_flow.dart';
 import 'package:broker_wallet/src/viewmodels/Signup-Login/phone_otp_viewmodel.dart';
 
 enum SignupMethod { phone, email }
@@ -32,6 +33,7 @@ class SignUpViewModel extends ChangeNotifier {
       TextEditingController();
 
   bool _isLoading = false;
+  bool _googleInProgress = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
   bool _mounted = true;
@@ -126,6 +128,10 @@ class SignUpViewModel extends ChangeNotifier {
   }
 
   bool get isLoading => _isLoading;
+
+  /// True while "Continue with Google" runs: the account picker, Supabase
+  /// Auth and the device check.
+  bool get isGoogleSignInInProgress => _googleInProgress;
   bool get showPassword => _showPassword;
   bool get showConfirmPassword => _showConfirmPassword;
 
@@ -276,6 +282,7 @@ class SignUpViewModel extends ChangeNotifier {
   // Replace your entire signUp method with this:
 
   Future<void> signUp(BuildContext context) async {
+    if (_googleInProgress) return;
     if (!_validateEmailForm()) return;
 
     _setLoading(true);
@@ -394,7 +401,7 @@ class SignUpViewModel extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return;
     }
-    if (_isLoading) return;
+    if (_isLoading || _googleInProgress) return;
 
     _clearErrors();
     var valid = true;
@@ -453,8 +460,27 @@ class SignUpViewModel extends ChangeNotifier {
     );
   }
 
+  /// "Continue with Google" from Sign-up. The same sign-in as on Login:
+  /// Supabase Auth creates the account only when the Google account has none,
+  /// so it can never create a second account for an existing one.
   Future<void> signUpWithGoogle(BuildContext context) async {
-    _showToast('Google sign up coming soon', Colors.orange);
+    if (_isLoading || _googleInProgress) return;
+    final authVM = context.read<AuthViewModel>();
+    _googleInProgress = true;
+    if (!_disposed) notifyListeners();
+
+    final result = await GoogleSignInFlow.run(authVM);
+
+    if (!_disposed) {
+      _googleInProgress = false;
+      notifyListeners();
+    }
+    if (!context.mounted) return;
+    GoogleSignInFlow.apply(
+      context,
+      result,
+      showError: (message) => _showToast(message, Colors.red),
+    );
   }
 
   @override

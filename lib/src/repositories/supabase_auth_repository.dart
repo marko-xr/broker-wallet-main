@@ -13,6 +13,7 @@ import 'package:broker_wallet/src/services/password_recovery_state_store.dart';
 import 'package:broker_wallet/src/services/app_session_check_outcome.dart';
 import 'package:broker_wallet/src/services/app_session_coordinator.dart';
 import 'package:broker_wallet/src/services/contact_phone_service.dart';
+import 'package:broker_wallet/src/services/google_id_token_source.dart';
 import 'package:broker_wallet/src/services/offline_pass_lifecycle.dart';
 import 'package:broker_wallet/src/services/list_refresh_signals.dart';
 import 'package:broker_wallet/src/config/supabase_config.dart';
@@ -40,12 +41,18 @@ class SupabaseAuthRepository
     SupabaseClient? client,
     ContactPhoneGateway? contactPhones,
     PhoneNumberChangeGateway? phoneNumberChanges,
+    GoogleIdTokenSource? googleIdTokens,
   })  : _userRepository = userRepository,
         _client = client ?? Supabase.instance.client,
         _contactPhonesOverride = contactPhones,
-        _phoneNumberChangesOverride = phoneNumberChanges;
+        _phoneNumberChangesOverride = phoneNumberChanges,
+        _googleIdTokensOverride = googleIdTokens;
 
   final SupabaseClient _client;
+
+  final GoogleIdTokenSource? _googleIdTokensOverride;
+  late final GoogleIdTokenSource _googleIdTokens =
+      _googleIdTokensOverride ?? PluginGoogleIdTokenSource();
 
   final ContactPhoneGateway? _contactPhonesOverride;
   late final ContactPhoneGateway _contactPhones =
@@ -673,9 +680,94 @@ class SupabaseAuthRepository
     }
   }
 
+  /// Signs in to, or creates, an account with the Google account the user
+  /// picks. The Login and Sign-up buttons both come here.
+  ///
+  /// Google only proves the Google account. Supabase Auth verifies the ID
+  /// token (signature, expiry, audience = the configured client IDs) and finds
+  /// or creates the user: the same Google account always returns the same
+  /// user, and an existing account is joined by email only when Google
+  /// reports that email as verified (Supabase's own linking, which first
+  /// removes the credentials of an account whose email was never confirmed).
+  /// The app never matches or merges accounts itself, and a new account's
+  /// profile is created by the database from the Google name.
+  ///
+  /// As for every sign-in, the session is not access: it goes through the
+  /// same `claim: true` Single Active Device authorization, and the identity
+  /// is published only once that claim succeeds. A claim that fails or is
+  /// superseded ends the local session (inside [_authorizeAndPublish]).
   @override
   Future<UserModel> signInWithGoogle() async {
-    throw AuthFailure.providerUnavailable('Google');
+    final google = _googleIdTokens;
+    if (!google.isConfigured) throw AuthFailure.providerUnavailable('Google');
+
+    final GoogleIdTokens? tokens;
+    try {
+      tokens = await google.obtain();
+    } on GoogleTokenException catch (e) {
+      throw switch (e.reason) {
+        GoogleTokenFailure.notConfigured =>
+          AuthFailure.providerUnavailable('Google'),
+        GoogleTokenFailure.network => const AuthFailure(
+            code: AuthFailureCode.network,
+            message: 'Google could not be reached.',
+          ),
+        GoogleTokenFailure.failed => const AuthFailure(
+            code: AuthFailureCode.unknown,
+            message: 'Google did not complete the sign-in.',
+          ),
+      };
+    } catch (_) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Google did not complete the sign-in.',
+      );
+    }
+    if (tokens == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.cancelled,
+        message: 'Google sign-in was cancelled.',
+      );
+    }
+
+    final AuthResponse response;
+    try {
+      response = await _client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: tokens.idToken,
+        accessToken: tokens.accessToken,
+      );
+    } catch (e) {
+      throw AuthFailure.fromSupabaseGoogleSignIn(e);
+    }
+
+    final session = response.session;
+    final user = response.user ?? session?.user;
+    if (session == null || user == null) {
+      throw const AuthFailure(
+        code: AuthFailureCode.unknown,
+        message: 'Supabase did not return a session.',
+      );
+    }
+
+    if (!(await _authorizeAndPublish(session, claim: true))) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'This sign-in session is no longer active.',
+      );
+    }
+
+    // Another sign-in may have replaced the session while this one was being
+    // authorized; then this result describes nothing current.
+    if (AppSessionCoordinator.sessionId(_client.auth.currentSession) !=
+        AppSessionCoordinator.sessionId(session)) {
+      throw const AuthFailure(
+        code: AuthFailureCode.sessionExpired,
+        message: 'The session changed during sign-in.',
+      );
+    }
+
+    return await _profileOrNull(user.id) ?? _fromAuthUser(user);
   }
 
   @override

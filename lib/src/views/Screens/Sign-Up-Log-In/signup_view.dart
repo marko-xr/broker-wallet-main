@@ -360,8 +360,11 @@ class _SignUpViewState extends State<SignUpView> {
                       child: _buildSocialButton(
                         localization.translate('google'),
                         'assets/icons/google-icon.svg',
-                        () => vm.signUpWithGoogle(context),
+                        (vm.isLoading || vm.isGoogleSignInInProgress)
+                            ? null
+                            : () => vm.signUpWithGoogle(context),
                         colors,
+                        busy: vm.isGoogleSignInInProgress,
                       ),
                     ),
                   ],
@@ -402,12 +405,15 @@ class _SignUpViewState extends State<SignUpView> {
     );
   }
 
+  /// [busy]: the sign-in it starts is running; a progress indicator of the
+  /// icon's size takes the icon's place, so nothing moves.
   Widget _buildSocialButton(
     String text,
     String iconPath,
-    VoidCallback onPressed,
-    ColorScheme colors,
-  ) {
+    VoidCallback? onPressed,
+    ColorScheme colors, {
+    bool busy = false,
+  }) {
     return Container(
       height: AppControlSizes.standardButtonHeight,
       child: OutlinedButton(
@@ -421,11 +427,21 @@ class _SignUpViewState extends State<SignUpView> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SvgPicture.asset(
-              iconPath,
-              width: 20,
-              height: 20,
-            ),
+            if (busy)
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.primary,
+                ),
+              )
+            else
+              SvgPicture.asset(
+                iconPath,
+                width: 20,
+                height: 20,
+              ),
             const SizedBox(width: 8),
             Text(
               text,

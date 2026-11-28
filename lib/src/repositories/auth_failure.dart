@@ -58,6 +58,10 @@ enum AuthFailureCode {
   /// changed — Supabase's "Secure password change" setting.
   reauthenticationRequired,
 
+  /// The user closed the provider's own sign-in screen (Google's account
+  /// picker). Not an error to report: nothing was attempted.
+  cancelled,
+
   unknown,
 }
 
@@ -362,6 +366,58 @@ class AuthFailure implements Exception {
       }
     }
     return typed(AuthFailureCode.unknown, 'Phone sign-in failed.');
+  }
+
+  /// Maps a Supabase failure of the Google ID-token sign-in
+  /// (`/token?grant_type=id_token`) to a typed outcome.
+  ///
+  /// As with the phone mappings, only the code is carried: the message is a
+  /// fixed internal string and the original exception is not attached, so no
+  /// server text, token or account detail can reach a screen. A token Supabase
+  /// cannot accept (wrong audience, expired, bad nonce) has no error code and
+  /// is a plain failure.
+  factory AuthFailure.fromSupabaseGoogleSignIn(Object exception) {
+    if (exception is AuthFailure) return exception;
+
+    AuthFailure typed(AuthFailureCode code, String message) =>
+        AuthFailure(code: code, message: message);
+
+    if (exception is TimeoutException) {
+      return typed(AuthFailureCode.network, 'The request did not complete.');
+    }
+    // No status: the server was not reached. With a status it is a 5xx (for
+    // example a profile that could not be created) and nothing to retry blind.
+    if (exception is sb.AuthRetryableFetchException) {
+      return exception.statusCode == null
+          ? typed(AuthFailureCode.network, 'The request did not complete.')
+          : typed(AuthFailureCode.unknown, 'Google sign-in failed.');
+    }
+    if (exception is sb.AuthException) {
+      switch (exception.code) {
+        // The Google provider is off in Supabase Auth.
+        case 'provider_disabled':
+          return typed(
+            AuthFailureCode.providerUnavailable,
+            'Google sign-in is not enabled.',
+          );
+        case 'signup_disabled':
+          return typed(
+            AuthFailureCode.operationNotAllowed,
+            'New accounts are not allowed.',
+          );
+        case 'user_banned':
+          return typed(AuthFailureCode.userDisabled, 'The account is disabled.');
+        case 'over_request_rate_limit':
+        case 'too_many_requests':
+          return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+        case 'captcha_failed':
+          return typed(AuthFailureCode.captchaFailed, 'CAPTCHA failed.');
+      }
+      if (exception.statusCode == '429') {
+        return typed(AuthFailureCode.tooManyRequests, 'Rate limited.');
+      }
+    }
+    return typed(AuthFailureCode.unknown, 'Google sign-in failed.');
   }
 
   /// Maps email-change failures to fixed domain outcomes.

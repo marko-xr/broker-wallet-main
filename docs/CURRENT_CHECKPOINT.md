@@ -22,7 +22,9 @@ Never promote a status without the evidence named in this page or in a linked do
 
 ## Git map (read 2026-11-28, no fetch)
 
-- **Baseline for task 02 (task 01G, on origin):** `chore/task01-final-handoff`, a documentation-only commit on
+- **Task 02A.1 (local, not pushed):** `feature/auth-google-signin`, cut from `chore/task01-final-handoff` `f01bcc9`:
+  Google sign-in for Android (see Authentication below).
+- **Baseline for task 02 (task 01G; not on origin per `git ls-remote`, 2026-11-28):** `chore/task01-final-handoff`, a documentation-only commit on
   `fix/android-build-readiness` `8feca38`; its code is the integration tree `2cf3602`. Handoff, integrity check and
   external security-file status: `docs/TASK_01_FINAL_HANDOFF.md`. Pushing it uploaded the commits of the branches
   below as its history; those branches themselves stay local.
@@ -69,7 +71,8 @@ Never promote a status without the evidence named in this page or in a linked do
 | Delete Account, email accounts | Base | Yes | Yes | Yes (production, 2026-09-14) | Lost-response path NOT RUN |
 | Single Active Device | Base | Yes | Yes (Worker parity 2026-10-12) | Runtime-verified on staging | Authenticated production A-B test not run |
 | Phone accounts, Model X (B1–C4) | Base (`5d15ddb`, `ceb488d`) | Yes (PGlite, Worker 359/359, Flutter 2,453) | **No** | **No** | `PHONE_AUTH_ENABLED` defaults to false. Migrations `20261122120000`, `130000`, `140000` NOT applied; no hook enabled; Worker phone routes NOT deployed. `docs/PHONE_ACCOUNT_SECURITY_DESIGN.md` |
-| Google / Apple sign-in | None | – | – | – | Deferred. `google_sign_in` is still declared in `pubspec.yaml`, unused in `lib/` |
+| Google sign-in / sign-up, Android (task 02A.1) | `feature/auth-google-signin` | Yes (26 Google tests; 204 with related auth files, 2026-11-28) | **No**: provider, client IDs and SHA-1 not configured | No | CODE_READY / EXTERNAL_CONFIG_REQUIRED. Off unless built with `GOOGLE_WEB_CLIENT_ID`; iOS and web report "not available". Google-only accounts cannot use Delete Account yet (Worker refuses, fail-closed). `docs/GOOGLE_SIGN_IN_ANDROID.md` |
+| Apple sign-in | None | – | – | – | Task 02B |
 
 Phone accounts need a separate Supabase staging project and a real SMS/verify provider (business licence and UAE sender
 registration) before any hosted step. No OTP tests on the shared project.
@@ -147,5 +150,8 @@ R1–R8A, offline-first performance work (`docs/PERFORMANCE_OFFLINE_FIRST_MASTER
 LOCAL_TESTED, including a debug-signed Android release APK; it is **not** PRODUCTION_READY. Two external files (a
 plaintext passphrase note and the unencrypted 01B repository snapshot) await the owner's confirmation and deletion
 approval.
-**NEXT:** task 02, cut from `chore/task01-final-handoff`. Whether and when `main` is updated is the owner's decision;
-every hosted, store and payment step stays behind its own approval.
+**Task 02A.1 (2026-11-28):** Google sign-in for Android is LOCAL_TESTED on `feature/auth-google-signin`; it needs the
+owner's Google Cloud clients, the Supabase Google provider (a hosted step) and a device check before it is more.
+**NEXT:** the owner's Google setup and device check (`docs/GOOGLE_SIGN_IN_ANDROID.md`), then task 02B (Apple) from the
+approved integration tip. Whether and when `main` is updated is the owner's decision; every hosted, store and payment
+step stays behind its own approval.

@@ -3752,5 +3752,8 @@
   "subInvoiceNet": "المبلغ قبل الضريبة",
   "subInvoiceVat": "ضريبة القيمة المضافة {rate}",
   "subInvoiceTotal": "الإجمالي شامل الضريبة",
-  "subCreditNoteTitle": "إشعار دائن ضريبي"
+  "subCreditNoteTitle": "إشعار دائن ضريبي",
+  "googleSignInUnavailable": "تسجيل الدخول بحساب Google غير متاح حاليًا. يرجى تسجيل الدخول ببريدك الإلكتروني وكلمة المرور.",
+  "googleSignInNetworkError": "تعذّر الوصول إلى Google. تحقّق من اتصالك وحاول مرة أخرى.",
+  "googleSignInFailed": "لم يكتمل تسجيل الدخول بحساب Google. يرجى المحاولة مرة أخرى."
 }

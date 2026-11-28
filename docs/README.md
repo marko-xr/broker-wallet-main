@@ -17,6 +17,7 @@ One topic, one source of truth. When two documents disagree, the one named here 
 | `docs/PROJECT_STATE.md` | How the verified behaviour works (auth, recovery, deletion, media) and its verification history |
 | `docs/DECISIONS.md` | Durable decisions, including security decisions; superseded ones stay, marked with what replaced them |
 | `docs/PHONE_ACCOUNT_SECURITY_DESIGN.md` | Phone account design (Model X) |
+| `docs/GOOGLE_SIGN_IN_ANDROID.md` | Google sign-in on Android: design, SDK choice, owner setup, device acceptance, gaps |
 | `docs/NOTIFICATIONS_PRODUCTION_PLAN.md` | Notifications design, hosted runbook, iOS/APNs checklist |
 | `docs/SUBSCRIPTION_PRODUCTION_RUNBOOK.md` | Subscriptions and payments release procedure, configuration, rollback, store gates, web audit. Its code is on the integration branch, not on `46e931f`: see the Git map in the checkpoint |
 | `docs/PRODUCTION_DATABASE_BACKUP_RUNBOOK.md` | Production database backup, its record and the restore-test plan. The `supabase/backup/` scripts it uses are on `ops/production-backup-tooling` and the integration branch |
